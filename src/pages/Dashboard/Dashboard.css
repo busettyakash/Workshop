@@ -1,0 +1,188 @@
+/* ── Dashboard Layout ── */
+.ws-dash-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.ws-dash-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ws-dash-body {
+  flex: 1;
+  padding: 32px 36px;
+  max-width: 1200px;
+}
+
+.ws-dash-greeting {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+
+/* ── Stats Grid ── */
+.ws-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.ws-stat-card {
+  padding: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+  transition: all var(--transition-base);
+}
+.ws-stat-card:hover {
+  border-color: var(--color-gray-300);
+  box-shadow: var(--shadow-sm);
+}
+
+.ws-stat-card-label {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.ws-stat-card-value {
+  font-family: var(--font-display);
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.ws-stat-card-change {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.ws-stat-card-change.up   { color: var(--color-green); }
+.ws-stat-card-change.down { color: var(--color-red); }
+
+/* ── Table Section ── */
+.ws-table-section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+  overflow: hidden;
+}
+
+.ws-table-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ws-table-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 2px;
+}
+.ws-table-sub {
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary);
+}
+
+.ws-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-table-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  color: var(--color-gray-600);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-weight: 500;
+}
+.ws-table-btn:hover {
+  background: var(--color-surface-active);
+  color: var(--color-text-primary);
+}
+.ws-table-btn--primary {
+  background: var(--color-black);
+  color: #fff;
+  border-color: var(--color-black);
+}
+.ws-table-btn--primary:hover {
+  background: #222;
+  border-color: #222;
+}
+
+.ws-table-wrap { overflow-x: auto; }
+
+.ws-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ws-table th {
+  padding: 10px 16px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-align: left;
+  background: var(--color-gray-50);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.ws-table td {
+  padding: 13px 16px;
+  font-size: 0.8625rem;
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+}
+.ws-table tbody tr:last-child td { border-bottom: none; }
+.ws-table tbody tr:hover td { background: var(--color-gray-50); }
+
+.ws-td-name { font-weight: 500; }
+.ws-td-mono {
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+.ws-td-price {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ws-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .ws-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .ws-dash-body { padding: 20px; }
+  .ws-dash-content { margin-left: 0; }
+}

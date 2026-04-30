@@ -1,0 +1,79 @@
+.ws-topbar {
+  position: sticky;
+  top: 0;
+  height: var(--topbar-height);
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  z-index: var(--z-topbar);
+}
+
+.ws-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ws-topbar-menu-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--color-gray-500);
+  transition: all var(--transition-base);
+}
+.ws-topbar-menu-btn:hover {
+  background: var(--color-surface-active);
+  color: var(--color-text-primary);
+}
+
+.ws-topbar-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ws-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-topbar-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 0.8125rem;
+  color: var(--color-gray-600);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  transition: all var(--transition-base);
+  font-family: var(--font-body);
+}
+.ws-topbar-action-btn:hover {
+  background: var(--color-surface-active);
+  border-color: var(--color-gray-300);
+  color: var(--color-text-primary);
+}
+
+.ws-topbar-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3d68f5 0%, #7c3aed 100%);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+}

@@ -1,0 +1,4 @@
+/* Auth.css — shared auth page overrides */
+/* Main styles live in AuthLayout.css */
+
+.ws-auth-form .ws-input-group { margin: 0; }

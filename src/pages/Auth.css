@@ -1,0 +1,344 @@
+/* ═══════════════════════════════
+   AUTH PAGES — Pixel-perfect Attio parity
+   Login, Signup — two-column card layout
+═══════════════════════════════ */
+
+.ws-auth-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  color: var(--black);
+}
+
+/* ── Top bar: centered logo ── */
+.ws-auth-topbar {
+  padding: 24px 0 20px;
+  display: flex;
+  justify-content: center;
+  border-bottom: 0;
+}
+
+.ws-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: var(--black);
+}
+
+.ws-auth-logo {
+  width: 26px;
+  height: 26px;
+  color: var(--black);
+  display: block;
+}
+
+.ws-auth-name {
+  font-size: 1.18rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--black);
+  font-family: var(--font-tight);
+}
+
+/* ── Content container ── */
+.ws-auth-container {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px 24px 0;
+}
+
+/* ── Two-column card ── */
+.ws-auth-card {
+  display: flex;
+  width: 100%;
+  max-width: 980px;
+  min-height: 560px;
+  border: 1px solid #e4e5ea;
+  border-radius: 14px;
+  background: var(--white);
+  overflow: hidden;
+  box-shadow: none;
+}
+
+/* Wider for signup since it has more fields */
+.ws-auth-card--signup .ws-auth-left {
+  padding: 80px 76px 40px;
+}
+
+/* ── Left (form) panel ── */
+.ws-auth-left {
+  flex: 1;
+  padding: 100px 76px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── Right (description) panel ── */
+.ws-auth-right {
+  flex: 1;
+  padding: 100px 70px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: var(--white);
+  border-left: 1px solid #e4e5ea;
+}
+
+/* ── Typography inside card ── */
+.ws-auth-title {
+  font-size: 1.28rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--black);
+  margin-bottom: 6px;
+  text-align: center;
+  font-family: var(--font-tight);
+}
+
+.ws-auth-subtitle {
+  font-size: 0.82rem;
+  color: var(--gray-500);
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.ws-auth-right-title {
+  font-size: 1.38rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--black);
+  margin-bottom: 16px;
+  font-family: var(--font-tight);
+}
+
+.ws-auth-right-p {
+  max-width: 340px;
+  font-size: 0.87rem;
+  font-weight: 400;
+  color: #55565b;
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+
+/* ── Google button ── */
+.ws-auth-google-btn {
+  width: 100%;
+  max-width: 314px;
+  height: 36px;
+  margin: 0 auto 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #e0e2e8;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--black);
+  font-size: 0.84rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ws-auth-google-btn:hover {
+  background: var(--gray-50);
+  border-color: #cdd0d8;
+}
+
+.ws-auth-google-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* ── Divider ── */
+.ws-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 314px;
+  margin: 0 auto 20px;
+  width: 100%;
+}
+.ws-auth-divider-line {
+  flex: 1;
+  height: 1px;
+  background: #e0e2e8;
+}
+.ws-auth-divider-text {
+  font-size: 0.72rem;
+  color: #adb0ba;
+  font-weight: 500;
+}
+
+/* ── Form ── */
+.ws-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 100%;
+  max-width: 314px;
+  margin: 0 auto;
+}
+
+.ws-auth-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ws-auth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ws-auth-icon {
+  position: absolute;
+  left: 9px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+/* Attio-exact: left-icon padded, border-style input */
+.ws-auth-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 30px;
+  border: 1px solid #e0e2e8;
+  border-radius: 6px;
+  background: var(--white);
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--black);
+  font-family: var(--font);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+
+.ws-auth-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2.5px rgba(58,101,224,0.14);
+}
+
+.ws-auth-input::placeholder {
+  color: #adb0ba;
+}
+
+.ws-auth-input.error {
+  border-color: var(--red);
+}
+
+/* Non-editable display row (email shown below check inbox header) */
+.ws-auth-display-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  font-size: 0.82rem;
+  color: var(--gray-500);
+  padding: 0 10px;
+  margin-bottom: 2px;
+}
+
+.ws-auth-error-text {
+  font-size: 0.72rem;
+  color: var(--red);
+  margin-top: 2px;
+  padding-left: 2px;
+}
+
+/* ── Submit button ── */
+.ws-auth-btn-submit {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 0.83rem;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 2px;
+}
+.ws-auth-btn-submit:hover { background: var(--blue-hover); }
+.ws-auth-btn-submit:disabled { opacity: 0.65; cursor: not-allowed; }
+
+/* Checking state (loading) */
+.ws-auth-btn-submit.loading {
+  background: #94aff0;
+}
+
+/* ── Legal fine print ── */
+.ws-auth-legal {
+  margin-top: 28px;
+  max-width: 314px;
+  color: #9ca1aa;
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+}
+.ws-auth-legal a { color: #9ca1aa; text-decoration: underline; }
+
+/* ── Switch link ── */
+.ws-auth-switch {
+  margin-top: 8px;
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 0.8rem;
+}
+
+/* ── Footer ── */
+.ws-auth-footer {
+  padding: 20px 24px 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  font-size: 0.7rem;
+  color: #9ca1aa;
+}
+
+.ws-auth-footer a {
+  color: #9ca1aa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s;
+}
+.ws-auth-footer a:hover { color: var(--gray-700); }
+
+/* ── Responsive ── */
+@media (max-width: 780px) {
+  .ws-auth-container { padding: 14px; }
+
+  .ws-auth-card {
+    flex-direction: column;
+    max-width: 440px;
+    min-height: auto;
+    border-radius: 12px;
+  }
+
+  .ws-auth-right { display: none; }
+
+  .ws-auth-left {
+    padding: 40px 28px 32px;
+  }
+
+  .ws-auth-card--signup .ws-auth-left {
+    padding: 36px 24px 28px;
+  }
+
+  .ws-auth-google-btn,
+  .ws-auth-form,
+  .ws-auth-legal {
+    max-width: 100%;
+  }
+}

@@ -1,0 +1,43 @@
+.ws-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ws-badge--default {
+  background: var(--color-gray-100);
+  color: var(--color-gray-600);
+}
+
+.ws-badge--green {
+  background: var(--color-green-light);
+  color: var(--color-green);
+}
+
+.ws-badge--red {
+  background: var(--color-red-light);
+  color: var(--color-red);
+}
+
+.ws-badge--orange {
+  background: var(--color-orange-light);
+  color: var(--color-orange);
+}
+
+.ws-badge--blue {
+  background: var(--color-blue-light);
+  color: var(--color-blue);
+}
+
+.ws-badge--purple {
+  background: var(--color-purple-light);
+  color: var(--color-purple);
+}
+
+.ws-badge--custom {
+  /* colors injected via style prop */
+}

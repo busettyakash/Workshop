@@ -1,0 +1,123 @@
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  font-family: var(--font-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  position: relative;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Sizes */
+.ws-btn--sm {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 0.8125rem;
+  border-radius: var(--radius-md);
+}
+.ws-btn--md {
+  height: 38px;
+  padding: 0 16px;
+  font-size: 0.875rem;
+  border-radius: var(--radius-md);
+}
+.ws-btn--lg {
+  height: 46px;
+  padding: 0 22px;
+  font-size: 0.9375rem;
+  border-radius: var(--radius-pill);
+}
+
+/* Full width */
+.ws-btn--full { width: 100%; }
+
+/* ── Variants ── */
+
+/* Primary — Black */
+.ws-btn--primary {
+  background: var(--color-black);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.ws-btn--primary:hover:not(:disabled) {
+  background: #222;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.ws-btn--primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Ghost — transparent */
+.ws-btn--ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md);
+}
+.ws-btn--ghost:hover:not(:disabled) {
+  background: var(--color-surface-active);
+  color: var(--color-text-primary);
+}
+
+/* Outline */
+.ws-btn--outline {
+  background: var(--color-white);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-xs);
+}
+.ws-btn--outline:hover:not(:disabled) {
+  border-color: var(--color-gray-400);
+  background: var(--color-gray-50);
+}
+
+/* Blue */
+.ws-btn--blue {
+  background: var(--color-blue);
+  color: #fff;
+}
+.ws-btn--blue:hover:not(:disabled) {
+  background: var(--color-blue-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(61,104,245,0.3);
+}
+
+/* Danger */
+.ws-btn--danger {
+  background: var(--color-red);
+  color: #fff;
+}
+.ws-btn--danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+/* Disabled */
+.ws-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Loading spinner */
+.ws-btn--loading { cursor: wait; }
+.ws-btn-text-hidden { opacity: 0; }
+.ws-btn-spinner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ws-spin 0.7s linear infinite;
+}
+
+@keyframes ws-spin {
+  to { transform: rotate(360deg); }
+}

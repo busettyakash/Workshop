@@ -6,7 +6,6 @@ import './AuthLayout.css'
 export default function AuthLayout({ children, rightPanel }) {
   return (
     <div className="ws-auth-layout">
-      {/* Top brand bar */}
       <div className="ws-auth-topbar">
         <Link to="/" className="ws-auth-brand">
           <WorkshopLogo size={26} />
@@ -14,15 +13,11 @@ export default function AuthLayout({ children, rightPanel }) {
         </Link>
       </div>
 
-      {/* Card */}
       <main className="ws-auth-main">
         <div className="ws-auth-card">
-          {/* Left — form area */}
           <div className="ws-auth-left">
             {children}
           </div>
-
-          {/* Right — info panel */}
           <div className="ws-auth-right">
             {rightPanel || (
               <>
@@ -46,12 +41,10 @@ export default function AuthLayout({ children, rightPanel }) {
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="ws-auth-footer">
         <span>© {new Date().getFullYear()} Workshop Limited</span>
         <a href="#">Privacy Policy</a>
         <a href="#">Support</a>
-        <a href="#">Sign out</a>
       </footer>
     </div>
   )

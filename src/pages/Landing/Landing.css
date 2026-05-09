@@ -607,7 +607,7 @@
 }
 
 /* ══════════════════════════════════════════
-   AUTOMATE EVERYTHING — updated for Image 2
+   AUTOMATE EVERYTHING
    ══════════════════════════════════════════ */
 
 .ws-automate-section {
@@ -620,7 +620,6 @@
   max-width: 800px;
 }
 
-/* Two-column: narrow left text | wide graphic card */
 .ws-automate-layout {
   display: grid;
   grid-template-columns: 220px 1fr;
@@ -628,7 +627,6 @@
   align-items: start;
 }
 
-/* Left column — plain text, lives outside the card */
 .ws-automate-text-side {
   padding-top: 8px;
 }
@@ -660,7 +658,6 @@
   color: var(--color-blue);
 }
 
-/* Right column — clean white card */
 .ws-automate-graphic-area {
   display: flex;
   gap: 24px;
@@ -674,7 +671,6 @@
   min-height: 560px;
 }
 
-/* SVG connector overlay */
 .ws-automate-svg {
   position: absolute;
   top: 0;
@@ -685,7 +681,6 @@
   z-index: 1;
 }
 
-/* Flow canvas */
 .ws-automate-canvas {
   position: relative;
   width: 420px;
@@ -787,9 +782,6 @@
 }
 
 .ws-automate-status-green {
-  background: #dcfce7;
-  color: #166534;
-  border: 1px solid #dcfce7;
   background: #fff;
   color: #10b981;
 }
@@ -874,63 +866,64 @@
   color: var(--color-text-tertiary);
 }
 
-/* Right panel */
+/* ══ RIGHT PANEL — pill list ══ */
 .ws-automate-right-panel {
   flex: 1;
   position: relative;
   height: 440px;
   overflow: hidden;
-  /* Fade masks at top & bottom */
   -webkit-mask-image: linear-gradient(to bottom,
       transparent 0%,
-      black 18%,
-      black 82%,
+      black 20%,
+      black 80%,
       transparent 100%);
   mask-image: linear-gradient(to bottom,
       transparent 0%,
-      black 18%,
-      black 82%,
+      black 20%,
+      black 80%,
       transparent 100%);
 }
 
+/* ── pill stack gap ── */
 .ws-automate-pill-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   padding: 8px 0;
 }
 
+/* ── BASE pill — white card with border (Image 2 style) ── */
 .ws-automate-pill {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 11px 14px;
   border-radius: 10px;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--color-text-tertiary);
-  border-color: transparent;
-  background: transparent;
+  color: var(--color-text-secondary);
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
   width: 100%;
   white-space: nowrap;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
-/* The active pill is now a fixed centered spotlight overlay */
-.ws-automate-pill--active {
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.09);
-  color: var(--color-text-primary);
-  font-size: 0.9375rem;
-  font-weight: 600;
-  background: #fff;
-  /* Override absolute centering from the wrapper */
-}
-
+/* ── FADED pill — card still visible, just lower opacity ── */
 .ws-automate-pill--faded {
-  color: var(--color-text-tertiary);
-  border-color: transparent;
-  background: transparent;
+  background: #ffffff;
+  border-color: #efefef;
+  box-shadow: none;
+}
+
+/* ── ACTIVE pill — stronger border, bold, shadow ── */
+.ws-automate-pill--active {
+  border: 1.5px solid #d1d5db;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  color: var(--color-text-primary);
+  font-weight: 700;
+  background: #ffffff;
 }
 
 .ws-automate-pill-icon-box {
@@ -1063,7 +1056,6 @@
   position: relative;
 }
 
-/* Tree Diagram */
 .ws-ai-tree {
   display: flex;
   flex-direction: column;
@@ -1208,7 +1200,6 @@
   font-weight: 500;
 }
 
-/* Profile Card Area */
 .ws-ai-profile-container {
   display: flex;
   flex-direction: column;
@@ -1296,7 +1287,6 @@
   color: var(--color-text-secondary);
 }
 
-/* Pills */
 .ws-ai-pill-blue {
   padding: 1px 8px;
   border-radius: var(--radius-pill);
@@ -1330,7 +1320,6 @@
   color: #6d28d9;
 }
 
-/* Atom Graphic */
 .ws-ai-atom {
   position: relative;
   width: 120px;
@@ -1502,67 +1491,275 @@
   border-color: var(--color-gray-400);
 }
 
-.ws-dm-entities {
+.ws-dm-graph-container {
+  position: relative;
+  width: 100%;
+  max-width: 1000px;
+  height: 400px;
+  margin: 0 auto 64px;
+  padding: 32px;
+  background-image: radial-gradient(#f1f5f9 1.5px, transparent 1.5px);
+  background-size: 32px 32px;
   display: flex;
-  gap: 16px;
+  align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 32px;
 }
 
-.ws-dm-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  background: #fff;
-  min-width: 180px;
+.ws-dm-entities-graph {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 32px;
+  width: 100%;
+  height: 100%;
+  max-width: 900px;
+}
+
+.ws-dm-connectors {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ws-dm-line {
+  fill: none;
+  stroke: #e5e7eb;
+  stroke-width: 1;
+}
+
+.ws-dm-card--graph {
+  position: relative;
+  z-index: 2;
+  width: 190px;
+  min-height: 150px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  border-radius: 22px;
+  box-shadow: 
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px rgba(0, 0, 0, 0.03);
+  overflow: hidden;
+  transition: all 0.3s ease;
+  justify-self: center;
+  align-self: center;
+}
+
+.ws-dm-card--user {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.ws-dm-card--person {
+  grid-column: 2;
+  grid-row: 2;
+  transform: translateY(-20px);
 }
 
 .ws-dm-card--add {
-  border: 2px dashed var(--color-border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--color-text-tertiary);
-  font-size: 0.84rem;
-  cursor: pointer;
-  min-height: 140px;
+  grid-column: 3;
+  grid-row: 2;
+  width: 210px;
+  border: 1.5px dashed #c7d2fe !important;
+  background: #fafcff !important;
+  color: #4f46e5 !important;
+  box-shadow: none;
 }
 
-.ws-dm-card--add:hover {
-  border-color: var(--color-blue);
-  color: var(--color-blue);
-}
-
-.ws-dm-add-icon {
-  font-size: 1.4rem;
+.ws-dm-card--deal {
+  grid-column: 4;
+  grid-row: 1;
 }
 
 .ws-dm-card-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(243, 244, 246, 0.6);
 }
 
-.ws-dm-card-icon {
-  font-size: 0.85rem;
+.ws-dm-card-icon-box {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ws-dm-icon-green {
+  background: #10b981;
+  color: #fff;
+}
+
+.ws-dm-icon-blue {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.ws-dm-icon-purple {
+  background: #8b5cf6;
+  color: #fff;
 }
 
 .ws-dm-card-name {
-  font-size: 0.9rem;
+  font-size: 15px;
   font-weight: 600;
-  flex: 1;
+  color: #111827;
+  letter-spacing: -0.02em;
 }
 
 .ws-dm-card-badge {
-  font-size: 0.65rem;
-  color: var(--color-text-tertiary);
-  background: var(--color-gray-100);
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.ws-dm-card-body {
+  padding: 12px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ws-dm-attr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.ws-dm-attr svg {
+  color: #9ca3af;
+  stroke-width: 1.5;
+}
+
+.ws-dm-attr--more {
+  color: #3b82f6;
+  font-weight: 600;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.ws-dm-row-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ws-dm-row-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+}
+
+.ws-dm-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.ws-dm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.ws-dm-score-pill {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ws-th-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #9ca3af;
+}
+
+.ws-dm-table th,
+.ws-dm-table td {
+  border-right: 1px solid #f3f4f6;
+}
+
+.ws-dm-table th:last-child,
+.ws-dm-table td:last-child {
+  border-right: none;
+}
+
+.ws-td-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.ws-dm-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ws-dm-table th {
+  background: #fafafa;
+  text-align: left;
+  padding: 16px 24px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.ws-dm-table td {
+  padding: 16px 24px;
+  font-size: 14px;
+  color: #374151;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.ws-dm-table tr:hover td {
+  background: #fafafa;
+}
+
+.ws-td-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #111827;
+}
+
+.ws-dm-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #f3f4f6;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #374151;
 }
 
 .ws-dm-card-attrs {
@@ -2439,7 +2636,6 @@
    Landing.css — single page, Attio-style
 ════════════════════════════════════════ */
 
-/* ── Section ── */
 .cds-section {
   padding: 80px 0 100px;
   background: #fff;
@@ -2452,7 +2648,6 @@
   padding: 0 32px;
 }
 
-/* ── Unified Layout Wrapper ── */
 .cds-unified-wrapper {
   border: 1px solid #e2e2e2;
   border-radius: 16px;
@@ -2461,7 +2656,6 @@
   background: #fff;
 }
 
-/* ── Three-column card ── */
 .cds-split {
   display: grid;
   grid-template-columns: 256px 1fr 280px;
@@ -2474,7 +2668,6 @@
   border-top: 1px solid #e2e2e2;
 }
 
-/* ════ LEFT ════ */
 .cds-left {
   border-right: 1px solid #e2e2e2;
   padding: 52px 36px;
@@ -2521,7 +2714,6 @@
   gap: 10px;
 }
 
-/* ════ CENTER ════ */
 .cds-center {
   position: relative;
   background-color: #fdfdfd;
@@ -2536,9 +2728,9 @@
   background-color: #fdfdfd;
   background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
   background-size: 20px 20px;
+  overflow: hidden;
 }
 
-/* Fine grid */
 .cds-grid-bg {
   position: absolute;
   inset: 0;
@@ -2549,7 +2741,6 @@
   pointer-events: none;
 }
 
-/* ── 2×3 label grid — top 50% ── */
 .cds-labels-grid {
   position: absolute;
   top: 0;
@@ -2603,7 +2794,6 @@
   white-space: nowrap;
 }
 
-/* ── Graph area — bottom 50% ── */
 .cds-graph-area {
   position: absolute;
   bottom: 0;
@@ -2612,7 +2802,6 @@
   height: 50%;
 }
 
-/* SVG connector overlay — stretches exactly to graph area */
 .cds-connector-svg {
   position: absolute;
   inset: 0;
@@ -2622,7 +2811,6 @@
   z-index: 1;
 }
 
-/* Animated lines */
 .cds-line {
   fill: none;
   stroke: #bcd8f5;
@@ -2650,7 +2838,6 @@
   }
 }
 
-/* ── Logo node — straddles the 50% divider ── */
 .cds-logo-node {
   position: absolute;
   top: 0;
@@ -2708,7 +2895,6 @@
   }
 }
 
-/* ── Cards ── */
 .cds-card {
   position: absolute;
   background: #fff;
@@ -2723,22 +2909,6 @@
   animation: slideUp 0.5s cubic-bezier(0.34, 1.3, 0.64, 1) both;
 }
 
-/*
-  graph-area = 50% of 640px = 320px
-  SVG viewBox 600×300, preserveAspectRatio=none → 1:1 mapping in %
-
-  card left%  → SVG x = left% × 600
-  card bottomPx → SVG y = (320 - bottomPx) / 320 × 300
-
-  Workspace : left=20%, bottom=80px → x=120, y=(320-80)/320×300 = 225
-  Company   : left=80%, bottom=80px → x=480, y=225
-  Deal      : left=50%, bottom=16px → x=300, y=(320-16)/320×300 = 285
-
-  Lines go to top of card (card ~64px tall):
-    Workspace  → (120, 185)   [225 - 64*300/320 ≈ 185]
-    Company    → (480, 185)
-    Deal       → (300, 248)   [285 - 64*300/320 ≈ 225... use 248 for tip]
-*/
 .cds-card-l {
   left: 20%;
   bottom: 80px;
@@ -2804,14 +2974,6 @@
   font-weight: 600;
 }
 
-/* ════ RIGHT ════ */
-.cds-right {
-  position: relative;
-  background: #fafafa;
-  overflow: hidden;
-}
-
-/* Dot grid */
 .cds-dot-bg {
   position: absolute;
   inset: 0;
@@ -2819,7 +2981,6 @@
   background-size: 18px 18px;
 }
 
-/* Dashed lines */
 .cds-dash-wrap {
   position: absolute;
   top: 24px;
@@ -2844,7 +3005,6 @@
   border-top: 1.5px dashed #e0e0e0;
 }
 
-/* Integration icons */
 .cds-integrations {
   position: absolute;
   top: 22px;
@@ -2894,7 +3054,6 @@
   }
 }
 
-/* Cube */
 .cds-cube {
   position: absolute;
   bottom: 28px;

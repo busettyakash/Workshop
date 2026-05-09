@@ -149,38 +149,36 @@ export default function AutomateSection() {
       <div className="cds-right" style={{ overflow: 'hidden', position: 'relative' }}>
         <div className="ws-automate-right-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column', paddingTop: '40px' }}>
           <div className="ws-automate-pill-stack ws-animate-scroll">
-            {[...Array(2)].map((_, i) => (
-              <React.Fragment key={i}>
-                <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.35 }}>
-                  <div className="ws-automate-pill-icon-box ws-pill-icon-red"><RefreshCw size={12} /></div>
-                  Re-engage cold leads
-                </div>
-                <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.6 }}>
-                  <div className="ws-automate-pill-icon-box ws-pill-icon-yellow"><Star size={12} /></div>
-                  MQL lead routing
-                </div>
-                <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.85 }}>
-                  <div className="ws-automate-pill-icon-box ws-pill-icon-blue"><Anchor size={12} /></div>
-                  Onboarding hand-off
-                </div>
-                <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 1, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                  <div className="ws-automate-pill-icon-box ws-pill-icon-green"><Sparkles size={12} color="#10b981" /></div>
-                  New Deal email campaign
-                </div>
-                <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.85 }}>
-                  <div className="ws-automate-pill-icon-box ws-pill-icon-purple"><FileText size={12} /></div>
-                  Lead form submissions
-                </div>
-                <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.6 }}>
-                  <div className="ws-automate-pill-icon-box ws-pill-icon-red"><Heart size={12} /></div>
-                  Monitor customer health
-                </div>
-                <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.4 }}>
-                  <div className="ws-automate-pill-icon-box ws-pill-icon-green-light"><Search size={12} /></div>
-                  Identify expansion opportunity
-                </div>
-              </React.Fragment>
-            ))}
+
+            <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.35 }}>
+              <div className="ws-automate-pill-icon-box ws-pill-icon-red"><RefreshCw size={12} /></div>
+              Re-engage cold leads
+            </div>
+            <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.6 }}>
+              <div className="ws-automate-pill-icon-box ws-pill-icon-yellow"><Star size={12} /></div>
+              MQL lead routing
+            </div>
+            <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.85 }}>
+              <div className="ws-automate-pill-icon-box ws-pill-icon-blue"><Anchor size={12} /></div>
+              Onboarding hand-off
+            </div>
+            <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.85 }}>
+              <div className="ws-automate-pill-icon-box ws-pill-icon-green"><Sparkles size={12} color="#10b981" /></div>
+              New Deal email campaign
+            </div>
+            <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.85 }}>
+              <div className="ws-automate-pill-icon-box ws-pill-icon-purple"><FileText size={12} /></div>
+              Lead form submissions
+            </div>
+            <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.6 }}>
+              <div className="ws-automate-pill-icon-box ws-pill-icon-red"><Heart size={12} /></div>
+              Monitor customer health
+            </div>
+            <div className="ws-automate-pill ws-automate-pill--faded" style={{ opacity: 0.4 }}>
+              <div className="ws-automate-pill-icon-box ws-pill-icon-green-light"><Search size={12} /></div>
+              Identify expansion opportunity
+            </div>
+
           </div>
         </div>
       </div>

@@ -2,62 +2,14 @@ import React from 'react';
 import './Landing.css';
 
 /* ─── Integration logos ─── */
-const ZapierLogo = () => (
-  <svg viewBox="0 0 40 40" width="20" height="20">
-    <circle cx="20" cy="20" r="20" fill="#FF4A00" />
-    <text x="50%" y="57%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="18" fontWeight="bold">Z</text>
-  </svg>
-);
-const SlackLogo = () => (
-  <svg viewBox="0 0 40 40" width="20" height="20">
-    <path fill="#E01E5A" d="M15 5a4 4 0 0 0-4 4v6h8V9a4 4 0 0 0-4-4z" />
-    <path fill="#ECB22E" d="M35 15a4 4 0 0 0-4-4h-6v8h6a4 4 0 0 0 4-4z" />
-    <path fill="#2EB67D" d="M25 35a4 4 0 0 0 4-4v-6h-8v6a4 4 0 0 0 4 4z" />
-    <path fill="#36C5F0" d="M5 25a4 4 0 0 0 4 4h6v-8H9a4 4 0 0 0-4 4z" />
-  </svg>
-);
-const GmailLogo = () => (
-  <svg viewBox="0 0 40 40" width="20" height="20">
-    <rect width="40" height="40" rx="6" fill="#fff" />
-    <path fill="#EA4335" d="M6 30V14l14 9 14-9v16H6z" />
-    <path fill="#4285F4" d="M6 14l14 9 14-9H6z" />
-    <path fill="#FBBC05" d="M6 14v16l6-8-6-8z" />
-    <path fill="#34A853" d="M34 14v16l-6-8 6-8z" />
-    <path fill="#C5221F" d="M6 30l6-8 8 5 8-5 6 8H6z" />
-  </svg>
-);
-const OutlookLogo = () => (
-  <svg viewBox="0 0 40 40" width="20" height="20">
-    <rect width="40" height="40" rx="6" fill="#0078D4" />
-    <rect x="22" y="10" width="13" height="19" rx="2" fill="#50D9FF" opacity="0.9" />
-    <rect x="5" y="9" width="18" height="22" rx="2.5" fill="white" opacity="0.15" />
-    <text x="14" y="23" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">O</text>
-  </svg>
-);
-const SegmentLogo = () => (
-  <svg viewBox="0 0 40 40" width="20" height="20">
-    <circle cx="20" cy="20" r="20" fill="#52BD94" />
-    <text x="50%" y="57%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">S</text>
-  </svg>
-);
-const NotionLogo = () => (
-  <svg viewBox="0 0 40 40" width="20" height="20">
-    <rect width="40" height="40" rx="6" fill="#fff" stroke="#e5e5e5" />
-    <text x="50%" y="57%" dominantBaseline="middle" textAnchor="middle" fill="#1a1a1a" fontSize="17" fontWeight="bold">N</text>
-  </svg>
-);
-const HubspotLogo = () => (
-  <svg viewBox="0 0 40 40" width="20" height="20">
-    <circle cx="20" cy="20" r="20" fill="#FF7A59" />
-    <text x="50%" y="57%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold">hs</text>
-  </svg>
-);
-const MixpanelLogo = () => (
-  <svg viewBox="0 0 40 40" width="20" height="20">
-    <circle cx="20" cy="20" r="20" fill="#7856FF" />
-    <text x="50%" y="57%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">M</text>
-  </svg>
-);
+const ZapierLogo = () => <img src="https://cdn.simpleicons.org/zapier/FF4A00" width="22" height="22" alt="Zapier" />;
+const SlackLogo = () => <img src="https://cdn.simpleicons.org/slack" width="22" height="22" alt="Slack" />;
+const GmailLogo = () => <img src="https://cdn.simpleicons.org/gmail/EA4335" width="22" height="22" alt="Gmail" />;
+const OutlookLogo = () => <img src="https://cdn.simpleicons.org/microsoftoutlook/0078D4" width="22" height="22" alt="Outlook" />;
+const SegmentLogo = () => <img src="https://cdn.simpleicons.org/segment/52BD94" width="22" height="22" alt="Segment" />;
+const NotionLogo = () => <img src="https://cdn.simpleicons.org/notion/000000" width="22" height="22" alt="Notion" />;
+const HubspotLogo = () => <img src="https://cdn.simpleicons.org/hubspot/FF7A59" width="22" height="22" alt="HubSpot" />;
+const MixpanelLogo = () => <img src="https://cdn.simpleicons.org/mixpanel/7856FF" width="22" height="22" alt="Mixpanel" />;
 
 /* ─── Label icons ─── */
 const SalesIcon = () => (

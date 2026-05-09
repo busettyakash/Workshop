@@ -40,14 +40,34 @@ export default function Landing() {
       {/* ── 1. Hero ── */}
       <HeroSection />
 
-      {/* ── 2. "Retail at full throttle" + Automate workflow ── */}
-      <AutomateSection />
+      {/* ── UNIFIED PLATFORM SHOWCASE ── */}
+      <section className="cds-section">
+        <div className="cds-inner">
+          
+          {/* Big headline */}
+          <div className="ws-big-headline ws-automate-headline" style={{ marginBottom: '40px', maxWidth: '850px' }}>
+            <h2 className="ws-big-headline-title" style={{ fontSize: '1.8rem', lineHeight: '1.3' }}>
+              <strong style={{ color: '#0a0a0a', fontWeight: 700 }}>Retail at full throttle.</strong>{' '}
+              <span style={{ color: '#666', fontWeight: 500 }}>
+                Execute your revenue strategy with precision. Design powerful workflows,
+                deploy AI, integrate your data and build detailed reports — all in one platform.
+              </span>
+            </h2>
+          </div>
 
-      {/* ── 3. Deploy AI / Ask Workshop ── */}
-      <AskWorkshopSection />
+          <div className="cds-unified-wrapper">
+            {/* ── 2. "Retail at full throttle" + Automate workflow ── */}
+            <AutomateSection />
 
-      {/* ── 4. Connect any type of data ── */}
-      <ConnectDataSection />
+            {/* ── 3. Deploy AI / Ask Workshop ── */}
+            <AskWorkshopSection />
+
+            {/* ── 4. Connect any type of data ── */}
+            <ConnectDataSection />
+          </div>
+
+        </div>
+      </section>
 
       {/* ── 5. Data Model ── */}
       <DataModelSection />

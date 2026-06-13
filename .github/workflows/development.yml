@@ -1,0 +1,217 @@
+name: Development — Trivy Scan & Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────
+  # FRONTEND — Build & Scan
+  # ─────────────────────────────────────────
+  trivy-scan-frontend:
+    name: Frontend — Build & Trivy Scan
+    runs-on: ubuntu-latest
+    outputs:
+      scan_status: ${{ steps.trivy.outputs.scan_status }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Frontend Docker image
+        run: docker build -t frontend-dev:${{ github.sha }} .
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" \
+            | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update && sudo apt-get install -y trivy
+
+      - name: Run Trivy scan — Frontend
+        id: trivy
+        run: |
+          trivy image \
+            --exit-code 1 \
+            --severity MEDIUM,HIGH,CRITICAL \
+            --format table \
+            --output trivy-frontend-report.txt \
+            frontend-dev:${{ github.sha }}
+          echo "scan_status=passed" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Generate JSON report — Frontend
+        run: |
+          trivy image \
+            --exit-code 0 \
+            --severity MEDIUM,HIGH,CRITICAL \
+            --format json \
+            --output trivy-frontend-report.json \
+            frontend-dev:${{ github.sha }}
+
+      - name: Upload Frontend Trivy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-dev-frontend-${{ github.sha }}
+          path: |
+            trivy-frontend-report.txt
+            trivy-frontend-report.json
+          retention-days: 15
+
+      - name: Post frontend scan summary
+        if: always()
+        run: |
+          echo "## Trivy Scan — Frontend (Development)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat trivy-frontend-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Block if frontend vulnerabilities found
+        if: steps.trivy.outputs.scan_status != 'passed'
+        run: |
+          echo "❌ Frontend vulnerabilities found. Dev deploy blocked."
+          exit 1
+
+      - name: Cleanup Frontend image
+        if: always()
+        run: docker rmi frontend-dev:${{ github.sha }} || true
+
+  # ─────────────────────────────────────────
+  # BACKEND — Build & Scan
+  # ─────────────────────────────────────────
+  trivy-scan-backend:
+    name: Backend — Build & Trivy Scan
+    runs-on: ubuntu-latest
+    outputs:
+      scan_status: ${{ steps.trivy.outputs.scan_status }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Backend Docker image
+        run: docker build -t backend-dev:${{ github.sha }} ./backend
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" \
+            | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update && sudo apt-get install -y trivy
+
+      - name: Run Trivy scan — Backend
+        id: trivy
+        run: |
+          trivy image \
+            --exit-code 1 \
+            --severity MEDIUM,HIGH,CRITICAL \
+            --format table \
+            --output trivy-backend-report.txt \
+            backend-dev:${{ github.sha }}
+          echo "scan_status=passed" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Generate JSON report — Backend
+        run: |
+          trivy image \
+            --exit-code 0 \
+            --severity MEDIUM,HIGH,CRITICAL \
+            --format json \
+            --output trivy-backend-report.json \
+            backend-dev:${{ github.sha }}
+
+      - name: Upload Backend Trivy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-dev-backend-${{ github.sha }}
+          path: |
+            trivy-backend-report.txt
+            trivy-backend-report.json
+          retention-days: 15
+
+      - name: Post backend scan summary
+        if: always()
+        run: |
+          echo "## Trivy Scan — Backend (Development)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat trivy-backend-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Block if backend vulnerabilities found
+        if: steps.trivy.outputs.scan_status != 'passed'
+        run: |
+          echo "❌ Backend vulnerabilities found. Dev deploy blocked."
+          exit 1
+
+      - name: Cleanup Backend image
+        if: always()
+        run: docker rmi backend-dev:${{ github.sha }} || true
+
+  # ─────────────────────────────────────────
+  # DEPLOY FRONTEND — only if scan passed
+  # ─────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend → Development
+    needs: trivy-scan-frontend
+    runs-on: ubuntu-latest
+    if: needs.trivy-scan-frontend.outputs.scan_status == 'passed'
+    environment:
+      name: development-frontend
+      url: https://your-app-dev.vercel.app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy Frontend to Vercel (Development)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_FRONTEND_PROJECT_ID }}
+        run: |
+          npm install -g vercel
+          vercel pull --yes --environment=preview --token=$VERCEL_TOKEN
+          vercel build --token=$VERCEL_TOKEN
+          vercel deploy --prebuilt --token=$VERCEL_TOKEN
+
+      - name: Post frontend deploy summary
+        run: |
+          echo "## ✅ Frontend — Development Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: https://your-app-dev.vercel.app" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────
+  # DEPLOY BACKEND — only if scan passed
+  # ─────────────────────────────────────────
+  deploy-backend:
+    name: Deploy Backend → Development
+    needs: trivy-scan-backend
+    runs-on: ubuntu-latest
+    if: needs.trivy-scan-backend.outputs.scan_status == 'passed'
+    environment:
+      name: development-backend
+      url: https://your-api-dev.vercel.app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy Backend to Vercel (Development)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_BACKEND_PROJECT_ID }}
+        run: |
+          npm install -g vercel
+          vercel pull --yes --environment=preview --token=$VERCEL_TOKEN
+          vercel build --token=$VERCEL_TOKEN
+          vercel deploy --prebuilt --token=$VERCEL_TOKEN
+
+      - name: Post backend deploy summary
+        run: |
+          echo "## ✅ Backend — Development Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: https://your-api-dev.vercel.app" >> $GITHUB_STEP_SUMMARY

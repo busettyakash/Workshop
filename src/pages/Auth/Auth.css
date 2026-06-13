@@ -178,3 +178,97 @@
 .ws-input {
   height: 42px;
 }
+
+/* Step 4 specific styles */
+.ws-step4-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 4px;
+}
+.ws-step4-divider::before,
+.ws-step4-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+.ws-step4-divider span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+
+.ws-field-optional {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin-left: 4px;
+}
+
+.ws-field-hint {
+  font-size: 0.71rem;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.ws-auth-skip-btn {
+  width: 100%;
+  height: 40px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ws-auth-skip-btn:hover {
+  background: var(--color-gray-50);
+  color: var(--color-text-primary);
+}
+
+.ws-text-btn {
+  background: none;
+  border: none;
+  color: var(--color-blue);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  font-family: inherit;
+}
+
+.ws-custom-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.ws-chip {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: #fff;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.15s;
+}
+.ws-chip:hover { background: var(--color-gray-50); color: var(--color-text-primary); }
+.ws-chip.ws-active {
+  background: var(--color-blue);
+  border-color: var(--color-blue);
+  color: #fff;
+}
+

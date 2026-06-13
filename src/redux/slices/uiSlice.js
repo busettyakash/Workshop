@@ -6,6 +6,7 @@ const initialState = {
   activeNav:     'Home',
   notifications: [],
   toasts:        [],
+  configureOpen: false,
 }
 
 const uiSlice = createSlice({
@@ -27,6 +28,12 @@ const uiSlice = createSlice({
     setActiveNav(state, action) {
       state.activeNav = action.payload
     },
+    toggleConfigure(state) {
+      state.configureOpen = !state.configureOpen
+    },
+    setConfigureOpen(state, action) {
+      state.configureOpen = action.payload
+    },
     addToast(state, action) {
       state.toasts.push({
         id:      Date.now(),
@@ -40,10 +47,11 @@ const uiSlice = createSlice({
   },
 })
 
-export const { toggleSidebar, setSidebarOpen, toggleChat, setChatOpen, setActiveNav, addToast, removeToast } = uiSlice.actions
+export const { toggleSidebar, setSidebarOpen, toggleChat, setChatOpen, setActiveNav, toggleConfigure, setConfigureOpen, addToast, removeToast } = uiSlice.actions
 export default uiSlice.reducer
 
 export const selectSidebarOpen = (state) => state.ui.sidebarOpen
 export const selectChatOpen    = (state) => state.ui.chatOpen
 export const selectActiveNav   = (state) => state.ui.activeNav
 export const selectToasts      = (state) => state.ui.toasts
+export const selectConfigureOpen = (state) => state.ui.configureOpen

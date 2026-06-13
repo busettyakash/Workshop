@@ -19,9 +19,12 @@ async function createTables() {
         user_id UUID PRIMARY KEY,
         shop_name VARCHAR(255),
         phone VARCHAR(50),
-        email VARCHAR(255),
+        gstin VARCHAR(20),
+        email VARCHAR(255) UNIQUE,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(20);
 
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
@@ -30,11 +33,30 @@ async function createTables() {
         category VARCHAR(100),
         price DECIMAL(10, 2) NOT NULL,
         stock INT DEFAULT 0,
+        unit VARCHAR(50) DEFAULT 'pcs',
         status VARCHAR(50) DEFAULT 'active',
         description TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'pcs';
+
+      CREATE TABLE IF NOT EXISTS import_stock (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        sku VARCHAR(100),
+        category VARCHAR(100),
+        price DECIMAL(10, 2),
+        stock INT DEFAULT 0,
+        unit VARCHAR(50) DEFAULT 'pcs',
+        status VARCHAR(50) DEFAULT 'pending',
+        description TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'pcs';
 
       CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
@@ -47,11 +69,15 @@ async function createTables() {
         updated_at TIMESTAMP DEFAULT NOW()
       );
 
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS gst_number VARCHAR(50);
+
       CREATE TABLE IF NOT EXISTS bills (
         id SERIAL PRIMARY KEY,
-        customer_id INT REFERENCES customers(id) ON DELETE SET NULL,
+        customer_id INT REFERENCES people(id) ON DELETE SET NULL,
         items JSONB,
         amount DECIMAL(10, 2) NOT NULL,
+        discount DECIMAL(10, 2) DEFAULT 0,
         status VARCHAR(50) DEFAULT 'unpaid',
         due_date DATE,
         notes TEXT,
@@ -60,13 +86,7 @@ async function createTables() {
         updated_at TIMESTAMP DEFAULT NOW()
       );
 
-      CREATE TABLE IF NOT EXISTS bill_items (
-        id SERIAL PRIMARY KEY,
-        bill_id INT REFERENCES bills(id) ON DELETE CASCADE,
-        product_id INT REFERENCES products(id) ON DELETE SET NULL,
-        quantity INT DEFAULT 1,
-        price DECIMAL(10, 2) NOT NULL
-      );
+      ALTER TABLE bills ADD COLUMN IF NOT EXISTS discount DECIMAL(10, 2) DEFAULT 0;
 
       CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
@@ -77,10 +97,46 @@ async function createTables() {
         read BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS workflows (
+        id SERIAL PRIMARY KEY,
+        user_id UUID NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        is_live BOOLEAN DEFAULT true,
+        nodes JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS workflow_runs (
+        id SERIAL PRIMARY KEY,
+        workflow_id INT REFERENCES workflows(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL,
+        status VARCHAR(50) DEFAULT 'Executing',
+        duration VARCHAR(50),
+        test_company VARCHAR(255),
+        test_value DECIMAL(12, 2),
+        current_step INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+        id SERIAL PRIMARY KEY,
+        user_id UUID NOT NULL,
+        conversation_id VARCHAR(100) UNIQUE,
+        title VARCHAR(255),
+        messages JSONB DEFAULT '[]'::jsonb,
+        last_message TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_chat_sessions_conversation_id ON chat_sessions(conversation_id);
     `);
-    console.log('✅ All database tables created successfully!');
+    console.log('All database tables created successfully!');
   } catch (error) {
-    console.error('❌ Error creating tables:', error);
+    console.error('Error creating tables:', error);
   } finally {
     pool.end();
   }

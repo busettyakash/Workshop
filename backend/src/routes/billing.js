@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import redis from '../lib/redis.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -18,7 +19,7 @@ router.get('/', async (req, res) => {
     const { rows } = await query(
       `SELECT b.*, c.name AS customer_name
        FROM bills b
-       LEFT JOIN customers c ON b.customer_id = c.id
+       LEFT JOIN people c ON b.customer_id = c.id
        ${where} ORDER BY b.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
@@ -48,7 +49,7 @@ router.get('/:id', async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT b.*, c.name AS customer_name FROM bills b
-       LEFT JOIN customers c ON b.customer_id = c.id WHERE b.id=$1`,
+       LEFT JOIN people c ON b.customer_id = c.id WHERE b.id=$1`,
       [req.params.id]
     )
     if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
@@ -60,14 +61,57 @@ router.get('/:id', async (req, res) => {
 
 /* POST /api/billing */
 router.post('/', async (req, res) => {
-  const { customer_id, items, amount, due_date, notes } = req.body
+  const { customer_id, items, amount, due_date, notes, discount, status } = req.body
   if (!customer_id || !amount) return res.status(400).json({ error: 'customer_id and amount required' })
+  const billStatus = status === 'paid' ? 'paid' : 'unpaid'
+  const paidAt = billStatus === 'paid' ? 'NOW()' : 'NULL'
   try {
     const { rows } = await query(
-      `INSERT INTO bills (customer_id, items, amount, status, due_date, notes, created_at)
-       VALUES ($1,$2,$3,'unpaid',$4,$5,NOW()) RETURNING *`,
-      [customer_id, JSON.stringify(items || []), amount, due_date, notes]
+      `INSERT INTO bills (customer_id, items, amount, discount, status, due_date, notes, paid_at, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,${paidAt},NOW()) RETURNING *`,
+      [customer_id, JSON.stringify(items || []), amount, discount || 0, billStatus, due_date || null, notes]
     )
+
+    // Update stock for both products and import_stock tables and insert to bill_items
+    const itemsList = items || []
+    for (const item of itemsList) {
+      if (item.product_id) {
+        const qty = parseFloat(item.qty || 1)
+        
+        // 1. Decrement products table stock
+        await query(
+          "UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE id = $2",
+          [qty, item.product_id]
+        )
+
+        // 2. Insert into bill_items table
+        await query(
+          "INSERT INTO bill_items (bill_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)",
+          [rows[0].id, item.product_id, Math.round(qty), item.price || 0]
+        )
+        
+        // 3. Query product to find its SKU and decrement matching stock in import_stock table
+        const prodRes = await query("SELECT sku, name FROM products WHERE id = $1", [item.product_id])
+        if (prodRes.rows.length > 0) {
+          const { sku, name } = prodRes.rows[0]
+          if (sku) {
+            await query(
+              "UPDATE import_stock SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE sku = $2",
+              [qty, sku]
+            )
+          } else if (name) {
+            await query(
+              "UPDATE import_stock SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE name = $2",
+              [qty, name]
+            )
+          }
+        }
+      }
+    }
+
+    // Invalidate import_stock Redis cache
+    await redis.del('import_stock:all').catch(() => {})
+
     res.status(201).json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })

@@ -1,15 +1,16 @@
 import React from 'react'
-import { Menu, ArrowUpDown, Sparkles, Plus } from 'lucide-react'
+import { Menu, ArrowUpDown, Sparkles, Plus, Sliders, HelpCircle } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
-import { toggleSidebar, selectActiveNav, toggleChat, selectChatOpen } from '../../redux/slices/uiSlice'
+import { toggleSidebar, selectActiveNav, toggleConfigure } from '../../redux/slices/uiSlice'
 import { useAuth } from '../../hooks/useAuth'
 import './Topbar.css'
 
 export default function Topbar() {
   const dispatch  = useAppDispatch()
   const activeNav = useAppSelector(selectActiveNav)
-  const chatOpen  = useAppSelector(selectChatOpen)
   const { initials, shopName } = useAuth()
+
+  const isHome = activeNav === 'Home'
 
   return (
     <header className="ws-topbar">
@@ -25,30 +26,36 @@ export default function Topbar() {
       </div>
 
       <div className="ws-topbar-right">
-        <button className="ws-topbar-action-btn">
-          <ArrowUpDown size={13} />
-          Sort
-        </button>
-        <button className="ws-topbar-action-btn">
-          <Plus size={13} />
-          New
-        </button>
-        <button className="ws-topbar-action-btn ws-topbar-invite-btn">
-          <Plus size={13} style={{ color: 'var(--color-blue)' }} />
-          Invite
-        </button>
-        <button
-          className={`ws-topbar-chat-btn${chatOpen ? ' active' : ''}`}
-          onClick={() => dispatch(toggleChat())}
-          title="Toggle AI Assistant"
-          aria-label="Toggle AI Chat"
-        >
-          <Sparkles size={14} />
-          <span className="ws-topbar-chat-label">AI</span>
-        </button>
-        <div className="ws-topbar-avatar" title={shopName}>
-          {initials}
-        </div>
+        {isHome ? (
+          <>
+            <button className="ws-topbar-action-btn" onClick={() => dispatch(toggleConfigure())}>
+              <Sliders size={13} />
+              Configure
+            </button>
+            <button className="ws-topbar-action-btn">
+              <HelpCircle size={13} />
+              Help
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="ws-topbar-action-btn">
+              <ArrowUpDown size={13} />
+              Sort
+            </button>
+            <button className="ws-topbar-action-btn">
+              <Plus size={13} />
+              New
+            </button>
+            <button className="ws-topbar-action-btn ws-topbar-invite-btn">
+              <Plus size={13} style={{ color: 'var(--color-blue)' }} />
+              Invite
+            </button>
+            <div className="ws-topbar-avatar" title={shopName}>
+              {initials}
+            </div>
+          </>
+        )}
       </div>
     </header>
   )

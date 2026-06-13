@@ -5,7 +5,6 @@ import HeroSection from './HeroSection'
 import AutomateSection from './AutomateSection'
 import AskWorkshopSection from './AskWorkshopSection'
 import ConnectDataSection from './ConnectDataSection'
-import DataModelSection from './DataModelSection'
 import ReportingSection from './ReportingSection'
 import BuildFastSection from './BuildFastSection'
 import FinalCTASection from './FinalCTASection'
@@ -70,10 +69,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── 5. Data Model ── */}
-      <DataModelSection />
-
-      {/* ── 6. Powerful Reporting ── */}
+      {/* ── 6. Business Metrics Reporting ── */}
       <ReportingSection />
 
       {/* ── 7. Build fast ── */}

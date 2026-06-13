@@ -9,6 +9,11 @@ import billingRoutes  from './routes/billing.js'
 import customerRoutes from './routes/customers.js'
 import reportRoutes   from './routes/reports.js'
 import notifyRoutes   from './routes/notifications.js'
+import workflowRoutes from './routes/workflows.js'
+import chatRoutes     from './routes/chat.js'
+import importStockRoutes from './routes/importStock.js'
+import peopleRoutes   from './routes/people.js'
+import dealsRoutes    from './routes/deals.js'
 
 const app  = express()
 const PORT = process.env.PORT || 5000
@@ -52,6 +57,11 @@ app.use('/api/billing',       billingRoutes)
 app.use('/api/customers',     customerRoutes)
 app.use('/api/reports',       reportRoutes)
 app.use('/api/notifications', notifyRoutes)
+app.use('/api/workflows',     workflowRoutes)
+app.use('/api/chat',          chatRoutes)
+app.use('/api/import-stock',  importStockRoutes)
+app.use('/api/people',        peopleRoutes)
+app.use('/api/deals',         dealsRoutes)
 
 /* ── 404 handler ── */
 app.use((_req, res) => {

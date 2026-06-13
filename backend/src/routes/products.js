@@ -14,7 +14,13 @@ router.get('/', async (req, res) => {
 
   if (search) { params.push(`%${search}%`); conditions.push(`(name ILIKE $${params.length} OR sku ILIKE $${params.length})`) }
   if (category) { params.push(category); conditions.push(`category = $${params.length}`) }
-  if (status)   { params.push(status);   conditions.push(`status = $${params.length}`) }
+  
+  // Default to status = 'active' if not specified, but return all if status = 'all'
+  const finalStatus = status === 'all' ? null : (status || 'active')
+  if (finalStatus) {
+    params.push(finalStatus)
+    conditions.push(`status = $${params.length}`)
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   params.push(limit, offset)

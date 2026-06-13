@@ -16,14 +16,18 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle 401 — clear storage and redirect to login
+// Handle 401 — clear storage and redirect to login ONLY when not already on auth pages
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('ws_token')
-      localStorage.removeItem('ws_user')
-      window.location.href = '/login'
+      const onAuthPage = ['/login', '/signup'].some(p => window.location.pathname.startsWith(p))
+      if (!onAuthPage) {
+        // Expired session — clear and redirect
+        localStorage.removeItem('ws_token')
+        localStorage.removeItem('ws_user')
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(err)
   }

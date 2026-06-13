@@ -11,16 +11,33 @@ export const getOtpTemplate = (otp) => `
         <tr>
           <td align="center" style="padding: 40px 0;">
             <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 500px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
-              
-              <!-- Header/Logo -->
+
+              <!-- Header: Workshop Logo -->
               <tr>
-                <td align="center" style="padding: 40px 40px 20px 40px;">
-                  <div style="background-color: #3d68f5; width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
-                    <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M10 10H14L18 22H14L10 10Z" fill="white"/>
-                      <path d="M18 10H22L26 22H22L18 10Z" fill="white" fill-opacity="0.6"/>
-                    </svg>
-                  </div>
+                <td align="center" style="padding: 40px 40px 24px 40px;">
+                  <table border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td align="center">
+                        <!-- Blue rounded square -->
+                        <div style="background-color: #555657ff; width: 56px; height: 56px; border-radius: 14px; margin: 0 auto;">
+                          <table border="0" cellpadding="0" cellspacing="0" width="56" height="56">
+                            <tr>
+                              <td align="center" valign="middle">
+                                <!-- Workshop Logo SVG: three rotated rounded rectangles -->
+                                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <rect x="3" y="6" width="4.5" height="14" rx="2.25" transform="rotate(-15 3 6)" fill="white"/>
+                                  <rect x="10.5" y="8" width="4.5" height="10" rx="2.25" transform="rotate(-15 10.5 8)" fill="white" opacity="0.82"/>
+                                  <rect x="18" y="10" width="4.5" height="7" rx="2.25" transform="rotate(-15 18 10)" fill="white" opacity="0.6"/>
+                                </svg>
+                              </td>
+                            </tr>
+                          </table>
+                        </div>
+                        <!-- Workshop wordmark -->
+                        <div style="margin-top: 12px; font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em;">Workshop</div>
+                      </td>
+                    </tr>
+                  </table>
                 </td>
               </tr>
 
@@ -60,7 +77,7 @@ export const getOtpTemplate = (otp) => `
                 </td>
               </tr>
             </table>
-            
+
             <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 500px;">
               <tr>
                 <td style="padding: 24px 0; text-align: center;">

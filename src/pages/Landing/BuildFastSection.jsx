@@ -1,5 +1,16 @@
 import React from 'react'
 import './Landing.css'
+import {
+  Mail,
+  ClipboardList,
+  Briefcase,
+  MapPin,
+  Building,
+  Clock,
+  Search,
+  Link as LinkIcon,
+  Sparkles
+} from 'lucide-react'
 
 /**
  * "Build fast" section — matching Screenshot 134408
@@ -24,14 +35,7 @@ export default function BuildFastSection() {
           </div>
         </div>
 
-        {/* ── Filter tabs ── */}
-        <div className="ws-dm-tabs" style={{ marginTop: 40 }}>
-          {['📧 Email events', '📅 Calendar events', '⚡ Segment events', '🌐 Data sources'].map((tab, i) => (
-            <button key={i} className={`ws-dm-tab ${i === 0 ? 'ws-dm-tab--active' : ''}`}>
-              {tab}
-            </button>
-          ))}
-        </div>
+
 
         {/* ── Customer profile card ── */}
         <div className="ws-build-profile">
@@ -45,35 +49,37 @@ export default function BuildFastSection() {
               </div>
             </div>
 
-            <button className="ws-build-compose">✉ Compose email</button>
+            <button className="ws-build-compose">
+              <Mail size={14} style={{ marginRight: 6 }} /> Compose email
+            </button>
 
             <div className="ws-build-details">
               <div className="ws-build-detail-label">▾ Details</div>
               <div className="ws-build-detail-row">
-                <span>📋 Name</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardList size={14} className="ws-text-muted" /> Name</span>
                 <span>Rahul Sharma</span>
               </div>
               <div className="ws-build-detail-row">
-                <span>💼 Description</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Briefcase size={14} className="ws-text-muted" /> Description</span>
                 <span>Manager at Electronics Hub</span>
               </div>
               <div className="ws-build-detail-row">
-                <span>📧 Email</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Mail size={14} className="ws-text-muted" /> Email</span>
                 <a href="#" className="ws-build-detail-link">rahul@electronichub.com</a>
               </div>
               <div className="ws-build-detail-row">
-                <span>📍 Location</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><MapPin size={14} className="ws-text-muted" /> Location</span>
                 <span>Mumbai, India</span>
               </div>
               <div className="ws-build-detail-row">
-                <span>🏢 Company</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Building size={14} className="ws-text-muted" /> Company</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />
                   Electronics Hub
                 </span>
               </div>
               <div className="ws-build-detail-row">
-                <span>🕐 Last interaction</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Clock size={14} className="ws-text-muted" /> Last interaction</span>
                 <span>6 hours ago</span>
               </div>
             </div>
@@ -81,18 +87,20 @@ export default function BuildFastSection() {
 
           {/* Right — highlights + activity */}
           <div className="ws-build-highlights">
-            <div className="ws-build-highlights-header">🔍 Highlights</div>
+            <div className="ws-build-highlights-header">
+              <Search size={14} style={{ marginRight: 6 }} /> Highlights
+            </div>
 
             <div className="ws-build-highlight-grid">
               <div className="ws-build-highlight-card">
-                <div className="ws-build-highlight-card-label">Summary <span style={{ opacity: 0.4 }}>✦</span></div>
+                <div className="ws-build-highlight-card-label">Summary <Sparkles size={12} style={{ opacity: 0.4, marginLeft: 4 }} /></div>
                 <p className="ws-build-highlight-card-body">
                   Rahul Sharma, the Manager at Electronics Hub, is leading the
                   initiative to modernize their data infrastructure....
                 </p>
               </div>
               <div className="ws-build-highlight-card">
-                <div className="ws-build-highlight-card-label">LinkedIn <span style={{ color: '#0077b5' }}>🔗</span></div>
+                <div className="ws-build-highlight-card-label">LinkedIn <LinkIcon size={12} color="#0077b5" style={{ marginLeft: 4 }} /></div>
                 <a href="#" className="ws-build-highlight-link">rahulsharma</a>
               </div>
             </div>
@@ -126,7 +134,7 @@ export default function BuildFastSection() {
 
             {/* Activity feed */}
             <div className="ws-build-activity">
-              <div className="ws-build-activity-header">✦ Activity ›</div>
+              <div className="ws-build-activity-header"><Sparkles size={14} style={{ marginRight: 6 }} /> Activity ›</div>
               {[
                 { who: 'Amit Kumar', action: 'attended an', what: 'in-person meeting', time: '6 hours ago' },
                 { who: 'Rahul Sharma', action: 'attended an', what: 'event', time: '2 days ago' },

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mail, Lock, ArrowLeft, Phone, FileText, Globe, MessageSquare } from 'lucide-react'
+import { Mail, Lock, ArrowLeft, Phone, CreditCard } from 'lucide-react'
 import WorkshopLogo from '../../components/WorkshopLogo'
 import Notification from '../../components/Notification'
 import AuthLayout from '../../components/layout/AuthLayout'
@@ -10,8 +10,6 @@ import { useAppDispatch } from '../../redux/hooks'
 import { registerThunk } from '../../redux/slices/authSlice'
 import './Auth.css'
 
-// Using global Input component
-
 export default function Signup() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
@@ -20,11 +18,15 @@ export default function Signup() {
     email: '', password: '', confirmPassword: '',
     companyName: '', workspaceHandle: '', workspaceHandleManual: false,
     billingCountry: 'India', referralSource: '',
+    phone: '', gstin: '',
     usageType: 'Sales', inviteEmail: '', otp: ''
   })
   const [errors, setErrors] = useState({})
   const [isLoading, setIsLoading] = useState(false)
   const [apiError, setApiError] = useState('')
+
+  const normalizeEmail = (value) => value.trim().toLowerCase()
+  const normalizeOtp = (value) => value.replace(/\D/g, '').slice(0, 6)
 
   useEffect(() => {
     if (!form.workspaceHandleManual && form.companyName) {
@@ -35,7 +37,11 @@ export default function Signup() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setForm(prev => ({ ...prev, [name]: value }))
+    const nextValue =
+      name === 'email' ? normalizeEmail(value)
+      : name === 'otp' ? normalizeOtp(value)
+      : value
+    setForm(prev => ({ ...prev, [name]: nextValue }))
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }))
   }
 
@@ -52,11 +58,7 @@ export default function Signup() {
       if (!form.email || !/\S+@\S+\.\S+/.test(form.email)) newErrors.email = 'Valid email is required.'
       if (!form.password || form.password.length < 6) newErrors.password = 'Password must be at least 6 characters.'
       if (form.password !== form.confirmPassword) newErrors.confirmPassword = 'Passwords do not match.'
-      
-      if (Object.keys(newErrors).length > 0) {
-        setErrors(newErrors)
-        return
-      }
+      if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return }
       
       setIsLoading(true)
       try {
@@ -88,6 +90,21 @@ export default function Signup() {
       }
       setStep(4)
     } else if (step === 4) {
+      const newErrors = {}
+      if (!form.phone) {
+        newErrors.phone = 'Phone number is required'
+      } else if (!/^[+\d\s\-()]{7,15}$/.test(form.phone)) {
+        newErrors.phone = 'Enter a valid phone number'
+      }
+      if (!form.gstin) {
+        newErrors.gstin = 'GSTIN is required'
+      } else if (form.gstin.length !== 15) {
+        newErrors.gstin = 'GSTIN must be exactly 15 characters'
+      }
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors)
+        return
+      }
       setStep(5)
     }
   }
@@ -100,7 +117,7 @@ export default function Signup() {
     try {
       const payload = {
         ...form,
-        shopName: form.companyName // Map for backend compatibility
+        shopName: form.companyName
       }
       const resultAction = await dispatch(registerThunk(payload))
       if (registerThunk.fulfilled.match(resultAction)) {
@@ -123,7 +140,7 @@ export default function Signup() {
             <div className="ws-preview-sidebar">
               <div className="ws-preview-item ws-active">
                 <div className="ws-preview-avatar">
-                  {form.companyName ? form.companyName.charAt(0).toUpperCase() : 'W'}
+                  <WorkshopLogo size={18} />
                 </div>
                 <span className="ws-preview-text">{form.companyName || 'Workspace title'}</span>
                 <ArrowLeft size={12} style={{ transform: 'rotate(-90deg)', marginLeft: 'auto', opacity: 0.5 }} />
@@ -217,7 +234,7 @@ export default function Signup() {
             <p className="ws-auth-step-subtitle" style={{ textAlign: 'left' }}>We've sent a 6-digit code to <strong>{form.email}</strong>. Enter it below to continue.</p>
 
             <Input name="otp" placeholder="6-digit OTP" 
-              value={form.otp} onChange={e => setForm(prev => ({ ...prev, otp: e.target.value }))} 
+              value={form.otp} onChange={handleChange} 
               error={errors.otp} autoFocus maxLength={6} />
 
             <button type="submit" className="ws-auth-submit-btn" disabled={isLoading} style={{ marginTop: '8px' }}>
@@ -240,7 +257,7 @@ export default function Signup() {
             
             <div className="ws-logo-upload-section">
               <div className="ws-logo-preview">
-                {form.companyName ? form.companyName.charAt(0).toUpperCase() : 'W'}
+                <WorkshopLogo size={28} />
               </div>
               <div className="ws-logo-actions">
                 <span className="ws-logo-label">Company logo</span>
@@ -296,23 +313,65 @@ export default function Signup() {
               <div className="ws-auth-stepper" style={{ margin: 0 }}>4/5</div>
             </div>
 
-            <h1 className="ws-auth-step-title" style={{ textAlign: 'left' }}>Help us customize your workspace</h1>
-            <p className="ws-auth-step-subtitle" style={{ textAlign: 'left' }}>Workshop is built to be flexible. What will you be using it for?</p>
+            <h1 className="ws-auth-step-title" style={{ textAlign: 'left' }}>Customize your workspace</h1>
+            <p className="ws-auth-step-subtitle" style={{ textAlign: 'left' }}>Tell us how you'll use Workshop and add your business details.</p>
             
-            <div className="ws-custom-chips">
-              {['Sales', 'Inventory', 'Billing', 'Customers', 'Marketing', 'E-commerce', 'Wholesale', 'Other'].map(option => (
-                <button
-                  key={option}
-                  type="button"
-                  className={`ws-chip ${form.usageType === option ? 'ws-active' : ''}`}
-                  onClick={() => setForm(prev => ({ ...prev, usageType: option }))}
-                >
-                  {option}
-                </button>
-              ))}
+            {/* Usage Type Chips */}
+            <div className="ws-form-field">
+              <label className="ws-field-label">What will you be using it for?</label>
+              <div className="ws-custom-chips">
+                {['Sales', 'Inventory', 'Billing', 'Customers', 'Marketing', 'E-commerce', 'Wholesale', 'Other'].map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`ws-chip ${form.usageType === option ? 'ws-active' : ''}`}
+                    onClick={() => setForm(prev => ({ ...prev, usageType: option }))}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <button type="submit" className="ws-auth-submit-btn" style={{ marginTop: '24px' }}>
+            {/* Divider */}
+            <div className="ws-step4-divider">
+              <span>Business identity</span>
+            </div>
+
+            {/* Phone Number */}
+            <div className="ws-form-field">
+              <label className="ws-field-label">Phone number</label>
+              <Input
+                name="phone"
+                type="tel"
+                placeholder="+91 98765 43210"
+                icon={Phone}
+                value={form.phone}
+                onChange={handleChange}
+                error={errors.phone}
+              />
+            </div>
+
+            {/* GSTIN */}
+            <div className="ws-form-field">
+              <label className="ws-field-label">GSTIN</label>
+              <Input
+                name="gstin"
+                type="text"
+                placeholder="22AAAAA0000A1Z5"
+                icon={CreditCard}
+                value={form.gstin}
+                onChange={e => {
+                  const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15)
+                  setForm(prev => ({ ...prev, gstin: v }))
+                  if (errors.gstin) setErrors(prev => ({ ...prev, gstin: '' }))
+                }}
+                error={errors.gstin}
+              />
+              <p className="ws-field-hint">15-character GST Identification Number (e.g., 22AAAAA0000A1Z5)</p>
+            </div>
+
+            <button type="submit" className="ws-auth-submit-btn" style={{ marginTop: '8px' }}>
               Continue
             </button>
           </form>

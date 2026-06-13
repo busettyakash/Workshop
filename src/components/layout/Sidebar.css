@@ -12,6 +12,7 @@
   z-index: var(--z-sidebar);
   overflow: hidden;
   transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+  transform: translateX(-100%);
 }
 
 /* Mobile overlay */
@@ -296,3 +297,258 @@
   .ws-sb-close-btn { display: flex; }
   .ws-sb-overlay { display: block; }
 }
+
+/* ── Attio Sidebar Folder & Sublist Styles ── */
+.ws-sb-sublist,
+.ws-sb-folder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 20px;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-border);
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+.ws-sb-subitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  padding: 5px 8px;
+  border-radius: var(--radius-md);
+  font-size: 0.81rem;
+  color: var(--color-gray-600);
+  transition: all var(--transition-base);
+  text-decoration: none;
+  text-align: left;
+}
+
+.ws-sb-subitem:hover {
+  background: var(--color-surface-active);
+  color: var(--color-text-primary);
+}
+
+.ws-sb-subitem svg {
+  color: var(--color-gray-400);
+}
+
+.ws-sb-subitem:hover svg {
+  color: var(--color-text-primary);
+}
+
+/* Badge/Tag inside sub-items (e.g. Deals) */
+.ws-sb-tag {
+  margin-left: auto;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: var(--color-gray-100);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Arrow rotation for collapsible sections */
+.ws-sb-arrow {
+  margin-left: auto;
+  color: var(--color-gray-400);
+  transition: transform 0.15s ease;
+}
+.ws-sb-arrow.rotated {
+  transform: rotate(90deg);
+}
+
+/* Collapsible Section styles */
+.ws-sb-section {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.ws-sb-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 9px;
+  background: transparent;
+  border: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.12s;
+}
+
+.ws-sb-section-header:hover {
+  color: var(--color-text-primary);
+}
+
+.ws-sb-section-header .ws-sb-arrow {
+  margin-left: 0;
+  margin-right: 2px;
+}
+
+/* Folders */
+.ws-sb-folder {
+  display: flex;
+  flex-direction: column;
+  margin-top: 2px;
+}
+
+.ws-sb-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  padding: 5px 9px;
+  background: transparent;
+  border: none;
+  font-size: 0.84rem;
+  color: var(--color-gray-600);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-base);
+  border-radius: var(--radius-md);
+}
+
+.ws-sb-folder-header:hover {
+  background: var(--color-surface-active);
+  color: var(--color-text-primary);
+}
+
+.ws-sb-folder-header .ws-sb-arrow {
+  margin-left: 0;
+  margin-right: 2px;
+}
+
+.ws-sb-folder-header svg {
+  color: var(--color-gray-400);
+}
+
+.ws-sb-folder-header:hover svg {
+  color: var(--color-text-primary);
+}
+
+/* ── Star Favorites Navigation Styles ── */
+.ws-sb-nav-item-wrapper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding-right: 6px;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-base);
+}
+
+.ws-sb-nav-item-wrapper:hover,
+.ws-sb-nav-item-wrapper.active {
+  background: var(--color-surface-active);
+}
+
+.ws-sb-nav-item-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  padding: 6px 9px;
+  background: transparent;
+  border: none;
+  font-size: 0.845rem;
+  color: var(--color-gray-600);
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  transition: all var(--transition-base);
+}
+
+.ws-sb-nav-item-wrapper.active .ws-sb-nav-item-btn {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.ws-sb-nav-item-wrapper:hover .ws-sb-nav-item-btn {
+  color: var(--color-text-primary);
+}
+
+/* Star Button */
+.ws-sb-star-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-gray-300);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ws-sb-nav-item-wrapper:hover .ws-sb-star-btn,
+.ws-sb-subitem:hover .ws-sb-star-btn {
+  opacity: 0.6;
+}
+
+.ws-sb-star-btn:hover {
+  opacity: 1 !important;
+  color: #eab308;
+}
+
+.ws-sb-star-btn.favorited {
+  opacity: 1 !important;
+  color: #eab308;
+}
+
+/* Arrow Toggle Button for nested sections */
+.ws-sb-arrow-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-gray-400);
+  transition: all var(--transition-base);
+}
+.ws-sb-arrow-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-text-primary);
+}
+.ws-sb-arrow-btn.rotated .ws-sb-arrow {
+  transform: rotate(90deg);
+}
+
+/* Active Sub-item styles */
+.ws-sb-subitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  padding: 5px 8px;
+  border-radius: var(--radius-md);
+  font-size: 0.81rem;
+  color: var(--color-gray-600);
+  transition: all var(--transition-base);
+  text-decoration: none;
+  text-align: left;
+  padding-right: 6px;
+}
+
+.ws-sb-subitem span {
+  flex: 1;
+}
+
+.ws-sb-subitem.active {
+  background: var(--color-surface-active);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+

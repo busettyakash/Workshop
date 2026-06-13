@@ -1,19 +1,20 @@
 import React from 'react'
 import Sidebar from '../components/layout/Sidebar'
 import Topbar from '../components/layout/Topbar'
-import { useAppDispatch } from '../redux/hooks'
-import { setActiveNav } from '../redux/slices/uiSlice'
+import { useAppDispatch, useAppSelector } from '../redux/hooks'
+import { setActiveNav, selectSidebarOpen } from '../redux/slices/uiSlice'
 import { Construction } from 'lucide-react'
 import './Dashboard/Dashboard.css'
 
 export default function PlaceholderPage({ title }) {
   const dispatch = useAppDispatch()
+  const sidebarOpen = useAppSelector(selectSidebarOpen)
   React.useEffect(() => { dispatch(setActiveNav(title)) }, [dispatch, title])
 
   return (
     <div className="ws-dash-layout">
       <Sidebar />
-      <div className="ws-dash-content">
+      <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
         <main className="ws-dash-body">
           <div className="ws-dash-greeting">{title}</div>

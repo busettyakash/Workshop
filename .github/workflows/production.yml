@@ -160,7 +160,8 @@ jobs:
     if: needs.trivy-scan-frontend.outputs.scan_status == 'passed'
     environment:
       name: production-frontend
-      url: https://your-app.vercel.app
+      url: https://workshop-workspace.vercel.app/
+
 
     steps:
       - name: Checkout repository
@@ -193,7 +194,7 @@ jobs:
     if: needs.trivy-scan-backend.outputs.scan_status == 'passed'
     environment:
       name: production-backend
-      url: https://your-api.vercel.app
+      url: https://workshop-workspace.vercel.app/
 
     steps:
       - name: Checkout repository

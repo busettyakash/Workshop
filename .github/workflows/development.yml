@@ -160,7 +160,7 @@ jobs:
     if: needs.trivy-scan-frontend.outputs.scan_status == 'passed'
     environment:
       name: development-frontend
-      url: https://your-app-dev.vercel.app
+      url: https://workshop-lrjx88kzd-akash-s-projects-1eae6560.vercel.app/
 
     steps:
       - name: Checkout repository
@@ -193,7 +193,7 @@ jobs:
     if: needs.trivy-scan-backend.outputs.scan_status == 'passed'
     environment:
       name: development-backend
-      url: https://your-api-dev.vercel.app
+      url: https://your-api-dev.vercel.apphttps://workshop-lrjx88kzd-akash-s-projects-1eae6560.vercel.app/
 
     steps:
       - name: Checkout repository

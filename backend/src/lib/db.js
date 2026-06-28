@@ -3,15 +3,11 @@ import pg from 'pg'
 
 const { Pool } = pg
 
-const dbUrl = process.env.NODE_ENV === 'production' 
-  ? process.env.DATABASE_URL 
-  : (process.env.LOCAL_DATABASE_URL || 'postgresql://postgres:password@localhost:5432/insforge');
-
-const isLocal = dbUrl?.includes('localhost') || dbUrl?.includes('127.0.0.1');
+const dbUrl = process.env.DATABASE_URL
 
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: isLocal ? false : { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: false },
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 30000,

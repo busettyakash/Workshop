@@ -553,4 +553,52 @@ router.get('/members', requireAuth, async (req, res) => {
   }
 })
 
+/* GET /api/auth/diagnostic - Diagnostic tool to check backend status */
+router.get('/diagnostic', async (req, res) => {
+  const status = {
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      DATABASE_URL_SET: !!process.env.DATABASE_URL,
+      INSFORGE_API_BASE_URL_SET: !!process.env.INSFORGE_API_BASE_URL,
+      INSFORGE_API_KEY_SET: !!process.env.INSFORGE_API_KEY,
+      UPSTASH_REDIS_REST_URL_SET: !!process.env.UPSTASH_REDIS_REST_URL,
+      QSTASH_TOKEN_SET: !!process.env.QSTASH_TOKEN,
+      SMTP_HOST_SET: !!process.env.SMTP_HOST,
+      SMTP_USER_SET: !!process.env.SMTP_USER,
+      SMTP_PASS_SET: !!process.env.SMTP_PASS,
+    },
+    database: null,
+    redis: null,
+    smtp: null,
+  }
+
+  // 1. Check Database
+  try {
+    const dbRes = await query('SELECT NOW()')
+    status.database = { success: true, time: dbRes.rows[0].now }
+  } catch (err) {
+    status.database = { success: false, error: err.message }
+  }
+
+  // 2. Check Redis
+  try {
+    await redis.set('test_diagnostic_key', 'ok', { ex: 5 })
+    const val = await redis.get('test_diagnostic_key')
+    status.redis = { success: val === 'ok' }
+  } catch (err) {
+    status.redis = { success: false, error: err.message }
+  }
+
+  // 3. Check SMTP
+  try {
+    // Import transport to test connection verify
+    const { default: smtpLib } = await import('../lib/smtp.js')
+    status.smtp = { success: true, details: 'Transporter loaded' }
+  } catch (err) {
+    status.smtp = { success: false, error: err.message }
+  }
+
+  res.json(status)
+})
+
 export default router

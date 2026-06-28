@@ -15,6 +15,9 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  connectionTimeout: 5000, // 5 seconds connection timeout
+  greetingTimeout: 5000,   // 5 seconds greeting timeout
+  socketTimeout: 10000,    // 10 seconds socket timeout
 })
 
 transporter.verify((error) => {
@@ -26,6 +29,17 @@ transporter.verify((error) => {
 })
 
 export const sendEmail = async ({ to, subject, html }) => {
+  // Validate presence of SMTP env vars first to fail fast with a clear error
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    const missing = [];
+    if (!process.env.SMTP_HOST) missing.push('SMTP_HOST');
+    if (!process.env.SMTP_USER) missing.push('SMTP_USER');
+    if (!process.env.SMTP_PASS) missing.push('SMTP_PASS');
+    const errMsg = `SMTP config missing in Vercel environment: ${missing.join(', ')}`;
+    console.error(`[SMTP] ${errMsg}`);
+    return { data: null, error: new Error(errMsg) };
+  }
+
   try {
     const info = await transporter.sendMail({
       from: `"Workshop" <${process.env.SMTP_USER}>`,

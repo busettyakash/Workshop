@@ -34,9 +34,9 @@ export default function ImportStock() {
       const res = await api.get('/import-stock')
       setProducts(res.data?.data || [])
     } catch (err) {
+      console.error('[ImportStock] Failed to load:', err?.response?.status, err?.response?.data)
       dispatch(addToast({ message: 'Failed to load import stock', type: 'error' }))
     } finally {
-      setProducts(prev => prev.length > 0 ? prev : [])
       setLoading(false)
     }
   }
@@ -145,9 +145,9 @@ export default function ImportStock() {
                         <input 
                           type="checkbox" 
                           className="ws-table-checkbox" 
-                          checked={products.filter(p => p.status !== 'added').length > 0 && products.filter(p => p.status !== 'added').every(p => selectedIds.includes(p.id))}
+                          checked={products.filter(p => p.status === 'active').length > 0 && products.filter(p => p.status === 'active').every(p => selectedIds.includes(p.id))}
                           onChange={() => {
-                            const selectables = products.filter(p => p.status !== 'added')
+                            const selectables = products.filter(p => p.status === 'active')
                             const allSelected = selectables.length > 0 && selectables.every(p => selectedIds.includes(p.id))
                             if (allSelected) {
                               setSelectedIds([])
@@ -182,6 +182,15 @@ export default function ImportStock() {
                                 disabled 
                                 checked={false} 
                                 style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                              />
+                            ) : row.status !== 'active' ? (
+                              <input 
+                                type="checkbox" 
+                                className="ws-table-checkbox" 
+                                disabled 
+                                checked={false} 
+                                style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                                title="Only active status items can be added to products"
                               />
                             ) : (
                               <input 
@@ -233,6 +242,15 @@ export default function ImportStock() {
                                   title="Product is already added"
                                 >
                                   <Check size={13} /> Added
+                                </button>
+                              ) : row.status !== 'active' ? (
+                                <button
+                                  className="ws-chat-history-delete-btn"
+                                  style={{ color: '#9ca3af', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'not-allowed', opacity: 0.6 }}
+                                  disabled
+                                  title="Only active items can be added to products"
+                                >
+                                  <Plus size={13} /> Add to Products
                                 </button>
                               ) : (
                                 <button

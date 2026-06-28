@@ -72,8 +72,8 @@ export default function Login() {
     try {
       const resultAction = await dispatch(loginThunk({ email, password }))
       if (loginThunk.fulfilled.match(resultAction)) {
-        const storedUser = JSON.parse(localStorage.getItem('ws_user') || '{}')
-        localStorage.setItem('ws_user', JSON.stringify({
+        const storedUser = JSON.parse(sessionStorage.getItem('ws_user') || '{}')
+        sessionStorage.setItem('ws_user', JSON.stringify({
           ...storedUser,
           successMessage: 'Welcome back! Login successful.'
         }))

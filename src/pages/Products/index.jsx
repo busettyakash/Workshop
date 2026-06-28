@@ -134,6 +134,17 @@ export default function Products() {
     }
   }
 
+  const handleUpdateRestock = async (product, value) => {
+    try {
+      const payload = { ...product, next_restock_time: value }
+      await api.put(`/products/${product.id}`, payload)
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, next_restock_time: value } : p))
+      dispatch(addToast({ message: 'Restock time updated', type: 'success' }))
+    } catch (err) {
+      dispatch(addToast({ message: 'Failed to update restock time', type: 'error' }))
+    }
+  }
+
   const getStatusStyle = (status) => {
     switch (status) {
       case 'active':
@@ -184,6 +195,7 @@ export default function Products() {
                       <th>Price</th>
                       <th>Stock</th>
                       <th>Status</th>
+                      <th>Next Restock</th>
                       <th>Barcode</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
@@ -194,6 +206,18 @@ export default function Products() {
                       const statusStyle = getPillStyle(row.status)
                       const stockStatus = row.stock > 10 ? 'in stock' : row.stock > 0 ? 'low stock' : 'out of stock'
                       const stockStyle = getPillStyle(stockStatus)
+                      
+                      const restockOpts = ['TBD', 'In 30 mins', 'Tomorrow', 'Next week', 'Next month']
+                      const restock = row.next_restock_time || 'TBD'
+                      const getRestockStyle = (val) => {
+                        if (val === 'In 30 mins') return { bg: '#fee2e2', text: '#991b1b', border: '#fecaca' }
+                        if (val === 'Tomorrow') return { bg: '#fef3c7', text: '#92400e', border: '#fde68a' }
+                        if (val === 'Next week') return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }
+                        if (val === 'Next month') return { bg: '#dcfce7', text: '#166534', border: '#bbf7d0' }
+                        return { bg: '#f3f4f6', text: '#4b5563', border: '#e5e7eb' }
+                      }
+                      const restockStyle = getRestockStyle(restock)
+
                       return (
                         <tr key={row.id}>
                           <td>
@@ -225,6 +249,32 @@ export default function Products() {
                             <span className="ws-pill-topic" style={{ background: statusStyle.bg, color: statusStyle.text, borderColor: statusStyle.border }}>
                               {row.status}
                             </span>
+                          </td>
+                          <td>
+                            {row.stock <= 0 ? (
+                              <select 
+                                value={restock}
+                                onChange={(e) => handleUpdateRestock(row, e.target.value)}
+                                style={{ 
+                                  appearance: 'none',
+                                  background: restockStyle.bg, 
+                                  color: restockStyle.text, 
+                                  border: `1px solid ${restockStyle.border}`,
+                                  borderRadius: '16px',
+                                  padding: '2px 8px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 500,
+                                  cursor: 'pointer',
+                                  outline: 'none'
+                                }}
+                              >
+                                {restockOpts.map(opt => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span style={{ color: '#9ca3af' }}>—</span>
+                            )}
                           </td>
                           <td>
                             {row.sku ? (

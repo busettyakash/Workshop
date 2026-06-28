@@ -5,13 +5,20 @@ import { requireAuth } from '../middleware/auth.js'
 const router = Router()
 router.use(requireAuth)
 
+
+
 /* GET /api/customers */
 router.get('/', async (req, res) => {
+  const userId = req.workspaceId
   const { page = 1, limit = 20, search } = req.query
   const offset = (page - 1) * limit
-  const params = []
-  let where = ''
-  if (search) { params.push(`%${search}%`); where = `WHERE name ILIKE $1 OR email ILIKE $1 OR phone ILIKE $1` }
+  const params = [userId]
+  const conditions = ['user_id = $1']
+  if (search) {
+    params.push(`%${search}%`)
+    conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length} OR phone ILIKE $${params.length})`)
+  }
+  const where = `WHERE ${conditions.join(' AND ')}`
   params.push(limit, offset)
   try {
     const { rows } = await query(
@@ -28,8 +35,9 @@ router.get('/', async (req, res) => {
 
 /* GET /api/customers/:id */
 router.get('/:id', async (req, res) => {
+  const userId = req.workspaceId
   try {
-    const { rows } = await query('SELECT * FROM customers WHERE id=$1', [req.params.id])
+    const { rows } = await query('SELECT * FROM customers WHERE id=$1 AND user_id = $2', [req.params.id, userId])
     if (!rows.length) return res.status(404).json({ error: 'Customer not found' })
     res.json(rows[0])
   } catch (err) {
@@ -39,13 +47,14 @@ router.get('/:id', async (req, res) => {
 
 /* POST /api/customers */
 router.post('/', async (req, res) => {
+  const userId = req.workspaceId
   const { name, email, phone, address, gst_number } = req.body
   if (!name) return res.status(400).json({ error: 'name is required' })
   try {
     const { rows } = await query(
-      `INSERT INTO customers (name, email, phone, address, gst_number, created_at)
-       VALUES ($1,$2,$3,$4,$5,NOW()) RETURNING *`,
-      [name, email, phone, address, gst_number]
+      `INSERT INTO customers (name, email, phone, address, gst_number, user_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,NOW()) RETURNING *`,
+      [name, email, phone, address, gst_number, userId]
     )
     res.status(201).json(rows[0])
   } catch (err) {
@@ -55,12 +64,13 @@ router.post('/', async (req, res) => {
 
 /* PUT /api/customers/:id */
 router.put('/:id', async (req, res) => {
+  const userId = req.workspaceId
   const { name, email, phone, address, gst_number } = req.body
   try {
     const { rows } = await query(
       `UPDATE customers SET name=$1,email=$2,phone=$3,address=$4,gst_number=$5,updated_at=NOW()
-       WHERE id=$6 RETURNING *`,
-      [name, email, phone, address, gst_number, req.params.id]
+       WHERE id=$6 AND user_id = $7 RETURNING *`,
+      [name, email, phone, address, gst_number, req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Customer not found' })
     res.json(rows[0])
@@ -71,8 +81,9 @@ router.put('/:id', async (req, res) => {
 
 /* DELETE /api/customers/:id */
 router.delete('/:id', async (req, res) => {
+  const userId = req.workspaceId
   try {
-    await query('DELETE FROM customers WHERE id=$1', [req.params.id])
+    await query('DELETE FROM customers WHERE id=$1 AND user_id = $2', [req.params.id, userId])
     res.json({ message: 'Customer deleted' })
   } catch (err) {
     res.status(500).json({ error: err.message })

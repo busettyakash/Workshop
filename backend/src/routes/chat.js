@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { query } from '../lib/db.js'
 import crypto from 'crypto'
+import insforge from '../lib/insforge.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -56,10 +57,61 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'messages array is required' })
   }
 
-  const userId = req.user.id
+  const userId = req.workspaceId
   const lastMsg = messages[messages.length - 1]?.content || ''
 
   try {
+    // ── Handle Deal P2P Chat Bypassing AI ──
+    if (conversationId && conversationId.startsWith('deal-')) {
+      const dealIdStr = conversationId.split('-')[1]
+      const dealId = parseInt(dealIdStr, 10)
+      if (!isNaN(dealId)) {
+        const dealCheck = await query('SELECT * FROM deals WHERE id = $1 AND (user_id = $2 OR company_shop_id = $2)', [dealId, userId])
+        if (dealCheck.rows.length > 0) {
+          const deal = dealCheck.rows[0]
+          const senderName = deal.user_id === userId ? 'Seller' : 'Buyer'
+
+          const currentSession = await query('SELECT messages FROM chat_sessions WHERE conversation_id = $1', [conversationId])
+          let dbMessages = currentSession.rows[0]?.messages || []
+          
+          dbMessages.push({
+            id: Date.now(),
+            role: 'user',
+            content: `**${senderName}:** ${lastMsg}`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          })
+
+          await query(`UPDATE chat_sessions SET messages = $1::jsonb, last_message = $2, updated_at = NOW() WHERE conversation_id = $3`, [JSON.stringify(dbMessages), lastMsg.slice(0, 255), conversationId])
+          
+          // Notify counterparty
+          const targetUserId = deal.user_id === userId ? deal.company_shop_id : deal.user_id
+          if (targetUserId) {
+            try {
+              const notifTitle = `New message from ${senderName}`
+              const notifBody = `New message in deal "${deal.title}": ${lastMsg}`
+              const notifLink = deal.user_id === targetUserId ? `/deals/edit/${deal.id}` : `/deals/review/${deal.id}`
+              
+              await query(
+                `INSERT INTO notifications (user_id, title, body, type, read, link, created_at)
+                 VALUES ($1, $2, $3, 'info', false, $4, NOW())`,
+                [targetUserId, notifTitle, notifBody, notifLink]
+              )
+              
+              await insforge.realtime.publish(`notifications:${targetUserId}`, {
+                event: 'new_notification',
+                payload: { title: notifTitle, body: notifBody, link: notifLink }
+              }).catch(() => {})
+            } catch (err) {
+              console.error('Failed to notify counterparty:', err.message)
+            }
+          }
+
+          // Send system confirmation
+          return res.json({ content: `*Message delivered to ${senderName === 'Seller' ? 'Buyer' : 'Seller'}.*`, cached: false })
+        }
+      }
+    }
+
     // ── Call OpenRouter ──
     if (!OPENROUTER_API_KEY) {
       return res.status(500).json({ error: 'OpenRouter API key not configured' })
@@ -73,12 +125,17 @@ Be concise, friendly, and actionable. Use markdown for formatting when helpful. 
 
 You have access to tools to add products to the staged import stock (import_stock) and to run read-only database queries to retrieve context to answer questions about products, stock levels, bills, customers, etc.
 Database tables available for SELECT queries:
-- products: id, name, sku, category, price, stock, status, description, created_at, updated_at
-- import_stock: id, name, sku, category, price, stock, status, unit, description, created_at, updated_at
-- people: id, name, email, phone, persona, status, notes, created_at, updated_at (stores customers, leads, partners)
-- bills: id, customer_id, items (JSON array of billing items), amount, discount, status (paid/unpaid), due_date, notes, paid_at, created_at
-- deals: id, title, value, stage, owner, close_date, notes, status, created_at, updated_at
-- deal_logs: id, deal_id, deal_title, event, from_value, to_value, done_by, created_at
+- products: id, name, sku, category, price, stock, status, description, user_id, created_at, updated_at
+- import_stock: id, name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at
+- people: id, name, email, phone, persona, status, notes, user_id, created_at, updated_at (stores customers, leads, partners)
+- bills: id, customer_id, items (JSON array of billing items), amount, discount, status (paid/unpaid), due_date, notes, paid_at, user_id, created_at
+- deals: id, title, value, stage, owner, close_date, notes, status, user_id, created_at, updated_at
+- deal_logs: id, deal_id, deal_title, event, from_value, to_value, done_by, user_id, created_at
+
+CRITICAL SECURITY RULE: You MUST always filter every table in your query by \`user_id = '${userId}'\`. 
+For example: \`SELECT * FROM products WHERE user_id = '${userId}'\`. 
+If you join tables, filter both or use aliases: \`SELECT * FROM bills b JOIN people p ON b.customer_id = p.id WHERE b.user_id = '${userId}' AND p.user_id = '${userId}'\`.
+Your query will FAIL if it does not contain the filter \`user_id = '${userId}'\` on every table queried!
 
 Always run database queries to get real-time accurate information when asked about specific business data (e.g. products, bills, people/customers) instead of using placeholders or dump data.`
     }
@@ -138,11 +195,11 @@ Always run database queries to get real-time accurate information when asked abo
                 toolResult = { error: 'name and price are required' }
               } else {
                 const { rows } = await query(
-                  `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING *`,
-                  [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null]
+                  `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *`,
+                  [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null, userId]
                 )
-                await redis.del('import_stock:all').catch(() => {})
+                await redis.del(`import_stock:${userId}`).catch(() => {})
                 toolResult = { success: true, product: rows[0] }
               }
             } else if (toolName === 'query_database_readonly') {
@@ -152,6 +209,8 @@ Always run database queries to get real-time accurate information when asked abo
                 toolResult = { error: 'Only SELECT queries are allowed for read-only database query.' }
               } else if (/\b(insert|update|delete|drop|alter|create|truncate|replace|grant|revoke)\b/i.test(cleanSql)) {
                 toolResult = { error: 'Mutation SQL commands are forbidden.' }
+              } else if (!cleanSql.toLowerCase().includes('user_id') || !cleanSql.includes(`'${userId}'`)) {
+                toolResult = { error: `Security check failed: Your query must filter by user_id = '${userId}' to prevent unauthorized access.` }
               } else {
                 const { rows } = await query(cleanSql)
                 toolResult = { success: true, rows }
@@ -201,12 +260,16 @@ router.get('/sessions', async (req, res) => {
       `SELECT id, conversation_id, title, last_message, updated_at 
        FROM chat_sessions 
        WHERE user_id = $1 
+          OR conversation_id IN (
+             SELECT 'deal-' || id FROM deals WHERE user_id = $1::text OR company_shop_id = $1::text
+          )
        ORDER BY updated_at DESC 
        LIMIT 20`,
-      [req.user.id]
+      [req.workspaceId]
     )
     res.json(rows)
   } catch (err) {
+    console.error('Sessions list error:', err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -215,12 +278,19 @@ router.get('/sessions', async (req, res) => {
 router.get('/sessions/:id', async (req, res) => {
   try {
     const { rows } = await query(
-      `SELECT messages FROM chat_sessions WHERE id = $1 AND user_id = $2`,
-      [req.params.id, req.user.id]
+      `SELECT messages FROM chat_sessions 
+       WHERE id = $1 AND (
+         user_id = $2 
+         OR conversation_id IN (
+             SELECT 'deal-' || id FROM deals WHERE user_id = $2::text OR company_shop_id = $2::text
+         )
+       )`,
+      [req.params.id, req.workspaceId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Session not found' })
     res.json({ messages: rows[0].messages })
   } catch (err) {
+    console.error('Session load error:', err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -230,7 +300,7 @@ router.delete('/sessions/:id', async (req, res) => {
   try {
     await query(
       `DELETE FROM chat_sessions WHERE id = $1 AND user_id = $2`,
-      [req.params.id, req.user.id]
+      [req.params.id, req.workspaceId]
     )
     res.json({ message: 'Session deleted' })
   } catch (err) {

@@ -7,8 +7,10 @@ export const loginThunk = createAsyncThunk(
   async ({ email, password }, { rejectWithValue }) => {
     try {
       const data = await authApi.login({ email, password })
-      localStorage.setItem('ws_token', data.token)
-      localStorage.setItem('ws_user', JSON.stringify({ shopName: data.user.shopName, email: data.user.email }))
+      sessionStorage.setItem('ws_token', data.token)
+      sessionStorage.setItem('ws_user', JSON.stringify({ shopName: data.user.shopName, email: data.user.email }))
+      sessionStorage.setItem('ws_active_workspace_id', data.user.id)
+      sessionStorage.setItem('ws_active_workspace_name', data.user.shopName)
       return { ...data, successMessage: 'Welcome back! Login successful.' }
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || 'Invalid email or password.')
@@ -21,8 +23,18 @@ export const registerThunk = createAsyncThunk(
   async (formData, { rejectWithValue }) => {
     try {
       const data = await authApi.register(formData)
-      localStorage.setItem('ws_token', data.token)
-      localStorage.setItem('ws_user', JSON.stringify({ shopName: data.user.shopName, email: data.user.email }))
+      sessionStorage.setItem('ws_token', data.token)
+      sessionStorage.setItem('ws_user', JSON.stringify({ shopName: data.user.shopName, email: data.user.email }))
+
+      // If the user was previously invited to a workspace, auto-switch to that workspace
+      if (data.defaultWorkspaceId) {
+        sessionStorage.setItem('ws_active_workspace_id', data.defaultWorkspaceId)
+        sessionStorage.setItem('ws_active_workspace_name', data.defaultWorkspaceName || data.user.shopName)
+      } else {
+        sessionStorage.setItem('ws_active_workspace_id', data.user.id)
+        sessionStorage.setItem('ws_active_workspace_name', data.user.shopName)
+      }
+
       return { ...data, successMessage: 'Workspace created successfully! Welcome.' }
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || 'Registration failed. Please try again.')
@@ -32,12 +44,12 @@ export const registerThunk = createAsyncThunk(
 
 // ── Initial State ─────────────────────────────────────────
 const getStoredUser = () => {
-  try { return JSON.parse(localStorage.getItem('ws_user') || 'null') } catch { return null }
+  try { return JSON.parse(sessionStorage.getItem('ws_user') || 'null') } catch { return null }
 }
 
 const initialState = {
   user:    getStoredUser(),
-  token:   localStorage.getItem('ws_token') || null,
+  token:   sessionStorage.getItem('ws_token') || null,
   status:  'idle',   // 'idle' | 'loading' | 'succeeded' | 'failed'
   error:   null,
   emailStep: 'email', // 'email' | 'checking' | 'password'
@@ -49,12 +61,17 @@ const authSlice = createSlice({
   initialState,
   reducers: {
     logout(state) {
-      state.user  = null
-      state.token = null
-      state.status = 'idle'
-      state.error  = null
-      localStorage.removeItem('ws_token')
-      localStorage.removeItem('ws_user')
+      state.user      = null
+      state.token     = null
+      state.status    = 'idle'
+      state.error     = null
+      state.emailStep = 'email'
+      // Clear ALL user-specific keys so switching accounts is fully clean
+      sessionStorage.removeItem('ws_token')
+      sessionStorage.removeItem('ws_user')
+      sessionStorage.removeItem('ws_active_workspace_id')
+      sessionStorage.removeItem('ws_active_workspace_name')
+      sessionStorage.removeItem('ws_favorites')
     },
     clearError(state) {
       state.error = null

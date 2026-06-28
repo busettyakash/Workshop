@@ -7,13 +7,13 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "build": "echo 'No build step for Node.js'"
+    "build": "echo 'No build step for Node.js'",
+    "db:start": "docker-compose up -d",
+    "db:stop": "docker-compose down",
+    "db:init": "node init-db.js"
   },
   "dependencies": {
     "@insforge/sdk": "latest",
-    "@upstash/qstash": "^2.11.0",
-    "@upstash/redis": "^1.38.0",
-    "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.3",

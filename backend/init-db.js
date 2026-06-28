@@ -5,9 +5,15 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+const dbUrl = process.env.NODE_ENV === 'production' 
+  ? process.env.DATABASE_URL 
+  : (process.env.LOCAL_DATABASE_URL || 'postgresql://postgres:password@localhost:5432/insforge');
+
+const isLocal = dbUrl?.includes('localhost') || dbUrl?.includes('127.0.0.1');
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  connectionString: dbUrl,
+  ssl: isLocal ? false : { rejectUnauthorized: false },
 });
 
 async function createTables() {
@@ -41,6 +47,7 @@ async function createTables() {
       );
 
       ALTER TABLE products ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'pcs';
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id TEXT;
 
       CREATE TABLE IF NOT EXISTS import_stock (
         id SERIAL PRIMARY KEY,
@@ -57,6 +64,7 @@ async function createTables() {
       );
 
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'pcs';
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS user_id TEXT;
 
       CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
@@ -71,6 +79,20 @@ async function createTables() {
 
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS gst_number VARCHAR(50);
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS user_id TEXT;
+
+      CREATE TABLE IF NOT EXISTS people (
+        id           SERIAL PRIMARY KEY,
+        name         TEXT NOT NULL,
+        email        TEXT,
+        phone        TEXT,
+        persona      TEXT DEFAULT 'Lead',
+        status       TEXT DEFAULT 'active',
+        notes        TEXT,
+        user_id      TEXT,
+        created_at   TIMESTAMPTZ DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ DEFAULT NOW()
+      );
 
       CREATE TABLE IF NOT EXISTS bills (
         id SERIAL PRIMARY KEY,
@@ -87,6 +109,7 @@ async function createTables() {
       );
 
       ALTER TABLE bills ADD COLUMN IF NOT EXISTS discount DECIMAL(10, 2) DEFAULT 0;
+      ALTER TABLE bills ADD COLUMN IF NOT EXISTS user_id TEXT;
 
       CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,

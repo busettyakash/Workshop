@@ -11,11 +11,17 @@ export const authApi = {
 
   register: async (data) => {
     const res = await apiClient.post('/auth/register', {
-      shopName:     data.shopName,
-      gstinNumber:  data.gstin,
-      mobileNumber: data.mobile,
       email:        normalizeEmail(data.email),
       password:     data.password,
+      shopName:     data.shopName || data.companyName,
+      phone:        data.phone || data.mobileNumber,
+      mobileNumber: data.phone || data.mobileNumber,
+      gstin:        data.gstin,
+      workspaceHandle: data.workspaceHandle,
+      billingCountry: data.billingCountry,
+      referralSource: data.referralSource,
+      usageType:    data.usageType,
+      inviteEmail:  data.inviteEmail,
     })
     return res.data
   },
@@ -44,4 +50,20 @@ export const authApi = {
     const res = await apiClient.post('/auth/verify-otp', { email: normalizeEmail(email), otp: normalizeOtp(otp) })
     return res.data
   },
+
+  invite: async ({ email, role }) => {
+    const res = await apiClient.post('/auth/invite', { email, role })
+    return res.data
+  },
+
+  getWorkspaces: async () => {
+    const res = await apiClient.get('/auth/workspaces')
+    return res.data
+  },
+
+  getMembers: async () => {
+    const res = await apiClient.get('/auth/members')
+    return res.data
+  },
 }
+

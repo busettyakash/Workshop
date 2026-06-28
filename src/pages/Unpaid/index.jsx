@@ -17,11 +17,6 @@ export default function UnpaidBills() {
   const [loading, setLoading] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, displayId: '' })
 
-  useEffect(() => {
-    dispatch(setActiveNav('Unpaid'))
-    fetchUnpaidBills()
-  }, [dispatch])
-
   const fetchUnpaidBills = async () => {
     setLoading(true)
     try {
@@ -33,6 +28,13 @@ export default function UnpaidBills() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    dispatch(setActiveNav('Unpaid'))
+    fetchUnpaidBills()
+  }, [dispatch])
+
+
 
   const handleMarkPaid = async (id) => {
     try {

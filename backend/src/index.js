@@ -14,9 +14,24 @@ import chatRoutes     from './routes/chat.js'
 import importStockRoutes from './routes/importStock.js'
 import peopleRoutes   from './routes/people.js'
 import dealsRoutes    from './routes/deals.js'
+import companiesRoutes  from './routes/companies.js'
+import billTemplateRoutes from './routes/billTemplates.js'
 
 const app  = express()
 const PORT = process.env.PORT || 5000
+
+/* ── Request Logger Middleware ── */
+app.use((req, res, next) => {
+  const start = Date.now()
+  const originalSend = res.send
+  res.send = function (body) {
+    const duration = Date.now() - start
+    const logLine = `[Request] ${req.method} ${req.originalUrl} - Status: ${res.statusCode} (${duration}ms) - Auth: ${req.headers.authorization ? 'Yes' : 'No'} - Workspace: ${req.headers['x-workspace-id'] || 'None'}`
+    console.log(logLine)
+    return originalSend.apply(res, arguments)
+  }
+  next()
+})
 
 /* ── Middleware ── */
 app.use(cors({
@@ -62,6 +77,8 @@ app.use('/api/chat',          chatRoutes)
 app.use('/api/import-stock',  importStockRoutes)
 app.use('/api/people',        peopleRoutes)
 app.use('/api/deals',         dealsRoutes)
+app.use('/api/companies',     companiesRoutes)
+app.use('/api/bill-templates', billTemplateRoutes)
 
 /* ── 404 handler ── */
 app.use((_req, res) => {

@@ -127,7 +127,7 @@ export default function Workflows() {
 
   /* ── Helpers ── */
   const getUserInfo = () => {
-    try { return JSON.parse(localStorage.getItem('ws_user') || '{}') } catch { return {} }
+    try { return JSON.parse(sessionStorage.getItem('ws_user') || '{}') } catch { return {} }
   }
   const userInfo = getUserInfo()
   const initials = (userInfo.shopName || 'AB').slice(0, 2).toUpperCase()

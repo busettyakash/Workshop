@@ -17,7 +17,10 @@ import Paid    from './pages/Paid/index'
 import Unpaid  from './pages/Unpaid/index'
 import People   from './pages/People/index'
 import PersonForm from './pages/People/PersonForm'
+import Notifications from './pages/Notifications/index'
 import Deals    from './pages/Deals/index'
+import DealForm from './pages/Deals/DealForm'
+import DealReview from './pages/Deals/DealReview'
 import DealLogs from './pages/DealLogs/index'
 import PlaceholderPage from './pages/Placeholder'
 
@@ -31,18 +34,19 @@ import { selectIsAuth } from './redux/slices/authSlice'
 /* ── Private Route Guard ── */
 function PrivateRoute({ children }) {
   const isAuth = useAppSelector(selectIsAuth)
-  const token  = localStorage.getItem('ws_token')
+  const token  = sessionStorage.getItem('ws_token')
   return (isAuth || token) ? children : <Navigate to="/login" replace />
 }
 
 /* ── Public Route (redirect if already logged in) ── */
 function PublicRoute({ children }) {
   const isAuth = useAppSelector(selectIsAuth)
-  const token  = localStorage.getItem('ws_token')
+  const token  = sessionStorage.getItem('ws_token')
   return (isAuth || token) ? <Navigate to="/dashboard" replace /> : children
 }
 
 export default function App() {
+
   return (
     <BrowserRouter>
       <ToastContainer />
@@ -60,7 +64,6 @@ export default function App() {
         <Route path="/workflows"   element={<PrivateRoute><Workflows /></PrivateRoute>} />
         <Route path="/reports"     element={<PrivateRoute><ReportsPage /></PrivateRoute>} />
         <Route path="/notes"       element={<PrivateRoute><PlaceholderPage title="Notes" /></PrivateRoute>} />
-        <Route path="/emails"      element={<PrivateRoute><PlaceholderPage title="Emails" /></PrivateRoute>} />
         <Route path="/import-stock"          element={<PrivateRoute><ImportStock /></PrivateRoute>} />
         <Route path="/import-stock/add"      element={<PrivateRoute><ImportStockForm /></PrivateRoute>} />
         <Route path="/import-stock/edit/:id" element={<PrivateRoute><ImportStockForm /></PrivateRoute>} />
@@ -69,7 +72,14 @@ export default function App() {
         <Route path="/people"    element={<PrivateRoute><People /></PrivateRoute>} />
         <Route path="/people/add" element={<PrivateRoute><PersonForm /></PrivateRoute>} />
         <Route path="/people/edit/:id" element={<PrivateRoute><PersonForm /></PrivateRoute>} />
+        <Route path="/companies"    element={<Navigate to="/" replace />} />
+        <Route path="/companies/add" element={<Navigate to="/" replace />} />
+        <Route path="/companies/edit/:id" element={<Navigate to="/" replace />} />
+        <Route path="/notifications" element={<PrivateRoute><Notifications /></PrivateRoute>} />
         <Route path="/deals"     element={<PrivateRoute><Deals /></PrivateRoute>} />
+        <Route path="/deals/add"  element={<PrivateRoute><DealForm /></PrivateRoute>} />
+        <Route path="/deals/edit/:id" element={<PrivateRoute><DealForm /></PrivateRoute>} />
+        <Route path="/deals/review/:id" element={<PrivateRoute><DealReview /></PrivateRoute>} />
         <Route path="/deal-logs" element={<PrivateRoute><DealLogs /></PrivateRoute>} />
 
         {/* 404 */}

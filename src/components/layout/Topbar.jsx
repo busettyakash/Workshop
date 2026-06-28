@@ -47,7 +47,10 @@ export default function Topbar() {
               <Plus size={13} />
               New
             </button>
-            <button className="ws-topbar-action-btn ws-topbar-invite-btn">
+            <button 
+              className="ws-topbar-action-btn ws-topbar-invite-btn"
+              onClick={() => window.dispatchEvent(new CustomEvent('ws-open-invite'))}
+            >
               <Plus size={13} style={{ color: 'var(--color-blue)' }} />
               Invite
             </button>

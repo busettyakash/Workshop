@@ -552,3 +552,23 @@
   font-weight: 500;
 }
 
+/* Custom rounded-rect icons for People and Deals */
+.ws-sb-custom-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ws-sb-icon-companies {
+  background-color: #2563eb;
+}
+.ws-sb-icon-people {
+  background-color: #2563eb;
+}
+.ws-sb-icon-deals {
+  background-color: #c2410c;
+}
+

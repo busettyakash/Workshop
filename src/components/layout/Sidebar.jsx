@@ -3,10 +3,10 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   Home, Bell, BarChart3, Settings,
   Package, BookOpen, Receipt, CheckCircle, XCircle,
-  Users, UserCheck, GitBranch,
+  Users, UserCheck, GitBranch, Building2,
   Search, ChevronDown, ChevronRight, LogOut, UserPlus, Zap, Menu, X,
   Briefcase, User, CheckSquare, FileText, Mail, Phone, Send, Folder, LayoutGrid, Play, Star,
-  MessageSquare, Upload, UserRound, ScrollText
+  MessageSquare, Upload, UserRound, ScrollText, DollarSign
 } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectActiveNav, toggleSidebar, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
@@ -14,6 +14,7 @@ import { logout } from '../../redux/slices/authSlice'
 import { useAuth } from '../../hooks/useAuth'
 import { ROUTES } from '../../constants'
 import api from '../../api/client'
+import { authApi } from '../../services/authApi'
 import './Sidebar.css'
 
 const ICON_MAP = {
@@ -21,17 +22,17 @@ const ICON_MAP = {
   Notifications: <Bell size={14} />,
   Tasks:         <CheckSquare size={14} />,
   Notes:         <FileText size={14} />,
-  Emails:        <Mail size={14} />,
   Calls:         <Phone size={14} />,
   Reports:       <BarChart3 size={14} />,
   Automations:   <Play size={14} />,
   Sequences:     <Send size={14} />,
   Workflows:     <GitBranch size={14} />,
   Folder:        <Folder size={14} />,
-  Deals:         <LayoutGrid size={14} />,
+  Deals:         <DollarSign size={14} />,
   Products:      <Package size={14} />,
   Customers:     <Users size={14} />,
-  People:        <UserRound size={14} />,
+  Companies:     <Building2 size={14} />,
+  People:        <User size={14} />,
   Contacts:      <User size={14} />,
   Billing:       <Receipt size={14} />,
   Paid:          <CheckCircle size={14} />,
@@ -45,11 +46,12 @@ const ICON_MAP = {
 // All nav items with their actual or fallback routes
 const ALL_NAV_ITEMS = {
   'Home':          { icon: 'Home',          path: ROUTES.DASHBOARD },
+  'Notifications': { icon: 'Notifications', path: '/notifications' },
   'Notes':         { icon: 'Notes',         path: ROUTES.NOTES },
-  'Emails':        { icon: 'Emails',        path: ROUTES.EMAILS },
   'Reports':       { icon: 'Reports',       path: ROUTES.REPORTS },
   'Workflows':     { icon: 'Workflows',     path: '/workflows' },
   'Products':      { icon: 'Products',      path: ROUTES.PRODUCTS },
+  'Companies':     { icon: 'Companies',     path: '/' },
   'People':        { icon: 'People',        path: '/people' },
   'Deals':         { icon: 'Deals',         path: '/deals' },
   'Billing':       { icon: 'Billing',       path: ROUTES.BILLING },
@@ -60,10 +62,10 @@ const ALL_NAV_ITEMS = {
 }
 
 const MAIN_NAV = [
-  { label: 'Home',    icon: 'Home',    path: ROUTES.DASHBOARD },
-  { label: 'Notes',   icon: 'Notes',   path: ROUTES.NOTES },
-  { label: 'Emails',  icon: 'Emails',  path: ROUTES.EMAILS },
-  { label: 'Reports', icon: 'Reports', path: ROUTES.REPORTS },
+  { label: 'Home',          icon: 'Home',          path: ROUTES.DASHBOARD },
+  { label: 'Notifications', icon: 'Notifications', path: '/notifications' },
+  { label: 'Notes',         icon: 'Notes',         path: ROUTES.NOTES },
+  { label: 'Reports',       icon: 'Reports',       path: ROUTES.REPORTS },
 ]
 
 const RECORDS_NAV = [
@@ -128,19 +130,93 @@ export default function Sidebar() {
   const searchParams = new URLSearchParams(location.search)
   const activeSessionId = searchParams.get('session')
 
+  const [favorites, setFavorites] = useState(() => {
+    const saved = sessionStorage.getItem('ws_favorites')
+    return saved ? JSON.parse(saved) : []
+  })
+
+  const [workspaces, setWorkspaces] = useState([])
+  const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false)
+  const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('Member')
+  const [inviting, setInviting] = useState(false)
+
+  // Reactive workspace state — reads from sessionStorage on mount and updates on switch
+  const [activeWorkspaceName, setActiveWorkspaceName] = useState(
+    () => sessionStorage.getItem('ws_active_workspace_name') || shopName
+  )
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(
+    () => sessionStorage.getItem('ws_active_workspace_id') || ''
+  )
+
   useEffect(() => {
-    const token = localStorage.getItem('ws_token')
+    const handleOpenInvite = () => setInviteModalOpen(true)
+    window.addEventListener('ws-open-invite', handleOpenInvite)
+    return () => window.removeEventListener('ws-open-invite', handleOpenInvite)
+  }, [])
+
+  const handleInviteSubmit = async (e) => {
+    e.preventDefault()
+    if (!inviteEmail?.trim()) return
+    setInviting(true)
+    try {
+      await authApi.invite({ email: inviteEmail, role: inviteRole })
+      dispatch(addToast({ message: `Invitation sent to ${inviteEmail}`, type: 'success' }))
+      setInviteEmail('')
+      setInviteModalOpen(false)
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Failed to send invite'
+      dispatch(addToast({ message: msg, type: 'error' }))
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  // Keep reactive state in sync with sessionStorage on mount
+  useEffect(() => {
+    const storedName = sessionStorage.getItem('ws_active_workspace_name')
+    const storedId = sessionStorage.getItem('ws_active_workspace_id')
+    if (storedName) setActiveWorkspaceName(storedName)
+    if (storedId) setActiveWorkspaceId(storedId)
+  }, [])
+
+  useEffect(() => {
+    const token = sessionStorage.getItem('ws_token')
     if (token) {
       api.get('/chat/sessions')
         .then(res => setChats(res.data || []))
         .catch(() => {})
+
+      authApi.getWorkspaces()
+        .then(data => {
+          setWorkspaces(data || [])
+          const activeId = sessionStorage.getItem('ws_active_workspace_id')
+          const isValid = data?.some(w => String(w.id) === String(activeId))
+          if (!activeId || !isValid) {
+            const owner = data?.find(w => w.isOwner)
+            if (owner) {
+              sessionStorage.setItem('ws_active_workspace_id', owner.id)
+              sessionStorage.setItem('ws_active_workspace_name', owner.shopName)
+              setActiveWorkspaceId(owner.id)
+              setActiveWorkspaceName(owner.shopName)
+              if (activeId && !isValid) {
+                // If they had an invalid workspace selected, reload to refresh headers
+                window.location.reload()
+              }
+            }
+          } else {
+            // Workspace is valid — sync name in case it changed
+            const current = data?.find(w => String(w.id) === String(activeId))
+            if (current && current.shopName !== activeWorkspaceName) {
+              sessionStorage.setItem('ws_active_workspace_name', current.shopName)
+              setActiveWorkspaceName(current.shopName)
+            }
+          }
+        })
+        .catch(() => {})
     }
   }, [location])
-
-  const [favorites, setFavorites] = useState(() => {
-    const saved = localStorage.getItem('ws_favorites')
-    return saved ? JSON.parse(saved) : []
-  })
 
   const toggleFavorite = (label, e) => {
     if (e) {
@@ -157,7 +233,7 @@ export default function Sidebar() {
       dispatch(addToast({ message: `Added ${label} to Favorites.`, type: 'success' }))
     }
     setFavorites(updated)
-    localStorage.setItem('ws_favorites', JSON.stringify(updated))
+    sessionStorage.setItem('ws_favorites', JSON.stringify(updated))
   }
 
   const handleNav    = (label) => dispatch(setActiveNav(label))
@@ -167,7 +243,7 @@ export default function Sidebar() {
     navigate(ROUTES.LOGIN) 
   }
 
-  const logoLetter = shopName ? shopName.charAt(0).toUpperCase() : 'W'
+  const logoLetter = activeWorkspaceName ? activeWorkspaceName.charAt(0).toUpperCase() : 'W'
 
   return (
     <>
@@ -178,12 +254,12 @@ export default function Sidebar() {
 
       <aside className={`ws-sidebar${sidebarOpen ? ' ws-sidebar--open' : ''}`}>
         {/* Workspace Header */}
-        <div className="ws-sb-header">
-          <button className="ws-sb-workspace-btn">
+        <div className="ws-sb-header" style={{ position: 'relative' }}>
+          <button className="ws-sb-workspace-btn" onClick={() => setWorkspaceDropdownOpen(!workspaceDropdownOpen)}>
             <div className="ws-sb-ws-icon" style={{ textTransform: 'uppercase', color: '#fff', fontWeight: '800', fontSize: '11px', fontFamily: 'sans-serif' }}>
               {logoLetter}
             </div>
-            <span className="ws-sb-ws-name">{shopName}</span>
+            <span className="ws-sb-ws-name">{activeWorkspaceName}</span>
             <ChevronDown size={13} className="ws-sb-chevron" />
           </button>
           <button
@@ -193,6 +269,66 @@ export default function Sidebar() {
           >
             <X size={15} />
           </button>
+
+          {workspaceDropdownOpen && (
+            <div className="ws-sb-ws-dropdown" style={{
+              position: 'absolute',
+              top: '55px',
+              left: '12px',
+              width: '216px',
+              background: '#fff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              zIndex: 1000,
+              padding: '6px 0'
+            }}>
+              <div style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af', borderBottom: '1px solid #f3f4f6' }}>
+                Switch Workspace
+              </div>
+              {workspaces.map(w => {
+                const isActive = w.id === activeWorkspaceId
+                return (
+                  <button
+                    key={w.id}
+                    onClick={() => {
+                      sessionStorage.setItem('ws_active_workspace_id', w.id)
+                      sessionStorage.setItem('ws_active_workspace_name', w.shopName)
+                      setActiveWorkspaceId(w.id)
+                      setActiveWorkspaceName(w.shopName)
+                      setWorkspaceDropdownOpen(false)
+                      window.location.reload()
+                    }}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px',
+                      border: 'none',
+                      background: isActive ? '#eff6ff' : 'transparent',
+                      color: isActive ? '#3d68f5' : '#374151',
+                      cursor: 'pointer',
+                      fontSize: '0.825rem',
+                      textAlign: 'left',
+                      transition: 'background 0.1s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = isActive ? '#eff6ff' : '#f9fafb'}
+                    onMouseLeave={e => e.currentTarget.style.background = isActive ? '#eff6ff' : 'transparent'}
+                  >
+                    <span style={{ fontWeight: isActive ? '600' : '400', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '6px' }}>
+                      {w.shopName}
+                    </span>
+                    {w.isOwner && (
+                      <span style={{ fontSize: '0.65rem', background: '#f3f4f6', color: '#6b7280', padding: '1px 4px', borderRadius: '4px' }}>
+                        Owner
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* Search */}
@@ -323,19 +459,23 @@ export default function Sidebar() {
             ))}
           </div>
 
-          <div className="ws-sb-section-label">Lists</div>
-          <div className="ws-sb-nav-list">
-            {LISTS_NAV.map(item => (
-              <NavItem 
-                key={item.label} 
-                item={item} 
-                active={activeNav === item.label} 
-                onClick={handleNav} 
-                favorites={favorites}
-                onToggleFav={toggleFavorite}
-              />
-            ))}
-          </div>
+          {LISTS_NAV.length > 0 && (
+            <>
+              <div className="ws-sb-section-label">Lists</div>
+              <div className="ws-sb-nav-list">
+                {LISTS_NAV.map(item => (
+                  <NavItem 
+                    key={item.label} 
+                    item={item} 
+                    active={activeNav === item.label} 
+                    onClick={handleNav} 
+                    favorites={favorites}
+                    onToggleFav={toggleFavorite}
+                  />
+                ))}
+              </div>
+            </>
+          )}
 
           <div className="ws-sb-section-label">Chats</div>
           <div className="ws-sb-nav-list" style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 8px' }}>
@@ -382,7 +522,7 @@ export default function Sidebar() {
         {/* Bottom */}
         <div className="ws-sb-bottom">
           <div className="ws-sb-footer-actions">
-            <button className="ws-sb-invite-btn">
+            <button className="ws-sb-invite-btn" onClick={() => setInviteModalOpen(true)}>
               <UserPlus size={14} />
               Invite teammates
             </button>
@@ -393,6 +533,114 @@ export default function Sidebar() {
           </div>
         </div>
       </aside>
+
+      {/* Invite Teammate Modal */}
+      {inviteModalOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backdropFilter: 'blur(2px)'
+        }}>
+          <div style={{
+            background: '#fff',
+            width: '400px',
+            borderRadius: '12px',
+            padding: '24px',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, color: '#111827', fontFamily: 'sans-serif' }}>Invite Teammate</h3>
+              <button 
+                onClick={() => setInviteModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#4b5563', fontFamily: 'sans-serif' }}>Teammate Email Address</label>
+                <input 
+                  type="email"
+                  required
+                  placeholder="name@company.com"
+                  value={inviteEmail}
+                  onChange={e => setInviteEmail(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #d1d5db',
+                    fontSize: '0.875rem',
+                    outline: 'none',
+                    fontFamily: 'sans-serif'
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#4b5563', fontFamily: 'sans-serif' }}>Role</label>
+                <select 
+                  value={inviteRole}
+                  onChange={e => setInviteRole(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #d1d5db',
+                    fontSize: '0.875rem',
+                    background: '#fff',
+                    outline: 'none',
+                    fontFamily: 'sans-serif'
+                  }}
+                >
+                  <option value="Member">Member</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button 
+                  type="button"
+                  onClick={() => setInviteModalOpen(false)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    border: '1px solid #d1d5db',
+                    background: '#fff',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    fontFamily: 'sans-serif'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={inviting}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: 'var(--color-blue, #3d68f5)',
+                    color: '#fff',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    fontFamily: 'sans-serif'
+                  }}
+                >
+                  {inviting ? 'Inviting...' : 'Send Invitation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   )
 }

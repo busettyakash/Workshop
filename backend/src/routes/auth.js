@@ -97,28 +97,23 @@ router.post('/send-otp', async (req, res) => {
 
     console.log(`[OTP DEBUG] OTP for ${email} is ${otp}`)
 
-    // Send email via SMTP
-    try {
-      console.log(`[OTP] Sending email via SMTP to ${email}...`)
-      const { data: mailData, error: mailError } = await resend.emails.send({
-        from: 'Workshop <onboarding@resend.dev>',
-        to: email,
-        subject: `${otp} is your Workshop verification code`,
-        html: getOtpTemplate(otp)
-      })
+    // Send email via SMTP / Resend
+    const { error: mailError } = await resend.emails.send({
+      to: email,
+      subject: `${otp} is your Workshop verification code`,
+      html: getOtpTemplate(otp)
+    })
 
-      if (mailError) {
-        console.error(`[OTP] Send failed:`, mailError)
-      } else {
-        console.log(`[OTP] Email sent successfully:`, mailData?.id)
-      }
-    } catch (mErr) {
-      console.error(`[OTP] Mail exception:`, mErr.message)
+    if (mailError) {
+      console.error(`[OTP] Email delivery failed:`, mailError.message || mailError)
+      return res.status(500).json({ message: 'Failed to send OTP. Please try again later.' })
     }
 
+    console.log(`[OTP] Email sent to ${email}`)
     res.json({ message: 'OTP sent to your email' })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('[OTP] Unexpected error:', err.message)
+    res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
   }
 })
 
@@ -151,25 +146,22 @@ router.post('/send-login-otp', async (req, res) => {
     console.log(`[LOGIN OTP DEBUG] OTP for ${email} is ${otp}`)
 
     // Send OTP email
-    try {
-      const { data: mailData, error: mailError } = await resend.emails.send({
-        from: 'Workshop <onboarding@resend.dev>',
-        to: email,
-        subject: `${otp} is your Workshop verification code`,
-        html: getOtpTemplate(otp)
-      })
-      if (mailError) {
-        console.error(`[LOGIN OTP] Send failed:`, mailError)
-      } else {
-        console.log(`[LOGIN OTP] Email sent:`, mailData?.id)
-      }
-    } catch (mErr) {
-      console.error(`[LOGIN OTP] Mail exception:`, mErr.message)
+    const { error: mailError } = await resend.emails.send({
+      to: email,
+      subject: `${otp} is your Workshop verification code`,
+      html: getOtpTemplate(otp)
+    })
+
+    if (mailError) {
+      console.error(`[LOGIN OTP] Email delivery failed:`, mailError.message || mailError)
+      return res.status(500).json({ message: 'Failed to send OTP. Please try again later.' })
     }
 
+    console.log(`[LOGIN OTP] Email sent to ${email}`)
     res.json({ message: 'OTP sent to your email' })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('[LOGIN OTP] Unexpected error:', err.message)
+    res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
   }
 })
 

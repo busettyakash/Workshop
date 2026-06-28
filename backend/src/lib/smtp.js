@@ -1,41 +1,43 @@
+/**
+ * Email sender — nodemailer SMTP
+ * Works for both local (Gmail) and production (same Gmail SMTP).
+ * Requires: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.
+ */
 import nodemailer from 'nodemailer'
 import dotenv from 'dotenv'
-
 dotenv.config()
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_PORT === '465', // True for 465, false for 587 or other ports
+  secure: process.env.SMTP_PORT === '465',
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
 })
 
-// Verify connection configuration on start
-transporter.verify((error, success) => {
+transporter.verify((error) => {
   if (error) {
-    console.error('[SMTP] Connection validation failed:', error.message)
+    console.error('[SMTP] Connection failed:', error.message)
   } else {
-    console.log('[SMTP] Transporter is ready to send emails')
+    console.log('[SMTP] Ready — using', process.env.SMTP_USER)
   }
 })
 
-export const sendEmail = async ({ from, to, subject, html }) => {
+export const sendEmail = async ({ to, subject, html }) => {
   try {
-    console.log(`[SMTP] Attempting to send email to ${to}...`)
     const info = await transporter.sendMail({
-      from: from || `"Workshop" <${process.env.SMTP_USER}>`,
+      from: `"Workshop" <${process.env.SMTP_USER}>`,
       to,
       subject,
       html,
     })
-    console.log('[SMTP] Email sent successfully. Message ID:', info.messageId)
+    console.log('[SMTP] Email sent:', info.messageId)
     return { data: { id: info.messageId }, error: null }
-  } catch (error) {
-    console.error('[SMTP] Failed to send email:', error.message)
-    return { data: null, error }
+  } catch (err) {
+    console.error('[SMTP] Send failed:', err.message)
+    return { data: null, error: err }
   }
 }
 

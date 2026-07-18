@@ -3,7 +3,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Upload, Trash2, Edit2, Loader2, X, Check } from 'lucide-react'
+import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
@@ -23,16 +23,43 @@ export default function ImportStock() {
   const [selectedIds, setSelectedIds] = useState([])
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' })
 
+  const [page, setPage] = useState(1)
+  const [limit] = useState(20) // fixed limit to remove dropdown
+  const [total, setTotal] = useState(0)
+
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('') // '' (default), 'name_asc', 'name_desc'
+  const [filterStatus, setFilterStatus] = useState('all') // default all
+  const [showFilterBar, setShowFilterBar] = useState(false)
+
+  const totalPages = Math.ceil(total / limit) || 1
+  const getPageNumbers = () => {
+    const pages = []
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      if (page <= 2) {
+        pages.push(1, 2, 3, '...', totalPages)
+      } else if (page >= totalPages - 1) {
+        pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
+      } else {
+        pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
+      }
+    }
+    return pages
+  }
+
   useEffect(() => {
     dispatch(setActiveNav('Import Stock'))
-    fetchProducts()
-  }, [dispatch])
+    fetchProducts(page)
+  }, [dispatch, page, search, sort, filterStatus])
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (currentPage = page) => {
     setLoading(true)
     try {
-      const res = await api.get('/import-stock')
+      const res = await api.get(`/import-stock?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}&status=${filterStatus}`)
       setProducts(res.data?.data || [])
+      setTotal(res.data?.total || 0)
     } catch (err) {
       console.error('[ImportStock] Failed to load:', err?.response?.status, err?.response?.data)
       dispatch(addToast({ message: 'Failed to load import stock', type: 'error' }))
@@ -104,31 +131,119 @@ export default function ImportStock() {
         <Topbar />
         <main className="ws-dash-body">
           <div className="ws-dash-greeting">Import Stock</div>
-          <div className="ws-table-section">
-            <div className="ws-table-header">
-              <div className="ws-table-header-left">
-                <h2 className="ws-table-title">All Stock Items</h2>
-                <p className="ws-table-sub">Stage products here before adding them to your live inventory.</p>
-              </div>
-              <div className="ws-table-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {selectedIds.length > 0 && (
+          <div className="ws-table-section" style={{ minHeight: 'calc(100vh - 240px)', display: 'flex', flexDirection: 'column' }}>
+            <div className="ws-table-header" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="ws-table-header-left">
+                  <h2 className="ws-table-title">All Stock Items</h2>
+                  <p className="ws-table-sub">Stage products here before adding them to your live inventory.</p>
+                </div>
+                <div className="ws-table-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {selectedIds.length > 0 && (
+                    <button 
+                      className="ws-table-btn ws-table-btn--primary" 
+                      onClick={handleBulkAddToProducts} 
+                      style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 600 }}
+                    >
+                      <Plus size={13} style={{ marginRight: '6px' }} /> Add Selected ({selectedIds.length})
+                    </button>
+                  )}
+
+                  {/* Search box */}
+                  <div style={{ position: 'relative' }}>
+                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+                    <input
+                      type="text"
+                      placeholder="Search stock..."
+                      value={search}
+                      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                      style={{
+                        padding: '8px 12px 8px 30px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '8px',
+                        fontSize: '0.8125rem',
+                        outline: 'none',
+                        width: '180px',
+                        background: '#fff',
+                        color: '#374151'
+                      }}
+                    />
+                  </div>
+
+                  {/* Sort button */}
                   <button 
-                    className="ws-table-btn ws-table-btn--primary" 
-                    onClick={handleBulkAddToProducts} 
-                    style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 600 }}
+                    className="ws-table-btn" 
+                    onClick={() => {
+                      setSort(prev => prev === 'name_asc' ? 'name_desc' : prev === 'name_desc' ? '' : 'name_asc');
+                      setPage(1);
+                    }}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 6, 
+                      borderColor: sort ? '#111827' : '#d1d5db',
+                      background: sort ? '#f3f4f6' : '#fff',
+                      fontWeight: sort ? 600 : 500
+                    }}
                   >
-                    <Plus size={13} style={{ marginRight: '6px' }} /> Add Selected ({selectedIds.length})
+                    <ArrowUpDown size={13} /> 
+                    Sort {sort === 'name_asc' ? 'A-Z' : sort === 'name_desc' ? 'Z-A' : ''}
                   </button>
-                )}
-                <button className="ws-table-btn">
-                  <Upload size={13} style={{ marginRight: '6px' }} /> Import CSV
-                </button>
-                <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/import-stock/add')}>
-                  <Plus size={13} /> Add Stock
-                </button>
+
+                  {/* Filter button */}
+                  <button 
+                    className="ws-table-btn" 
+                    onClick={() => setShowFilterBar(prev => !prev)}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 6, 
+                      borderColor: showFilterBar || filterStatus !== 'all' ? '#111827' : '#d1d5db',
+                      background: showFilterBar || filterStatus !== 'all' ? '#f3f4f6' : '#fff',
+                      fontWeight: showFilterBar || filterStatus !== 'all' ? 600 : 500
+                    }}
+                  >
+                    <Filter size={13} /> Filter
+                  </button>
+
+                  <button className="ws-table-btn">
+                    <Upload size={13} style={{ marginRight: '6px' }} /> Import CSV
+                  </button>
+                  <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/import-stock/add')}>
+                    <Plus size={13} /> Add Stock
+                  </button>
+                </div>
               </div>
+
+              {/* Expandable Filter Bar */}
+              {showFilterBar && (
+                <div style={{ display: 'flex', gap: 12, padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#4b5563' }}>
+                    <span>Status:</span>
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none', background: '#fff', fontSize: '0.8125rem', cursor: 'pointer' }}
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="active">Active</option>
+                      <option value="added">Added</option>
+                    </select>
+                  </div>
+
+                  {filterStatus !== 'all' && (
+                    <button 
+                      onClick={() => { setFilterStatus('all'); setPage(1); }}
+                      style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#3d68f5', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
+                    >
+                      Reset Filters
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="ws-table-wrap">
+            <div className="ws-table-wrap" style={{ flex: 1 }}>
               {loading ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Loader2 size={24} className="ws-chat-loader-spin" />
@@ -286,6 +401,93 @@ export default function ImportStock() {
                   </tbody>
                 </table>
               )}
+            </div>
+            {/* Pagination component outside ws-table-wrap at bottom of card */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid #f3f4f6', background: '#fff', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', marginTop: 'auto' }}>
+              <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
+                Showing <span style={{ fontWeight: 600, color: '#111827' }}>{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
+                <span style={{ fontWeight: 600, color: '#111827' }}>{Math.min(page * limit, total)}</span> of{' '}
+                <span style={{ fontWeight: 600, color: '#111827' }}>{total}</span> entries
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage(page - 1)}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    background: '#fff',
+                    color: page <= 1 ? '#d1d5db' : '#374151',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  &lt;
+                </button>
+                {getPageNumbers().map((p, idx) => {
+                  if (p === '...') {
+                    return (
+                      <span key={`dots-${idx}`} style={{ color: '#9ca3af', padding: '0 8px', fontSize: '0.875rem' }}>
+                        ...
+                      </span>
+                    )
+                  }
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        background: page === p ? '#111827' : '#fff',
+                        color: page === p ? '#fff' : '#374151',
+                        border: page === p ? '1px solid #111827' : '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      {p}
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(page + 1)}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    background: '#fff',
+                    color: page >= totalPages ? '#d1d5db' : '#374151',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  &gt;
+                </button>
+              </div>
             </div>
           </div>
         </main>

@@ -86,9 +86,18 @@ router.post('/send-otp', async (req, res) => {
 
     console.log(`[OTP] Request for email: ${email}`)
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
+
+    // Rate limit: if OTP was sent in the last 60s, don't send again
+    const cooldownKey = `otp_cooldown:${email}`
+    const onCooldown = await redis.get(cooldownKey).catch(() => null)
+    if (onCooldown) {
+      return res.status(429).json({ message: 'Please wait 60 seconds before requesting a new OTP.' })
+    }
+
     try {
       console.log(`[OTP] Connecting to Redis...`)
       await redis.set(`otp:${email}`, otp, { ex: 300 })
+      await redis.set(cooldownKey, '1', { ex: 60 }) // 60s cooldown
       console.log(`[OTP] Redis set successful`)
     } catch (rErr) {
       console.error(`[OTP] Redis failed, using memory fallback:`, rErr.message)
@@ -143,8 +152,17 @@ router.post('/send-login-otp', async (req, res) => {
 
     // Generate and store OTP in Redis
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
+
+    // Rate limit: if OTP was sent in the last 60s, don't send again
+    const cooldownKey = `otp_cooldown:${email}`
+    const onCooldown = await redis.get(cooldownKey).catch(() => null)
+    if (onCooldown) {
+      return res.status(429).json({ message: 'Please wait 60 seconds before requesting a new OTP.' })
+    }
+
     try {
       await redis.set(`otp:${email}`, otp, { ex: 300 })
+      await redis.set(cooldownKey, '1', { ex: 60 }) // 60s cooldown
       console.log(`[LOGIN OTP] Redis set for ${email}`)
     } catch (rErr) {
       console.error(`[LOGIN OTP] Redis failed, using memory fallback:`, rErr.message)

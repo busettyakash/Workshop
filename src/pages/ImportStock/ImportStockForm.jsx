@@ -59,7 +59,7 @@ export default function ImportStockForm() {
   const [focus, setFocus] = useState(null)
 
   const [form, setForm] = useState({
-    name: '', sku: '', category: '', price: '', stock: 0, status: 'pending', unit: 'pcs', description: ''
+    name: '', sku: '', category: '', price: '', stock: 0, status: 'pending', unit: 'pcs', description: '', bag_weight: 1
   })
 
   useEffect(() => {
@@ -80,7 +80,8 @@ export default function ImportStockForm() {
           stock: item.stock || 0,
           status: item.status || 'pending',
           unit: item.unit || 'pcs',
-          description: item.description || ''
+          description: item.description || '',
+          bag_weight: item.bag_weight || 1
         })
       } else {
         dispatch(addToast({ message: 'Pending product not found', type: 'error' }))
@@ -117,8 +118,12 @@ export default function ImportStockForm() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     const err = {}
+    const isKgs = form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg'
     if (!form.name.trim()) err.name = 'Product name is required'
     if (!form.price || isNaN(form.price) || parseFloat(form.price) <= 0) err.price = 'Enter a valid price'
+    if (isKgs && (!form.bag_weight || isNaN(form.bag_weight) || parseFloat(form.bag_weight) <= 0)) {
+      err.bag_weight = 'Enter a valid bag weight (e.g. 25)'
+    }
     if (Object.keys(err).length) { setErrors(err); return }
 
     setSaving(true)
@@ -232,14 +237,21 @@ export default function ImportStockForm() {
                   <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
                     <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.9375rem', margin: 0 }}>Pricing & Stock</p>
                   </div>
-                  <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                  <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: (form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16 }}>
                     <div>
-                      <label style={S.label}>Price (₹) <span style={{ color: '#dc2626' }}>*</span></label>
+                      <label style={S.label}>{(form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') ? 'Bag Price (₹)' : 'Price (₹)'} <span style={{ color: '#dc2626' }}>*</span></label>
                       <input name="price" type="number" step="0.01" value={form.price} onChange={handleChange} placeholder="0.00" style={inp('price')} onFocus={() => setFocus('price')} onBlur={() => setFocus(null)} />
                       {errors.price && <span style={S.error}>{errors.price}</span>}
                     </div>
+                    {(form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') && (
+                      <div>
+                        <label style={S.label}>Bag Weight (kg) <span style={{ color: '#dc2626' }}>*</span></label>
+                        <input name="bag_weight" type="number" step="0.1" value={form.bag_weight} onChange={handleChange} placeholder="e.g. 25" style={inp('bag_weight')} onFocus={() => setFocus('bag_weight')} onBlur={() => setFocus(null)} />
+                        {errors.bag_weight && <span style={S.error}>{errors.bag_weight}</span>}
+                      </div>
+                    )}
                     <div>
-                      <label style={S.label}>Stock Quantity</label>
+                      <label style={S.label}>{(form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') ? 'Stock (kg)' : 'Stock Quantity'}</label>
                       <input name="stock" type="number" value={form.stock} onChange={handleChange} placeholder="0" style={inp('stock')} onFocus={() => setFocus('stock')} onBlur={() => setFocus(null)} />
                     </div>
                     <div>
@@ -255,6 +267,11 @@ export default function ImportStockForm() {
                       />
                     </div>
                   </div>
+                  {(form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') && form.price && form.bag_weight && parseFloat(form.bag_weight) > 0 && (
+                    <div style={{ padding: '0 20px 20px', fontSize: '0.8125rem', color: '#10b981', fontWeight: 600 }}>
+                      Calculated Price-per-kg: ₹{(parseFloat(form.price) / parseFloat(form.bag_weight)).toFixed(2)} / kg
+                    </div>
+                  )}
                 </div>
               </div>
 

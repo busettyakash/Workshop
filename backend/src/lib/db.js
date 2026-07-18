@@ -1,33 +1,4 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-import dns from 'dns'
-// ── DNS patch: use Google public DNS so DB host always resolves ──
-try {
-  dns.setServers(['8.8.8.8', '8.8.4.4'])
-} catch (e) {
-  console.warn('[DNS] Failed to set custom DNS servers:', e.message)
-}
-
-const originalLookup = dns.lookup
-dns.lookup = function (hostname, options, callback) {
-  if (typeof options === 'function') {
-    callback = options
-    options = {}
-  }
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return originalLookup(hostname, options, callback)
-  }
-  dns.resolve4(hostname, (err, addresses) => {
-    if (err || !addresses || addresses.length === 0) {
-      return originalLookup(hostname, options, callback)
-    }
-    if (options && options.all) {
-      const results = addresses.map(addr => ({ address: addr, family: 4 }))
-      callback(null, results)
-    } else {
-      callback(null, addresses[0], 4)
-    }
-  })
-}
 
 import pg from 'pg'
 

@@ -107,7 +107,7 @@ async function syncBillItems(userId) {
               await query(
                 `INSERT INTO bill_items (bill_id, product_id, quantity, price)
                  VALUES ($1, $2, $3, $4)`,
-                [b.id, productId, Math.round(qty), price]
+                [b.id, productId, qty, price]
               )
             }
           }

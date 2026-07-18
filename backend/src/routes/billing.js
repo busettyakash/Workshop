@@ -6,29 +6,47 @@ import redis from '../lib/redis.js'
 const router = Router()
 router.use(requireAuth)
 
+query(
+  `ALTER TABLE bill_items
+   ALTER COLUMN quantity TYPE NUMERIC(10, 2)
+   USING quantity::numeric(10, 2)`
+).catch((err) => {
+  console.warn('[Billing] Could not migrate bill_items.quantity to NUMERIC(10,2):', err.message)
+})
 
 
 /* GET /api/billing?status=paid|unpaid */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
-  const { status, page = 1, limit = 20 } = req.query
+  const { status, page = 1, limit = 20, search, sort } = req.query
   const offset = (page - 1) * limit
   const params = [userId]
   const conditions = ['b.user_id = $1']
   if (status) { params.push(status); conditions.push(`b.status = $${params.length}`) }
+  if (search) {
+    params.push(`%${search}%`)
+    conditions.push(`(c.name ILIKE $${params.length} OR CAST(b.id AS TEXT) ILIKE $${params.length})`)
+  }
   const where = `WHERE ${conditions.join(' AND ')}`
   params.push(limit, offset)
+
+  const orderCol = sort === 'id_asc' ? 'b.id ASC' : sort === 'id_desc' ? 'b.id DESC' : sort === 'amount_asc' ? 'b.amount ASC' : sort === 'amount_desc' ? 'b.amount DESC' : 'b.created_at DESC'
 
   try {
     const { rows } = await query(
       `SELECT b.*, c.name AS customer_name
        FROM bills b
        LEFT JOIN people c ON b.customer_id = c.id
-       ${where} ORDER BY b.created_at DESC
+       ${where} ORDER BY ${orderCol}
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
-    const count = await query(`SELECT COUNT(*) FROM bills b ${where}`, params.slice(0, -2))
+    const count = await query(
+      `SELECT COUNT(*) FROM bills b 
+       LEFT JOIN people c ON b.customer_id = c.id 
+       ${where}`, 
+      params.slice(0, -2)
+    )
     res.json({ data: rows, total: parseInt(count.rows[0].count), page: +page, limit: +limit })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -95,7 +113,7 @@ router.post('/', async (req, res) => {
         // 2. Insert into bill_items table
         await query(
           "INSERT INTO bill_items (bill_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)",
-          [rows[0].id, item.product_id, Math.round(qty), item.price || 0]
+          [rows[0].id, item.product_id, qty, item.price || 0]
         ).catch(() => {})
         
         // 3. Query product to find its SKU and decrement matching stock in import_stock table

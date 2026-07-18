@@ -3,7 +3,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Trash2, Loader2, Check } from 'lucide-react'
+import { Trash2, Loader2, Check, Search, Filter, ArrowUpDown } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
@@ -17,11 +17,37 @@ export default function UnpaidBills() {
   const [loading, setLoading] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, displayId: '' })
 
-  const fetchUnpaidBills = async () => {
+  const [page, setPage] = useState(1)
+  const [limit] = useState(20) // fixed limit to remove dropdown
+  const [total, setTotal] = useState(0)
+
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('') // '' (default), 'id_asc', 'id_desc', 'amount_asc', 'amount_desc'
+  const [showFilterBar, setShowFilterBar] = useState(false)
+
+  const totalPages = Math.ceil(total / limit) || 1
+  const getPageNumbers = () => {
+    const pages = []
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      if (page <= 2) {
+        pages.push(1, 2, 3, '...', totalPages)
+      } else if (page >= totalPages - 1) {
+        pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
+      } else {
+        pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
+      }
+    }
+    return pages
+  }
+
+  const fetchUnpaidBills = async (currentPage = page) => {
     setLoading(true)
     try {
-      const res = await api.get('/billing?status=unpaid')
+      const res = await api.get(`/billing?status=unpaid&page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}`)
       setBills(res.data?.data || [])
+      setTotal(res.data?.total || 0)
     } catch (err) {
       dispatch(addToast({ message: 'Failed to load unpaid bills', type: 'error' }))
     } finally {
@@ -31,16 +57,14 @@ export default function UnpaidBills() {
 
   useEffect(() => {
     dispatch(setActiveNav('Unpaid'))
-    fetchUnpaidBills()
-  }, [dispatch])
-
-
+    fetchUnpaidBills(page)
+  }, [dispatch, page, search, sort])
 
   const handleMarkPaid = async (id) => {
     try {
       await api.patch(`/billing/${id}/pay`)
       dispatch(addToast({ message: 'Bill marked as Paid successfully', type: 'success' }))
-      fetchUnpaidBills()
+      fetchUnpaidBills(page, limit)
     } catch (err) {
       dispatch(addToast({ message: 'Failed to update bill', type: 'error' }))
     }
@@ -75,15 +99,84 @@ export default function UnpaidBills() {
         <main className="ws-dash-body">
           <div className="ws-dash-greeting">Unpaid Invoices</div>
 
-          <div className="ws-table-section">
-            <div className="ws-table-header">
-              <div>
-                <h2 className="ws-table-title">Unpaid Invoices</h2>
-                <p className="ws-table-sub">{bills.length} pending invoices total</p>
+          <div className="ws-table-section" style={{ minHeight: 'calc(100vh - 240px)', display: 'flex', flexDirection: 'column' }}>
+            <div className="ws-table-header" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h2 className="ws-table-title">Unpaid Invoices</h2>
+                  <p className="ws-table-sub">{total} pending invoices total</p>
+                </div>
+                <div className="ws-table-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {/* Search box */}
+                  <div style={{ position: 'relative' }}>
+                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+                    <input
+                      type="text"
+                      placeholder="Search invoices..."
+                      value={search}
+                      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                      style={{
+                        padding: '8px 12px 8px 30px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '8px',
+                        fontSize: '0.8125rem',
+                        outline: 'none',
+                        width: '180px',
+                        background: '#fff',
+                        color: '#374151'
+                      }}
+                    />
+                  </div>
+
+                  {/* Sort button */}
+                  <button 
+                    className="ws-table-btn" 
+                    onClick={() => {
+                      setSort(prev => prev === 'id_asc' ? 'id_desc' : prev === 'id_desc' ? 'amount_asc' : prev === 'amount_asc' ? 'amount_desc' : prev === 'amount_desc' ? '' : 'id_asc');
+                      setPage(1);
+                    }}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 6, 
+                      borderColor: sort ? '#111827' : '#d1d5db',
+                      background: sort ? '#f3f4f6' : '#fff',
+                      fontWeight: sort ? 600 : 500
+                    }}
+                  >
+                    <ArrowUpDown size={13} /> 
+                    Sort {sort === 'id_asc' ? 'ID Asc' : sort === 'id_desc' ? 'ID Desc' : sort === 'amount_asc' ? 'Min Amt' : sort === 'amount_desc' ? 'Max Amt' : ''}
+                  </button>
+
+                  {/* Filter button */}
+                  <button 
+                    className="ws-table-btn" 
+                    onClick={() => setShowFilterBar(prev => !prev)}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 6, 
+                      borderColor: showFilterBar ? '#111827' : '#d1d5db',
+                      background: showFilterBar ? '#f3f4f6' : '#fff',
+                      fontWeight: showFilterBar ? 600 : 500
+                    }}
+                  >
+                    <Filter size={13} /> Filter
+                  </button>
+                </div>
               </div>
+
+              {/* Expandable Filter Bar */}
+              {showFilterBar && (
+                <div style={{ display: 'flex', gap: 12, padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb', alignItems: 'center' }}>
+                  <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
+                    Filtering for <span style={{ fontWeight: 600, color: '#111827' }}>Pending</span> invoices only.
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="ws-table-wrap">
+            <div className="ws-table-wrap" style={{ flex: 1 }}>
               {loading ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Loader2 size={24} className="ws-chat-loader-spin" />
@@ -158,6 +251,94 @@ export default function UnpaidBills() {
                   </tbody>
                 </table>
               )}
+            </div>
+
+            {/* Pagination component outside ws-table-wrap at bottom of card */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid #f3f4f6', background: '#fff', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', marginTop: 'auto' }}>
+              <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
+                Showing <span style={{ fontWeight: 600, color: '#111827' }}>{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
+                <span style={{ fontWeight: 600, color: '#111827' }}>{Math.min(page * limit, total)}</span> of{' '}
+                <span style={{ fontWeight: 600, color: '#111827' }}>{total}</span> entries
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage(page - 1)}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    background: '#fff',
+                    color: page <= 1 ? '#d1d5db' : '#374151',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  &lt;
+                </button>
+                {getPageNumbers().map((p, idx) => {
+                  if (p === '...') {
+                    return (
+                      <span key={`dots-${idx}`} style={{ color: '#9ca3af', padding: '0 8px', fontSize: '0.875rem' }}>
+                        ...
+                      </span>
+                    )
+                  }
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        background: page === p ? '#111827' : '#fff',
+                        color: page === p ? '#fff' : '#374151',
+                        border: page === p ? '1px solid #111827' : '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      {p}
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(page + 1)}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    background: '#fff',
+                    color: page >= totalPages ? '#d1d5db' : '#374151',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  &gt;
+                </button>
+              </div>
             </div>
           </div>
         </main>

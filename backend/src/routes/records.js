@@ -5,18 +5,7 @@ import { requireAuth } from '../middleware/auth.js'
 const router = Router()
 router.use(requireAuth)
 
-const ALLOWED_TABLES = [
-  'account_groups', 'activities', 'categories', 'brands', 'variants', 'bundles', 
-  'price_books', 'pricing_rules', 'taxes', 'opportunities', 'quotes', 'sales_orders', 
-  'deliveries', 'sales_returns', 'approval_queue', 'payments', 'credit_notes', 
-  'debit_notes', 'refunds', 'expenses', 'customer_ledger', 'credit_sales', 
-  'outstanding_dues', 'collections', 'payment_reminders', 'warehouses', 
-  'purchase_orders', 'goods_received', 'stock_transfers', 'stock_adjustments', 
-  'cycle_counts', 'low_stock_alerts', 'supplier_quotations', 'purchase_requests', 
-  'purchase_approvals', 'vendor_comparisons', 'purchase_returns', 'scheduled_reports', 
-  'business_rules', 'branches', 'tax_configurations', 'numbering_series', 
-  'integrations', 'audit_logs', 'system_settings'
-]
+const ALLOWED_TABLES = []
 
 // Middleware to validate table name to prevent SQL injection
 const validateTable = (req, res, next) => {

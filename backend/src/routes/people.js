@@ -28,20 +28,35 @@ ensureTable().catch(console.error)
 /* GET /api/people */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
-  const { search } = req.query
+  const { page = 1, limit = 20, search, status, persona, sort } = req.query
+  const offset = (page - 1) * limit
   const params = [userId]
   const conditions = ['user_id = $1']
   if (search) {
     params.push(`%${search}%`)
     conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length})`)
   }
+  if (status && status !== 'all') {
+    params.push(status)
+    conditions.push(`status = $${params.length}`)
+  }
+  if (persona && persona !== 'all') {
+    params.push(persona)
+    conditions.push(`persona = $${params.length}`)
+  }
   const where = `WHERE ${conditions.join(' AND ')}`
+  params.push(parseInt(limit), parseInt(offset))
+
+  const orderCol = sort === 'name_asc' ? 'name ASC' : sort === 'name_desc' ? 'name DESC' : 'created_at DESC'
+
   try {
     const { rows } = await query(
-      `SELECT * FROM people ${where} ORDER BY created_at DESC`,
+      `SELECT * FROM people ${where} ORDER BY ${orderCol} LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
-    res.json({ data: rows, total: rows.length })
+    const countRes = await query(`SELECT COUNT(*) FROM people ${where}`, params.slice(0, -2))
+    const total = parseInt(countRes.rows[0].count)
+    res.json({ data: rows, total, page: parseInt(page), limit: parseInt(limit) })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

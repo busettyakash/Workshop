@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast, toggleChat } from '../../redux/slices/uiSlice'
-import { ArrowLeft, Loader2, Info, Check, X, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Loader2, Info, Check, X } from 'lucide-react'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 
@@ -116,15 +116,6 @@ export default function DealReview() {
       dispatch(addToast({ message: err.response?.data?.error || 'Failed to reject deal', type: 'error' }))
     } finally {
       setActionLoading(false)
-    }
-  }
-
-  const handleDiscuss = async () => {
-    try {
-      const res = await api.get(`/deals/${id}/chat`)
-      navigate(`/dashboard?session=${res.data.sessionId}`)
-    } catch (e) {
-      dispatch(addToast({ message: 'Chat session not found', type: 'error' }))
     }
   }
 
@@ -305,12 +296,12 @@ export default function DealReview() {
                     <div>
                       <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1e40af', margin: '0 0 4px' }}>Action Required</p>
                       <p style={{ fontSize: '0.7875rem', color: '#3b82f6', margin: 0, lineHeight: 1.5 }}>
-                        Please review the deal details. You can approve the deal, reject it, or discuss terms with the representative.
+                        Please review the deal details. You can approve or reject the deal.
                       </p>
                     </div>
                   </div>
                 </div>
-
+ 
                 {/* Actions */}
                 <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <button
@@ -322,17 +313,7 @@ export default function DealReview() {
                     {actionLoading ? <Loader2 size={14} className="ws-chat-loader-spin" /> : <Check size={16} />}
                     Approve Deal
                   </button>
-                  
-                  <button
-                    type="button"
-                    onClick={handleDiscuss}
-                    disabled={actionLoading}
-                    style={{ width: '100%', height: 40, border: 'none', borderRadius: '8px', background: actionLoading ? '#9ca3af' : '#3d68f5', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: actionLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                  >
-                    <MessageSquare size={16} />
-                    Discuss
-                  </button>
-
+ 
                   <button
                     type="button"
                     onClick={handleReject}

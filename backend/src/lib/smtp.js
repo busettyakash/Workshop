@@ -1,11 +1,38 @@
 /**
- * Email sender — nodemailer SMTP
- * Works for both local (Gmail) and production (same Gmail SMTP).
+ * Email sender — nodemailer SMTP (Gmail)
  * Requires: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.
+ *
+ * DNS patch is applied here so smtp.gmail.com resolves correctly even
+ * when the local router DNS server is broken/slow.
  */
+import dns from 'dns'
 import nodemailer from 'nodemailer'
 import dotenv from 'dotenv'
 dotenv.config()
+
+// ── DNS patch: use Google public DNS so smtp.gmail.com always resolves ── Only in development
+if (process.env.NODE_ENV === 'development') {
+  try {
+    dns.setServers(['8.8.8.8', '8.8.4.4'])
+  } catch (_) {}
+
+  const _origLookup = dns.lookup
+  dns.lookup = function (hostname, options, callback) {
+    if (typeof options === 'function') { callback = options; options = {} }
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return _origLookup(hostname, options, callback)
+    }
+    dns.resolve4(hostname, (err, addrs) => {
+      if (err || !addrs?.length) return _origLookup(hostname, options, callback)
+      if (options && options.all) {
+        callback(null, addrs.map(a => ({ address: a, family: 4 })))
+      } else {
+        callback(null, addrs[0], 4)
+      }
+    })
+  }
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -15,29 +42,28 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-  connectionTimeout: 5000, // 5 seconds connection timeout
-  greetingTimeout: 5000,   // 5 seconds greeting timeout
-  socketTimeout: 10000,    // 10 seconds socket timeout
+  connectionTimeout: 15000,
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
 })
 
 transporter.verify((error) => {
   if (error) {
     console.error('[SMTP] Connection failed:', error.message)
   } else {
-    console.log('[SMTP] Ready — using', process.env.SMTP_USER)
+    console.log('[SMTP] Ready ✅ — using', process.env.SMTP_USER)
   }
 })
 
-export const sendEmail = async ({ to, subject, html }) => {
-  // Validate presence of SMTP env vars first to fail fast with a clear error
+export const sendEmail = async ({ to, subject, html, attachments = [] }) => {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    const missing = [];
-    if (!process.env.SMTP_HOST) missing.push('SMTP_HOST');
-    if (!process.env.SMTP_USER) missing.push('SMTP_USER');
-    if (!process.env.SMTP_PASS) missing.push('SMTP_PASS');
-    const errMsg = `SMTP config missing in Vercel environment: ${missing.join(', ')}`;
-    console.error(`[SMTP] ${errMsg}`);
-    return { data: null, error: new Error(errMsg) };
+    const missing = [
+      !process.env.SMTP_HOST && 'SMTP_HOST',
+      !process.env.SMTP_USER && 'SMTP_USER',
+      !process.env.SMTP_PASS && 'SMTP_PASS',
+    ].filter(Boolean)
+    console.error(`[SMTP] Missing env vars: ${missing.join(', ')}`)
+    return { data: null, error: new Error(`SMTP config missing: ${missing.join(', ')}`) }
   }
 
   try {
@@ -46,8 +72,9 @@ export const sendEmail = async ({ to, subject, html }) => {
       to,
       subject,
       html,
+      attachments,
     })
-    console.log('[SMTP] Email sent:', info.messageId)
+    console.log('[SMTP] Email sent ✅ id:', info.messageId)
     return { data: { id: info.messageId }, error: null }
   } catch (err) {
     console.error('[SMTP] Send failed:', err.message)

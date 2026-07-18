@@ -1,4 +1,35 @@
 import 'dotenv/config'
+import dns from 'dns'
+if (process.env.NODE_ENV === 'development') {
+  try {
+    dns.setServers(['8.8.8.8', '8.8.4.4'])
+  } catch (e) {
+    console.warn('[DNS] Failed to set custom DNS servers:', e.message)
+  }
+
+  const originalLookup = dns.lookup
+  dns.lookup = function (hostname, options, callback) {
+    if (typeof options === 'function') {
+      callback = options
+      options = {}
+    }
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return originalLookup(hostname, options, callback)
+    }
+    dns.resolve4(hostname, (err, addresses) => {
+      if (err || !addresses || addresses.length === 0) {
+        return originalLookup(hostname, options, callback)
+      }
+      if (options && options.all) {
+        const results = addresses.map(addr => ({ address: addr, family: 4 }))
+        callback(null, results)
+      } else {
+        callback(null, addresses[0], 4)
+      }
+    })
+  }
+}
+
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 import express from 'express'
 import cors from 'cors'
@@ -16,6 +47,9 @@ import peopleRoutes   from './routes/people.js'
 import dealsRoutes    from './routes/deals.js'
 import companiesRoutes  from './routes/companies.js'
 import billTemplateRoutes from './routes/billTemplates.js'
+import recordRoutes from './routes/records.js'
+import notesRoutes  from './routes/notes.js'
+import emailsRoutes from './routes/emails.js'
 
 const app  = express()
 const PORT = process.env.PORT || 5000
@@ -79,6 +113,9 @@ app.use('/api/people',        peopleRoutes)
 app.use('/api/deals',         dealsRoutes)
 app.use('/api/companies',     companiesRoutes)
 app.use('/api/bill-templates', billTemplateRoutes)
+app.use('/api/records',        recordRoutes)
+app.use('/api/notes',          notesRoutes)
+app.use('/api/emails',         emailsRoutes)
 
 /* ── 404 handler ── */
 app.use((_req, res) => {

@@ -1,7 +1,8 @@
 import insforge from '../lib/insforge.js'
 import jwt from 'jsonwebtoken'
-import { query } from '../lib/db.js'
+import { query, dbLocalStorage } from '../lib/db.js'
 import redis from '../lib/redis.js'
+import { getCached, setCached } from '../lib/fastCache.js'
 
 const LOCAL_JWT_SECRET = process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production'
 
@@ -21,7 +22,7 @@ export async function requireAuth(req, res, next) {
   if (token === 'mock-dev-token') {
     req.user = MOCK_DEV_USER
     req.workspaceId = MOCK_DEV_USER.id
-    return next()
+    return dbLocalStorage.run(MOCK_DEV_USER.id, () => next())
   }
 
   let user = null
@@ -54,13 +55,13 @@ export async function requireAuth(req, res, next) {
   // Map InsForge user ID to local shop_profiles user_id if present
   try {
     const cacheKey = `user_id_map:${user.email.toLowerCase()}`
-    let localUserId = await redis.get(cacheKey).catch(() => null)
+    let localUserId = await getCached(redis, cacheKey)
     
     if (!localUserId) {
       const profileRes = await query('SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1)', [user.email])
       if (profileRes.rows.length > 0 && profileRes.rows[0].user_id) {
         localUserId = profileRes.rows[0].user_id
-        await redis.set(cacheKey, localUserId, { ex: 3600 }).catch(() => {}) // Cache for 1 hour
+        setCached(redis, cacheKey, localUserId, 3600)
       }
     }
     
@@ -78,12 +79,12 @@ export async function requireAuth(req, res, next) {
   const isWorkspacesRoute = req.path === '/workspaces' || (req.originalUrl && req.originalUrl.includes('/auth/workspaces'))
   if (isWorkspacesRoute || !requestedWorkspaceId || requestedWorkspaceId === user.id) {
     req.workspaceId = user.id
-    return next()
+    return dbLocalStorage.run(user.id, () => next())
   }
 
   try {
     const cacheKey = `workspace_member:${requestedWorkspaceId}:${user.email.toLowerCase()}`
-    let isMember = await redis.get(cacheKey).catch(() => null)
+    let isMember = await getCached(redis, cacheKey)
 
     if (isMember === null) {
       const { rows } = await query(
@@ -91,12 +92,12 @@ export async function requireAuth(req, res, next) {
         [requestedWorkspaceId, user.email]
       )
       isMember = rows.length > 0 ? 'true' : 'false'
-      await redis.set(cacheKey, isMember, { ex: 1800 }).catch(() => {}) // Cache for 30 minutes
+      setCached(redis, cacheKey, isMember, 1800)
     }
 
     if (isMember === 'true') {
       req.workspaceId = requestedWorkspaceId
-      return next()
+      return dbLocalStorage.run(requestedWorkspaceId, () => next())
     } else {
       return res.status(403).json({ error: 'Forbidden: You do not have access to this workspace' })
     }

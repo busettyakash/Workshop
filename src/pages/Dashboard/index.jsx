@@ -7,7 +7,8 @@ import { addToast, setActiveNav, selectSidebarOpen } from '../../redux/slices/ui
 import { useLocation, useNavigate, Link } from 'react-router-dom'
 import {
   ChevronDown, ArrowUp, Plus, Bot, Loader2, Star, Clock, Trash2,
-  Home, HelpCircle, ChevronLeft, ChevronRight, MoreHorizontal, Compass, Paperclip
+  Home, HelpCircle, ChevronLeft, ChevronRight, MoreHorizontal, Compass, Paperclip,
+  FileText, Mail, StickyNote, Inbox
 } from 'lucide-react'
 import './Dashboard.css'
 
@@ -18,7 +19,6 @@ export default function Dashboard() {
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const { user } = useAuth()
 
-  // ── View Mode: 'home' | 'chat' ──
   const [view, setView] = useState('home')
 
   // ── Chat State ──
@@ -32,6 +32,14 @@ export default function Dashboard() {
   const [sessions, setSessions] = useState([])
   const [showHistory, setShowHistory] = useState(false)
   const [favorited, setFavorited] = useState(false)
+
+  // ── Home section data ──
+  const [recentNotes, setRecentNotes] = useState([])
+  const [recentEmails, setRecentEmails] = useState([])
+  const [totalNotesCount, setTotalNotesCount] = useState(0)
+  const [totalEmailsCount, setTotalEmailsCount] = useState(0)
+  const [notesLoading, setNotesLoading] = useState(true)
+  const [emailsLoading, setEmailsLoading] = useState(true)
 
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -51,10 +59,12 @@ export default function Dashboard() {
     ? emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1)
     : 'there'
 
-  // Fetch recent sessions on mount
+  // Fetch recent sessions + home data on mount
   useEffect(() => {
     dispatch(setActiveNav('Home'))
     fetchSessions()
+    fetchRecentNotes()
+    fetchRecentEmails()
   }, [dispatch])
 
   // Scroll to bottom when new messages arrive
@@ -93,6 +103,30 @@ export default function Dashboard() {
       setSessions(res.data || [])
     } catch (err) {
       console.error('Failed to fetch sessions', err)
+    }
+  }
+
+  const fetchRecentNotes = async () => {
+    setNotesLoading(true)
+    try {
+      const res = await api.get('/notes')
+      const data = res.data?.data || []
+      setRecentNotes(data.slice(0, 3))
+      setTotalNotesCount(res.data?.total || data.length)
+    } catch { /* silent */ } finally {
+      setNotesLoading(false)
+    }
+  }
+
+  const fetchRecentEmails = async () => {
+    setEmailsLoading(true)
+    try {
+      const res = await api.get('/emails?direction=inbox')
+      const data = res.data?.data || []
+      setRecentEmails(data.slice(0, 3))
+      setTotalEmailsCount(res.data?.total || data.length)
+    } catch { /* silent */ } finally {
+      setEmailsLoading(false)
     }
   }
 
@@ -384,13 +418,7 @@ export default function Dashboard() {
                   />
                   <div className="ws-chat-input-controls">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <button className="ws-chat-model-selector">
-                        <span>Auto</span>
-                        <ChevronDown size={11} />
-                      </button>
-                      <button className="ws-chat-star-btn" style={{ padding: 4 }} title="Explore">
-                        <Compass size={14} />
-                      </button>
+                      {/* Controls removed */}
                     </div>
                     <button 
                       className={`ws-chat-send-btn ${homeInputText.trim() ? 'active' : ''}`}
@@ -402,50 +430,92 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Meetings Section */}
-                <section className="ws-home-section" style={{ display: 'flex', flexDirection: 'column', width: '100%', marginBottom: 36 }}>
-                  <div className="ws-home-section-hdr" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <h2 className="ws-home-section-title" style={{ fontSize: '0.92rem', fontWeight: 600, color: '#4b5563' }}>Meetings</h2>
-                    <div className="ws-home-section-controls" style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: '0.8rem', color: '#6b7280' }}>
-                      <span>Today, May 31</span>
-                      <div className="ws-home-arrows" style={{ display: 'flex', gap: 4 }}>
-                        <button className="ws-home-arrow-btn" style={{ padding: 2, background: 'none', border: '1px solid #e5e7eb', borderRadius: 4, cursor: 'pointer' }}><ChevronLeft size={13} /></button>
-                        <button className="ws-home-arrow-btn" style={{ padding: 2, background: 'none', border: '1px solid #e5e7eb', borderRadius: 4, cursor: 'pointer' }}><ChevronRight size={13} /></button>
-                      </div>
-                      <MoreHorizontal size={14} style={{ cursor: 'pointer' }} />
-                    </div>
+
+                {/* ── Notes Section ── */}
+                <section style={{ display: 'flex', flexDirection: 'column', width: '100%', marginBottom: 36 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <h2 style={{ fontSize: '0.92rem', fontWeight: 600, color: '#4b5563', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                      Notes
+                      {!notesLoading && <span style={{ fontSize: '0.75rem', fontWeight: 550, color: '#9ca3af', marginLeft: 6 }}>{totalNotesCount}</span>}
+                    </h2>
+                    <Link to="/notes" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', textDecoration: 'none' }}>View all</Link>
                   </div>
 
-                  <div className="ws-home-empty-card" style={{ padding: '36px 20px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
-                    <p className="ws-home-empty-title" style={{ fontSize: '0.88rem', fontWeight: 600, color: '#111827', marginBottom: 4 }}>Turn meetings into opportunities</p>
-                    <p className="ws-home-empty-desc" style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: 16 }}>Sync your calendar to get instant meeting context</p>
-                    <button className="ws-home-google-btn">
-                      <svg width="14" height="14" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                      </svg>
-                      Sync Google Account
-                    </button>
-                  </div>
+                  {notesLoading ? (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
+                      <Loader2 size={18} className="ws-chat-loader-spin" style={{ color: '#d1d5db' }} />
+                    </div>
+                  ) : recentNotes.length === 0 ? (
+                    <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No notes yet</p>
+                      <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Capture ideas, meeting notes and more</p>
+                      <Link to="/notes" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#111827', color: '#fff', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none' }}>
+                        <Plus size={13} /> New note
+                      </Link>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {recentNotes.map(note => (
+                        <Link key={note.id} to="/notes" style={{ textDecoration: 'none', display: 'block' }}>
+                          <div style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, transition: 'border-color 0.1s, box-shadow 0.1s' }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = '#3d68f5'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(61,104,245,0.06)' }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.boxShadow = 'none' }}
+                          >
+                            <div style={{ fontSize: '0.845rem', fontWeight: 600, color: '#111827', marginBottom: 3 }}>{note.title}</div>
+                            {note.body && <div style={{ fontSize: '0.78rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note.body}</div>}
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
                 </section>
 
-                {/* Tasks Section */}
-                <section className="ws-home-section" style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-                  <div className="ws-home-section-hdr" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <h2 className="ws-home-section-title" style={{ fontSize: '0.92rem', fontWeight: 600, color: '#4b5563' }}>Tasks <span style={{ fontSize: '0.75rem', fontWeight: 550, color: '#9ca3af', marginLeft: 6 }}>0</span></h2>
-                    <span className="ws-tasks-view-all" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', cursor: 'pointer' }}>View all</span>
+                {/* ── Emails Section ── */}
+                <section style={{ display: 'flex', flexDirection: 'column', width: '100%', marginBottom: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <h2 style={{ fontSize: '0.92rem', fontWeight: 600, color: '#4b5563', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                      Emails
+                      {!emailsLoading && <span style={{ fontSize: '0.75rem', fontWeight: 550, color: '#9ca3af', marginLeft: 6 }}>{totalEmailsCount}</span>}
+                    </h2>
+                    <Link to="/emails" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', textDecoration: 'none' }}>View all</Link>
                   </div>
 
-                  <div className="ws-home-empty-card" style={{ padding: '36px 20px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
-                    <p className="ws-home-empty-title" style={{ fontSize: '0.88rem', fontWeight: 600, color: '#111827', marginBottom: 4 }}>Stay on top of work</p>
-                    <p className="ws-home-empty-desc" style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: 16 }}>Create tasks for yourself or your team to track next steps</p>
-                    <button className="ws-home-new-btn">
-                      <Plus size={13} />
-                      New task
-                    </button>
-                  </div>
+                  {emailsLoading ? (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
+                      <Loader2 size={18} className="ws-chat-loader-spin" style={{ color: '#d1d5db' }} />
+                    </div>
+                  ) : recentEmails.length === 0 ? (
+                    <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No emails yet</p>
+                      <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Compose your first email or wait for replies</p>
+                      <Link to="/emails?compose=true" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#111827', color: '#fff', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none' }}>
+                        <Plus size={13} /> Compose
+                      </Link>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {recentEmails.map(email => (
+                        <Link key={email.id} to="/emails" style={{ textDecoration: 'none', display: 'block' }}>
+                          <div style={{ padding: '12px 16px', background: email.is_read ? '#fff' : '#f8faff', border: `1px solid ${email.is_read ? '#e5e7eb' : '#c7d7fd'}`, borderRadius: 10, display: 'flex', gap: 12, alignItems: 'flex-start', transition: 'border-color 0.1s, box-shadow 0.1s' }}
+                            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 0 0 3px rgba(61,104,245,0.06)' }}
+                            onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
+                          >
+                            {!email.is_read && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3d68f5', flexShrink: 0, marginTop: 5 }} />}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                <span style={{ fontSize: '0.84rem', fontWeight: email.is_read ? 500 : 700, color: '#111827' }}>{email.from_name || email.from_email}</span>
+                                <span style={{ fontSize: '0.72rem', color: '#9ca3af', flexShrink: 0, marginLeft: 10 }}>
+                                  {new Date(email.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '0.8rem', color: '#374151', fontWeight: email.is_read ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
+                              {email.preview && <div style={{ fontSize: '0.76rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>{email.preview}</div>}
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
                 </section>
 
               </div>
@@ -593,16 +663,7 @@ export default function Dashboard() {
                   rows={1}
                 />
                 <div className="ws-chat-input-controls">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button className="ws-chat-model-selector">
-                      <span>Auto</span>
-                      <ChevronDown size={11} />
-                    </button>
-                    <button className="ws-chat-star-btn" style={{ padding: 4 }} title="Explore">
-                      <Compass size={14} />
-                    </button>
-                  </div>
-                  <div className="ws-chat-input-right-controls">
+                  <div className="ws-chat-input-right-controls" style={{ marginLeft: 'auto' }}>
                     {isLoading && <Loader2 size={14} className="ws-chat-loader-spin" />}
                     <button 
                       className={`ws-chat-send-btn ${inputText.trim() && !isLoading ? 'active' : ''}`}

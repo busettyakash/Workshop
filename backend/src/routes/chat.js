@@ -4,6 +4,7 @@ import redis from '../lib/redis.js'
 import { query } from '../lib/db.js'
 import crypto from 'crypto'
 import insforge from '../lib/insforge.js'
+import { sendEmail } from '../lib/smtp.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -46,6 +47,55 @@ const tools = [
         required: ['sql']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_email',
+      description: 'Sends an email to a recipient via SMTP and records it in the database emails table. Use this whenever the user asks you to send, dispatch, or write an email.',
+      parameters: {
+        type: 'object',
+        properties: {
+          to: { type: 'string', description: 'The recipient email address' },
+          subject: { type: 'string', description: 'The email subject line' },
+          body: { type: 'string', description: 'The body content of the email' }
+        },
+        required: ['to', 'subject', 'body']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_note',
+      description: 'Creates a new note in the database notes table. Use this when the user asks you to take, save, create, or add a note.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Title of the note' },
+          body: { type: 'string', description: 'Content/body of the note' }
+        },
+        required: ['title']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_person',
+      description: 'Creates a new person/contact (Lead, Customer, or Partner) in the database people table. Use this when the user asks to add or create a new contact, customer, lead, or supplier/partner.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Name of the contact' },
+          email: { type: 'string', description: 'Email address of the contact' },
+          phone: { type: 'string', description: 'Phone number of the contact' },
+          persona: { type: 'string', enum: ['Lead', 'Customer', 'Partner'], description: 'Role of the contact, defaults to "Lead"' },
+          notes: { type: 'string', description: 'Any extra notes about this contact' }
+        },
+        required: ['name']
+      }
+    }
   }
 ]
 
@@ -59,6 +109,21 @@ router.post('/', async (req, res) => {
 
   const userId = req.workspaceId
   const lastMsg = messages[messages.length - 1]?.content || ''
+
+  // ── Redis Cache Check ──
+  const cacheKey = `chat_cache:${userId}:${crypto.createHash('md5').update(lastMsg.toLowerCase().trim()).digest('hex')}`
+  try {
+    const cached = await redis.get(cacheKey)
+    if (cached) {
+      console.log('[REDIS] Cache Hit for query:', lastMsg)
+      saveSession(userId, conversationId, messages, cached, title).catch(err => {
+        console.warn('[DB] Session save failed:', err.message)
+      })
+      return res.json({ content: cached, cached: true })
+    }
+  } catch (cacheErr) {
+    console.warn('[REDIS] Cache read failed:', cacheErr.message)
+  }
 
   try {
     // ── Handle Deal P2P Chat Bypassing AI ──
@@ -123,7 +188,13 @@ router.post('/', async (req, res) => {
 You help users with: sales analysis, inventory management, customer relations, billing, workflow automation, and business insights.
 Be concise, friendly, and actionable. Use markdown for formatting when helpful. Current context: Indian retail/wholesale business platform.
 
-You have access to tools to add products to the staged import stock (import_stock) and to run read-only database queries to retrieve context to answer questions about products, stock levels, bills, customers, etc.
+You have access to tools to:
+1. Add products to the staged import stock (import_stock)
+2. Run read-only database queries to retrieve context (query_database_readonly)
+3. Send emails to customers/suppliers (send_email)
+4. Create/add new notes to the database (add_note)
+5. Create new contacts/people (create_person)
+
 Database tables available for SELECT queries:
 - products: id, name, sku, category, price, stock, status, description, user_id, created_at, updated_at
 - import_stock: id, name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at
@@ -131,6 +202,8 @@ Database tables available for SELECT queries:
 - bills: id, customer_id, items (JSON array of billing items), amount, discount, status (paid/unpaid), due_date, notes, paid_at, user_id, created_at
 - deals: id, title, value, stage, owner, close_date, notes, status, user_id, created_at, updated_at
 - deal_logs: id, deal_id, deal_title, event, from_value, to_value, done_by, user_id, created_at
+- notes: id, title, body, user_id, created_at, updated_at
+- emails: id, from_name, from_email, subject, body, preview, is_read, starred, direction, user_id, created_at, updated_at
 
 CRITICAL SECURITY RULE: You MUST always filter every table in your query by \`user_id = '${userId}'\`. 
 For example: \`SELECT * FROM products WHERE user_id = '${userId}'\`. 
@@ -215,6 +288,102 @@ Always run database queries to get real-time accurate information when asked abo
                 const { rows } = await query(cleanSql)
                 toolResult = { success: true, rows }
               }
+            } else if (toolName === 'send_email') {
+              const { to, subject, body } = args
+              if (!to || !subject || !body) {
+                toolResult = { error: 'to, subject and body are required' }
+              } else {
+                // 1. Record sent email in DB
+                const { rows } = await query(
+                  `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
+                   VALUES ('Me', $1, $2, $3, $4, 'sent', $5, NOW(), NOW()) RETURNING *`,
+                  [to.trim(), subject.trim(), body, body.slice(0, 120), userId]
+                )
+                
+                // Invalidate emails cache
+                try {
+                  const keys = await redis.keys(`emails:${userId}:*`).catch(() => [])
+                  for (const key of keys) {
+                    await redis.del(key).catch(() => {})
+                  }
+                } catch (cErr) {
+                  console.error('[Emails AI Cache Invalidation Error]', cErr.message)
+                }
+
+                // Also create an inbox copy for registered recipients.
+                try {
+                  const recipientEmail = to.toLowerCase().trim()
+                  const senderEmail = req.user?.email || ''
+                  let recipientUserId = recipientEmail === senderEmail.toLowerCase().trim() ? userId : null
+
+                  if (!recipientUserId) {
+                    const recipientRes = await query(
+                      'SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1) LIMIT 1',
+                      [recipientEmail]
+                    )
+                    recipientUserId = recipientRes.rows[0]?.user_id || null
+                  }
+
+                  if (recipientUserId) {
+                    await query(
+                      `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
+                       VALUES ($1, $2, $3, $4, $5, 'inbox', $6, NOW(), NOW())`,
+                      [req.user?.shopName || senderEmail || 'Me', senderEmail || 'Me', subject.trim(), body, body.slice(0, 120), recipientUserId]
+                    )
+
+                    const recipientKeys = await redis.keys(`emails:${recipientUserId}:*`).catch(() => [])
+                    for (const key of recipientKeys) {
+                      await redis.del(key).catch(() => {})
+                    }
+                  }
+                } catch (inboxErr) {
+                  console.error('[Emails AI Recipient Inbox Error]', inboxErr.message)
+                }
+
+                // 2. Deliver via SMTP
+                await sendEmail({
+                  to: to.trim(),
+                  subject: subject.trim(),
+                  html: body.replace(/\n/g, '<br/>')
+                })
+                
+                toolResult = { success: true, email: rows[0], message: 'Email sent successfully via SMTP' }
+              }
+            } else if (toolName === 'add_note') {
+              const { title, body = '' } = args
+              if (!title) {
+                toolResult = { error: 'title is required' }
+              } else {
+                const { rows } = await query(
+                  `INSERT INTO notes (title, body, user_id, created_at, updated_at)
+                   VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *`,
+                  [title.trim(), body, userId]
+                )
+
+                // Invalidate notes cache
+                try {
+                  const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
+                  for (const key of keys) {
+                    await redis.del(key).catch(() => {})
+                  }
+                } catch (cErr) {
+                  console.error('[Notes AI Cache Invalidation Error]', cErr.message)
+                }
+
+                toolResult = { success: true, note: rows[0] }
+              }
+            } else if (toolName === 'create_person') {
+              const { name, email = '', phone = '', persona = 'Lead', notes = '' } = args
+              if (!name) {
+                toolResult = { error: 'name is required' }
+              } else {
+                const { rows } = await query(
+                  `INSERT INTO people (name, email, phone, persona, notes, user_id, created_at, updated_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING *`,
+                  [name.trim(), email.trim(), phone.trim(), persona, notes, userId]
+                )
+                toolResult = { success: true, person: rows[0] }
+              }
             } else {
               toolResult = { error: `Unknown tool: ${toolName}` }
             }
@@ -240,6 +409,14 @@ Always run database queries to get real-time accurate information when asked abo
     }
 
     const content = finalContent || 'Sorry, I could not generate a response.'
+
+    // Save to Redis Cache
+    try {
+      await redis.set(cacheKey, content, { ex: 3600 })
+      console.log('[REDIS] Cache Saved for query:', lastMsg)
+    } catch (cacheErr) {
+      console.warn('[REDIS] Cache write failed:', cacheErr.message)
+    }
 
     // ── Save session to DB ──
     saveSession(userId, conversationId, messages, content, title).catch(err => {

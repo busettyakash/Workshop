@@ -22,6 +22,7 @@ const ICON_MAP = {
   Notifications: <Bell size={14} />,
   Tasks:         <CheckSquare size={14} />,
   Notes:         <FileText size={14} />,
+  Emails:        <Mail size={14} />,
   Calls:         <Phone size={14} />,
   Reports:       <BarChart3 size={14} />,
   Automations:   <Play size={14} />,
@@ -43,11 +44,11 @@ const ICON_MAP = {
   DealLogs:      <ScrollText size={14} />,
 }
 
-// All nav items with their actual or fallback routes
+// All nav items for Favorites lookup
 const ALL_NAV_ITEMS = {
   'Home':          { icon: 'Home',          path: ROUTES.DASHBOARD },
-  'Notifications': { icon: 'Notifications', path: '/notifications' },
   'Notes':         { icon: 'Notes',         path: ROUTES.NOTES },
+  'Emails':        { icon: 'Emails',        path: ROUTES.EMAILS },
   'Reports':       { icon: 'Reports',       path: ROUTES.REPORTS },
   'Workflows':     { icon: 'Workflows',     path: '/workflows' },
   'Products':      { icon: 'Products',      path: ROUTES.PRODUCTS },
@@ -62,23 +63,23 @@ const ALL_NAV_ITEMS = {
 }
 
 const MAIN_NAV = [
-  { label: 'Home',          icon: 'Home',          path: ROUTES.DASHBOARD },
-  { label: 'Notifications', icon: 'Notifications', path: '/notifications' },
-  { label: 'Notes',         icon: 'Notes',         path: ROUTES.NOTES },
-  { label: 'Reports',       icon: 'Reports',       path: ROUTES.REPORTS },
+  { label: 'Home',    icon: 'Home',    path: ROUTES.DASHBOARD },
+  { label: 'Notes',   icon: 'Notes',   path: ROUTES.NOTES },
+  { label: 'Emails',  icon: 'Emails',  path: ROUTES.EMAILS },
+  { label: 'Reports', icon: 'Reports', path: ROUTES.REPORTS },
 ]
 
 const RECORDS_NAV = [
-  { label: 'Products',     icon: 'Products',  path: ROUTES.PRODUCTS },
-  { label: 'People',       icon: 'People',    path: '/people' },
-  { label: 'Deals',        icon: 'Deals',     path: '/deals' },
+  { label: 'Products',     icon: 'Products',    path: ROUTES.PRODUCTS },
+  { label: 'People',       icon: 'People',      path: '/people' },
+  { label: 'Deals',        icon: 'Deals',       path: '/deals' },
   { label: 'Import Stock', icon: 'ImportStock', path: ROUTES.IMPORT_STOCK },
 ]
 
 const BILLING_NAV = [
-  { label: 'Billing',  icon: 'Billing',   path: ROUTES.BILLING },
-  { label: 'Paid',     icon: 'Paid',      path: ROUTES.PAID },
-  { label: 'Unpaid',   icon: 'Unpaid',    path: ROUTES.UNPAID },
+  { label: 'Billing', icon: 'Billing', path: ROUTES.BILLING },
+  { label: 'Paid',    icon: 'Paid',    path: ROUTES.PAID },
+  { label: 'Unpaid',  icon: 'Unpaid',  path: ROUTES.UNPAID },
 ]
 
 const LISTS_NAV = [
@@ -131,8 +132,13 @@ export default function Sidebar() {
   const activeSessionId = searchParams.get('session')
 
   const [favorites, setFavorites] = useState(() => {
-    const saved = sessionStorage.getItem('ws_favorites')
-    return saved ? JSON.parse(saved) : []
+    try {
+      const saved = sessionStorage.getItem('ws_favorites')
+      const parsed = saved ? JSON.parse(saved) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
   })
 
   const [workspaces, setWorkspaces] = useState([])
@@ -142,7 +148,7 @@ export default function Sidebar() {
   const [inviteRole, setInviteRole] = useState('Member')
   const [inviting, setInviting] = useState(false)
 
-  // Reactive workspace state — reads from sessionStorage on mount and updates on switch
+  // Reactive workspace state
   const [activeWorkspaceName, setActiveWorkspaceName] = useState(
     () => sessionStorage.getItem('ws_active_workspace_name') || shopName
   )
@@ -173,20 +179,14 @@ export default function Sidebar() {
     }
   }
 
-  // Keep reactive state in sync with sessionStorage on mount
-  useEffect(() => {
-    const storedName = sessionStorage.getItem('ws_active_workspace_name')
-    const storedId = sessionStorage.getItem('ws_active_workspace_id')
-    if (storedName) setActiveWorkspaceName(storedName)
-    if (storedId) setActiveWorkspaceId(storedId)
-  }, [])
-
   useEffect(() => {
     const token = sessionStorage.getItem('ws_token')
     if (token) {
-      api.get('/chat/sessions')
-        .then(res => setChats(res.data || []))
-        .catch(() => {})
+      const chatTimer = window.setTimeout(() => {
+        api.get('/chat/sessions')
+          .then(res => setChats(res.data || []))
+          .catch(() => {})
+      }, 800)
 
       authApi.getWorkspaces()
         .then(data => {
@@ -201,12 +201,10 @@ export default function Sidebar() {
               setActiveWorkspaceId(owner.id)
               setActiveWorkspaceName(owner.shopName)
               if (activeId && !isValid) {
-                // If they had an invalid workspace selected, reload to refresh headers
                 window.location.reload()
               }
             }
           } else {
-            // Workspace is valid — sync name in case it changed
             const current = data?.find(w => String(w.id) === String(activeId))
             if (current && current.shopName !== activeWorkspaceName) {
               sessionStorage.setItem('ws_active_workspace_name', current.shopName)
@@ -215,8 +213,11 @@ export default function Sidebar() {
           }
         })
         .catch(() => {})
+
+      return () => window.clearTimeout(chatTimer)
     }
-  }, [location])
+    return undefined
+  }, [activeWorkspaceName, location])
 
   const toggleFavorite = (label, e) => {
     if (e) {
@@ -357,7 +358,7 @@ export default function Sidebar() {
 
             {/* Collapsible Automations Item */}
             <div className="ws-sb-collapsible-item">
-              <div className={`ws-sb-nav-item-wrapper ${activeNav === 'Sequences' || activeNav === 'Workflows' ? 'active' : ''}`}>
+              <div className={`ws-sb-nav-item-wrapper ${activeNav === 'Workflows' ? 'active' : ''}`}>
                 <button 
                   className="ws-sb-nav-item-btn"
                   onClick={() => setAutomationsOpen(!automationsOpen)}

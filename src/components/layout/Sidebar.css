@@ -294,6 +294,9 @@
     transform: translateX(-100%);
     box-shadow: 4px 0 24px rgba(0,0,0,0.12);
   }
+  .ws-sidebar--open {
+    transform: translateX(0) !important;
+  }
   .ws-sb-close-btn { display: flex; }
   .ws-sb-overlay { display: block; }
 }

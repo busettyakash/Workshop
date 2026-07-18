@@ -22,7 +22,8 @@ import Deals    from './pages/Deals/index'
 import DealForm from './pages/Deals/DealForm'
 import DealReview from './pages/Deals/DealReview'
 import DealLogs from './pages/DealLogs/index'
-import PlaceholderPage from './pages/Placeholder'
+import Notes  from './pages/Notes/index'
+import Emails from './pages/Emails/index'
 
 // UI
 import ToastContainer from './components/ui/Toast'
@@ -63,7 +64,8 @@ export default function App() {
         <Route path="/billing/add" element={<PrivateRoute><BillForm /></PrivateRoute>} />
         <Route path="/workflows"   element={<PrivateRoute><Workflows /></PrivateRoute>} />
         <Route path="/reports"     element={<PrivateRoute><ReportsPage /></PrivateRoute>} />
-        <Route path="/notes"       element={<PrivateRoute><PlaceholderPage title="Notes" /></PrivateRoute>} />
+        <Route path="/notes"       element={<PrivateRoute><Notes /></PrivateRoute>} />
+        <Route path="/emails"      element={<PrivateRoute><Emails /></PrivateRoute>} />
         <Route path="/import-stock"          element={<PrivateRoute><ImportStock /></PrivateRoute>} />
         <Route path="/import-stock/add"      element={<PrivateRoute><ImportStockForm /></PrivateRoute>} />
         <Route path="/import-stock/edit/:id" element={<PrivateRoute><ImportStockForm /></PrivateRoute>} />

@@ -526,24 +526,6 @@ export default function DealForm() {
                     {saving && <Loader2 size={14} className="ws-chat-loader-spin" />}
                     {saving ? 'Saving...' : id ? 'Update Deal' : 'Save Deal'}
                   </button>
-                  {id && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const res = await api.get(`/deals/${id}/chat`)
-                          navigate(`/dashboard?session=${res.data.sessionId}`)
-                        } catch (e) {
-                          dispatch(addToast({ message: 'Chat session not found', type: 'error' }))
-                        }
-                      }}
-                      style={{ width: '100%', height: 38, border: '1px solid #3d68f5', borderRadius: '8px', background: '#eff6ff', color: '#3d68f5', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#dbeafe'}
-                      onMouseLeave={e => e.currentTarget.style.background = '#eff6ff'}
-                    >
-                      Discuss with Customer
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => navigate('/deals')}

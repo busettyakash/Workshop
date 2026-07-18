@@ -97,20 +97,27 @@ router.post('/send-otp', async (req, res) => {
 
     console.log(`[OTP DEBUG] OTP for ${email} is ${otp}`)
 
-    // Send email via SMTP / Resend
-    const { error: mailError } = await resend.emails.send({
+    // Send OTP email in the background to prevent blocking/timing out the HTTP response
+    resend.emails.send({
       to: email,
       subject: `${otp} is your Workshop verification code`,
       html: getOtpTemplate(otp)
+    }).then(({ error: mailError }) => {
+      if (mailError) {
+        console.error(`[OTP] Background email delivery failed:`, mailError.message || mailError)
+      } else {
+        console.log(`[OTP] Background email sent to ${email}`)
+      }
+    }).catch(err => {
+      console.error(`[OTP] Background email error:`, err.message)
     })
 
-    if (mailError) {
-      console.error(`[OTP] Email delivery failed:`, mailError.message || mailError)
-      return res.status(500).json({ message: 'Failed to send OTP. Please try again later.' })
+    // Return success immediately with devOtp included for local development
+    const response = { message: 'OTP sent to your email' }
+    if (process.env.NODE_ENV === 'development') {
+      response.devOtp = otp
     }
-
-    console.log(`[OTP] Email sent to ${email}`)
-    res.json({ message: 'OTP sent to your email' })
+    res.json(response)
   } catch (err) {
     console.error('[OTP] Unexpected error:', err.message)
     res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
@@ -145,20 +152,27 @@ router.post('/send-login-otp', async (req, res) => {
 
     console.log(`[LOGIN OTP DEBUG] OTP for ${email} is ${otp}`)
 
-    // Send OTP email
-    const { error: mailError } = await resend.emails.send({
+    // Send OTP email in the background to prevent blocking/timing out the HTTP response
+    resend.emails.send({
       to: email,
       subject: `${otp} is your Workshop verification code`,
       html: getOtpTemplate(otp)
+    }).then(({ error: mailError }) => {
+      if (mailError) {
+        console.error(`[LOGIN OTP] Background email delivery failed:`, mailError.message || mailError)
+      } else {
+        console.log(`[LOGIN OTP] Background email sent to ${email}`)
+      }
+    }).catch(err => {
+      console.error(`[LOGIN OTP] Background email error:`, err.message)
     })
 
-    if (mailError) {
-      console.error(`[LOGIN OTP] Email delivery failed:`, mailError.message || mailError)
-      return res.status(500).json({ message: 'Failed to send OTP. Please try again later.' })
+    // Return success immediately with devOtp included for local development
+    const response = { message: 'OTP sent to your email' }
+    if (process.env.NODE_ENV === 'development') {
+      response.devOtp = otp
     }
-
-    console.log(`[LOGIN OTP] Email sent to ${email}`)
-    res.json({ message: 'OTP sent to your email' })
+    res.json(response)
   } catch (err) {
     console.error('[LOGIN OTP] Unexpected error:', err.message)
     res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
@@ -465,11 +479,47 @@ router.post('/invite', requireAuth, async (req, res) => {
     const cacheKey = `workspace_member:${req.workspaceId}:${email}`
     await redis.del(cacheKey).catch(() => {})
 
+    // ── Create in-app notification for user B ──────────────────────────────
+    try {
+      const profileRes = await query(
+        `SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+        [email]
+      )
+      if (profileRes.rows.length > 0) {
+        const userBId = profileRes.rows[0].user_id
+        const senderName = req.user.shopName || req.user.email
+        const notifTitle = `Workspace Invitation`
+        const notifBody = `${senderName} has invited you to collaborate in their workspace as ${role}. Switch workspaces from the sidebar to get started.`
+
+        await query(
+          `INSERT INTO notifications (user_id, title, body, type, read, created_at)
+           VALUES ($1, $2, $3, 'info', false, NOW())`,
+          [userBId, notifTitle, notifBody]
+        )
+
+        // Push real-time notification to user B if they are online
+        try {
+          await insforge.realtime.publish(`notifications:${userBId}`, {
+            event: 'new_notification',
+            payload: { title: notifTitle, body: notifBody }
+          })
+        } catch (_) {}
+
+        console.log(`[Invite] In-app notification created for user B (${email})`)
+      } else {
+        console.log(`[Invite] User B (${email}) not yet registered — no in-app notification created`)
+      }
+    } catch (notifErr) {
+      console.error('[Invite] Failed to create in-app notification:', notifErr.message)
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     try {
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
       const signupLink = `${frontendUrl}/signup?invite_from=${encodeURIComponent(req.user.email)}&workspace=${encodeURIComponent(req.user.shopName || 'Workshop')}`
 
-      await resend.emails.send({
+      // Send invite email in the background to prevent blocking the response
+      resend.emails.send({
         from: 'Workshop <onboarding@resend.dev>',
         to: email,
         subject: `Invitation to collaborate on ${req.user.shopName || 'Workshop'}`,
@@ -477,6 +527,14 @@ router.post('/invite', requireAuth, async (req, res) => {
                <p><strong>${req.user.email}</strong> has invited you to collaborate in their workspace: <strong>${req.user.shopName || 'Workshop'}</strong>.</p>
                <p>If you already have a Workshop account, log in and switch to their workspace via the workspace dropdown in the sidebar.</p>
                <p>If you're new, <a href="${signupLink}">click here to sign up</a> and you'll be automatically added to their workspace.</p>`
+      }).then(({ error: mailErr }) => {
+        if (mailErr) {
+          console.error('[Invite Email] Resend background error:', mailErr.message || mailErr)
+        } else {
+          console.log(`[Invite Email] Background email sent to ${email}`)
+        }
+      }).catch(err => {
+        console.error('[Invite Email] Background email error:', err.message)
       })
     } catch (mailErr) {
       console.error('[Invite Email] Resend error:', mailErr.message)

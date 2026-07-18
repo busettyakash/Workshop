@@ -10,6 +10,11 @@ import { requireAuth } from '../middleware/auth.js'
 
 // Fallback in-memory store if Redis fails
 const memoryStore = new Map()
+const pendingOtpSends = new Set()
+
+const OTP_TTL_SECONDS = 300
+const OTP_COOLDOWN_SECONDS = 60
+const OTP_SEND_LOCK_SECONDS = 30
 
 const router = Router()
 
@@ -35,6 +40,137 @@ function normalizeEmail(email = '') {
 
 function normalizeOtp(otp = '') {
   return String(otp).replace(/\D/g, '').slice(0, 6)
+}
+
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString()
+}
+
+function getOtpKey(email) {
+  return `otp:${email}`
+}
+
+function getCooldownKey(email) {
+  return `otp_cooldown:${email}`
+}
+
+function getSendLockKey(email) {
+  return `otp_send_lock:${email}`
+}
+
+function getMemoryValue(key) {
+  const entry = memoryStore.get(key)
+  if (!entry) return null
+  if (entry.expires <= Date.now()) {
+    memoryStore.delete(key)
+    return null
+  }
+  return entry.value
+}
+
+async function hasOtpCooldown(email) {
+  const cooldownKey = getCooldownKey(email)
+  const redisCooldown = await redis.get(cooldownKey).catch(() => null)
+  return Boolean(redisCooldown || getMemoryValue(cooldownKey))
+}
+
+async function acquireOtpSendLock(email) {
+  const lockKey = getSendLockKey(email)
+  try {
+    const acquired = await redis.set(lockKey, '1', { nx: true, ex: OTP_SEND_LOCK_SECONDS })
+    return acquired !== null && acquired !== false
+  } catch {
+    if (pendingOtpSends.has(email)) return false
+    pendingOtpSends.add(email)
+    return true
+  }
+}
+
+async function releaseOtpSendLock(email) {
+  pendingOtpSends.delete(email)
+  await redis.del(getSendLockKey(email)).catch(() => { })
+}
+
+async function storeOtp(email, otp) {
+  const otpKey = getOtpKey(email)
+  try {
+    await redis.set(otpKey, otp, { ex: OTP_TTL_SECONDS })
+    console.log(`[OTP] Redis set successful for ${email}`)
+  } catch (rErr) {
+    console.error(`[OTP] Redis failed, using memory fallback:`, rErr.message)
+    memoryStore.set(otpKey, { value: otp, expires: Date.now() + OTP_TTL_SECONDS * 1000 })
+  }
+}
+
+async function setOtpCooldown(email) {
+  const cooldownKey = getCooldownKey(email)
+  try {
+    await redis.set(cooldownKey, '1', { ex: OTP_COOLDOWN_SECONDS })
+  } catch {
+    memoryStore.set(cooldownKey, { value: '1', expires: Date.now() + OTP_COOLDOWN_SECONDS * 1000 })
+  }
+}
+
+async function clearOtp(email) {
+  await redis.del(getOtpKey(email)).catch(() => { })
+  memoryStore.delete(getOtpKey(email))
+}
+
+async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
+  const { error: mailError } = await resend.emails.send({
+    from: 'Workshop <onboarding@resend.dev>',
+    to: email,
+    subject: `${otp} is your Workshop verification code`,
+    html: getOtpTemplate(otp)
+  })
+
+  if (mailError) {
+    throw new Error(mailError.message || String(mailError))
+  }
+
+  console.log(`[${logPrefix}] Email sent to ${email}`)
+}
+
+async function issueOtp(email, logPrefix = 'OTP') {
+  if (await hasOtpCooldown(email)) {
+    return {
+      status: 429,
+      body: { message: `Please wait ${OTP_COOLDOWN_SECONDS} seconds before requesting a new OTP.` }
+    }
+  }
+
+  const lockAcquired = await acquireOtpSendLock(email)
+  if (!lockAcquired) {
+    return {
+      status: 429,
+      body: { message: 'An OTP is already being sent. Please wait a moment before trying again.' }
+    }
+  }
+
+  const otp = generateOtp()
+
+  try {
+    await storeOtp(email, otp)
+    console.log(`[${logPrefix} DEBUG] OTP for ${email} is ${otp}`)
+
+    await sendOtpEmail(email, otp, logPrefix)
+    await setOtpCooldown(email)
+
+    const body = { message: 'OTP sent to your email' }
+    if (process.env.NODE_ENV === 'development') {
+      body.devOtp = otp
+    }
+    return { status: 200, body }
+  } catch (err) {
+    await clearOtp(email)
+    console.error(`[${logPrefix}] Email delivery failed:`, err.message)
+    return {
+      status: 502,
+      body: { message: 'Failed to send OTP email. Please try again.' }
+    }
+  } finally {
+    await releaseOtpSendLock(email)
+  }
 }
 
 function getLocalUserId(email = '') {
@@ -85,49 +221,8 @@ router.post('/send-otp', async (req, res) => {
     }
 
     console.log(`[OTP] Request for email: ${email}`)
-    const otp = Math.floor(100000 + Math.random() * 900000).toString()
-
-    // Rate limit: if OTP was sent in the last 60s, don't send again
-    const cooldownKey = `otp_cooldown:${email}`
-    const onCooldown = await redis.get(cooldownKey).catch(() => null)
-    if (onCooldown) {
-      return res.status(429).json({ message: 'Please wait 60 seconds before requesting a new OTP.' })
-    }
-
-    try {
-      console.log(`[OTP] Connecting to Redis...`)
-      await redis.set(`otp:${email}`, otp, { ex: 300 })
-      await redis.set(cooldownKey, '1', { ex: 60 }) // 60s cooldown
-      console.log(`[OTP] Redis set successful`)
-    } catch (rErr) {
-      console.error(`[OTP] Redis failed, using memory fallback:`, rErr.message)
-      memoryStore.set(`otp:${email}`, { otp, expires: Date.now() + 300000 })
-    }
-
-    console.log(`[OTP DEBUG] OTP for ${email} is ${otp}`)
-
-    // Send OTP email in the background to prevent blocking/timing out the HTTP response
-    resend.emails.send({
-      from: 'Workshop <onboarding@resend.dev>',
-      to: email,
-      subject: `${otp} is your Workshop verification code`,
-      html: getOtpTemplate(otp)
-    }).then(({ error: mailError }) => {
-      if (mailError) {
-        console.error(`[OTP] Background email delivery failed:`, mailError.message || mailError)
-      } else {
-        console.log(`[OTP] Background email sent to ${email}`)
-      }
-    }).catch(err => {
-      console.error(`[OTP] Background email error:`, err.message)
-    })
-
-    // Return success immediately with devOtp included for local development
-    const response = { message: 'OTP sent to your email' }
-    if (process.env.NODE_ENV === 'development') {
-      response.devOtp = otp
-    }
-    res.json(response)
+    const otpResult = await issueOtp(email, 'OTP')
+    res.status(otpResult.status).json(otpResult.body)
   } catch (err) {
     console.error('[OTP] Unexpected error:', err.message)
     res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
@@ -150,49 +245,8 @@ router.post('/send-login-otp', async (req, res) => {
       return res.status(404).json({ message: 'No account found with this email. Please sign up first.' })
     }
 
-    // Generate and store OTP in Redis
-    const otp = Math.floor(100000 + Math.random() * 900000).toString()
-
-    // Rate limit: if OTP was sent in the last 60s, don't send again
-    const cooldownKey = `otp_cooldown:${email}`
-    const onCooldown = await redis.get(cooldownKey).catch(() => null)
-    if (onCooldown) {
-      return res.status(429).json({ message: 'Please wait 60 seconds before requesting a new OTP.' })
-    }
-
-    try {
-      await redis.set(`otp:${email}`, otp, { ex: 300 })
-      await redis.set(cooldownKey, '1', { ex: 60 }) // 60s cooldown
-      console.log(`[LOGIN OTP] Redis set for ${email}`)
-    } catch (rErr) {
-      console.error(`[LOGIN OTP] Redis failed, using memory fallback:`, rErr.message)
-      memoryStore.set(`otp:${email}`, { otp, expires: Date.now() + 300000 })
-    }
-
-    console.log(`[LOGIN OTP DEBUG] OTP for ${email} is ${otp}`)
-
-    // Send OTP email in the background to prevent blocking/timing out the HTTP response
-    resend.emails.send({
-      from: 'Workshop <onboarding@resend.dev>',
-      to: email,
-      subject: `${otp} is your Workshop verification code`,
-      html: getOtpTemplate(otp)
-    }).then(({ error: mailError }) => {
-      if (mailError) {
-        console.error(`[LOGIN OTP] Background email delivery failed:`, mailError.message || mailError)
-      } else {
-        console.log(`[LOGIN OTP] Background email sent to ${email}`)
-      }
-    }).catch(err => {
-      console.error(`[LOGIN OTP] Background email error:`, err.message)
-    })
-
-    // Return success immediately with devOtp included for local development
-    const response = { message: 'OTP sent to your email' }
-    if (process.env.NODE_ENV === 'development') {
-      response.devOtp = otp
-    }
-    res.json(response)
+    const otpResult = await issueOtp(email, 'LOGIN OTP')
+    res.status(otpResult.status).json(otpResult.body)
   } catch (err) {
     console.error('[LOGIN OTP] Unexpected error:', err.message)
     res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
@@ -208,20 +262,17 @@ router.post('/verify-otp', async (req, res) => {
 
   try {
     let storedOtp = await redis.get(`otp:${email}`).catch(() => null)
-    
+
     // Check memory fallback if redis returned nothing
     if (!storedOtp) {
-      const mem = memoryStore.get(`otp:${email}`)
-      if (mem && mem.expires > Date.now()) {
-        storedOtp = mem.otp
-      }
+      storedOtp = getMemoryValue(getOtpKey(email))
     }
 
     console.log(`[OTP VERIFY] Attempt for ${email}: input=${otp}, stored=${storedOtp}`)
 
     if (String(storedOtp) === otp) {
       // Success - now delete
-      await redis.del(`otp:${email}`).catch(() => {})
+      await redis.del(`otp:${email}`).catch(() => { })
       memoryStore.delete(`otp:${email}`)
       res.json({ message: 'OTP verified successfully' })
     } else {
@@ -247,7 +298,7 @@ router.post('/register', async (req, res) => {
     const { data, error } = await insforge.auth.signUp({ email, password })
     if (error) {
       const msg = error.nextActions || error.error || error.message || 'Registration failed'
-      
+
       // If the email exists in InsForge cloud, but not in our local DB (because it was cleared),
       // gracefully proceed to create the local profile to fix the deadlock.
       if (msg === 'AUTH_EMAIL_EXISTS' || msg.toLowerCase().includes('already registered')) {
@@ -288,7 +339,7 @@ router.post('/register', async (req, res) => {
     ).catch((err) => { console.error('DB Insert Error', err) })
 
     // Clear stale user ID mapping in Redis cache
-    await redis.del(`user_id_map:${email.toLowerCase()}`).catch(() => {})
+    await redis.del(`user_id_map:${email.toLowerCase()}`).catch(() => { })
 
     // Generate local JWT token if InsForge signUp doesn't return one directly
     let token = data?.accessToken || data?.session?.access_token
@@ -361,7 +412,7 @@ router.post('/login', async (req, res) => {
 
   try {
     // Clear stale user ID mapping in Redis cache to ensure it stays in sync
-    await redis.del(`user_id_map:${email}`).catch(() => {})
+    await redis.del(`user_id_map:${email}`).catch(() => { })
 
     // 1. Confirm user exists in our DB
     const profile = await query(
@@ -460,7 +511,7 @@ router.get('/me', async (req, res) => {
         },
       })
     }
-  } catch (_) {}
+  } catch (_) { }
 
   try {
     const { data, error } = await insforge.auth.getUser(token)
@@ -497,7 +548,7 @@ router.post('/invite', requireAuth, async (req, res) => {
 
     // Clear membership cache key
     const cacheKey = `workspace_member:${req.workspaceId}:${email}`
-    await redis.del(cacheKey).catch(() => {})
+    await redis.del(cacheKey).catch(() => { })
 
     // ── Create in-app notification for user B ──────────────────────────────
     try {
@@ -523,7 +574,7 @@ router.post('/invite', requireAuth, async (req, res) => {
             event: 'new_notification',
             payload: { title: notifTitle, body: notifBody }
           })
-        } catch (_) {}
+        } catch (_) { }
 
         console.log(`[Invite] In-app notification created for user B (${email})`)
       } else {
@@ -574,7 +625,7 @@ router.get('/workspaces', requireAuth, async (req, res) => {
       `SELECT user_id, shop_name, email FROM shop_profiles WHERE email = $1`,
       [email]
     )
-    
+
     let workspaces = []
     if (ownWs.rows.length > 0) {
       const own = ownWs.rows[0]

@@ -10,27 +10,25 @@ import nodemailer from 'nodemailer'
 import dotenv from 'dotenv'
 dotenv.config()
 
-// ── DNS patch: use Google public DNS so smtp.gmail.com always resolves ── Only in development
-if (process.env.NODE_ENV === 'development') {
-  try {
-    dns.setServers(['8.8.8.8', '8.8.4.4'])
-  } catch (_) {}
+// ── DNS patch: use Google public DNS so smtp.gmail.com always resolves ──
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4'])
+} catch (_) {}
 
-  const _origLookup = dns.lookup
-  dns.lookup = function (hostname, options, callback) {
-    if (typeof options === 'function') { callback = options; options = {} }
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return _origLookup(hostname, options, callback)
-    }
-    dns.resolve4(hostname, (err, addrs) => {
-      if (err || !addrs?.length) return _origLookup(hostname, options, callback)
-      if (options && options.all) {
-        callback(null, addrs.map(a => ({ address: a, family: 4 })))
-      } else {
-        callback(null, addrs[0], 4)
-      }
-    })
+const _origLookup = dns.lookup
+dns.lookup = function (hostname, options, callback) {
+  if (typeof options === 'function') { callback = options; options = {} }
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return _origLookup(hostname, options, callback)
   }
+  dns.resolve4(hostname, (err, addrs) => {
+    if (err || !addrs?.length) return _origLookup(hostname, options, callback)
+    if (options && options.all) {
+      callback(null, addrs.map(a => ({ address: a, family: 4 })))
+    } else {
+      callback(null, addrs[0], 4)
+    }
+  })
 }
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -45,6 +43,9 @@ const transporter = nodemailer.createTransport({
   connectionTimeout: 15000,
   greetingTimeout: 10000,
   socketTimeout: 20000,
+  tls: {
+    rejectUnauthorized: false
+  }
 })
 
 transporter.verify((error) => {

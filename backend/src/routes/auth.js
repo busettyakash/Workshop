@@ -2,7 +2,7 @@ import { Router } from 'express'
 import insforge from '../lib/insforge.js'
 import { query } from '../lib/db.js'
 import redis from '../lib/redis.js'
-import resend from '../lib/smtp.js'
+import resend from '../lib/resend.js'
 import { getOtpTemplate } from '../utils/emailTemplates.js'
 import jwt from 'jsonwebtoken'
 import { createHash } from 'crypto'
@@ -99,6 +99,7 @@ router.post('/send-otp', async (req, res) => {
 
     // Send OTP email in the background to prevent blocking/timing out the HTTP response
     resend.emails.send({
+      from: 'Workshop <onboarding@resend.dev>',
       to: email,
       subject: `${otp} is your Workshop verification code`,
       html: getOtpTemplate(otp)
@@ -154,6 +155,7 @@ router.post('/send-login-otp', async (req, res) => {
 
     // Send OTP email in the background to prevent blocking/timing out the HTTP response
     resend.emails.send({
+      from: 'Workshop <onboarding@resend.dev>',
       to: email,
       subject: `${otp} is your Workshop verification code`,
       html: getOtpTemplate(otp)

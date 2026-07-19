@@ -536,7 +536,7 @@ router.get('/me', async (req, res) => {
 })
 
 /* POST /api/auth/invite - Invite a teammate to current user's workspace */
-router.post('/invite', requireAuth, apiLimiter, async (req, res) => {
+router.post('/invite', apiLimiter, requireAuth, async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   const role = req.body?.role || 'Member'
   if (!email) return res.status(400).json({ error: 'Email is required' })
@@ -624,7 +624,7 @@ router.post('/invite', requireAuth, apiLimiter, async (req, res) => {
 })
 
 /* GET /api/auth/workspaces - Fetch workspaces accessible by current user */
-router.get('/workspaces', requireAuth, apiLimiter, async (req, res) => {
+router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
   const email = normalizeEmail(req.user.email)
   try {
     const ownWs = await query(
@@ -676,7 +676,7 @@ router.get('/workspaces', requireAuth, apiLimiter, async (req, res) => {
 })
 
 /* GET /api/auth/members - Fetch members of current user's workspace */
-router.get('/members', requireAuth, apiLimiter, async (req, res) => {
+router.get('/members', apiLimiter, requireAuth, async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT id, member_email, role, created_at FROM workspace_members WHERE workspace_owner_id = $1`,

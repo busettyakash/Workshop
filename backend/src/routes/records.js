@@ -27,7 +27,8 @@ router.use('/:module', validateTable)
 /* GET /api/records/:module */
 router.get('/:module', async (req, res) => {
   const userId = req.workspaceId
-  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
+  const { module } = req.params
+  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
   const { page = 1, limit = 50 } = req.query
   const offset = (page - 1) * limit
 
@@ -48,8 +49,8 @@ router.get('/:module', async (req, res) => {
 /* GET /api/records/:module/:id */
 router.get('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
-  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
-  const { id } = req.params
+  const { module, id } = req.params
+  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
 
   try {
     const { rows } = await query(
@@ -68,7 +69,8 @@ router.get('/:module/:id', async (req, res) => {
 /* POST /api/records/:module */
 router.post('/:module', async (req, res) => {
   const userId = req.workspaceId
-  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
+  const { module } = req.params
+  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
   
   // Exclude fields like id, created_at, updated_at
   const bodyFields = { ...req.body }
@@ -105,8 +107,8 @@ router.post('/:module', async (req, res) => {
 /* PUT /api/records/:module/:id */
 router.put('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
-  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
-  const { id } = req.params
+  const { module, id } = req.params
+  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
 
   const bodyFields = { ...req.body }
   delete bodyFields.id
@@ -148,8 +150,8 @@ router.put('/:module/:id', async (req, res) => {
 /* DELETE /api/records/:module/:id */
 router.delete('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
-  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
-  const { id } = req.params
+  const { module, id } = req.params
+  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
 
   try {
     const { rowCount } = await query(

@@ -6,6 +6,7 @@ import AuthLayout from '../../components/layout/AuthLayout'
 import { authApi } from '../../services/authApi'
 import { useAppDispatch } from '../../redux/hooks'
 import { loginThunk } from '../../redux/slices/authSlice'
+import { addToast } from '../../redux/slices/uiSlice'
 import './Auth.css'
 
 export default function Login() {
@@ -73,11 +74,7 @@ export default function Login() {
     try {
       const resultAction = await dispatch(loginThunk({ email, password }))
       if (loginThunk.fulfilled.match(resultAction)) {
-        const storedUser = JSON.parse(sessionStorage.getItem('ws_user') || '{}')
-        sessionStorage.setItem('ws_user', JSON.stringify({
-          ...storedUser,
-          successMessage: 'Welcome back! Login successful.'
-        }))
+        dispatch(addToast({ message: 'Welcome back! Login successful.', type: 'success' }))
         navigate('/dashboard')
       } else {
         showError(resultAction.payload || 'Invalid password. Please try again.')

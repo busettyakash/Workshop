@@ -116,7 +116,7 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
 
           const fromName    = parsed.from?.value?.[0]?.name || fromAddress
           const bodyText    = parsed.text || parsed.html || ''
-          const preview     = bodyText.replace(/<[^>]+>/g, '').slice(0, 150)
+          const preview     = bodyText.replace(/<\/?([^>]+)(>|$)/g, '').replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 150)
           const date        = parsed.date || new Date()
 
           // Skip emails we already saved (by matching from + subject + approximate timestamp)

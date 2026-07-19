@@ -7,6 +7,7 @@ import { getOtpTemplate } from '../utils/emailTemplates.js'
 import jwt from 'jsonwebtoken'
 import { createHash } from 'crypto'
 import { requireAuth } from '../middleware/auth.js'
+import { apiLimiter, authLimiter } from '../middleware/rateLimit.js'
 
 // Fallback in-memory store if Redis fails
 const memoryStore = new Map()
@@ -153,7 +154,12 @@ async function issueOtp(email, logPrefix = 'OTP') {
     await storeOtp(email, otp)
     console.log(`[${logPrefix} DEBUG] OTP for ${email} is ${otp}`)
 
-    await sendOtpEmail(email, otp, logPrefix)
+    // Send email in the background to prevent request hang/timeout and double-sends
+    sendOtpEmail(email, otp, logPrefix).catch(async (err) => {
+      await clearOtp(email)
+      console.error(`[${logPrefix}] Email delivery failed:`, err.message)
+    })
+    
     await setOtpCooldown(email)
 
     const body = { message: 'OTP sent to your email' }
@@ -530,7 +536,7 @@ router.get('/me', async (req, res) => {
 })
 
 /* POST /api/auth/invite - Invite a teammate to current user's workspace */
-router.post('/invite', requireAuth, async (req, res) => {
+router.post('/invite', requireAuth, apiLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   const role = req.body?.role || 'Member'
   if (!email) return res.status(400).json({ error: 'Email is required' })
@@ -618,7 +624,7 @@ router.post('/invite', requireAuth, async (req, res) => {
 })
 
 /* GET /api/auth/workspaces - Fetch workspaces accessible by current user */
-router.get('/workspaces', requireAuth, async (req, res) => {
+router.get('/workspaces', requireAuth, apiLimiter, async (req, res) => {
   const email = normalizeEmail(req.user.email)
   try {
     const ownWs = await query(
@@ -670,7 +676,7 @@ router.get('/workspaces', requireAuth, async (req, res) => {
 })
 
 /* GET /api/auth/members - Fetch members of current user's workspace */
-router.get('/members', requireAuth, async (req, res) => {
+router.get('/members', requireAuth, apiLimiter, async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT id, member_email, role, created_at FROM workspace_members WHERE workspace_owner_id = $1`,

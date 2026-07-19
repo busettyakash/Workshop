@@ -76,7 +76,7 @@ const RECORDS_NAV = [
   { label: 'Import Stock', icon: 'ImportStock', path: ROUTES.IMPORT_STOCK },
 ]
 
-const BILLING_NAV = [
+const INVOICES_NAV = [
   { label: 'Billing', icon: 'Billing', path: ROUTES.BILLING },
   { label: 'Paid',    icon: 'Paid',    path: ROUTES.PAID },
   { label: 'Unpaid',  icon: 'Unpaid',  path: ROUTES.UNPAID },
@@ -448,7 +448,7 @@ export default function Sidebar() {
 
           <div className="ws-sb-section-label">Billing</div>
           <div className="ws-sb-nav-list">
-            {BILLING_NAV.map(item => (
+            {INVOICES_NAV.map(item => (
               <NavItem 
                 key={item.label} 
                 item={item} 

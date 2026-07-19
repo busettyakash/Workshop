@@ -1,8 +1,10 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import { apiLimiter } from '../middleware/rateLimit.js'
 
 const router = Router()
+router.use(apiLimiter)
 router.use(requireAuth)
 
 /* Ensure bill_templates table */

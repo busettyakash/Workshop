@@ -4,8 +4,10 @@ import { requireAuth } from '../middleware/auth.js'
 import { sendEmail } from '../lib/smtp.js'
 import { syncGmailInbox } from '../lib/imap.js'
 import redis from '../lib/redis.js'
+import { apiLimiter } from '../middleware/rateLimit.js'
 
 const router = Router()
+router.use(apiLimiter)
 router.use(requireAuth)
 
 const clearEmailsCache = async (userId) => {

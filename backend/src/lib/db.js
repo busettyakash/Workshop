@@ -91,7 +91,7 @@ export const query = async (text, params) => {
       const displayQuery = text.replace(/\s+/g, ' ').trim()
       console.log(`[DB Query] (${duration}ms) ${displayQuery.substring(0, 150)}${displayQuery.length > 150 ? '...' : ''}`)
       if (params && params.length > 0) {
-        console.log(`[DB Params]`, params)
+        console.log(`[DB Params] [REDACTED] count=${params.length}`)
       }
     } else if (duration > 2000) {
       console.warn(`[DB Slow Query] ${duration}ms — ${text.substring(0, 80)}...`)
@@ -102,7 +102,7 @@ export const query = async (text, params) => {
     const duration = Date.now() - start
     console.error(`[DB Query Error] (${duration}ms) ${err.message}`)
     console.error(`[DB Query Error] Query: ${text}`)
-    console.error(`[DB Query Error] Params:`, params)
+    console.error(`[DB Query Error] Params count: ${Array.isArray(params) ? params.length : 0}`)
     throw err
   } finally {
     client.release()

@@ -1,41 +1,56 @@
 import nodemailer from 'nodemailer'
 import dotenv from 'dotenv'
-
 dotenv.config()
+
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_PORT === '465', // True for 465, false for 587 or other ports
+  secure: process.env.SMTP_PORT === '465',
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-})
-
-// Verify connection configuration on start
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('[SMTP] Connection validation failed:', error.message)
-  } else {
-    console.log('[SMTP] Transporter is ready to send emails')
+  connectionTimeout: 15000,
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
+  tls: {
+    rejectUnauthorized: false
   }
 })
 
-export const sendEmail = async ({ from, to, subject, html }) => {
+transporter.verify((error) => {
+  if (error) {
+    console.error('[SMTP] Connection failed:', error.message)
+  } else {
+    console.log('[SMTP] Ready ✅ — using', process.env.SMTP_USER)
+  }
+})
+
+export const sendEmail = async ({ to, subject, html, attachments = [] }) => {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    const missing = [
+      !process.env.SMTP_HOST && 'SMTP_HOST',
+      !process.env.SMTP_USER && 'SMTP_USER',
+      !process.env.SMTP_PASS && 'SMTP_PASS',
+    ].filter(Boolean)
+    console.error(`[SMTP] Missing env vars: ${missing.join(', ')}`)
+    return { data: null, error: new Error(`SMTP config missing: ${missing.join(', ')}`) }
+  }
+
   try {
-    console.log(`[SMTP] Attempting to send email to ${to}...`)
     const info = await transporter.sendMail({
-      from: from || `"Workshop" <${process.env.SMTP_USER}>`,
+      from: `"Workshop" <${process.env.SMTP_USER}>`,
       to,
       subject,
       html,
+      attachments,
     })
-    console.log('[SMTP] Email sent successfully. Message ID:', info.messageId)
+    console.log('[SMTP] Email sent ✅ id:', info.messageId)
     return { data: { id: info.messageId }, error: null }
-  } catch (error) {
-    console.error('[SMTP] Failed to send email:', error.message)
-    return { data: null, error }
+  } catch (err) {
+    console.error('[SMTP] Send failed:', err.message)
+    return { data: null, error: err }
   }
 }
 

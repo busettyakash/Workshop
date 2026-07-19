@@ -3,10 +3,11 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Filter, ArrowUpDown, Loader2, Trash2, X } from 'lucide-react'
+import { Plus, Filter, ArrowUpDown, Loader2, Trash2, Edit2, X } from 'lucide-react'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import { getAvatarColor, getSingleLetter } from '../../utils/tableHelpers'
+import { useNavigate } from 'react-router-dom'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 
 const STAGE_OPTIONS = ['Discovery', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost']
@@ -19,95 +20,30 @@ const STAGE_STYLES = {
   'Closed Lost':  { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
 }
 
-function AddDealModal({ onClose, onSaved }) {
-  const dispatch = useAppDispatch()
-  const [form, setForm] = useState({ title: '', value: '', stage: 'Discovery', owner: '', close_date: '', notes: '' })
-  const [saving, setSaving] = useState(false)
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-
-  const handleSave = async () => {
-    if (!form.title.trim()) { dispatch(addToast({ message: 'Title is required', type: 'error' })); return }
-    setSaving(true)
-    try {
-      await api.post('/deals', { ...form, value: parseFloat(form.value) || 0 })
-      dispatch(addToast({ message: 'Deal added!', type: 'success' }))
-      onSaved()
-      onClose()
-    } catch (err) {
-      dispatch(addToast({ message: err.response?.data?.error || 'Failed to add deal', type: 'error' }))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="ws-modal-backdrop" onClick={onClose}>
-      <div className="ws-modal-card" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
-        <div className="ws-modal-header">
-          <h3 className="ws-modal-title">Add Deal</h3>
-          <button className="ws-modal-close-x" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="ws-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {[
-            { label: 'Deal Title *', key: 'title', type: 'text', placeholder: 'e.g. Enterprise License' },
-            { label: 'Value (₹)',    key: 'value', type: 'number', placeholder: '0.00' },
-            { label: 'Owner',        key: 'owner', type: 'text', placeholder: 'Your name' },
-            { label: 'Close Date',   key: 'close_date', type: 'date', placeholder: '' },
-          ].map(({ label, key, type, placeholder }) => (
-            <div key={key} className="ws-field-group">
-              <label className="ws-field-label">{label}</label>
-              <input
-                className="ws-field-input"
-                type={type}
-                placeholder={placeholder}
-                value={form[key]}
-                onChange={e => set(key, e.target.value)}
-              />
-            </div>
-          ))}
-          <div className="ws-field-group">
-            <label className="ws-field-label">Stage</label>
-            <select className="ws-field-input" value={form.stage} onChange={e => set('stage', e.target.value)}>
-              {STAGE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="ws-field-group">
-            <label className="ws-field-label">Notes</label>
-            <textarea
-              className="ws-field-input"
-              rows={2}
-              style={{ resize: 'vertical' }}
-              placeholder="Optional notes..."
-              value={form.notes}
-              onChange={e => set('notes', e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="ws-modal-footer">
-          <button className="ws-modal-btn" onClick={onClose}>Cancel</button>
-          <button className="ws-modal-btn ws-modal-btn--primary" onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 size={14} className="ws-chat-loader-spin" /> : null}
-            {saving ? 'Saving…' : 'Add Deal'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default function Deals() {
   const dispatch   = useAppDispatch()
+  const navigate   = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const [deals, setDeals] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, title: '' })
+  const [activeTab, setActiveTab] = useState('my_deals')
 
   useEffect(() => {
     dispatch(setActiveNav('Deals'))
     fetchDeals()
   }, [dispatch])
+
+  const currentUserId = sessionStorage.getItem('ws_active_workspace_id')
+
+  const filteredDeals = deals.filter(row => {
+    if (activeTab === 'my_deals') {
+      return String(row.user_id) === String(currentUserId)
+    } else {
+      return String(row.company_shop_id) === String(currentUserId)
+    }
+  })
 
   const fetchDeals = async () => {
     setLoading(true)
@@ -160,24 +96,64 @@ export default function Deals() {
               <div className="ws-table-actions">
                 <button className="ws-table-btn"><ArrowUpDown size={12} /> Sort</button>
                 <button className="ws-table-btn"><Filter size={12} /> Filter</button>
-                <button className="ws-table-btn ws-table-btn--primary" onClick={() => setShowModal(true)}>
+                <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/deals/add')}>
                   <Plus size={13} /> New Deal
                 </button>
               </div>
             </div>
 
             <div className="ws-table-wrap">
+              {/* Tabs */}
+              <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', padding: '0 20px', marginBottom: 20 }}>
+                <button
+                  onClick={() => setActiveTab('my_deals')}
+                  style={{
+                    padding: '12px 16px',
+                    border: 'none',
+                    background: 'none',
+                    borderBottom: activeTab === 'my_deals' ? '2px solid #3d68f5' : '2px solid transparent',
+                    color: activeTab === 'my_deals' ? '#3d68f5' : '#6b7280',
+                    fontWeight: activeTab === 'my_deals' ? 600 : 500,
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  My Deals
+                </button>
+                <button
+                  onClick={() => setActiveTab('received')}
+                  style={{
+                    padding: '12px 16px',
+                    border: 'none',
+                    background: 'none',
+                    borderBottom: activeTab === 'received' ? '2px solid #3d68f5' : '2px solid transparent',
+                    color: activeTab === 'received' ? '#3d68f5' : '#6b7280',
+                    fontWeight: activeTab === 'received' ? 600 : 500,
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Received Deals
+                </button>
+              </div>
+
               {loading ? (
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '48px 0' }}>
                   <Loader2 size={22} className="ws-chat-loader-spin" style={{ color: 'var(--color-gray-400)' }} />
                 </div>
-              ) : deals.length === 0 ? (
+              ) : filteredDeals.length === 0 ? (
                 <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-gray-700)', marginBottom: 4 }}>No deals yet</p>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--color-gray-400)', marginBottom: 16 }}>Start by creating your first deal</p>
-                  <button className="ws-table-btn ws-table-btn--primary" onClick={() => setShowModal(true)}>
-                    <Plus size={13} /> New Deal
-                  </button>
+                  <p style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-gray-700)', marginBottom: 4 }}>No deals found</p>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--color-gray-400)', marginBottom: 16 }}>
+                    {activeTab === 'my_deals' ? 'Start by creating your first deal' : 'You have not received any deals yet'}
+                  </p>
+                  {activeTab === 'my_deals' && (
+                    <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/deals/add')}>
+                      <Plus size={13} /> New Deal
+                    </button>
+                  )}
                 </div>
               ) : (
                 <table className="ws-table-styled">
@@ -189,12 +165,15 @@ export default function Deals() {
                       <th>Stage</th>
                       <th>Owner</th>
                       <th>Close Date</th>
-                      <th style={{ width: 48 }}></th>
+                      <th style={{ width: 100, textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {deals.map(row => {
+                    {filteredDeals.map(row => {
                       const stageStyle = STAGE_STYLES[row.stage] || { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' }
+                      const currentUserId = sessionStorage.getItem('ws_active_workspace_id')
+                      const isUserB = row.company_id === currentUserId || row.company_shop_id === currentUserId
+                      const targetRoute = isUserB ? `/deals/review/${row.id}` : `/deals/edit/${row.id}`
                       return (
                         <tr key={row.id}>
                           <td><input type="checkbox" className="ws-table-checkbox" readOnly /></td>
@@ -203,7 +182,35 @@ export default function Deals() {
                               <div className="ws-table-avatar" style={{ background: getAvatarColor(row.title), borderRadius: 6 }}>
                                 {getSingleLetter(row.title)}
                               </div>
-                              <span className="ws-table-name-text">{row.title}</span>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span 
+                                  className="ws-table-primary-text" 
+                                  style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
+                                  onClick={() => navigate(targetRoute)}
+                                >
+                                  {row.title}
+                                </span>
+                                {row.company_name && (
+                                  <span style={{ fontSize: '0.76rem', color: '#3d68f5', fontWeight: 500, marginTop: 2, display: 'block' }}>
+                                    🏢 {row.company_name}
+                                  </span>
+                                )}
+                                {row.products && (() => {
+                                  let parsed = []
+                                  if (typeof row.products === 'string') {
+                                    try { parsed = JSON.parse(row.products) } catch(e){}
+                                  } else if (Array.isArray(row.products)) {
+                                    parsed = row.products
+                                  }
+                                  if (!parsed.length) return null
+                                  const text = parsed.map(p => `${p.name} (x${p.quantity})`).join(', ')
+                                  return (
+                                    <span style={{ fontSize: '0.74rem', color: 'var(--color-gray-500)', marginTop: 2, display: 'block', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={text}>
+                                      {text}
+                                    </span>
+                                  )
+                                })()}
+                              </div>
                             </div>
                           </td>
                           <td style={{ fontWeight: 600, color: 'var(--color-gray-900)', fontSize: '0.86rem' }}>
@@ -217,14 +224,36 @@ export default function Deals() {
                           <td style={{ color: 'var(--color-gray-600)', fontSize: '0.83rem' }}>{row.owner || '—'}</td>
                           <td style={{ color: 'var(--color-gray-500)', fontSize: '0.82rem' }}>{formatDate(row.close_date)}</td>
                           <td>
-                            <button
-                              className="ws-chat-history-delete-btn"
-                              style={{ padding: 5 }}
-                              onClick={() => setConfirmDelete({ isOpen: true, id: row.id, title: row.title })}
-                              title="Delete"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                              {isUserB ? (
+                                <button
+                                  className="ws-table-btn"
+                                  style={{ padding: '6px 12px', background: '#eff6ff', color: '#3b82f6', border: '1px solid #bfdbfe' }}
+                                  onClick={() => navigate(targetRoute)}
+                                >
+                                  Review
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ padding: 6 }}
+                                    onClick={() => navigate(targetRoute)}
+                                    title="Edit Deal"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ padding: 6 }}
+                                    onClick={() => setConfirmDelete({ isOpen: true, id: row.id, title: row.title })}
+                                    title="Delete"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )
@@ -236,7 +265,6 @@ export default function Deals() {
           </div>
         </main>
       </div>
-      {showModal && <AddDealModal onClose={() => setShowModal(false)} onSaved={fetchDeals} />}
 
       <ConfirmModal
         isOpen={confirmDelete.isOpen}

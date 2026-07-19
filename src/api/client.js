@@ -11,8 +11,12 @@ const api = axios.create({
 
 // Attach token to every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('ws_token')
+  const token = sessionStorage.getItem('ws_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+  
+  const activeWorkspaceId = sessionStorage.getItem('ws_active_workspace_id')
+  if (activeWorkspaceId) config.headers['x-workspace-id'] = activeWorkspaceId
+  
   return config
 })
 
@@ -24,8 +28,8 @@ api.interceptors.response.use(
       const onAuthPage = ['/login', '/signup'].some(p => window.location.pathname.startsWith(p))
       if (!onAuthPage) {
         // Expired session — clear and redirect
-        localStorage.removeItem('ws_token')
-        localStorage.removeItem('ws_user')
+        sessionStorage.removeItem('ws_token')
+        sessionStorage.removeItem('ws_user')
         window.location.href = '/login'
       }
     }

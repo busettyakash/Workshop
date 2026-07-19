@@ -6,6 +6,7 @@ import AuthLayout from '../../components/layout/AuthLayout'
 import { authApi } from '../../services/authApi'
 import { useAppDispatch } from '../../redux/hooks'
 import { loginThunk } from '../../redux/slices/authSlice'
+import { addToast } from '../../redux/slices/uiSlice'
 import './Auth.css'
 
 export default function Login() {
@@ -18,6 +19,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notification, setNotification] = useState(null) // { message, type }
+  const [resendCooldown, setResendCooldown] = useState(0) // seconds remaining
 
   const showError = (msg) => setNotification({ message: msg, type: 'error' })
   const clearNotification = () => setNotification(null)
@@ -72,11 +74,7 @@ export default function Login() {
     try {
       const resultAction = await dispatch(loginThunk({ email, password }))
       if (loginThunk.fulfilled.match(resultAction)) {
-        const storedUser = JSON.parse(localStorage.getItem('ws_user') || '{}')
-        localStorage.setItem('ws_user', JSON.stringify({
-          ...storedUser,
-          successMessage: 'Welcome back! Login successful.'
-        }))
+        dispatch(addToast({ message: 'Welcome back! Login successful.', type: 'success' }))
         navigate('/dashboard')
       } else {
         showError(resultAction.payload || 'Invalid password. Please try again.')
@@ -90,13 +88,23 @@ export default function Login() {
 
   // Resend OTP (also checks DB)
   const handleResendOtp = async () => {
+    if (resendCooldown > 0) return
     setLoading(true)
     clearNotification()
     try {
       await authApi.sendLoginOtp(email)
       setNotification({ message: 'A new OTP has been sent to your email.', type: 'success' })
+      // Start 60s cooldown countdown
+      setResendCooldown(60)
+      const timer = setInterval(() => {
+        setResendCooldown(prev => {
+          if (prev <= 1) { clearInterval(timer); return 0 }
+          return prev - 1
+        })
+      }, 1000)
     } catch (err) {
-      showError(err.response?.data?.message || 'Failed to resend OTP.')
+      const msg = err.response?.data?.message || 'Failed to resend OTP.'
+      showError(msg)
     } finally {
       setLoading(false)
     }
@@ -148,15 +156,17 @@ export default function Login() {
                   Didn't receive it?{' '}
                   <button
                     type="button"
-                    disabled={loading}
+                    disabled={loading || resendCooldown > 0}
                     onClick={handleResendOtp}
                     style={{
                       background: 'none', border: 'none',
-                      color: 'var(--color-blue)', fontWeight: 600,
-                      cursor: 'pointer', padding: 0, fontSize: 'inherit'
+                      color: resendCooldown > 0 ? 'var(--color-text-secondary)' : 'var(--color-blue)',
+                      fontWeight: 600,
+                      cursor: resendCooldown > 0 ? 'not-allowed' : 'pointer',
+                      padding: 0, fontSize: 'inherit'
                     }}
                   >
-                    Resend OTP
+                    {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend OTP'}
                   </button>
                 </p>
                 <button

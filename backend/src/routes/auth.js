@@ -2,15 +2,38 @@ import { Router } from 'express'
 import insforge from '../lib/insforge.js'
 import { query } from '../lib/db.js'
 import redis from '../lib/redis.js'
-import resend from '../lib/smtp.js'
+import resend from '../lib/resend.js'
 import { getOtpTemplate } from '../utils/emailTemplates.js'
 import jwt from 'jsonwebtoken'
 import { createHash } from 'crypto'
+import { requireAuth } from '../middleware/auth.js'
+import { apiLimiter, authLimiter } from '../middleware/rateLimit.js'
 
 // Fallback in-memory store if Redis fails
 const memoryStore = new Map()
+const pendingOtpSends = new Set()
+
+const OTP_TTL_SECONDS = 300
+const OTP_COOLDOWN_SECONDS = 60
+const OTP_SEND_LOCK_SECONDS = 30
 
 const router = Router()
+
+/* Ensure workspace_members table exists */
+const ensureWorkspaceTable = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS workspace_members (
+      id SERIAL PRIMARY KEY,
+      workspace_owner_id TEXT NOT NULL,
+      member_email TEXT NOT NULL,
+      role TEXT DEFAULT 'Member',
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE (workspace_owner_id, member_email)
+    )
+  `).catch(err => console.error('[DB] Error ensuring workspace_members table:', err.message))
+}
+ensureWorkspaceTable()
+
 
 function normalizeEmail(email = '') {
   return String(email).trim().toLowerCase()
@@ -18,6 +41,142 @@ function normalizeEmail(email = '') {
 
 function normalizeOtp(otp = '') {
   return String(otp).replace(/\D/g, '').slice(0, 6)
+}
+
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString()
+}
+
+function getOtpKey(email) {
+  return `otp:${email}`
+}
+
+function getCooldownKey(email) {
+  return `otp_cooldown:${email}`
+}
+
+function getSendLockKey(email) {
+  return `otp_send_lock:${email}`
+}
+
+function getMemoryValue(key) {
+  const entry = memoryStore.get(key)
+  if (!entry) return null
+  if (entry.expires <= Date.now()) {
+    memoryStore.delete(key)
+    return null
+  }
+  return entry.value
+}
+
+async function hasOtpCooldown(email) {
+  const cooldownKey = getCooldownKey(email)
+  const redisCooldown = await redis.get(cooldownKey).catch(() => null)
+  return Boolean(redisCooldown || getMemoryValue(cooldownKey))
+}
+
+async function acquireOtpSendLock(email) {
+  const lockKey = getSendLockKey(email)
+  try {
+    const acquired = await redis.set(lockKey, '1', { nx: true, ex: OTP_SEND_LOCK_SECONDS })
+    return acquired !== null && acquired !== false
+  } catch {
+    if (pendingOtpSends.has(email)) return false
+    pendingOtpSends.add(email)
+    return true
+  }
+}
+
+async function releaseOtpSendLock(email) {
+  pendingOtpSends.delete(email)
+  await redis.del(getSendLockKey(email)).catch(() => { })
+}
+
+async function storeOtp(email, otp) {
+  const otpKey = getOtpKey(email)
+  try {
+    await redis.set(otpKey, otp, { ex: OTP_TTL_SECONDS })
+    console.log(`[OTP] Redis set successful for ${email}`)
+  } catch (rErr) {
+    console.error(`[OTP] Redis failed, using memory fallback:`, rErr.message)
+    memoryStore.set(otpKey, { value: otp, expires: Date.now() + OTP_TTL_SECONDS * 1000 })
+  }
+}
+
+async function setOtpCooldown(email) {
+  const cooldownKey = getCooldownKey(email)
+  try {
+    await redis.set(cooldownKey, '1', { ex: OTP_COOLDOWN_SECONDS })
+  } catch {
+    memoryStore.set(cooldownKey, { value: '1', expires: Date.now() + OTP_COOLDOWN_SECONDS * 1000 })
+  }
+}
+
+async function clearOtp(email) {
+  await redis.del(getOtpKey(email)).catch(() => { })
+  memoryStore.delete(getOtpKey(email))
+}
+
+async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
+  const { error: mailError } = await resend.emails.send({
+    from: 'Workshop <onboarding@resend.dev>',
+    to: email,
+    subject: `${otp} is your Workshop verification code`,
+    html: getOtpTemplate(otp)
+  })
+
+  if (mailError) {
+    throw new Error(mailError.message || String(mailError))
+  }
+
+  console.log(`[${logPrefix}] Email sent to ${email}`)
+}
+
+async function issueOtp(email, logPrefix = 'OTP') {
+  if (await hasOtpCooldown(email)) {
+    return {
+      status: 429,
+      body: { message: `Please wait ${OTP_COOLDOWN_SECONDS} seconds before requesting a new OTP.` }
+    }
+  }
+
+  const lockAcquired = await acquireOtpSendLock(email)
+  if (!lockAcquired) {
+    return {
+      status: 429,
+      body: { message: 'An OTP is already being sent. Please wait a moment before trying again.' }
+    }
+  }
+
+  const otp = generateOtp()
+
+  try {
+    await storeOtp(email, otp)
+    console.log(`[${logPrefix} DEBUG] OTP for ${email} is ${otp}`)
+
+    // Send email in the background to prevent request hang/timeout and double-sends
+    sendOtpEmail(email, otp, logPrefix).catch(async (err) => {
+      await clearOtp(email)
+      console.error(`[${logPrefix}] Email delivery failed:`, err.message)
+    })
+    
+    await setOtpCooldown(email)
+
+    const body = { message: 'OTP sent to your email' }
+    if (process.env.NODE_ENV === 'development') {
+      body.devOtp = otp
+    }
+    return { status: 200, body }
+  } catch (err) {
+    await clearOtp(email)
+    console.error(`[${logPrefix}] Email delivery failed:`, err.message)
+    return {
+      status: 502,
+      body: { message: 'Failed to send OTP email. Please try again.' }
+    }
+  } finally {
+    await releaseOtpSendLock(email)
+  }
 }
 
 function getLocalUserId(email = '') {
@@ -51,47 +210,28 @@ router.post('/check-email', async (req, res) => {
   }
 })
 
-/* POST /api/auth/send-otp - For SIGNUP: just send OTP (email not checked) */
+/* POST /api/auth/send-otp - For SIGNUP: check email DOES NOT exist THEN send OTP */
 router.post('/send-otp', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   if (!email) return res.status(400).json({ message: 'Email is required' })
 
   try {
+    // Check if email already exists
+    const result = await query(
+      'SELECT email FROM shop_profiles WHERE email = $1',
+      [email]
+    ).catch(() => ({ rows: [] }))
+
+    if (result.rows.length > 0) {
+      return res.status(409).json({ message: 'An account with this email already exists. Please log in instead.' })
+    }
+
     console.log(`[OTP] Request for email: ${email}`)
-    const otp = Math.floor(100000 + Math.random() * 900000).toString()
-    try {
-      console.log(`[OTP] Connecting to Redis...`)
-      await redis.set(`otp:${email}`, otp, { ex: 300 })
-      console.log(`[OTP] Redis set successful`)
-    } catch (rErr) {
-      console.error(`[OTP] Redis failed, using memory fallback:`, rErr.message)
-      memoryStore.set(`otp:${email}`, { otp, expires: Date.now() + 300000 })
-    }
-
-    console.log(`[OTP DEBUG] OTP for ${email} is ${otp}`)
-
-    // Send email via SMTP
-    try {
-      console.log(`[OTP] Sending email via SMTP to ${email}...`)
-      const { data: mailData, error: mailError } = await resend.emails.send({
-        from: 'Workshop <onboarding@resend.dev>',
-        to: email,
-        subject: `${otp} is your Workshop verification code`,
-        html: getOtpTemplate(otp)
-      })
-
-      if (mailError) {
-        console.error(`[OTP] Send failed:`, mailError)
-      } else {
-        console.log(`[OTP] Email sent successfully:`, mailData?.id)
-      }
-    } catch (mErr) {
-      console.error(`[OTP] Mail exception:`, mErr.message)
-    }
-
-    res.json({ message: 'OTP sent to your email' })
+    const otpResult = await issueOtp(email, 'OTP')
+    res.status(otpResult.status).json(otpResult.body)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('[OTP] Unexpected error:', err.message)
+    res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
   }
 })
 
@@ -111,38 +251,11 @@ router.post('/send-login-otp', async (req, res) => {
       return res.status(404).json({ message: 'No account found with this email. Please sign up first.' })
     }
 
-    // Generate and store OTP in Redis
-    const otp = Math.floor(100000 + Math.random() * 900000).toString()
-    try {
-      await redis.set(`otp:${email}`, otp, { ex: 300 })
-      console.log(`[LOGIN OTP] Redis set for ${email}`)
-    } catch (rErr) {
-      console.error(`[LOGIN OTP] Redis failed, using memory fallback:`, rErr.message)
-      memoryStore.set(`otp:${email}`, { otp, expires: Date.now() + 300000 })
-    }
-
-    console.log(`[LOGIN OTP DEBUG] OTP for ${email} is ${otp}`)
-
-    // Send OTP email
-    try {
-      const { data: mailData, error: mailError } = await resend.emails.send({
-        from: 'Workshop <onboarding@resend.dev>',
-        to: email,
-        subject: `${otp} is your Workshop verification code`,
-        html: getOtpTemplate(otp)
-      })
-      if (mailError) {
-        console.error(`[LOGIN OTP] Send failed:`, mailError)
-      } else {
-        console.log(`[LOGIN OTP] Email sent:`, mailData?.id)
-      }
-    } catch (mErr) {
-      console.error(`[LOGIN OTP] Mail exception:`, mErr.message)
-    }
-
-    res.json({ message: 'OTP sent to your email' })
+    const otpResult = await issueOtp(email, 'LOGIN OTP')
+    res.status(otpResult.status).json(otpResult.body)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('[LOGIN OTP] Unexpected error:', err.message)
+    res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
   }
 })
 
@@ -155,20 +268,17 @@ router.post('/verify-otp', async (req, res) => {
 
   try {
     let storedOtp = await redis.get(`otp:${email}`).catch(() => null)
-    
+
     // Check memory fallback if redis returned nothing
     if (!storedOtp) {
-      const mem = memoryStore.get(`otp:${email}`)
-      if (mem && mem.expires > Date.now()) {
-        storedOtp = mem.otp
-      }
+      storedOtp = getMemoryValue(getOtpKey(email))
     }
 
     console.log(`[OTP VERIFY] Attempt for ${email}: input=${otp}, stored=${storedOtp}`)
 
     if (String(storedOtp) === otp) {
       // Success - now delete
-      await redis.del(`otp:${email}`).catch(() => {})
+      await redis.del(`otp:${email}`).catch(() => { })
       memoryStore.delete(`otp:${email}`)
       res.json({ message: 'OTP verified successfully' })
     } else {
@@ -182,7 +292,7 @@ router.post('/verify-otp', async (req, res) => {
 /* POST /api/auth/register */
 router.post('/register', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
-  const { password, shopName, phone, mobileNumber, gstin } = req.body
+  const { password, shopName, phone, mobileNumber, gstin, workspaceHandle, billingCountry, referralSource, usageType, inviteEmail } = req.body
   const actualPhone = phone || mobileNumber
   if (!email || !password || !shopName || !actualPhone || !gstin) {
     return res.status(400).json({ message: 'Email, password, shopName, phone, and GSTIN are required' })
@@ -193,27 +303,108 @@ router.post('/register', async (req, res) => {
   try {
     const { data, error } = await insforge.auth.signUp({ email, password })
     if (error) {
-      console.error('[Auth Error]', error)
       const msg = error.nextActions || error.error || error.message || 'Registration failed'
-      return res.status(400).json({ message: msg })
+
+      // If the email exists in InsForge cloud, but not in our local DB (because it was cleared),
+      // gracefully proceed to create the local profile to fix the deadlock.
+      if (msg === 'AUTH_EMAIL_EXISTS' || msg.toLowerCase().includes('already registered')) {
+        console.log(`[Register] User exists in InsForge Cloud but not locally. Proceeding to create local profile.`)
+      } else {
+        console.error('[Auth Error]', error)
+        return res.status(400).json({ message: msg })
+      }
     }
 
-    // Store extra profile in DB with GSTIN
+    const userId = data?.user?.id || getLocalUserId(email)
+
+    // Store extra profile in DB with GSTIN and Workspace details
     await query(
-      `INSERT INTO shop_profiles (email, shop_name, phone, gstin, created_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO shop_profiles (email, user_id, shop_name, phone, gstin, workspace_handle, billing_country, referral_source, usage_type, password, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
        ON CONFLICT (email) DO UPDATE SET 
+         user_id = COALESCE(shop_profiles.user_id, EXCLUDED.user_id),
          shop_name = EXCLUDED.shop_name, 
          phone = EXCLUDED.phone,
-         gstin = COALESCE(EXCLUDED.gstin, shop_profiles.gstin)`,
-      [email, shopName, actualPhone || null, gstin || null]
+         gstin = COALESCE(EXCLUDED.gstin, shop_profiles.gstin),
+         workspace_handle = COALESCE(shop_profiles.workspace_handle, EXCLUDED.workspace_handle),
+         billing_country = COALESCE(shop_profiles.billing_country, EXCLUDED.billing_country),
+         referral_source = COALESCE(shop_profiles.referral_source, EXCLUDED.referral_source),
+         usage_type = COALESCE(shop_profiles.usage_type, EXCLUDED.usage_type)`,
+      [
+        email,
+        userId,
+        shopName,
+        actualPhone || null,
+        gstin || null,
+        workspaceHandle || null,
+        billingCountry || null,
+        referralSource || null,
+        usageType || null,
+        password || null
+      ]
     ).catch((err) => { console.error('DB Insert Error', err) })
 
-    res.status(201).json({
+    // Clear stale user ID mapping in Redis cache
+    await redis.del(`user_id_map:${email.toLowerCase()}`).catch(() => { })
+
+    // Generate local JWT token if InsForge signUp doesn't return one directly
+    let token = data?.accessToken || data?.session?.access_token
+    if (!token) {
+      token = jwt.sign(
+        { sub: userId, email, shopName, iss: 'workshop-local' },
+        process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
+        { expiresIn: '7d' }
+      )
+    }
+
+    // Add initial teammate invite if provided
+    if (inviteEmail) {
+      const invited = normalizeEmail(inviteEmail)
+      if (invited && invited !== email) {
+        await query(
+          `INSERT INTO workspace_members (workspace_owner_id, member_email, role)
+           VALUES ($1, $2, 'Member')
+           ON CONFLICT (workspace_owner_id, member_email) DO NOTHING`,
+          [userId, invited]
+        ).catch(err => console.error('Error adding initial invite:', err.message))
+      }
+    }
+
+    // Check if this user was previously invited to another workspace
+    // If so, return that workspace as the default so the frontend auto-switches
+    let defaultWorkspaceId = null
+    let defaultWorkspaceName = null
+    try {
+      const inviteResult = await query(
+        `SELECT m.workspace_owner_id, p.shop_name, p.email AS owner_email
+         FROM workspace_members m
+         JOIN shop_profiles p ON p.user_id::text = m.workspace_owner_id OR p.email = m.workspace_owner_id
+         WHERE LOWER(m.member_email) = LOWER($1)
+         ORDER BY m.created_at ASC
+         LIMIT 1`,
+        [email]
+      )
+      if (inviteResult.rows.length > 0) {
+        defaultWorkspaceId = inviteResult.rows[0].workspace_owner_id
+        defaultWorkspaceName = inviteResult.rows[0].shop_name || `${inviteResult.rows[0].owner_email}'s Workshop`
+        console.log(`[Register] User ${email} has pending invite → defaulting to workspace ${defaultWorkspaceId} (${defaultWorkspaceName})`)
+      }
+    } catch (invErr) {
+      console.error('[Register] Error checking pending invites:', invErr.message)
+    }
+
+    const response = {
       message: 'Registration successful',
-      user: { email, shopName },
-      token: data?.accessToken || data?.session?.access_token || 'mock-dev-token',
-    })
+      user: { id: userId, email, shopName },
+      token,
+    }
+
+    if (defaultWorkspaceId) {
+      response.defaultWorkspaceId = defaultWorkspaceId
+      response.defaultWorkspaceName = defaultWorkspaceName
+    }
+
+    res.status(201).json(response)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -226,9 +417,12 @@ router.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ message: 'email and password required' })
 
   try {
+    // Clear stale user ID mapping in Redis cache to ensure it stays in sync
+    await redis.del(`user_id_map:${email}`).catch(() => { })
+
     // 1. Confirm user exists in our DB
     const profile = await query(
-      'SELECT shop_name, phone FROM shop_profiles WHERE email = $1',
+      'SELECT user_id, shop_name, phone FROM shop_profiles WHERE email = $1',
       [email]
     ).catch(() => ({ rows: [] }))
 
@@ -237,11 +431,12 @@ router.post('/login', async (req, res) => {
     }
 
     const shopName = profile.rows[0]?.shop_name || email.split('@')[0]
+    const localUserId = profile.rows[0]?.user_id || getLocalUserId(email)
 
     // 2. Try InsForge authentication
     const { data, error } = await insforge.auth.signInWithPassword({ email, password })
     let token = data?.session?.access_token || data?.accessToken
-    let userId = data?.user?.id || getLocalUserId(email)
+    let userId = localUserId || data?.user?.id || getLocalUserId(email)
 
     if (error) {
       const rawMsg = error.nextActions || error.error || error.message || ''
@@ -322,15 +517,223 @@ router.get('/me', async (req, res) => {
         },
       })
     }
-  } catch (_) {}
+  } catch (_) { }
 
   try {
     const { data, error } = await insforge.auth.getUser(token)
     if (error) return res.status(401).json({ error: 'Unauthorized' })
+
+    // Map ID locally if present
+    const profileRes = await query('SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1)', [data.user.email]).catch(() => ({ rows: [] }))
+    if (profileRes.rows.length > 0 && profileRes.rows[0].user_id) {
+      data.user.id = profileRes.rows[0].user_id
+    }
+
     res.json({ user: data.user })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
+})
+
+/* POST /api/auth/invite - Invite a teammate to current user's workspace */
+router.post('/invite', apiLimiter, requireAuth, async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  const role = req.body?.role || 'Member'
+  if (!email) return res.status(400).json({ error: 'Email is required' })
+  if (email === normalizeEmail(req.user.email)) {
+    return res.status(400).json({ error: 'You cannot invite yourself' })
+  }
+  try {
+    await query(
+      `INSERT INTO workspace_members (workspace_owner_id, member_email, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (workspace_owner_id, member_email) 
+       DO UPDATE SET role = EXCLUDED.role`,
+      [req.workspaceId, email, role]
+    )
+
+    // Clear membership cache key
+    const cacheKey = `workspace_member:${req.workspaceId}:${email}`
+    await redis.del(cacheKey).catch(() => { })
+
+    // ── Create in-app notification for user B ──────────────────────────────
+    try {
+      const profileRes = await query(
+        `SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+        [email]
+      )
+      if (profileRes.rows.length > 0) {
+        const userBId = profileRes.rows[0].user_id
+        const senderName = req.user.shopName || req.user.email
+        const notifTitle = `Workspace Invitation`
+        const notifBody = `${senderName} has invited you to collaborate in their workspace as ${role}. Switch workspaces from the sidebar to get started.`
+
+        await query(
+          `INSERT INTO notifications (user_id, title, body, type, read, created_at)
+           VALUES ($1, $2, $3, 'info', false, NOW())`,
+          [userBId, notifTitle, notifBody]
+        )
+
+        // Push real-time notification to user B if they are online
+        try {
+          await insforge.realtime.publish(`notifications:${userBId}`, {
+            event: 'new_notification',
+            payload: { title: notifTitle, body: notifBody }
+          })
+        } catch (_) { }
+
+        console.log(`[Invite] In-app notification created for user B (${email})`)
+      } else {
+        console.log(`[Invite] User B (${email}) not yet registered — no in-app notification created`)
+      }
+    } catch (notifErr) {
+      console.error('[Invite] Failed to create in-app notification:', notifErr.message)
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
+    try {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+      const signupLink = `${frontendUrl}/signup?invite_from=${encodeURIComponent(req.user.email)}&workspace=${encodeURIComponent(req.user.shopName || 'Workshop')}`
+
+      // Send invite email in the background to prevent blocking the response
+      resend.emails.send({
+        from: 'Workshop <onboarding@resend.dev>',
+        to: email,
+        subject: `Invitation to collaborate on ${req.user.shopName || 'Workshop'}`,
+        html: `<p>Hello,</p>
+               <p><strong>${req.user.email}</strong> has invited you to collaborate in their workspace: <strong>${req.user.shopName || 'Workshop'}</strong>.</p>
+               <p>If you already have a Workshop account, log in and switch to their workspace via the workspace dropdown in the sidebar.</p>
+               <p>If you're new, <a href="${signupLink}">click here to sign up</a> and you'll be automatically added to their workspace.</p>`
+      }).then(({ error: mailErr }) => {
+        if (mailErr) {
+          console.error('[Invite Email] Resend background error:', mailErr.message || mailErr)
+        } else {
+          console.log(`[Invite Email] Background email sent to ${email}`)
+        }
+      }).catch(err => {
+        console.error('[Invite Email] Background email error:', err.message)
+      })
+    } catch (mailErr) {
+      console.error('[Invite Email] Resend error:', mailErr.message)
+    }
+
+    res.json({ message: `Successfully invited ${email}` })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* GET /api/auth/workspaces - Fetch workspaces accessible by current user */
+router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
+  const email = normalizeEmail(req.user.email)
+  try {
+    const ownWs = await query(
+      `SELECT user_id, shop_name, email FROM shop_profiles WHERE email = $1`,
+      [email]
+    )
+
+    let workspaces = []
+    if (ownWs.rows.length > 0) {
+      const own = ownWs.rows[0]
+      const ownerId = own.user_id || req.workspaceId
+      workspaces.push({
+        id: ownerId,
+        shopName: own.shop_name || 'My Shop',
+        ownerEmail: own.email,
+        isOwner: true
+      })
+    } else {
+      workspaces.push({
+        id: req.workspaceId,
+        shopName: req.user.shopName || 'My Shop',
+        ownerEmail: email,
+        isOwner: true
+      })
+    }
+
+    const invitedWs = await query(
+      `SELECT p.user_id, p.shop_name, p.email AS owner_email, m.role
+       FROM workspace_members m
+       JOIN shop_profiles p ON p.user_id::text = m.workspace_owner_id OR p.email = m.workspace_owner_id
+       WHERE m.member_email = $1`,
+      [email]
+    )
+
+    for (const row of invitedWs.rows) {
+      workspaces.push({
+        id: row.user_id || row.owner_email,
+        shopName: row.shop_name || `${row.owner_email}'s Shop`,
+        ownerEmail: row.owner_email,
+        isOwner: false,
+        role: row.role
+      })
+    }
+
+    res.json(workspaces)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* GET /api/auth/members - Fetch members of current user's workspace */
+router.get('/members', apiLimiter, requireAuth, async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT id, member_email, role, created_at FROM workspace_members WHERE workspace_owner_id = $1`,
+      [req.workspaceId]
+    )
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* GET /api/auth/diagnostic - Diagnostic tool to check backend status */
+router.get('/diagnostic', async (req, res) => {
+  const status = {
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      DATABASE_URL_SET: !!process.env.DATABASE_URL,
+      INSFORGE_API_BASE_URL_SET: !!process.env.INSFORGE_API_BASE_URL,
+      INSFORGE_API_KEY_SET: !!process.env.INSFORGE_API_KEY,
+      UPSTASH_REDIS_REST_URL_SET: !!process.env.UPSTASH_REDIS_REST_URL,
+      QSTASH_TOKEN_SET: !!process.env.QSTASH_TOKEN,
+      SMTP_HOST_SET: !!process.env.SMTP_HOST,
+      SMTP_USER_SET: !!process.env.SMTP_USER,
+      SMTP_PASS_SET: !!process.env.SMTP_PASS,
+    },
+    database: null,
+    redis: null,
+    smtp: null,
+  }
+
+  // 1. Check Database
+  try {
+    const dbRes = await query('SELECT NOW()')
+    status.database = { success: true, time: dbRes.rows[0].now }
+  } catch (err) {
+    status.database = { success: false, error: err.message }
+  }
+
+  // 2. Check Redis
+  try {
+    await redis.set('test_diagnostic_key', 'ok', { ex: 5 })
+    const val = await redis.get('test_diagnostic_key')
+    status.redis = { success: val === 'ok' }
+  } catch (err) {
+    status.redis = { success: false, error: err.message }
+  }
+
+  // 3. Check SMTP
+  try {
+    // Import transport to test connection verify
+    const { default: smtpLib } = await import('../lib/smtp.js')
+    status.smtp = { success: true, details: 'Transporter loaded' }
+  } catch (err) {
+    status.smtp = { success: false, error: err.message }
+  }
+
+  res.json(status)
 })
 
 export default router

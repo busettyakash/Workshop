@@ -70,7 +70,7 @@ router.get('/', async (req, res) => {
   try {
     const { rows } = await query(
       'SELECT * FROM workflows WHERE user_id = $1 ORDER BY created_at DESC',
-      [req.user.id]
+      [req.workspaceId]
     )
 
     if (rows.length === 0) {
@@ -78,7 +78,7 @@ router.get('/', async (req, res) => {
       const seedResult = await query(
         `INSERT INTO workflows (user_id, name, is_live, nodes)
          VALUES ($1, 'Automotive Deal Onboarding', true, $2) RETURNING *`,
-         [req.user.id, JSON.stringify(DEFAULT_NODES)]
+         [req.workspaceId, JSON.stringify(DEFAULT_NODES)]
       )
       return res.json(seedResult.rows)
     }
@@ -96,7 +96,7 @@ router.post('/', async (req, res) => {
     const { rows } = await query(
       `INSERT INTO workflows (user_id, name, is_live, nodes, created_at, updated_at)
        VALUES ($1, $2, false, $3, NOW(), NOW()) RETURNING *`,
-      [req.user.id, name || 'Untitled Workflow', JSON.stringify([])]
+      [req.workspaceId, name || 'Untitled Workflow', JSON.stringify([])]
     )
     res.status(201).json(rows[0])
   } catch (err) {
@@ -115,7 +115,7 @@ router.put('/:id', async (req, res) => {
            nodes = COALESCE($3, nodes), 
            updated_at = NOW()
        WHERE id = $4 AND user_id = $5 RETURNING *`,
-      [name, is_live, nodes ? JSON.stringify(nodes) : null, req.params.id, req.user.id]
+      [name, is_live, nodes ? JSON.stringify(nodes) : null, req.params.id, req.workspaceId]
     )
 
     if (!rows.length) {
@@ -133,7 +133,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const { rows } = await query(
       'DELETE FROM workflows WHERE id = $1 AND user_id = $2 RETURNING *',
-      [req.params.id, req.user.id]
+      [req.params.id, req.workspaceId]
     )
     if (!rows.length) {
       return res.status(404).json({ error: 'Workflow not found or unauthorized' })
@@ -149,7 +149,7 @@ router.get('/:id/runs', async (req, res) => {
   try {
     const { rows } = await query(
       'SELECT * FROM workflow_runs WHERE workflow_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 50',
-      [req.params.id, req.user.id]
+      [req.params.id, req.workspaceId]
     )
     res.json(rows)
   } catch (err) {
@@ -182,7 +182,7 @@ router.post('/:id/runs', async (req, res) => {
     const { rows } = await query(
       `INSERT INTO workflow_runs (workflow_id, user_id, status, duration, test_company, test_value, current_step, created_at)
        VALUES ($1, $2, 'Executing', NULL, $3, $4, 0, NOW()) RETURNING *`,
-      [req.params.id, req.user.id, test_company || 'Automotive Shop Client', test_value || 0]
+      [req.params.id, req.workspaceId, test_company || 'Automotive Shop Client', test_value || 0]
     )
     const run = rows[0]
     const logKey = `run:${run.id}:logs`
@@ -230,7 +230,7 @@ router.put('/:id/runs/:runId', async (req, res) => {
            duration = COALESCE($2, duration), 
            current_step = COALESCE($3, current_step)
        WHERE id = $4 AND user_id = $5 AND workflow_id = $6 RETURNING *`,
-      [status, duration, current_step, req.params.runId, req.user.id, req.params.id]
+      [status, duration, current_step, req.params.runId, req.workspaceId, req.params.id]
     )
 
     if (!rows.length) {
@@ -285,7 +285,7 @@ router.post('/:id/runs/:runId/cancel', async (req, res) => {
       `UPDATE workflow_runs 
        SET status = 'Cancelled'
        WHERE id = $1 AND user_id = $2 AND workflow_id = $3 RETURNING *`,
-      [req.params.runId, req.user.id, req.params.id]
+      [req.params.runId, req.workspaceId, req.params.id]
     )
 
     if (!rows.length) {

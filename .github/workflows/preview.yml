@@ -9,6 +9,9 @@ on:
         default: new-feature
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   checks:
     uses: ./.github/workflows/checks.yml

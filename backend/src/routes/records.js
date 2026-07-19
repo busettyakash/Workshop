@@ -27,7 +27,7 @@ router.use('/:module', validateTable)
 /* GET /api/records/:module */
 router.get('/:module', async (req, res) => {
   const userId = req.workspaceId
-  const { module } = req.params
+  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
   const { page = 1, limit = 50 } = req.query
   const offset = (page - 1) * limit
 
@@ -48,7 +48,8 @@ router.get('/:module', async (req, res) => {
 /* GET /api/records/:module/:id */
 router.get('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
-  const { module, id } = req.params
+  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
+  const { id } = req.params
 
   try {
     const { rows } = await query(
@@ -67,7 +68,7 @@ router.get('/:module/:id', async (req, res) => {
 /* POST /api/records/:module */
 router.post('/:module', async (req, res) => {
   const userId = req.workspaceId
-  const { module } = req.params
+  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
   
   // Exclude fields like id, created_at, updated_at
   const bodyFields = { ...req.body }
@@ -104,7 +105,8 @@ router.post('/:module', async (req, res) => {
 /* PUT /api/records/:module/:id */
 router.put('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
-  const { module, id } = req.params
+  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
+  const { id } = req.params
 
   const bodyFields = { ...req.body }
   delete bodyFields.id
@@ -146,7 +148,8 @@ router.put('/:module/:id', async (req, res) => {
 /* DELETE /api/records/:module/:id */
 router.delete('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
-  const { module, id } = req.params
+  const module = String(req.params.module).replace(/[^a-zA-Z0-9_]/g, '')
+  const { id } = req.params
 
   try {
     const { rowCount } = await query(

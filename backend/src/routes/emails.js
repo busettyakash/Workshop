@@ -10,6 +10,15 @@ const router = Router()
 router.use(apiLimiter)
 router.use(requireAuth)
 
+const escapeHtml = (unsafe) => {
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 const clearEmailsCache = async (userId) => {
   try {
     const keys = await redis.keys(`emails:${userId}:*`).catch(() => [])
@@ -174,7 +183,7 @@ router.post('/', async (req, res) => {
         const mailOptions = {
           to: from_email.trim(),
           subject: subject.trim(),
-          html: body.replace(/\n/g, '<br/>')
+          html: escapeHtml(body).replace(/\n/g, '<br/>')
         }
         
         // Add attachment if present

@@ -13,7 +13,7 @@ import { query } from './db.js'
 
 // ── DNS patch (same as smtp.js) ── Only active in development mode to avoid affecting production
 if (process.env.NODE_ENV === 'development') {
-  try { dns.setServers(['8.8.8.8', '8.8.4.4']) } catch (_) {}
+  try { dns.setServers(['8.8.8.8', '8.8.4.4']) } catch {}
   const _origLookup = dns.lookup
   dns.lookup = function (hostname, options, callback) {
     if (typeof options === 'function') { callback = options; options = {} }
@@ -116,7 +116,7 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
 
           const fromName    = parsed.from?.value?.[0]?.name || fromAddress
           const bodyText    = parsed.text || parsed.html || ''
-          const preview     = bodyText.replace(/<\/?([^>]+)(>|$)/g, '').replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 150)
+          const preview     = String(bodyText).slice(0, 150)
           const date        = parsed.date || new Date()
 
           // Skip emails we already saved (by matching from + subject + approximate timestamp)

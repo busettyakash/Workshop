@@ -241,7 +241,7 @@ export default function Emails() {
       <Sidebar />
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
-        <main className="ws-dash-body" style={{ padding: 0, display: 'flex', overflow: 'hidden', flex: 1, minHeight: 0 }}>
+        <main className="ws-dash-body ws-dash-body-split" style={{ padding: 0, display: 'flex', overflow: 'hidden', flex: 1, minHeight: 0 }}>
 
           {/* ── Left panel: email list ── */}
           <div style={{
@@ -251,27 +251,28 @@ export default function Emails() {
             background: '#fff', height: '100%', overflow: 'hidden'
           }}>
             {/* Header */}
-            <div style={{ padding: '18px 16px 10px', borderBottom: '1px solid #f3f4f6' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ padding: '10px 14px 10px', borderBottom: '1px solid #f3f4f6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <h1 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>Mail</h1>
+                  <h1 style={{ fontSize: '1.05rem', fontWeight: 600, color: '#0f172a', margin: 0, paddingLeft: 14 }}>Mail</h1>
                   {directionTab === 'inbox' && unreadCount > 0 && (
                     <span style={{ background: '#3d68f5', color: '#fff', fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: 10 }}>{unreadCount}</span>
                   )}
                 </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <button
                     onClick={handleSync}
                     disabled={syncing}
                     title="Sync Gmail inbox"
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontSize: '0.78rem', fontWeight: 600, cursor: syncing ? 'not-allowed' : 'pointer', opacity: syncing ? 0.6 : 1 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', height: 26, borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontSize: '0.75rem', fontWeight: 500, cursor: syncing ? 'not-allowed' : 'pointer', opacity: syncing ? 0.6 : 1 }}
                   >
                     <RefreshCw size={13} className={syncing ? 'ws-chat-loader-spin' : ''} />
                     {syncing ? 'Syncing…' : 'Sync'}
                   </button>
                   <button
                     onClick={() => { setComposing(true); setSelected(null); }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: 'none', background: '#111827', color: '#fff', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                    className="attio-btn attio-btn-primary"
+                    style={{ height: 26, fontSize: '0.75rem', padding: '2px 8px', gap: 4 }}
                   >
                     <Plus size={13} /> Compose
                   </button>
@@ -279,28 +280,28 @@ export default function Emails() {
               </div>
 
               {/* Inbox vs Sent Tabs */}
-              <div style={{ display: 'flex', borderBottom: '1px solid #f3f4f6', marginBottom: 10 }}>
+              <div style={{ display: 'flex', borderBottom: '1px solid #f3f4f6', marginBottom: 8 }}>
                 <button 
                   onClick={() => { setDirectionTab('inbox'); setSelected(null); setComposing(false); }}
-                  style={{ flex: 1, padding: '8px 0', border: 'none', background: 'none', borderBottom: directionTab === 'inbox' ? '2px solid #3d68f5' : '2px solid transparent', color: directionTab === 'inbox' ? '#3d68f5' : '#6b7280', fontWeight: directionTab === 'inbox' ? 700 : 500, fontSize: '0.8rem', cursor: 'pointer' }}
+                  style={{ flex: 1, padding: '6px 0', border: 'none', background: 'none', borderBottom: directionTab === 'inbox' ? '2px solid #2563eb' : '2px solid transparent', color: directionTab === 'inbox' ? '#2563eb' : '#6b7280', fontWeight: directionTab === 'inbox' ? 600 : 500, fontSize: '0.78rem', cursor: 'pointer' }}
                 >
                   Inbox
                 </button>
                 <button 
                   onClick={() => { setDirectionTab('sent'); setSelected(null); setComposing(false); }}
-                  style={{ flex: 1, padding: '8px 0', border: 'none', background: 'none', borderBottom: directionTab === 'sent' ? '2px solid #3d68f5' : '2px solid transparent', color: directionTab === 'sent' ? '#3d68f5' : '#6b7280', fontWeight: directionTab === 'sent' ? 700 : 500, fontSize: '0.8rem', cursor: 'pointer' }}
+                  style={{ flex: 1, padding: '6px 0', border: 'none', background: 'none', borderBottom: directionTab === 'sent' ? '2px solid #2563eb' : '2px solid transparent', color: directionTab === 'sent' ? '#2563eb' : '#6b7280', fontWeight: directionTab === 'sent' ? 600 : 500, fontSize: '0.78rem', cursor: 'pointer' }}
                 >
                   Sent
                 </button>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 7, padding: '6px 10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '3px 8px', height: 28 }}>
                 <Search size={13} style={{ color: '#9ca3af' }} />
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search emails…"
-                  style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.82rem', color: '#374151', width: '100%' }}
+                  style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.78rem', color: '#374151', width: '100%' }}
                 />
               </div>
             </div>
@@ -321,22 +322,22 @@ export default function Emails() {
                     key={email.id}
                     onClick={() => handleSelect(email)}
                     style={{
-                      padding: '12px 16px', cursor: 'pointer',
+                      padding: '10px 14px', cursor: 'pointer',
                       background: selected?.id === email.id ? '#f0f4ff' : (!email.is_read ? '#f8faff' : 'transparent'),
                       borderBottom: '1px solid #f3f4f6',
                       borderLeft: selected?.id === email.id ? '2px solid #3d68f5' : '2px solid transparent',
-                      transition: 'all 0.1s'
+                      transition: 'all 0.15s'
                     }}
                     onMouseEnter={e => { if (selected?.id !== email.id) e.currentTarget.style.background = '#f9fafb' }}
                     onMouseLeave={e => { if (selected?.id !== email.id) e.currentTarget.style.background = !email.is_read ? '#f8faff' : 'transparent' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: '50%', background: avatarColor(directionTab === 'inbox' ? email.from_name : email.from_email), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 700, flexShrink: 0 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: avatarColor(directionTab === 'inbox' ? email.from_name : email.from_email), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 600, flexShrink: 0 }}>
                         {getInitials(directionTab === 'inbox' ? email.from_name : email.from_email)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                          <span style={{ fontSize: '0.845rem', fontWeight: !email.is_read ? 700 : 500, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '0.83rem', fontWeight: !email.is_read ? 600 : 500, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {directionTab === 'inbox' ? email.from_name : `To: ${email.from_email}`}
                           </span>
                           <span style={{ fontSize: '0.7rem', color: '#9ca3af', flexShrink: 0, marginLeft: 8 }}>{formatDate(email.created_at)}</span>
@@ -423,7 +424,8 @@ export default function Emails() {
                   <button
                     onClick={handleSend}
                     disabled={sending}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontSize: '0.82rem', fontWeight: 600, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1 }}
+                    className="btn-blue"
+                    style={{ background: sending ? '#9ca3af' : undefined, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1 }}
                   >
                     {sending ? <Loader2 size={13} className="ws-chat-loader-spin" /> : <Send size={13} />}
                     {sending ? 'Sending…' : 'Send'}

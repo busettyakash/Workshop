@@ -27,6 +27,7 @@ async function createTables() {
       );
 
       ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(20);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
 
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
@@ -180,8 +181,7 @@ async function createTables() {
         `, [table]);
 
         const cols = colsRes.rows.map(r => r.column_name);
-        let usingExpr = 'true';
-
+        let usingExpr;
         if (cols.includes('user_id')) {
           usingExpr = `user_id::text = current_setting('app.current_user_id', true) OR current_setting('app.bypass_rls', true) = 'on'`;
         } else if (cols.includes('workspace_owner_id')) {

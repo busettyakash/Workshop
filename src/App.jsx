@@ -5,6 +5,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Landing     from './pages/Landing/index'
 import Login       from './pages/Auth/Login'
 import Signup      from './pages/Auth/Signup'
+import ForgotPassword from './pages/Auth/ForgotPassword'
+
+// Pages
 import Dashboard   from './pages/Dashboard/index'
 import Products    from './pages/Products/index'
 import Billing     from './pages/Billing/index'
@@ -17,13 +20,13 @@ import Paid    from './pages/Paid/index'
 import Unpaid  from './pages/Unpaid/index'
 import People   from './pages/People/index'
 import PersonForm from './pages/People/PersonForm'
-import Notifications from './pages/Notifications/index'
 import Deals    from './pages/Deals/index'
 import DealForm from './pages/Deals/DealForm'
 import DealReview from './pages/Deals/DealReview'
 import DealLogs from './pages/DealLogs/index'
 import Notes  from './pages/Notes/index'
 import Emails from './pages/Emails/index'
+import Settings from './pages/Settings/index'
 
 // UI
 import ToastContainer from './components/ui/Toast'
@@ -53,9 +56,10 @@ export default function App() {
       <ToastContainer />
       <Routes>
         {/* Public */}
-        <Route path="/"       element={<Landing />} />
-        <Route path="/login"  element={<PublicRoute><Login /></PublicRoute>} />
-        <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
+        <Route path="/"               element={<Landing />} />
+        <Route path="/login"          element={<PublicRoute><Login /></PublicRoute>} />
+        <Route path="/signup"         element={<PublicRoute><Signup /></PublicRoute>} />
+        <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
 
         {/* Protected */}
         <Route path="/dashboard"   element={<PrivateRoute><Dashboard /></PrivateRoute>} />
@@ -77,12 +81,12 @@ export default function App() {
         <Route path="/companies"    element={<Navigate to="/" replace />} />
         <Route path="/companies/add" element={<Navigate to="/" replace />} />
         <Route path="/companies/edit/:id" element={<Navigate to="/" replace />} />
-        <Route path="/notifications" element={<PrivateRoute><Notifications /></PrivateRoute>} />
         <Route path="/deals"     element={<PrivateRoute><Deals /></PrivateRoute>} />
         <Route path="/deals/add"  element={<PrivateRoute><DealForm /></PrivateRoute>} />
         <Route path="/deals/edit/:id" element={<PrivateRoute><DealForm /></PrivateRoute>} />
         <Route path="/deals/review/:id" element={<PrivateRoute><DealReview /></PrivateRoute>} />
         <Route path="/deal-logs" element={<PrivateRoute><DealLogs /></PrivateRoute>} />
+        <Route path="/settings"  element={<PrivateRoute><Settings /></PrivateRoute>} />
 
         {/* 404 */}
         <Route path="*" element={<Navigate to="/" replace />} />

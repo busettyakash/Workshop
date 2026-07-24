@@ -140,7 +140,7 @@ router.post('/', async (req, res) => {
             payload: { title: notifTitle, body: notifBody, link: notifLink }
           })
         }
-      } catch (_) {}
+      } catch {}
     } catch (nErr) {
       console.error('Failed to create notification on deal creation:', nErr.message)
     }
@@ -246,7 +246,7 @@ router.put('/:id', async (req, res) => {
               payload: { title: notifTitle, body: notifBody, link: notifLink }
             })
           }
-        } catch (_) {}
+        } catch {}
       } catch (nErr) {
         console.error('Failed to create notification on deal update:', nErr.message)
       }
@@ -277,7 +277,7 @@ router.post('/:id/approve', async (req, res) => {
     let parsedProducts = []
     if (old.products) {
       if (typeof old.products === 'string') {
-        try { parsedProducts = JSON.parse(old.products) } catch (e) {}
+        try { parsedProducts = JSON.parse(old.products) } catch {}
       } else if (Array.isArray(old.products)) {
         parsedProducts = old.products
       }
@@ -310,7 +310,7 @@ router.post('/:id/approve', async (req, res) => {
          VALUES ($1, $2, $3, 'success', false, $4, NOW())`,
         [old.user_id, 'Deal Approved', `Deal "${old.title}" was approved by the customer.`, `/deals/edit/${old.id}`]
       )
-    } catch (e) {}
+    } catch {}
 
     res.json(rows[0])
   } catch (err) {
@@ -341,7 +341,7 @@ router.post('/:id/reject', async (req, res) => {
          VALUES ($1, $2, $3, 'error', false, $4, NOW())`,
         [old.user_id, 'Deal Rejected', `Deal "${old.title}" was rejected by the customer.`, `/deals/edit/${old.id}`]
       )
-    } catch (e) {}
+    } catch {}
 
     res.json(rows[0])
   } catch (err) {

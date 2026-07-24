@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mail, Lock } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import Notification from '../../components/Notification'
 import AuthLayout from '../../components/layout/AuthLayout'
 import { authApi } from '../../services/authApi'
@@ -15,6 +15,7 @@ export default function Login() {
   const [step, setStep] = useState('email') // 'email' | 'otp' | 'password'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -192,23 +193,42 @@ export default function Login() {
 
             <form className="ws-auth-form" onSubmit={handleLogin}>
               <div className="ws-auth-input-group">
-                <div className="ws-auth-input-wrap">
+                <div className="ws-auth-input-wrap" style={{ position: 'relative' }}>
                   <Lock size={14} className="ws-auth-icon" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     className="ws-auth-input"
                     placeholder="Enter your password…"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     autoFocus
                     required
+                    style={{ paddingRight: 36 }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 2
+                    }}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
 
               <button type="submit" className="ws-auth-btn-submit" disabled={loading}>
                 {loading ? 'Signing in…' : 'Sign in'}
               </button>
+
+              <div style={{ textAlign: 'center', marginTop: '14px' }}>
+                <Link to="/forgot-password" className="ws-auth-switch" style={{ color: 'var(--color-blue)', fontWeight: 500, fontSize: '0.85rem' }}>
+                  Forgot password?
+                </Link>
+              </div>
             </form>
           </>
 
@@ -243,8 +263,15 @@ export default function Login() {
               </button>
             </form>
 
-            <div className="ws-auth-switch">
-              Don't have an account? <Link to="/signup">Sign up</Link>
+            <div className="ws-auth-switch" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '16px' }}>
+              <div>
+                Don't have an account? <Link to="/signup">Sign up</Link>
+              </div>
+              <div>
+                <Link to="/forgot-password" style={{ color: 'var(--color-blue)', fontWeight: 500, fontSize: '0.8125rem' }}>
+                  Forgot password?
+                </Link>
+              </div>
             </div>
           </>
         )}

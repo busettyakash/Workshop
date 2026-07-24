@@ -521,7 +521,8 @@ export default function DealForm() {
                   <button
                     type="submit"
                     disabled={saving}
-                    style={{ width: '100%', height: 40, border: 'none', borderRadius: '8px', background: saving ? '#9ca3af' : '#111827', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                    className="btn-blue"
+                    style={{ width: '100%', justifyContent: 'center', background: saving ? '#9ca3af' : undefined, cursor: saving ? 'not-allowed' : 'pointer' }}
                   >
                     {saving && <Loader2 size={14} className="ws-chat-loader-spin" />}
                     {saving ? 'Saving...' : id ? 'Update Deal' : 'Save Deal'}

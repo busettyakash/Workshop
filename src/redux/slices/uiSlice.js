@@ -4,7 +4,6 @@ const initialState = {
   sidebarOpen:   true,
   chatOpen:      true,
   activeNav:     'Home',
-  notifications: [],
   toasts:        [],
   configureOpen: false,
 }

@@ -19,7 +19,6 @@ import './Sidebar.css'
 
 const ICON_MAP = {
   Home:          <Home size={14} />,
-  Notifications: <Bell size={14} />,
   Tasks:         <CheckSquare size={14} />,
   Notes:         <FileText size={14} />,
   Emails:        <Mail size={14} />,
@@ -60,6 +59,7 @@ const ALL_NAV_ITEMS = {
   'Unpaid':        { icon: 'Unpaid',        path: ROUTES.UNPAID },
   'Import Stock':  { icon: 'ImportStock',   path: ROUTES.IMPORT_STOCK },
   'Deal Logs':     { icon: 'DealLogs',      path: '/deal-logs' },
+  'Settings':      { icon: 'Settings',      path: '/settings' },
 }
 
 const MAIN_NAV = [
@@ -84,6 +84,7 @@ const INVOICES_NAV = [
 
 const LISTS_NAV = [
   { label: 'Deal Logs', icon: 'DealLogs', path: '/deal-logs' },
+  { label: 'Settings',  icon: 'Settings', path: '/settings' },
 ]
 
 function NavItem({ item, active, onClick, favorites, onToggleFav }) {
@@ -124,7 +125,14 @@ export default function Sidebar() {
   const { shopName } = useAuth()
 
   const [automationsOpen, setAutomationsOpen] = useState(false)
-  const [favoritesOpen, setFavoritesOpen] = useState(true)
+  const [favoritesOpen, setFavoritesOpen] = useState(false)
+  const [recordsOpen, setRecordsOpen] = useState(() => {
+    return ['/products', '/people', '/deals', '/import-stock'].some(path => window.location.pathname.startsWith(path))
+  })
+  const [billingOpen, setBillingOpen] = useState(() => {
+    return ['/billing', '/paid', '/unpaid'].some(path => window.location.pathname.startsWith(path))
+  })
+  const [listsOpen, setListsOpen] = useState(false)
 
   const location = useLocation()
   const [chats, setChats] = useState([])
@@ -243,6 +251,17 @@ export default function Sidebar() {
     dispatch(addToast({ message: 'Signed out successfully.', type: 'info' }))
     navigate(ROUTES.LOGIN) 
   }
+
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('ws_sidebar_width')
+    return saved ? parseInt(saved, 10) : 200
+  })
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-width', `${sidebarWidth}px`)
+    localStorage.setItem('ws_sidebar_width', sidebarWidth)
+  }, [sidebarWidth])
+
 
   const logoLetter = activeWorkspaceName ? activeWorkspaceName.charAt(0).toUpperCase() : 'W'
 
@@ -432,50 +451,123 @@ export default function Sidebar() {
             )}
           </div>
 
-          <div className="ws-sb-section-label">Records</div>
-          <div className="ws-sb-nav-list">
-            {RECORDS_NAV.map(item => (
-              <NavItem 
-                key={item.label} 
-                item={item} 
-                active={activeNav === item.label} 
-                onClick={handleNav} 
-                favorites={favorites}
-                onToggleFav={toggleFavorite}
-              />
-            ))}
-          </div>
-
-          <div className="ws-sb-section-label">Billing</div>
-          <div className="ws-sb-nav-list">
-            {INVOICES_NAV.map(item => (
-              <NavItem 
-                key={item.label} 
-                item={item} 
-                active={activeNav === item.label} 
-                onClick={handleNav} 
-                favorites={favorites}
-                onToggleFav={toggleFavorite}
-              />
-            ))}
-          </div>
-
-          {LISTS_NAV.length > 0 && (
-            <>
-              <div className="ws-sb-section-label">Lists</div>
-              <div className="ws-sb-nav-list">
-                {LISTS_NAV.map(item => (
-                  <NavItem 
-                    key={item.label} 
-                    item={item} 
-                    active={activeNav === item.label} 
-                    onClick={handleNav} 
-                    favorites={favorites}
-                    onToggleFav={toggleFavorite}
-                  />
+          {/* Collapsible Records Item */}
+          <div className="ws-sb-collapsible-item">
+            <div className="ws-sb-nav-item-wrapper">
+              <button 
+                className="ws-sb-nav-item-btn"
+                onClick={() => setRecordsOpen(!recordsOpen)}
+              >
+                {ICON_MAP.Folder}
+                <span>Records</span>
+              </button>
+              <button 
+                className={`ws-sb-arrow-btn ${recordsOpen ? 'rotated' : ''}`}
+                onClick={() => setRecordsOpen(!recordsOpen)}
+                aria-label="Toggle sublist"
+              >
+                <ChevronRight size={12} className="ws-sb-arrow" />
+              </button>
+            </div>
+            
+            {recordsOpen && (
+              <div className="ws-sb-sublist">
+                {RECORDS_NAV.map(item => (
+                  <Link to={item.path} key={item.label} style={{ textDecoration: 'none' }} onClick={() => handleNav(item.label)}>
+                    <div className={`ws-sb-subitem ${activeNav === item.label ? 'active' : ''}`}>
+                      {ICON_MAP[item.icon]}
+                      <span>{item.label}</span>
+                      <button 
+                        className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
+                        onClick={(e) => toggleFavorite(item.label, e)}
+                      >
+                        <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
+                      </button>
+                    </div>
+                  </Link>
                 ))}
               </div>
-            </>
+            )}
+          </div>
+
+          {/* Collapsible Billing Item */}
+          <div className="ws-sb-collapsible-item">
+            <div className="ws-sb-nav-item-wrapper">
+              <button 
+                className="ws-sb-nav-item-btn"
+                onClick={() => setBillingOpen(!billingOpen)}
+              >
+                {ICON_MAP.Billing}
+                <span>Billing</span>
+              </button>
+              <button 
+                className={`ws-sb-arrow-btn ${billingOpen ? 'rotated' : ''}`}
+                onClick={() => setBillingOpen(!billingOpen)}
+                aria-label="Toggle sublist"
+              >
+                <ChevronRight size={12} className="ws-sb-arrow" />
+              </button>
+            </div>
+            
+            {billingOpen && (
+              <div className="ws-sb-sublist">
+                {INVOICES_NAV.map(item => (
+                  <Link to={item.path} key={item.label} style={{ textDecoration: 'none' }} onClick={() => handleNav(item.label)}>
+                    <div className={`ws-sb-subitem ${activeNav === item.label ? 'active' : ''}`}>
+                      {ICON_MAP[item.icon]}
+                      <span>{item.label}</span>
+                      <button 
+                        className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
+                        onClick={(e) => toggleFavorite(item.label, e)}
+                      >
+                        <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
+                      </button>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Collapsible Lists Item */}
+          {LISTS_NAV.length > 0 && (
+            <div className="ws-sb-collapsible-item">
+              <div className="ws-sb-nav-item-wrapper">
+                <button 
+                  className="ws-sb-nav-item-btn"
+                  onClick={() => setListsOpen(!listsOpen)}
+                >
+                  <LayoutGrid size={14} />
+                  <span>Lists</span>
+                </button>
+                <button 
+                  className={`ws-sb-arrow-btn ${listsOpen ? 'rotated' : ''}`}
+                  onClick={() => setListsOpen(!listsOpen)}
+                  aria-label="Toggle sublist"
+                >
+                  <ChevronRight size={12} className="ws-sb-arrow" />
+                </button>
+              </div>
+              
+              {listsOpen && (
+                <div className="ws-sb-sublist">
+                  {LISTS_NAV.map(item => (
+                    <Link to={item.path} key={item.label} style={{ textDecoration: 'none' }} onClick={() => handleNav(item.label)}>
+                      <div className={`ws-sb-subitem ${activeNav === item.label ? 'active' : ''}`}>
+                        {ICON_MAP[item.icon]}
+                        <span>{item.label}</span>
+                        <button 
+                          className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
+                          onClick={(e) => toggleFavorite(item.label, e)}
+                        >
+                          <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
+                        </button>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           <div className="ws-sb-section-label">Chats</div>
@@ -498,7 +590,7 @@ export default function Sidebar() {
                       gap: '8px', 
                       padding: '6px 12px', 
                       borderRadius: '6px',
-                      fontSize: '0.8rem',
+                      fontSize: '0.85rem',
                       color: isActive ? '#3d68f5' : '#4b5563',
                       background: isActive ? '#eff6ff' : 'transparent',
                       transition: 'all 0.12s'

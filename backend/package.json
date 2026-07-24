@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "eslint": "^9.39.5",
+    "eslint-plugin-sonarjs": "^4.2.0",
     "globals": "^17.7.0"
   },
   "overrides": {

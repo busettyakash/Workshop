@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
@@ -52,6 +52,8 @@ const S = {
 
 export default function PersonForm() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+  const returnUrl = searchParams.get('returnUrl')
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
@@ -111,11 +113,18 @@ export default function PersonForm() {
       if (id) {
         await api.put(`/people/${id}`, form)
         dispatch(addToast({ message: 'Person updated successfully!', type: 'success' }))
+        navigate(returnUrl || '/people')
       } else {
-        await api.post('/people', form)
+        const res = await api.post('/people', form)
+        const newPerson = res.data?.data || res.data
         dispatch(addToast({ message: 'Person added successfully!', type: 'success' }))
+        if (returnUrl) {
+          const sep = returnUrl.includes('?') ? '&' : '?'
+          navigate(newPerson?.id ? `${returnUrl}${sep}createdPersonId=${newPerson.id}` : returnUrl)
+        } else {
+          navigate('/people')
+        }
       }
-      navigate('/people')
     } catch {
       dispatch(addToast({ message: 'Failed to save person details', type: 'error' }))
     } finally {
@@ -139,7 +148,7 @@ export default function PersonForm() {
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
             <button
-              onClick={() => navigate('/people')}
+              onClick={() => navigate(returnUrl || '/people')}
               style={{ background: '#f3f4f6', border: 'none', borderRadius: '8px', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6b7280', flexShrink: 0 }}
               onMouseEnter={e => e.currentTarget.style.background = '#e5e7eb'}
               onMouseLeave={e => e.currentTarget.style.background = '#f3f4f6'}
@@ -245,7 +254,8 @@ export default function PersonForm() {
                   <button
                     type="submit"
                     disabled={saving}
-                    style={{ width: '100%', height: 40, border: 'none', borderRadius: '8px', background: saving ? '#9ca3af' : '#111827', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                    className="btn-blue"
+                    style={{ width: '100%', justifyContent: 'center', background: saving ? '#9ca3af' : undefined, cursor: saving ? 'not-allowed' : 'pointer' }}
                   >
                     {saving && <Loader2 size={14} className="ws-chat-loader-spin" />}
                     {saving ? 'Saving...' : id ? 'Update Person' : 'Save Person'}

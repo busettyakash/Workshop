@@ -1,17 +1,62 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown } from 'lucide-react'
-import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
+import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown, Eye } from 'lucide-react'
+import { getAvatarColor, getSingleLetter, getPillStyle, getCategoryTagStyle } from '../../utils/tableHelpers'
+import { getBulkUnitDetails } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
-
-// Form component moved to a separate page
-
-import { useNavigate } from 'react-router-dom'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import TablePagination from '../../components/ui/TablePagination'
+
+function PricingModal({ product, onClose }) {
+  if (!product) return null
+  const bulkUnit = getBulkUnitDetails(product.unit)
+  const bagWeight = parseFloat(product.bag_weight || 1)
+  const unitPrice = (parseFloat(product.price || 0) / bagWeight).toFixed(2)
+
+  return (
+    <div className="ws-modal-backdrop" onClick={onClose}>
+      <div className="ws-modal-card" style={{ maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
+        <div className="ws-modal-header">
+          <h3 className="ws-modal-title">Pricing Details</h3>
+          <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="ws-modal-body" style={{ padding: '20px 24px' }}>
+          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', marginBottom: 14, borderBottom: '1px solid #f1f5f9', paddingBottom: 8 }}>
+            {product.name}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: '0.8125rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#64748b' }}>Package Price:</span>
+              <span style={{ fontWeight: 600, color: '#0f172a' }}>₹{product.price}</span>
+            </div>
+            {bulkUnit && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#64748b' }}>Package Unit:</span>
+                  <span style={{ fontWeight: 500, color: '#334155' }}>{bulkUnit.name} ({bagWeight}{bulkUnit.short})</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: 6, border: '1px solid #f1f5f9' }}>
+                  <span style={{ color: '#475467', fontWeight: 500 }}>Unit Rate Breakdown:</span>
+                  <span style={{ fontWeight: 700, color: '#2563eb' }}>₹{unitPrice} / {bulkUnit.short}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="ws-modal-footer">
+          <button className="ws-modal-btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function ImportStock() {
   const dispatch = useAppDispatch()
@@ -21,6 +66,7 @@ export default function ImportStock() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState([])
+  const [selectedPricing, setSelectedPricing] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' })
 
   const [page, setPage] = useState(1)
@@ -130,120 +176,106 @@ export default function ImportStock() {
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
         <main className="ws-dash-body">
-          <div className="ws-dash-greeting">Import Stock</div>
-          <div className="ws-table-section" style={{ minHeight: 'calc(100vh - 240px)', display: 'flex', flexDirection: 'column' }}>
-            <div className="ws-table-header" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div className="ws-table-header-left">
-                  <h2 className="ws-table-title">All Stock Items</h2>
-                  <p className="ws-table-sub">Stage products here before adding them to your live inventory.</p>
-                </div>
-                <div className="ws-table-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  {selectedIds.length > 0 && (
-                    <button 
-                      className="ws-table-btn ws-table-btn--primary" 
-                      onClick={handleBulkAddToProducts} 
-                      style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 600 }}
-                    >
-                      <Plus size={13} style={{ marginRight: '6px' }} /> Add Selected ({selectedIds.length})
-                    </button>
-                  )}
-
-                  {/* Search box */}
-                  <div style={{ position: 'relative' }}>
-                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                    <input
-                      type="text"
-                      placeholder="Search stock..."
-                      value={search}
-                      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                      style={{
-                        padding: '8px 12px 8px 30px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        fontSize: '0.8125rem',
-                        outline: 'none',
-                        width: '180px',
-                        background: '#fff',
-                        color: '#374151'
-                      }}
-                    />
-                  </div>
-
-                  {/* Sort button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => {
-                      setSort(prev => prev === 'name_asc' ? 'name_desc' : prev === 'name_desc' ? '' : 'name_asc');
-                      setPage(1);
-                    }}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: sort ? '#111827' : '#d1d5db',
-                      background: sort ? '#f3f4f6' : '#fff',
-                      fontWeight: sort ? 600 : 500
-                    }}
-                  >
-                    <ArrowUpDown size={13} /> 
-                    Sort {sort === 'name_asc' ? 'A-Z' : sort === 'name_desc' ? 'Z-A' : ''}
-                  </button>
-
-                  {/* Filter button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => setShowFilterBar(prev => !prev)}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: showFilterBar || filterStatus !== 'all' ? '#111827' : '#d1d5db',
-                      background: showFilterBar || filterStatus !== 'all' ? '#f3f4f6' : '#fff',
-                      fontWeight: showFilterBar || filterStatus !== 'all' ? 600 : 500
-                    }}
-                  >
-                    <Filter size={13} /> Filter
-                  </button>
-
-                  <button className="ws-table-btn">
-                    <Upload size={13} style={{ marginRight: '6px' }} /> Import CSV
-                  </button>
-                  <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/import-stock/add')}>
-                    <Plus size={13} /> Add Stock
-                  </button>
-                </div>
+          <div className="attio-products-container">
+            {/* Top Toolbar */}
+            <div className="ws-unified-page-header">
+              <div className="ws-unified-header-left">
+                <span className="ws-unified-header-title">Import Stock</span>
+                <span className="ws-unified-header-badge">{total} items</span>
               </div>
+              <div className="ws-unified-header-actions">
+                {selectedIds.length > 0 && (
+                  <button 
+                    className="attio-btn" 
+                    onClick={handleBulkAddToProducts} 
+                    style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 600 }}
+                  >
+                    <Plus size={13} style={{ marginRight: '4px' }} /> Add Selected ({selectedIds.length})
+                  </button>
+                )}
 
-              {/* Expandable Filter Bar */}
-              {showFilterBar && (
-                <div style={{ display: 'flex', gap: 12, padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#4b5563' }}>
-                    <span>Status:</span>
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
-                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none', background: '#fff', fontSize: '0.8125rem', cursor: 'pointer' }}
-                    >
-                      <option value="all">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="active">Active</option>
-                      <option value="added">Added</option>
-                    </select>
-                  </div>
-
-                  {filterStatus !== 'all' && (
-                    <button 
-                      onClick={() => { setFilterStatus('all'); setPage(1); }}
-                      style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#3d68f5', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
-                    >
-                      Reset Filters
-                    </button>
-                  )}
+                {/* Search box */}
+                <div className="attio-search-box">
+                  <Search size={14} className="attio-search-icon" />
+                  <input
+                    type="text"
+                    className="attio-input-search"
+                    placeholder="Search stock..."
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                  />
                 </div>
-              )}
+
+                {/* Sort button */}
+                <button 
+                  className="attio-btn"
+                  onClick={() => {
+                    setSort(prev => prev === 'name_asc' ? 'name_desc' : prev === 'name_desc' ? '' : 'name_asc');
+                    setPage(1);
+                  }}
+                  style={{
+                    background: sort ? '#f1f5f9' : '#ffffff',
+                    borderColor: sort ? '#0f172a' : '#cbd5e1',
+                    fontWeight: sort ? 600 : 500
+                  }}
+                >
+                  <ArrowUpDown size={13} /> 
+                  Sort {sort === 'name_asc' ? 'A-Z' : sort === 'name_desc' ? 'Z-A' : ''}
+                </button>
+
+                {/* Filter button */}
+                <button 
+                  className="attio-btn"
+                  onClick={() => setShowFilterBar(prev => !prev)}
+                  style={{
+                    background: showFilterBar || filterStatus !== 'all' ? '#f1f5f9' : '#ffffff',
+                    borderColor: showFilterBar || filterStatus !== 'all' ? '#0f172a' : '#cbd5e1',
+                    fontWeight: showFilterBar || filterStatus !== 'all' ? 600 : 500
+                  }}
+                >
+                  <Filter size={13} /> Filter
+                </button>
+
+                <button className="attio-btn">
+                  <Upload size={13} style={{ marginRight: '4px' }} /> Import CSV
+                </button>
+                <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock/add')}>
+                  <Plus size={13} style={{ marginRight: '4px' }} /> Add Stock
+                </button>
+              </div>
             </div>
-            <div className="ws-table-wrap" style={{ flex: 1 }}>
+
+            {/* Expandable Filter Box */}
+            {showFilterBar && (
+              <div className="attio-filter-box">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Status:</span>
+                  <select
+                    className="attio-select"
+                    value={filterStatus}
+                    onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="active">Active</option>
+                    <option value="added">Added</option>
+                  </select>
+                </div>
+
+                {filterStatus !== 'all' && (
+                  <button 
+                    onClick={() => { setFilterStatus('all'); setPage(1); }}
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    Reset Filters
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Table Card Shell */}
+            <div className="attio-table-card">
+              <div className="attio-table-wrap">
               {loading ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Loader2 size={24} className="ws-chat-loader-spin" />
@@ -253,13 +285,13 @@ export default function ImportStock() {
                   No pending stock found. Click "Add stock" to stage one.
                 </div>
               ) : (
-                <table className="ws-table-styled">
+                <table className="attio-table">
                   <thead>
                     <tr>
-                      <th style={{ width: 40 }}>
+                      <th style={{ width: 28, textAlign: 'left', paddingLeft: 4 }}>
                         <input 
                           type="checkbox" 
-                          className="ws-table-checkbox" 
+                          className="attio-chk" 
                           checked={products.filter(p => p.status === 'active').length > 0 && products.filter(p => p.status === 'active').every(p => selectedIds.includes(p.id))}
                           onChange={() => {
                             const selectables = products.filter(p => p.status === 'active')
@@ -272,13 +304,13 @@ export default function ImportStock() {
                           }}
                         />
                       </th>
-                      <th>Product Name</th>
+                      <th>PRODUCT NAME</th>
                       <th>SKU</th>
-                      <th>Category</th>
-                      <th>Price</th>
-                      <th>Stock</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
+                      <th>CATEGORY</th>
+                      <th>PRICE</th>
+                      <th>STOCK</th>
+                      <th>STATUS</th>
+                      <th style={{ textAlign: 'right' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -289,11 +321,11 @@ export default function ImportStock() {
                       const stockStyle = getPillStyle(stockStatus)
                       return (
                         <tr key={row.id}>
-                          <td>
+                          <td style={{ textAlign: 'left', paddingLeft: 4 }}>
                             {row.status === 'added' ? (
                               <input 
                                 type="checkbox" 
-                                className="ws-table-checkbox" 
+                                className="attio-chk" 
                                 disabled 
                                 checked={false} 
                                 style={{ opacity: 0.4, cursor: 'not-allowed' }}
@@ -301,7 +333,7 @@ export default function ImportStock() {
                             ) : row.status !== 'active' ? (
                               <input 
                                 type="checkbox" 
-                                className="ws-table-checkbox" 
+                                className="attio-chk" 
                                 disabled 
                                 checked={false} 
                                 style={{ opacity: 0.4, cursor: 'not-allowed' }}
@@ -310,7 +342,7 @@ export default function ImportStock() {
                             ) : (
                               <input 
                                 type="checkbox" 
-                                className="ws-table-checkbox" 
+                                className="attio-chk" 
                                 checked={selectedIds.includes(row.id)}
                                 onChange={() => {
                                   setSelectedIds(prev => 
@@ -321,26 +353,48 @@ export default function ImportStock() {
                             )}
                           </td>
                           <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div className="ws-table-avatar" style={{ background: getAvatarColor(row.name) }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
                                 {getSingleLetter(row.name)}
                               </div>
-                              <span className="ws-table-primary-text" onClick={() => navigate(`/import-stock/edit/${row.id}`)}>
+                              <span className="ws-table-primary-text" onClick={() => navigate(`/import-stock/edit/${row.id}`)} style={{ fontWeight: 500, color: '#1e293b' }}>
                                 {row.name}
                               </span>
                             </div>
                           </td>
                           <td className="ws-td-mono">{row.sku || '—'}</td>
                           <td>
-                            <span className="ws-pill-topic" style={{ background: catStyle.bg, color: catStyle.text, borderColor: catStyle.border }}>
-                              {row.category || 'Unassigned'}
+                            {(() => {
+                              const catStyle = getCategoryTagStyle(row.category)
+                              return (
+                                <span className="attio-category-tag" style={{ background: catStyle.bg, color: catStyle.text, border: `1px solid ${catStyle.border}`, borderRadius: 6, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>
+                                  {row.category || 'Unassigned'}
+                                </span>
+                              )
+                            })()}
+                          </td>
+                          <td className="ws-td-price">
+                            <span style={{ fontWeight: 500, color: '#1e293b' }}>
+                              ₹{row.price} <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{row.unit ? `/ ${row.unit}` : ''}</span>
                             </span>
                           </td>
-                          <td className="ws-td-price">₹{row.price}</td>
                           <td>
-                            <span className="ws-pill-topic" style={{ background: stockStyle.bg, color: stockStyle.text, borderColor: stockStyle.border }}>
-                              Qty {row.stock}
-                            </span>
+                            {(() => {
+                              const bulkUnit = getBulkUnitDetails(row.unit)
+                              const bagWeight = parseFloat(row.bag_weight || 1)
+                              if (bulkUnit && bagWeight > 1) {
+                                return (
+                                  <span className="ws-pill-topic" style={{ background: stockStyle.bg, color: stockStyle.text, borderColor: stockStyle.border }}>
+                                    {row.stock} {bulkUnit.pluralName}
+                                  </span>
+                                )
+                              }
+                              return (
+                                <span className="ws-pill-topic" style={{ background: stockStyle.bg, color: stockStyle.text, borderColor: stockStyle.border }}>
+                                  {row.stock} {row.unit || 'pcs'}
+                                </span>
+                              )
+                            })()}
                           </td>
                           <td>
                             <span className="ws-pill-topic" style={{ background: statusStyle.bg, color: statusStyle.text, borderColor: statusStyle.border }}>
@@ -348,7 +402,36 @@ export default function ImportStock() {
                             </span>
                           </td>
                           <td>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
+                              {(() => {
+                                const bulkUnit = getBulkUnitDetails(row.unit)
+                                const bagWeight = parseFloat(row.bag_weight || 1)
+                                if (bulkUnit && bagWeight > 1) {
+                                  return (
+                                    <button 
+                                      onClick={() => setSelectedPricing(row)}
+                                      style={{
+                                        background: '#eff6ff',
+                                        border: '1px solid #bfdbfe',
+                                        color: '#2563eb',
+                                        cursor: 'pointer',
+                                        padding: '2px 8px',
+                                        borderRadius: 4,
+                                        fontSize: '0.72rem',
+                                        fontWeight: 500,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        transition: 'all 0.15s'
+                                      }}
+                                      title="View pricing details"
+                                    >
+                                      <Eye size={12} /> View
+                                    </button>
+                                  )
+                                }
+                                return null
+                              })()}
                               {row.status === 'added' ? (
                                 <button
                                   className="ws-chat-history-delete-btn"
@@ -402,96 +485,23 @@ export default function ImportStock() {
                 </table>
               )}
             </div>
-            {/* Pagination component outside ws-table-wrap at bottom of card */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid #f3f4f6', background: '#fff', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', marginTop: 'auto' }}>
-              <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
-                Showing <span style={{ fontWeight: 600, color: '#111827' }}>{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{Math.min(page * limit, total)}</span> of{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{total}</span> entries
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page <= 1 ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &lt;
-                </button>
-                {getPageNumbers().map((p, idx) => {
-                  if (p === '...') {
-                    return (
-                      <span key={`dots-${idx}`} style={{ color: '#9ca3af', padding: '0 8px', fontSize: '0.875rem' }}>
-                        ...
-                      </span>
-                    )
-                  }
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                        background: page === p ? '#111827' : '#fff',
-                        color: page === p ? '#fff' : '#374151',
-                        border: page === p ? '1px solid #111827' : '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      {p}
-                    </button>
-                  )
-                })}
-                <button
-                  type="button"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(page + 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page >= totalPages ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &gt;
-                </button>
-              </div>
+            {/* Pagination component */}
+            <TablePagination
+              page={page}
+              setPage={setPage}
+              total={total}
+              limit={limit}
+              getPageNumbers={getPageNumbers}
+              totalPages={totalPages}
+            />
             </div>
           </div>
         </main>
       </div>
+
+      {selectedPricing && (
+        <PricingModal product={selectedPricing} onClose={() => setSelectedPricing(null)} />
+      )}
 
       <ConfirmModal
         isOpen={confirmDelete.isOpen}

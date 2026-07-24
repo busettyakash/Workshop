@@ -172,7 +172,7 @@ export default function Notes() {
       <Sidebar />
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
-        <main className="ws-dash-body" style={{ padding: 0, display: 'flex', overflow: 'hidden', flex: 1, minHeight: 0 }}>
+        <main className="ws-dash-body ws-dash-body-split" style={{ padding: 0, display: 'flex', overflow: 'hidden', flex: 1, minHeight: 0 }}>
 
           {/* ── Left panel: notes list ── */}
           <div style={{
@@ -182,23 +182,24 @@ export default function Notes() {
             background: '#fff', height: '100%', overflow: 'hidden'
           }}>
             {/* Header */}
-            <div style={{ padding: '18px 16px 10px', borderBottom: '1px solid #f3f4f6' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <h1 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>Notes</h1>
+            <div style={{ padding: '10px 14px 10px', borderBottom: '1px solid #f3f4f6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <h1 style={{ fontSize: '1.05rem', fontWeight: 600, color: '#0f172a', margin: 0, paddingLeft: 14 }}>Notes</h1>
                 <button
                   onClick={() => { setShowNew(true); setEditing(false) }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: 'none', background: '#111827', color: '#fff', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                  className="attio-btn attio-btn-primary"
+                  style={{ height: 26, fontSize: '0.75rem', padding: '2px 8px', gap: 4 }}
                 >
                   <Plus size={13} /> New
                 </button>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 7, padding: '6px 10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '3px 8px', height: 28 }}>
                 <Search size={13} style={{ color: '#9ca3af' }} />
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search notes…"
-                  style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.82rem', color: '#374151', width: '100%' }}
+                  style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.78rem', color: '#374151', width: '100%' }}
                 />
               </div>
             </div>
@@ -237,11 +238,11 @@ export default function Notes() {
                     <input type="file" onChange={e => handleFileChange(e, 'new')} style={{ display: 'none' }} />
                     <Paperclip size={13} style={{ color: '#6b7280' }} />
                   </label>
-
                   <button
                     onClick={handleAddNote}
                     disabled={creating || !newTitle.trim()}
-                    style={{ flex: 1, padding: '5px 0', background: creating ? '#6b7280' : '#111827', color: '#fff', border: 'none', borderRadius: 6, fontSize: '0.78rem', fontWeight: 600, cursor: creating ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                    className="btn-blue"
+                    style={{ flex: 1, justifyContent: 'center', background: creating ? '#9ca3af' : undefined, cursor: creating ? 'not-allowed' : 'pointer' }}
                   >
                     {creating ? <Loader2 size={12} className="ws-chat-loader-spin" /> : null}
                     Save
@@ -258,8 +259,9 @@ export default function Notes() {
                   <Loader2 size={20} className="ws-chat-loader-spin" style={{ color: '#9ca3af' }} />
                 </div>
               ) : filtered.length === 0 ? (
-                <div style={{ padding: '40px 16px', textAlign: 'center', color: '#9ca3af' }}>
-                  <p style={{ fontSize: '0.82rem', margin: 0 }}>{search ? 'No notes match your search' : 'No notes yet. Create one!'}</p>
+                <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: '0.82rem' }}>
+                  <StickyNote size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
+                  <p style={{ margin: 0 }}>{search ? 'No notes match search' : 'No notes created yet'}</p>
                 </div>
               ) : (
                 filtered.map(note => (
@@ -267,33 +269,27 @@ export default function Notes() {
                     key={note.id}
                     onClick={() => handleSelect(note)}
                     style={{
-                      padding: '10px 16px', cursor: 'pointer',
-                      background: selected?.id === note.id ? '#f0f4ff' : 'transparent',
-                      borderLeft: selected?.id === note.id ? '2px solid #3d68f5' : '2px solid transparent',
-                      borderBottom: '1px solid #f9fafb',
-                      transition: 'all 0.1s'
+                      padding: '10px 14px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer',
+                      background: selected?.id === note.id ? '#eff6ff' : '#fff',
+                      borderLeft: selected?.id === note.id ? '3px solid #2563eb' : '3px solid transparent',
+                      transition: 'background 0.15s'
                     }}
-                    onMouseEnter={e => { if (selected?.id !== note.id) e.currentTarget.style.background = '#f9fafb' }}
-                    onMouseLeave={e => { if (selected?.id !== note.id) e.currentTarget.style.background = 'transparent' }}
                   >
-                    <div style={{ fontSize: '0.845rem', fontWeight: 600, color: '#111827', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note.title}</div>
-                    {note.body && (
-                      <div style={{ fontSize: '0.76rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{note.body}</div>
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{timeAgo(note.updated_at)}</div>
-                      {note.attachment_name && (
-                        <Paperclip size={10} style={{ color: '#9ca3af' }} />
-                      )}
+                    <div style={{ fontSize: '0.84rem', fontWeight: 500, color: '#0f172a', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {note.title}
                     </div>
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
+                      {note.body || 'No description'}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{timeAgo(note.updated_at)}</div>
                   </div>
                 ))
               )}
             </div>
           </div>
 
-          {/* ── Right panel: note detail / editor ── */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#fff' }}>
+          {/* ── Right panel: note detail / edit ── */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#fff', height: '100%', overflow: 'hidden' }}>
             {selected ? (
               <>
                 {/* Detail header */}
@@ -313,7 +309,8 @@ export default function Notes() {
                         <button
                           onClick={handleSaveEdit}
                           disabled={saving}
-                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 14px', background: '#111827', color: '#fff', border: 'none', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+                          className="btn-blue"
+                          style={{ opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}
                         >
                           {saving ? <Loader2 size={12} className="ws-chat-loader-spin" /> : null}
                           Save

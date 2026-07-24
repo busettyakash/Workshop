@@ -111,7 +111,7 @@ router.post('/', async (req, res) => {
   const lastMsg = messages[messages.length - 1]?.content || ''
 
   // ── Redis Cache Check ──
-  const cacheKey = `chat_cache:${userId}:${crypto.createHash('md5').update(lastMsg.toLowerCase().trim()).digest('hex')}`
+  const cacheKey = `chat_cache:${userId}:${crypto.createHash('sha256').update(lastMsg.toLowerCase().trim()).digest('hex')}`
   try {
     const cached = await redis.get(cacheKey)
     if (cached) {

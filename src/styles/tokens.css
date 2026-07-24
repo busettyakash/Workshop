@@ -59,9 +59,9 @@
   --color-surface-active:#f3f4f6;
 
   /* ── Sidebar ── */
-  --sidebar-width:     240px;
+  --sidebar-width:     200px;
   --sidebar-bg:        #fafafa;
-  --topbar-height:     52px;
+  --topbar-height:     44px;
 
   /* ── Radius ── */
   --radius-xs:  4px;

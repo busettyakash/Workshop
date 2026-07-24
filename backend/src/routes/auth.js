@@ -3,11 +3,11 @@ import insforge from '../lib/insforge.js'
 import { query } from '../lib/db.js'
 import redis from '../lib/redis.js'
 import resend from '../lib/resend.js'
-import { getOtpTemplate } from '../utils/emailTemplates.js'
+import { getOtpTemplate, getPasswordResetOtpTemplate } from '../utils/emailTemplates.js'
 import jwt from 'jsonwebtoken'
-import { createHash } from 'crypto'
+import { createHash, randomInt } from 'crypto'
 import { requireAuth } from '../middleware/auth.js'
-import { apiLimiter, authLimiter } from '../middleware/rateLimit.js'
+import { apiLimiter } from '../middleware/rateLimit.js'
 
 // Fallback in-memory store if Redis fails
 const memoryStore = new Map()
@@ -31,6 +31,10 @@ const ensureWorkspaceTable = async () => {
       UNIQUE (workspace_owner_id, member_email)
     )
   `).catch(err => console.error('[DB] Error ensuring workspace_members table:', err.message))
+
+  await query(`
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
+  `).catch(err => console.error('[DB] Error ensuring password column on shop_profiles:', err.message))
 }
 ensureWorkspaceTable()
 
@@ -44,7 +48,7 @@ function normalizeOtp(otp = '') {
 }
 
 function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString()
+  return randomInt(100000, 1000000).toString()
 }
 
 function getOtpKey(email) {
@@ -118,18 +122,50 @@ async function clearOtp(email) {
 }
 
 async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
-  const { error: mailError } = await resend.emails.send({
-    from: 'Workshop <onboarding@resend.dev>',
-    to: email,
-    subject: `${otp} is your Workshop verification code`,
-    html: getOtpTemplate(otp)
-  })
-
-  if (mailError) {
-    throw new Error(mailError.message || String(mailError))
+  let userName = ''
+  try {
+    const profileRes = await query('SELECT shop_name FROM shop_profiles WHERE email = $1', [email])
+    if (profileRes.rows[0]?.shop_name) {
+      userName = profileRes.rows[0].shop_name
+    }
+  } catch {
+    // Ignore profile lookup error, fallback to email prefix
   }
 
-  console.log(`[${logPrefix}] Email sent to ${email}`)
+  if (!userName && email.includes('@')) {
+    const prefix = email.split('@')[0]
+    userName = prefix.split(/[._-]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+  }
+
+  const isReset = String(logPrefix).toUpperCase().includes('RESET')
+  const subject = isReset
+    ? `${otp} is your Workshop password reset code`
+    : `${otp} is your Workshop verification code`
+  const html = isReset
+    ? getPasswordResetOtpTemplate(otp, email, userName)
+    : getOtpTemplate(otp, email, userName)
+
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'Workshop <onboarding@resend.dev>'
+
+  try {
+    const { data: mailData, error: mailError } = await resend.emails.send({
+      from: fromEmail,
+      to: email,
+      subject,
+      html
+    })
+
+    if (mailError) {
+      console.error(`[${logPrefix} Resend Warning] Could not deliver email to ${email}:`, mailError.message || mailError)
+      return { success: false, error: mailError }
+    }
+
+    console.log(`[${logPrefix} Resend Success] Email sent to ${email} (${userName}) - ID:`, mailData?.id)
+    return { success: true, data: mailData }
+  } catch (err) {
+    console.error(`[${logPrefix} Resend Exception] Could not send email to ${email}:`, err.message)
+    return { success: false, error: err }
+  }
 }
 
 async function issueOtp(email, logPrefix = 'OTP') {
@@ -152,28 +188,23 @@ async function issueOtp(email, logPrefix = 'OTP') {
 
   try {
     await storeOtp(email, otp)
-    console.log(`[${logPrefix} DEBUG] OTP for ${email} is ${otp}`)
+    console.log(`[${logPrefix} DEBUG] OTP generated for ${email}: ${otp}`)
 
-    // Send email in the background to prevent request hang/timeout and double-sends
-    sendOtpEmail(email, otp, logPrefix).catch(async (err) => {
-      await clearOtp(email)
-      console.error(`[${logPrefix}] Email delivery failed:`, err.message)
+    // Send email asynchronously in the background
+    sendOtpEmail(email, otp, logPrefix).catch((err) => {
+      console.error(`[${logPrefix}] Background email task failed:`, err.message)
     })
     
     await setOtpCooldown(email)
 
     const body = { message: 'OTP sent to your email' }
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV !== 'production') {
       body.devOtp = otp
     }
     return { status: 200, body }
   } catch (err) {
-    await clearOtp(email)
-    console.error(`[${logPrefix}] Email delivery failed:`, err.message)
-    return {
-      status: 502,
-      body: { message: 'Failed to send OTP email. Please try again.' }
-    }
+    console.error(`[${logPrefix}] Failed to store OTP:`, err.message)
+    return { status: 500, body: { message: 'Failed to generate OTP. Please try again.' } }
   } finally {
     await releaseOtpSendLock(email)
   }
@@ -256,6 +287,70 @@ router.post('/send-login-otp', async (req, res) => {
   } catch (err) {
     console.error('[LOGIN OTP] Unexpected error:', err.message)
     res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
+  }
+})
+
+/* POST /api/auth/send-reset-otp - For FORGOT PASSWORD: check email exists THEN send OTP */
+router.post('/send-reset-otp', async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  if (!email) return res.status(400).json({ message: 'Email is required' })
+
+  try {
+    const result = await query(
+      'SELECT email FROM shop_profiles WHERE email = $1',
+      [email]
+    ).catch(() => ({ rows: [] }))
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'No account found with this email.' })
+    }
+
+    const otpResult = await issueOtp(email, 'RESET OTP')
+    res.status(otpResult.status).json(otpResult.body)
+  } catch (err) {
+    console.error('[RESET OTP] Unexpected error:', err.message)
+    res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
+  }
+})
+
+/* POST /api/auth/reset-password - Verify OTP and update password */
+router.post('/reset-password', async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  const otp = normalizeOtp(req.body?.otp)
+  const { newPassword } = req.body
+
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({ message: 'Email, OTP, and new password are required' })
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters long' })
+  }
+
+  try {
+    let storedOtp = await redis.get(`otp:${email}`).catch(() => null)
+    if (!storedOtp) {
+      storedOtp = getMemoryValue(getOtpKey(email))
+    }
+
+    if (String(storedOtp) !== otp) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' })
+    }
+
+    // Clear OTP after successful check
+    await clearOtp(email)
+
+    // Update password in DB
+    await query(
+      'UPDATE shop_profiles SET password = $1 WHERE email = $2',
+      [newPassword, email]
+    )
+
+    console.log(`[RESET PASSWORD] Password updated successfully for ${email}`)
+    res.json({ message: 'Password reset successfully. You can now log in with your new password.' })
+  } catch (err) {
+    console.error('[RESET PASSWORD] Error:', err.message)
+    res.status(500).json({ message: 'Failed to reset password. Please try again.' })
   }
 })
 
@@ -422,7 +517,7 @@ router.post('/login', async (req, res) => {
 
     // 1. Confirm user exists in our DB
     const profile = await query(
-      'SELECT user_id, shop_name, phone FROM shop_profiles WHERE email = $1',
+      'SELECT user_id, shop_name, phone, password FROM shop_profiles WHERE email = $1',
       [email]
     ).catch(() => ({ rows: [] }))
 
@@ -432,6 +527,7 @@ router.post('/login', async (req, res) => {
 
     const shopName = profile.rows[0]?.shop_name || email.split('@')[0]
     const localUserId = profile.rows[0]?.user_id || getLocalUserId(email)
+    const storedPassword = profile.rows[0]?.password
 
     // 2. Try InsForge authentication
     const { data, error } = await insforge.auth.signInWithPassword({ email, password })
@@ -439,22 +535,32 @@ router.post('/login', async (req, res) => {
     let userId = localUserId || data?.user?.id || getLocalUserId(email)
 
     if (error) {
-      const rawMsg = error.nextActions || error.error || error.message || ''
-      const isWrongPassword = rawMsg === 'AUTH_UNAUTHORIZED' || rawMsg.toLowerCase().includes('invalid')
+      // Check if user has reset password locally
+      if (storedPassword && password === storedPassword) {
+        console.log(`[LOGIN] InsForge error (${error.message}) but matched local password for ${email}`)
+        token = jwt.sign(
+          { sub: localUserId, email, shopName, iss: 'workshop-local' },
+          process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
+          { expiresIn: '7d' }
+        )
+      } else {
+        const rawMsg = error.nextActions || error.error || error.message || ''
+        const isWrongPassword = rawMsg === 'AUTH_UNAUTHORIZED' || rawMsg.toLowerCase().includes('invalid')
 
-      if (isWrongPassword) {
-        // Genuinely wrong password — reject
-        return res.status(401).json({ message: 'Invalid email or password.' })
+        if (isWrongPassword) {
+          // Genuinely wrong password — reject
+          return res.status(401).json({ message: 'Invalid email or password.' })
+        }
+
+        // InsForge email-verification or FORBIDDEN error:
+        // User already verified email via our OTP system — issue our own JWT
+        console.log(`[LOGIN] InsForge blocked (${rawMsg}) but user is in DB — issuing local JWT`)
+        token = jwt.sign(
+          { sub: localUserId, email, shopName, iss: 'workshop-local' },
+          process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
+          { expiresIn: '7d' }
+        )
       }
-
-      // InsForge email-verification or FORBIDDEN error:
-      // User already verified email via our OTP system — issue our own JWT
-      console.log(`[LOGIN] InsForge blocked (${rawMsg}) but user is in DB — issuing local JWT`)
-      token = jwt.sign(
-        { sub: getLocalUserId(email), email, shopName, iss: 'workshop-local' },
-        process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
-        { expiresIn: '7d' }
-      )
     }
 
     if (!token) {
@@ -517,7 +623,9 @@ router.get('/me', async (req, res) => {
         },
       })
     }
-  } catch (_) { }
+  } catch {
+    // Ignore local JWT verify error
+  }
 
   try {
     const { data, error } = await insforge.auth.getUser(token)
@@ -580,7 +688,9 @@ router.post('/invite', apiLimiter, requireAuth, async (req, res) => {
             event: 'new_notification',
             payload: { title: notifTitle, body: notifBody }
           })
-        } catch (_) { }
+        } catch {
+          // Ignore realtime publish errors if client offline
+        }
 
         console.log(`[Invite] In-app notification created for user B (${email})`)
       } else {
@@ -727,7 +837,7 @@ router.get('/diagnostic', async (req, res) => {
   // 3. Check SMTP
   try {
     // Import transport to test connection verify
-    const { default: smtpLib } = await import('../lib/smtp.js')
+    await import('../lib/smtp.js')
     status.smtp = { success: true, details: 'Transporter loaded' }
   } catch (err) {
     status.smtp = { success: false, error: err.message }

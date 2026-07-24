@@ -14,12 +14,14 @@ query(
   console.warn('[Billing] Could not migrate bill_items.quantity to NUMERIC(10,2):', err.message)
 })
 
+import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
 
 /* GET /api/billing?status=paid|unpaid */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
-  const { status, page = 1, limit = 20, search, sort } = req.query
-  const offset = (page - 1) * limit
+  const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
+  const { status, search, sort } = req.query
+
   const params = [userId]
   const conditions = ['b.user_id = $1']
   if (status) { params.push(status); conditions.push(`b.status = $${params.length}`) }
@@ -27,12 +29,49 @@ router.get('/', async (req, res) => {
     params.push(`%${search}%`)
     conditions.push(`(c.name ILIKE $${params.length} OR CAST(b.id AS TEXT) ILIKE $${params.length})`)
   }
-  const where = `WHERE ${conditions.join(' AND ')}`
-  params.push(limit, offset)
 
-  const orderCol = sort === 'id_asc' ? 'b.id ASC' : sort === 'id_desc' ? 'b.id DESC' : sort === 'amount_asc' ? 'b.amount ASC' : sort === 'amount_desc' ? 'b.amount DESC' : 'b.created_at DESC'
+  let orderCol = 'b.created_at DESC, b.id DESC'
+  if (sort === 'id_asc') orderCol = 'b.id ASC'
+  else if (sort === 'id_desc') orderCol = 'b.id DESC'
+  else if (sort === 'amount_asc') orderCol = 'b.amount ASC, b.id DESC'
+  else if (sort === 'amount_desc') orderCol = 'b.amount DESC, b.id DESC'
 
   try {
+    if (cursor) {
+      if (cursor.created_at && cursor.id) {
+        params.push(cursor.created_at, cursor.id)
+        conditions.push(`(b.created_at, b.id) < ($${params.length - 1}, $${params.length})`)
+      }
+      const where = `WHERE ${conditions.join(' AND ')}`
+      params.push(limit + 1)
+      const { rows } = await query(
+        `SELECT b.*, c.name AS customer_name
+         FROM bills b
+         LEFT JOIN people c ON b.customer_id = c.id
+         ${where} ORDER BY ${orderCol}
+         LIMIT $${params.length}`,
+        params
+      )
+      const hasNextPage = rows.length > limit
+      if (hasNextPage) rows.pop()
+      const nextCursor = (hasNextPage && rows.length > 0)
+        ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
+        : null
+
+      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    const count = await query(
+      `SELECT COUNT(*) FROM bills b 
+       LEFT JOIN people c ON b.customer_id = c.id 
+       ${where}`, 
+      params
+    )
+    const total = parseInt(count.rows[0].count, 10) || 0
+    const totalPages = Math.ceil(total / limit) || 1
+
+    params.push(limit, offset)
     const { rows } = await query(
       `SELECT b.*, c.name AS customer_name
        FROM bills b
@@ -41,13 +80,22 @@ router.get('/', async (req, res) => {
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
-    const count = await query(
-      `SELECT COUNT(*) FROM bills b 
-       LEFT JOIN people c ON b.customer_id = c.id 
-       ${where}`, 
-      params.slice(0, -2)
-    )
-    res.json({ data: rows, total: parseInt(count.rows[0].count), page: +page, limit: +limit })
+
+    const hasNextPage = page < totalPages
+    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+    const nextCursor = (hasNextPage && lastRow)
+      ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
+      : null
+
+    res.json({
+      data: rows,
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNextPage,
+      nextCursor
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -88,14 +136,26 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   const userId = req.workspaceId
   const { customer_id, items, amount, due_date, notes, discount, status } = req.body
-  if (!customer_id || !amount) return res.status(400).json({ error: 'customer_id and amount required' })
+
+  const computedAmount = (items || []).reduce((acc, item) => {
+    const qty = parseFloat(item.qty || 1)
+    const price = parseFloat(item.price || 0)
+    const itemDisc = parseFloat(item.discount || 0)
+    return acc + Math.max(0, (qty * price) - itemDisc)
+  }, 0)
+
+  const finalAmount = amount !== undefined && amount !== null && amount !== ''
+    ? parseFloat(amount)
+    : Math.max(0, computedAmount - parseFloat(discount || 0))
+
+  if (isNaN(finalAmount)) return res.status(400).json({ error: 'A valid amount is required' })
   const billStatus = status === 'paid' ? 'paid' : 'unpaid'
   const paidAt = billStatus === 'paid' ? 'NOW()' : 'NULL'
   try {
     const { rows } = await query(
       `INSERT INTO bills (customer_id, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,${paidAt},NOW()) RETURNING *`,
-      [customer_id, JSON.stringify(items || []), amount, discount || 0, billStatus, due_date || null, notes, userId]
+      [customer_id || null, JSON.stringify(items || []), finalAmount, discount || 0, billStatus, due_date || null, notes, userId]
     )
 
     // Update stock for both products and import_stock tables and insert to bill_items

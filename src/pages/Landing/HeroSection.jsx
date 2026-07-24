@@ -46,7 +46,7 @@ export default function HeroSection() {
 
             <nav className="ws-sg-nav">
               {[
-                'Notifications', 'Tasks', 'Notes', 'Emails', 'Reports'
+                'Tasks', 'Notes', 'Emails', 'Reports'
               ].map(label => (
                 <div key={label} className="ws-sg-nav-item">{label}</div>
               ))}

@@ -85,24 +85,22 @@ export default function Deals() {
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
         <main className="ws-dash-body">
-          <div className="ws-dash-greeting">Deals</div>
-
-          <div className="ws-table-section">
-            <div className="ws-table-header">
-              <div className="ws-table-header-left">
-                <h2 className="ws-table-title">All Deals</h2>
-                <p className="ws-table-sub">{deals.length} {deals.length === 1 ? 'deal' : 'deals'}</p>
+          <div className="attio-products-container">
+            <div className="ws-unified-page-header">
+              <div className="ws-unified-header-left">
+                <span className="ws-unified-header-title">Deals</span>
+                <span className="ws-unified-header-badge">{deals.length} {deals.length === 1 ? 'deal' : 'deals'}</span>
               </div>
-              <div className="ws-table-actions">
-                <button className="ws-table-btn"><ArrowUpDown size={12} /> Sort</button>
-                <button className="ws-table-btn"><Filter size={12} /> Filter</button>
-                <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/deals/add')}>
-                  <Plus size={13} /> New Deal
+              <div className="ws-unified-header-actions">
+                <button className="attio-btn"><ArrowUpDown size={12} /> Sort</button>
+                <button className="attio-btn"><Filter size={12} /> Filter</button>
+                <button className="attio-btn attio-btn-primary" onClick={() => navigate('/deals/add')}>
+                  <Plus size={13} style={{ marginRight: '4px' }} /> New Deal
                 </button>
               </div>
             </div>
 
-            <div className="ws-table-wrap">
+            <div className="attio-table-card">
               {/* Tabs */}
               <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', padding: '0 20px', marginBottom: 20 }}>
                 <button

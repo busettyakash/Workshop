@@ -93,7 +93,7 @@ async function syncBillItems(userId) {
       if (check.rows.length === 0) {
         let itemsList = []
         if (typeof b.items === 'string') {
-          try { itemsList = JSON.parse(b.items) } catch(e) {}
+          try { itemsList = JSON.parse(b.items) } catch {}
         } else if (Array.isArray(b.items)) {
           itemsList = b.items
         }

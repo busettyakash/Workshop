@@ -39,7 +39,6 @@ import productRoutes  from './routes/products.js'
 import billingRoutes  from './routes/billing.js'
 import customerRoutes from './routes/customers.js'
 import reportRoutes   from './routes/reports.js'
-import notifyRoutes   from './routes/notifications.js'
 import workflowRoutes from './routes/workflows.js'
 import chatRoutes     from './routes/chat.js'
 import importStockRoutes from './routes/importStock.js'
@@ -50,19 +49,21 @@ import billTemplateRoutes from './routes/billTemplates.js'
 import recordRoutes from './routes/records.js'
 import notesRoutes  from './routes/notes.js'
 import emailsRoutes from './routes/emails.js'
+import uomRoutes    from './routes/uoms.js'
 
 const app  = express()
+app.disable('x-powered-by')
 const PORT = process.env.PORT || 5000
 
 /* ── Request Logger Middleware ── */
 app.use((req, res, next) => {
   const start = Date.now()
   const originalSend = res.send
-  res.send = function (body) {
+  res.send = function (...args) {
     const duration = Date.now() - start
     const logLine = `[Request] ${req.method} ${req.originalUrl} - Status: ${res.statusCode} (${duration}ms) - Auth: ${req.headers.authorization ? 'Yes' : 'No'} - Workspace: ${req.headers['x-workspace-id'] || 'None'}`
     console.log(logLine)
-    return originalSend.apply(res, arguments)
+    return originalSend.apply(res, args)
   }
   next()
 })
@@ -105,7 +106,6 @@ app.use('/api/products',      productRoutes)
 app.use('/api/billing',       billingRoutes)
 app.use('/api/customers',     customerRoutes)
 app.use('/api/reports',       reportRoutes)
-app.use('/api/notifications', notifyRoutes)
 app.use('/api/workflows',     workflowRoutes)
 app.use('/api/chat',          chatRoutes)
 app.use('/api/import-stock',  importStockRoutes)
@@ -116,6 +116,7 @@ app.use('/api/bill-templates', billTemplateRoutes)
 app.use('/api/records',        recordRoutes)
 app.use('/api/notes',          notesRoutes)
 app.use('/api/emails',         emailsRoutes)
+app.use('/api/uoms',           uomRoutes)
 
 /* ── 404 handler ── */
 app.use((_req, res) => {

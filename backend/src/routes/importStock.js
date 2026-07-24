@@ -8,11 +8,13 @@ router.use(requireAuth)
 
 const LOG_PREFIX = '[ImportStock]'
 
+import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
+
 /* GET /api/import-stock */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
-  const { page = 1, limit = 20, search, status, sort } = req.query
-  const offset = (page - 1) * limit
+  const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
+  const { search, status, sort } = req.query
   console.log(`${LOG_PREFIX} GET / — userId: ${userId}, page: ${page}, limit: ${limit}`)
   
   const params = [userId]
@@ -28,12 +30,53 @@ router.get('/', async (req, res) => {
     conditions.push(`i.status = $${params.length}`)
   }
 
-  const where = `WHERE ${conditions.join(' AND ')}`
-  params.push(parseInt(limit), parseInt(offset))
-
-  const orderCol = sort === 'name_asc' ? 'i.name ASC' : sort === 'name_desc' ? 'i.name DESC' : 'i.created_at DESC'
+  let orderCol = 'i.created_at DESC, i.id DESC'
+  if (sort === 'name_asc') orderCol = 'i.name ASC, i.id DESC'
+  else if (sort === 'name_desc') orderCol = 'i.name DESC, i.id DESC'
 
   try {
+    if (cursor) {
+      if (cursor.created_at && cursor.id) {
+        params.push(cursor.created_at, cursor.id)
+        conditions.push(`(i.created_at, i.id) < ($${params.length - 1}, $${params.length})`)
+      }
+      const where = `WHERE ${conditions.join(' AND ')}`
+      params.push(limit + 1)
+      const { rows } = await query(
+        `SELECT i.*, 
+          CASE 
+            WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock)
+            ELSE i.stock
+          END AS stock 
+         FROM import_stock i
+         LEFT JOIN LATERAL (
+           SELECT stock FROM products 
+           WHERE user_id = i.user_id AND (sku = i.sku OR name = i.name) 
+           ORDER BY created_at DESC LIMIT 1
+         ) p ON true
+         ${where}
+         ORDER BY ${orderCol}
+         LIMIT $${params.length}`,
+        params
+      )
+      const hasNextPage = rows.length > limit
+      if (hasNextPage) rows.pop()
+      const nextCursor = (hasNextPage && rows.length > 0)
+        ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
+        : null
+
+      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    const countRes = await query(
+      `SELECT COUNT(*) FROM import_stock i ${where}`,
+      params
+    )
+    const total = parseInt(countRes.rows[0].count, 10) || 0
+    const totalPages = Math.ceil(total / limit) || 1
+
+    params.push(limit, offset)
     const { rows } = await query(
       `SELECT i.*, 
         CASE 
@@ -52,14 +95,22 @@ router.get('/', async (req, res) => {
       params
     )
 
-    const countRes = await query(
-      `SELECT COUNT(*) FROM import_stock i ${where}`,
-      params.slice(0, -2)
-    )
-    const total = parseInt(countRes.rows[0].count)
+    const hasNextPage = page < totalPages
+    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+    const nextCursor = (hasNextPage && lastRow)
+      ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
+      : null
 
     console.log(`${LOG_PREFIX} GET / — returned ${rows.length} rows of ${total}`)
-    res.json({ data: rows, total, page: parseInt(page), limit: parseInt(limit) })
+    res.json({
+      data: rows,
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNextPage,
+      nextCursor
+    })
   } catch (err) {
     console.error(`${LOG_PREFIX} GET / — ERROR:`, err.message)
     res.status(500).json({ error: err.message })

@@ -7,14 +7,17 @@ router.use(requireAuth)
 
 
 
+import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
+
 // Add schema update
 query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS next_restock_time TEXT DEFAULT 'TBD'`).catch(() => {})
 
 /* GET /api/products */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
-  const { page = 1, limit = 20, search, category, status, sort } = req.query
-  const offset = (page - 1) * limit
+  const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
+  const { search, category, status, sort } = req.query
+
   const params = [userId]
   const conditions = ['user_id = $1']
 
@@ -27,18 +30,57 @@ router.get('/', async (req, res) => {
     conditions.push(`status = $${params.length}`)
   }
 
-  const where = `WHERE ${conditions.join(' AND ')}`
-  params.push(limit, offset)
-
-  const orderCol = sort === 'name_asc' ? 'name ASC' : sort === 'name_desc' ? 'name DESC' : 'created_at DESC'
+  let orderCol = 'created_at DESC, id DESC'
+  if (sort === 'name_asc') orderCol = 'name ASC, id DESC'
+  else if (sort === 'name_desc') orderCol = 'name DESC, id DESC'
 
   try {
+    if (cursor) {
+      if (cursor.created_at && cursor.id) {
+        params.push(cursor.created_at, cursor.id)
+        conditions.push(`(created_at, id) < ($${params.length - 1}, $${params.length})`)
+      }
+      const where = `WHERE ${conditions.join(' AND ')}`
+      params.push(limit + 1)
+      const { rows } = await query(
+        `SELECT * FROM products ${where} ORDER BY ${orderCol} LIMIT $${params.length}`,
+        params
+      )
+      const hasNextPage = rows.length > limit
+      if (hasNextPage) rows.pop()
+      const nextCursor = (hasNextPage && rows.length > 0)
+        ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
+        : null
+
+      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    const countRow = await query(`SELECT COUNT(*) FROM products ${where}`, params)
+    const total = parseInt(countRow.rows[0].count, 10) || 0
+    const totalPages = Math.ceil(total / limit) || 1
+
+    params.push(limit, offset)
     const { rows } = await query(
       `SELECT * FROM products ${where} ORDER BY ${orderCol} LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
-    const countRow = await query(`SELECT COUNT(*) FROM products ${where}`, params.slice(0, -2))
-    res.json({ data: rows, total: parseInt(countRow.rows[0].count), page: +page, limit: +limit })
+    
+    const hasNextPage = page < totalPages
+    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+    const nextCursor = (hasNextPage && lastRow)
+      ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
+      : null
+
+    res.json({
+      data: rows,
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNextPage,
+      nextCursor
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

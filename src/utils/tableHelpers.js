@@ -35,6 +35,43 @@ export function getSingleLetter(name) {
   return name.trim().charAt(0).toUpperCase()
 }
 
+export function getCategoryTagStyle(category) {
+  if (!category) return { bg: '#f1f5f9', text: '#475467', border: '#cbd5e1' }
+  const clean = category.toString().toLowerCase().trim()
+
+  if (clean.includes('food') || clean.includes('grain') || clean.includes('rice') || clean.includes('fruit') || clean.includes('veg')) {
+    return { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' } // Green
+  }
+  if (clean.includes('electronic') || clean.includes('gadget') || clean.includes('tech') || clean.includes('device')) {
+    return { bg: '#f3e8ff', text: '#6b21a8', border: '#e9d5ff' } // Purple
+  }
+  if (clean.includes('grocery') || clean.includes('oil') || clean.includes('flour') || clean.includes('beverage')) {
+    return { bg: '#dbeafe', text: '#1e40af', border: '#bfdbfe' } // Blue
+  }
+  if (clean.includes('cloth') || clean.includes('apparel') || clean.includes('fashion') || clean.includes('wear')) {
+    return { bg: '#fff7ed', text: '#9a3412', border: '#ffedd5' } // Orange
+  }
+  if (clean.includes('beauty') || clean.includes('cosmetic') || clean.includes('personal')) {
+    return { bg: '#fdf2f8', text: '#9d174d', border: '#fce7f3' } // Pink
+  }
+
+  // Dynamic hash palette for custom categories
+  let hash = 0
+  for (let i = 0; i < clean.length; i++) {
+    hash = clean.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  const colorSchemes = [
+    { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' }, // Green
+    { bg: '#f3e8ff', text: '#6b21a8', border: '#e9d5ff' }, // Purple
+    { bg: '#dbeafe', text: '#1e40af', border: '#bfdbfe' }, // Blue
+    { bg: '#fff7ed', text: '#9a3412', border: '#ffedd5' }, // Orange
+    { bg: '#fdf2f8', text: '#9d174d', border: '#fce7f3' }, // Pink
+    { bg: '#f0fdfa', text: '#0f766e', border: '#ccfbf1' }, // Teal
+    { bg: '#fef3c7', text: '#92400e', border: '#fde68a' }, // Amber
+  ]
+  return colorSchemes[Math.abs(hash) % colorSchemes.length]
+}
+
 export function getPillStyle(label) {
   if (!label) return { bg: '#f3f4f6', text: '#1f2937', border: '#e5e7eb' }
   const clean = label.toString().toLowerCase().trim()

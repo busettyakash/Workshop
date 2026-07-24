@@ -25,9 +25,12 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: backend/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
+      - name: Install Dependencies
+        run: npm ci
+      - name: SonarQube Inspection (Backend)
+        run: npm run lint
+      - name: Backend Unit Tests
+        run: npm test
 
   frontend-checks:
     runs-on: ubuntu-latest
@@ -43,9 +46,12 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
+      - name: Install Dependencies
+        run: npm ci
+      - name: SonarQube Inspection (Frontend)
+        run: npm run lint
+      - name: Frontend Unit Tests
+        run: npm test
 
   security-scan:
     runs-on: ubuntu-latest

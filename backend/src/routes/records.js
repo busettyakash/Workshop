@@ -13,7 +13,7 @@ const ALLOWED_TABLES = []
 const validateTable = (req, res, next) => {
   const { module } = req.params
   // CodeQL expects strict regex validation for dynamically constructed SQL queries
-  if (!/^[a-zA-Z0-9_]+$/.test(module)) {
+  if (!/^\w+$/.test(module)) {
     return res.status(400).json({ error: `Invalid module format` })
   }
   if (ALLOWED_TABLES.length > 0 && !ALLOWED_TABLES.includes(module)) {
@@ -24,23 +24,44 @@ const validateTable = (req, res, next) => {
 
 router.use('/:module', validateTable)
 
+import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
+
 /* GET /api/records/:module */
 router.get('/:module', async (req, res) => {
   const userId = req.workspaceId
   const { module } = req.params
-  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
-  const { page = 1, limit = 50 } = req.query
-  const offset = (page - 1) * limit
+  if (!/^\w+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
+  const { page, limit, offset, cursor } = parsePaginationParams(req.query, 50)
 
   try {
+    if (cursor && cursor.id) {
+      const { rows } = await query(
+        `SELECT * FROM ${module} WHERE user_id = $1 AND id < $2 ORDER BY id DESC LIMIT $3`,
+        [userId, cursor.id, limit + 1]
+      )
+      const hasNextPage = rows.length > limit
+      if (hasNextPage) rows.pop()
+      const nextCursor = (hasNextPage && rows.length > 0)
+        ? encodeCursor({ id: rows[rows.length - 1].id })
+        : null
+
+      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+    }
+
     const { rows } = await query(
       `SELECT * FROM ${module} WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`,
-      [userId, parseInt(limit), parseInt(offset)]
+      [userId, limit, offset]
     )
     const countRes = await query(`SELECT COUNT(*) FROM ${module} WHERE user_id = $1`, [userId])
-    const total = parseInt(countRes.rows[0].count)
+    const total = parseInt(countRes.rows[0].count, 10) || 0
+    const totalPages = Math.ceil(total / limit) || 1
+    const hasNextPage = page < totalPages
+    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+    const nextCursor = (hasNextPage && lastRow)
+      ? encodeCursor({ id: lastRow.id })
+      : null
 
-    res.json({ data: rows, total, page: parseInt(page), limit: parseInt(limit) })
+    res.json({ data: rows, total, page, limit, totalPages, hasNextPage, nextCursor })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -50,7 +71,7 @@ router.get('/:module', async (req, res) => {
 router.get('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
   const { module, id } = req.params
-  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
+  if (!/^\w+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
 
   try {
     const { rows } = await query(
@@ -70,7 +91,7 @@ router.get('/:module/:id', async (req, res) => {
 router.post('/:module', async (req, res) => {
   const userId = req.workspaceId
   const { module } = req.params
-  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
+  if (!/^\w+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
   
   // Exclude fields like id, created_at, updated_at
   const bodyFields = { ...req.body }
@@ -85,7 +106,7 @@ router.post('/:module', async (req, res) => {
     return res.status(400).json({ error: 'No fields provided for creation' })
   }
   // Validate column names to prevent SQL injection
-  if (!keys.every(k => /^[a-zA-Z0-9_]+$/.test(k))) {
+  if (!keys.every(k => /^\w+$/.test(k))) {
     return res.status(400).json({ error: 'Invalid column names in payload' })
   }
 
@@ -108,7 +129,7 @@ router.post('/:module', async (req, res) => {
 router.put('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
   const { module, id } = req.params
-  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
+  if (!/^\w+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
 
   const bodyFields = { ...req.body }
   delete bodyFields.id
@@ -121,7 +142,7 @@ router.put('/:module/:id', async (req, res) => {
     return res.status(400).json({ error: 'No fields provided for update' })
   }
   // Validate column names to prevent SQL injection
-  if (!keys.every(k => /^[a-zA-Z0-9_]+$/.test(k))) {
+  if (!keys.every(k => /^\w+$/.test(k))) {
     return res.status(400).json({ error: 'Invalid column names in payload' })
   }
 
@@ -151,7 +172,7 @@ router.put('/:module/:id', async (req, res) => {
 router.delete('/:module/:id', async (req, res) => {
   const userId = req.workspaceId
   const { module, id } = req.params
-  if (!/^[a-zA-Z0-9_]+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
+  if (!/^\w+$/.test(module)) return res.status(400).json({ error: 'Invalid module' })
 
   try {
     const { rowCount } = await query(

@@ -6,6 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Info } from 'lucide-react'
 import api from '../../api/client'
+import { getBulkUnitDetails, ALL_UOM_OPTIONS } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
 
 const S = {
@@ -59,12 +60,25 @@ export default function ImportStockForm() {
   const [focus, setFocus] = useState(null)
 
   const [form, setForm] = useState({
-    name: '', sku: '', category: '', price: '', stock: 0, status: 'pending', unit: 'pcs', description: '', bag_weight: 1
+    name: '', sku: '', category: '', price: '', stock: 0, status: 'pending', unit: 'pcs', description: '', bag_weight: 100
   })
+
+  const [uomOptions, setUomOptions] = useState(ALL_UOM_OPTIONS)
 
   useEffect(() => {
     dispatch(setActiveNav('Import Stock'))
     if (id) fetchItem()
+
+    api.get('/uoms').then(res => {
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        const dbOptions = res.data.map(u => ({
+          value: u.code,
+          label: `${u.name} (${u.code})`,
+          category: u.category
+        }))
+        setUomOptions(dbOptions)
+      }
+    }).catch(() => { })
   }, [id, dispatch])
 
   const fetchItem = async () => {
@@ -81,7 +95,7 @@ export default function ImportStockForm() {
           status: item.status || 'pending',
           unit: item.unit || 'pcs',
           description: item.description || '',
-          bag_weight: item.bag_weight || 1
+          bag_weight: item.bag_weight || 100
         })
       } else {
         dispatch(addToast({ message: 'Pending product not found', type: 'error' }))
@@ -118,11 +132,11 @@ export default function ImportStockForm() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     const err = {}
-    const isKgs = form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg'
+    const bulkUnit = getBulkUnitDetails(form.unit)
     if (!form.name.trim()) err.name = 'Product name is required'
     if (!form.price || isNaN(form.price) || parseFloat(form.price) <= 0) err.price = 'Enter a valid price'
-    if (isKgs && (!form.bag_weight || isNaN(form.bag_weight) || parseFloat(form.bag_weight) <= 0)) {
-      err.bag_weight = 'Enter a valid bag weight (e.g. 25)'
+    if (bulkUnit && (!form.bag_weight || isNaN(form.bag_weight) || parseFloat(form.bag_weight) <= 0)) {
+      err.bag_weight = `Enter a valid ${bulkUnit.label.toLowerCase()} (e.g. 25)`
     }
     if (Object.keys(err).length) { setErrors(err); return }
 
@@ -237,39 +251,134 @@ export default function ImportStockForm() {
                   <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
                     <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.9375rem', margin: 0 }}>Pricing & Stock</p>
                   </div>
-                  <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: (form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16 }}>
+                  <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: getBulkUnitDetails(form.unit) ? '1.2fr 1fr 1.2fr 1fr 1.2fr' : '1fr 1fr 1fr', gap: 14 }}>
                     <div>
-                      <label style={S.label}>{(form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') ? 'Bag Price (₹)' : 'Price (₹)'} <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input name="price" type="number" step="0.01" value={form.price} onChange={handleChange} placeholder="0.00" style={inp('price')} onFocus={() => setFocus('price')} onBlur={() => setFocus(null)} />
+                      <label style={S.label}>100-Unit Price (₹) <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input
+                        name="price_100"
+                        type="number"
+                        step="0.01"
+                        value={form.price_100 !== undefined ? form.price_100 : (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : '')}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          const bw = parseFloat(form.bag_weight || 100)
+                          const calculatedPrice = val ? ((parseFloat(val) / 100) * bw).toFixed(2) : ''
+                          setForm(prev => ({ ...prev, price_100: val, price: calculatedPrice }))
+                          if (errors.price) setErrors(prev => ({ ...prev, price: '' }))
+                        }}
+                        placeholder="e.g. 6000"
+                        style={inp('price_100')}
+                        onFocus={() => setFocus('price_100')}
+                        onBlur={() => setFocus(null)}
+                      />
                       {errors.price && <span style={S.error}>{errors.price}</span>}
                     </div>
-                    {(form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') && (
+                    {getBulkUnitDetails(form.unit) && (
                       <div>
-                        <label style={S.label}>Bag Weight (kg) <span style={{ color: '#dc2626' }}>*</span></label>
-                        <input name="bag_weight" type="number" step="0.1" value={form.bag_weight} onChange={handleChange} placeholder="e.g. 25" style={inp('bag_weight')} onFocus={() => setFocus('bag_weight')} onBlur={() => setFocus(null)} />
+                        <label style={S.label}>Pack / Container Size <span style={{ color: '#dc2626' }}>*</span></label>
+                        <input
+                          name="bag_weight"
+                          type="number"
+                          step="0.1"
+                          value={form.bag_weight}
+                          onChange={(e) => {
+                            const bw = e.target.value
+                            const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
+                            const calculatedPrice = p100 && bw ? ((p100 / 100) * parseFloat(bw)).toFixed(2) : form.price
+                            setForm(prev => ({ ...prev, bag_weight: bw, price: calculatedPrice }))
+                            if (errors.bag_weight) setErrors(prev => ({ ...prev, bag_weight: '' }))
+                          }}
+                          placeholder="e.g. 25, 50, 75, 100"
+                          style={inp('bag_weight')}
+                          onFocus={() => setFocus('bag_weight')}
+                          onBlur={() => setFocus(null)}
+                        />
+                        {getBulkUnitDetails(form.unit).quickSizes && (
+                          <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
+                            {getBulkUnitDetails(form.unit).quickSizes.map(size => {
+                              const isSelected = Number(form.bag_weight) === size
+                              return (
+                                <button
+                                  key={size}
+                                  type="button"
+                                  onClick={() => {
+                                    const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
+                                    const calculatedPrice = p100 ? ((p100 / 100) * size).toFixed(2) : form.price
+                                    setForm(prev => ({ ...prev, bag_weight: size, price: calculatedPrice }))
+                                  }}
+                                  style={{
+                                    padding: '2px 7px',
+                                    borderRadius: 5,
+                                    border: isSelected ? '1px solid #3d68f5' : '1px solid #e5e7eb',
+                                    background: isSelected ? '#eff6ff' : '#f9fafb',
+                                    color: isSelected ? '#3d68f5' : '#4b5563',
+                                    fontSize: '0.72rem',
+                                    fontWeight: isSelected ? 600 : 500,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.12s'
+                                  }}
+                                >
+                                  {size}{getBulkUnitDetails(form.unit).short}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
                         {errors.bag_weight && <span style={S.error}>{errors.bag_weight}</span>}
                       </div>
                     )}
+                    {getBulkUnitDetails(form.unit) && (
+                      <div>
+                        <label style={S.label}>Calculated Pack Price (₹)</label>
+                        <input
+                          type="text"
+                          readOnly
+                          value={
+                            (() => {
+                              const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
+                              const bw = parseFloat(form.bag_weight || 100)
+                              return p100 > 0 ? `₹${((p100 / 100) * bw).toFixed(2)}` : '₹0.00'
+                            })()
+                          }
+                          style={{ ...inp('calc_price'), background: '#f8fafc', color: '#10b981', fontWeight: 700 }}
+                        />
+                      </div>
+                    )}
                     <div>
-                      <label style={S.label}>{(form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') ? 'Stock (kg)' : 'Stock Quantity'}</label>
+                      <label style={S.label}>
+                        {getBulkUnitDetails(form.unit) && parseFloat(form.bag_weight) > 1
+                          ? `Stock Quantity (${getBulkUnitDetails(form.unit).pluralName})`
+                          : `Stock Quantity (${getBulkUnitDetails(form.unit)?.short || form.unit || 'pcs'})`}
+                      </label>
                       <input name="stock" type="number" value={form.stock} onChange={handleChange} placeholder="0" style={inp('stock')} onFocus={() => setFocus('stock')} onBlur={() => setFocus(null)} />
                     </div>
                     <div>
-                      <label style={S.label}>Unit of Measure</label>
-                      <input 
-                        name="unit" 
-                        value={form.unit} 
-                        onChange={handleChange} 
-                        placeholder="e.g. pcs" 
-                        style={inp('unit')} 
-                        onFocus={() => setFocus('unit')} 
-                        onBlur={() => setFocus(null)} 
-                      />
+                      <label style={S.label}>Unit of Measure (UOM)</label>
+                      <select
+                        name="unit"
+                        value={form.unit}
+                        onChange={handleChange}
+                        style={{ ...inp('unit'), cursor: 'pointer', background: '#fff' }}
+                        onFocus={() => setFocus('unit')}
+                        onBlur={() => setFocus(null)}
+                      >
+                        {uomOptions.map(opt => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                  {(form.unit?.toLowerCase() === 'kgs' || form.unit?.toLowerCase() === 'kg') && form.price && form.bag_weight && parseFloat(form.bag_weight) > 0 && (
+                  {getBulkUnitDetails(form.unit) && (form.price_100 || form.price) && form.bag_weight && (
                     <div style={{ padding: '0 20px 20px', fontSize: '0.8125rem', color: '#10b981', fontWeight: 600 }}>
-                      Calculated Price-per-kg: ₹{(parseFloat(form.price) / parseFloat(form.bag_weight)).toFixed(2)} / kg
+                      Calculated Unit Rate: ₹{(parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100).toFixed(2)} / {getBulkUnitDetails(form.unit).short}
+                      • {form.bag_weight}{getBulkUnitDetails(form.unit).short} {getBulkUnitDetails(form.unit).name} Price: ₹{((parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100) * parseFloat(form.bag_weight)).toFixed(2)}
+                      {form.stock && parseFloat(form.stock) > 0 && (
+                        <span style={{ color: '#4b5563', fontWeight: 500, marginLeft: 8 }}>
+                          • Total Inventory: {form.stock} {getBulkUnitDetails(form.unit).pluralName} ({(parseFloat(form.stock) * parseFloat(form.bag_weight)).toLocaleString()} {getBulkUnitDetails(form.unit).short} total)
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -311,7 +420,8 @@ export default function ImportStockForm() {
                   <button
                     type="submit"
                     disabled={saving}
-                    style={{ width: '100%', height: 40, border: 'none', borderRadius: '8px', background: saving ? '#9ca3af' : '#111827', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                    className="btn-blue"
+                    style={{ width: '100%', justifyContent: 'center', background: saving ? '#9ca3af' : undefined, cursor: saving ? 'not-allowed' : 'pointer' }}
                   >
                     {saving && <Loader2 size={14} className="ws-chat-loader-spin" />}
                     {saving ? 'Saving...' : id ? 'Update Product' : 'Save Product'}

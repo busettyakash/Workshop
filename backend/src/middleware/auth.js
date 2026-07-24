@@ -36,7 +36,9 @@ export async function requireAuth(req, res, next) {
         shopName: decoded.shopName,
       }
     }
-  } catch (_) {}
+  } catch {
+    // Local JWT verify failed, fallback to InsForge auth token verification
+  }
 
   if (!user) {
     try {

@@ -188,19 +188,18 @@ async function issueOtp(email, logPrefix = 'OTP') {
 
   try {
     await storeOtp(email, otp)
-    console.log('[%s DEBUG] OTP generated for %s: %s', logPrefix, email, otp)
 
-    // Send email asynchronously in the background
-    sendOtpEmail(email, otp, logPrefix).catch((err) => {
-      console.error('[%s] Background email task failed:', logPrefix, err.message)
-    })
+    const emailResult = await sendOtpEmail(email, otp, logPrefix)
+    if (!emailResult.success) {
+      await clearOtp(email)
+      return { status: 502, body: { message: 'Failed to send OTP email. Please try again.' } }
+    }
+
+    console.log('[%s] OTP email accepted for %s', logPrefix, email)
     
     await setOtpCooldown(email)
 
-    const body = { 
-      message: 'OTP sent to your email',
-      devOtp: otp 
-    }
+    const body = { message: 'OTP sent to your email' }
     return { status: 200, body }
   } catch (err) {
     console.error('[%s] Failed to store OTP:', logPrefix, err.message)

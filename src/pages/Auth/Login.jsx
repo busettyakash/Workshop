@@ -41,13 +41,9 @@ export default function Login() {
     clearNotification()
     try {
       // sendLoginOtp checks DB first — throws 404 if email not registered
-      const res = await authApi.sendLoginOtp(email)
-      if (res?.devOtp) {
-        setNotification({ message: `Verification code: ${res.devOtp} (Sent to ${email})`, type: 'info' })
-        setOtp(res.devOtp)
-      } else {
-        setNotification({ message: `Verification code sent to ${email}`, type: 'info' })
-      }
+      await authApi.sendLoginOtp(email)
+      setOtp('')
+      setNotification({ message: `Verification code sent to ${email}`, type: 'info' })
       setStep('otp')
     } catch (err) {
       const msg = err.response?.data?.message || 'Failed to send OTP. Please try again.'
@@ -99,13 +95,9 @@ export default function Login() {
     setLoading(true)
     clearNotification()
     try {
-      const res = await authApi.sendLoginOtp(email)
-      if (res?.devOtp) {
-        setNotification({ message: `New OTP: ${res.devOtp} (Sent to ${email})`, type: 'success' })
-        setOtp(res.devOtp)
-      } else {
-        setNotification({ message: 'A new OTP has been sent to your email.', type: 'success' })
-      }
+      await authApi.sendLoginOtp(email)
+      setOtp('')
+      setNotification({ message: 'A new OTP has been sent to your email.', type: 'success' })
       // Start 60s cooldown countdown
       setResendCooldown(60)
       const timer = setInterval(() => {

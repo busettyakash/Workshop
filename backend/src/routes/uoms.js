@@ -1,9 +1,11 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import { apiLimiter } from '../middleware/rateLimit.js'
 
 const router = Router()
 router.use(requireAuth)
+router.use(apiLimiter)
 
 // Initialize uoms table
 query(`

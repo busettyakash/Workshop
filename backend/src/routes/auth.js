@@ -156,14 +156,14 @@ async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
     })
 
     if (mailError) {
-      console.error(`[${logPrefix} Resend Warning] Could not deliver email to ${email}:`, mailError.message || mailError)
+      console.error('[%s Resend Warning] Could not deliver email to %s:', logPrefix, email, mailError.message || mailError)
       return { success: false, error: mailError }
     }
 
-    console.log(`[${logPrefix} Resend Success] Email sent to ${email} (${userName}) - ID:`, mailData?.id)
+    console.log('[%s Resend Success] Email sent to %s (%s) - ID:', logPrefix, email, userName, mailData?.id)
     return { success: true, data: mailData }
   } catch (err) {
-    console.error(`[${logPrefix} Resend Exception] Could not send email to ${email}:`, err.message)
+    console.error('[%s Resend Exception] Could not send email to %s:', logPrefix, email, err.message)
     return { success: false, error: err }
   }
 }
@@ -188,11 +188,11 @@ async function issueOtp(email, logPrefix = 'OTP') {
 
   try {
     await storeOtp(email, otp)
-    console.log(`[${logPrefix} DEBUG] OTP generated for ${email}: ${otp}`)
+    console.log('[%s DEBUG] OTP generated for %s: %s', logPrefix, email, otp)
 
     // Send email asynchronously in the background
     sendOtpEmail(email, otp, logPrefix).catch((err) => {
-      console.error(`[${logPrefix}] Background email task failed:`, err.message)
+      console.error('[%s] Background email task failed:', logPrefix, err.message)
     })
     
     await setOtpCooldown(email)
@@ -203,7 +203,7 @@ async function issueOtp(email, logPrefix = 'OTP') {
     }
     return { status: 200, body }
   } catch (err) {
-    console.error(`[${logPrefix}] Failed to store OTP:`, err.message)
+    console.error('[%s] Failed to store OTP:', logPrefix, err.message)
     return { status: 500, body: { message: 'Failed to generate OTP. Please try again.' } }
   } finally {
     await releaseOtpSendLock(email)
@@ -257,7 +257,7 @@ router.post('/send-otp', async (req, res) => {
       return res.status(409).json({ message: 'An account with this email already exists. Please log in instead.' })
     }
 
-    console.log(`[OTP] Request for email: ${email}`)
+    console.log('[OTP] Request for email: %s', email)
     const otpResult = await issueOtp(email, 'OTP')
     res.status(otpResult.status).json(otpResult.body)
   } catch (err) {
@@ -346,7 +346,7 @@ router.post('/reset-password', async (req, res) => {
       [newPassword, email]
     )
 
-    console.log(`[RESET PASSWORD] Password updated successfully for ${email}`)
+    console.log('[RESET PASSWORD] Password updated successfully for %s', email)
     res.json({ message: 'Password reset successfully. You can now log in with your new password.' })
   } catch (err) {
     console.error('[RESET PASSWORD] Error:', err.message)
@@ -369,7 +369,7 @@ router.post('/verify-otp', async (req, res) => {
       storedOtp = getMemoryValue(getOtpKey(email))
     }
 
-    console.log(`[OTP VERIFY] Attempt for ${email}: input=${otp}, stored=${storedOtp}`)
+    console.log('[OTP VERIFY] Attempt for %s: input=%s, stored=%s', email, otp, storedOtp)
 
     if (String(storedOtp) === otp) {
       // Success - now delete

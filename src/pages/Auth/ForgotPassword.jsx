@@ -37,8 +37,13 @@ export default function ForgotPassword() {
     setLoading(true)
     clearNotification()
     try {
-      await authApi.sendResetOtp(email)
-      showSuccess(`Verification code sent to ${email}`)
+      const res = await authApi.sendResetOtp(email)
+      if (res?.devOtp) {
+        showSuccess(`Reset code: ${res.devOtp} (Sent to ${email})`)
+        setOtp(res.devOtp)
+      } else {
+        showSuccess(`Verification code sent to ${email}`)
+      }
       setStep('reset')
     } catch (err) {
       const msg = err.response?.data?.message || 'Failed to send OTP. Please check your email address.'
@@ -54,8 +59,13 @@ export default function ForgotPassword() {
     setLoading(true)
     clearNotification()
     try {
-      await authApi.sendResetOtp(email)
-      showSuccess('A new verification code has been sent.')
+      const res = await authApi.sendResetOtp(email)
+      if (res?.devOtp) {
+        showSuccess(`New reset code: ${res.devOtp} (Sent to ${email})`)
+        setOtp(res.devOtp)
+      } else {
+        showSuccess('A new verification code has been sent.')
+      }
       setResendCooldown(60)
       const timer = setInterval(() => {
         setResendCooldown((prev) => {

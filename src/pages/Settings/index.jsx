@@ -77,7 +77,7 @@ export default function Settings() {
   }
 
   // Password submit
-  const handleUpdatePassword = (e) => {
+  const handleUpdatePassword = async (e) => {
     e.preventDefault()
     if (!passwordForm.currentPassword) {
       dispatch(addToast({ message: 'Please enter current password', type: 'error' }))
@@ -91,12 +91,21 @@ export default function Settings() {
       dispatch(addToast({ message: 'New passwords do not match', type: 'error' }))
       return
     }
+
     setPasswordUpdating(true)
-    setTimeout(() => {
-      setPasswordUpdating(false)
+    try {
+      const res = await api.post('/auth/update-password', {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword
+      })
+      dispatch(addToast({ message: res.data?.message || 'Password updated successfully!', type: 'success' }))
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
-      dispatch(addToast({ message: 'Password updated successfully!', type: 'success' }))
-    }, 600)
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to update password. Check your current password.'
+      dispatch(addToast({ message: msg, type: 'error' }))
+    } finally {
+      setPasswordUpdating(false)
+    }
   }
 
   // UOM Save to Backend DB

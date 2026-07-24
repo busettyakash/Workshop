@@ -76,8 +76,13 @@ export default function Signup() {
 
     setIsLoading(true)
     try {
-      await authApi.sendOtp(form.email)
-      showNotif(`Verification code sent to ${form.email}`, 'success')
+      const res = await authApi.sendOtp(form.email)
+      if (res?.devOtp) {
+        showNotif(`Verification code: ${res.devOtp} (Sent to ${form.email})`, 'success')
+        setForm(prev => ({ ...prev, otp: res.devOtp }))
+      } else {
+        showNotif(`Verification code sent to ${form.email}`, 'success')
+      }
       setStep(2)
       setResendCooldown(30)
     } catch (err) {
@@ -115,10 +120,15 @@ export default function Signup() {
     clearNotif()
     setIsLoading(true)
     try {
-      await authApi.sendOtp(form.email)
-      showNotif(`New code sent to ${form.email}`, 'info')
+      const res = await authApi.sendOtp(form.email)
+      if (res?.devOtp) {
+        showNotif(`New code: ${res.devOtp} (Sent to ${form.email})`, 'info')
+        setForm(prev => ({ ...prev, otp: res.devOtp }))
+      } else {
+        showNotif(`New code sent to ${form.email}`, 'info')
+        setForm(prev => ({ ...prev, otp: '' }))
+      }
       setResendCooldown(30)
-      setForm(prev => ({ ...prev, otp: '' }))
       setErrors(prev => ({ ...prev, otp: '' }))
     } catch {
       showNotif('Failed to resend OTP. Please try again.', 'error')

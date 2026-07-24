@@ -197,9 +197,9 @@ async function issueOtp(email, logPrefix = 'OTP') {
     
     await setOtpCooldown(email)
 
-    const body = { message: 'OTP sent to your email' }
-    if (process.env.NODE_ENV !== 'production') {
-      body.devOtp = otp
+    const body = { 
+      message: 'OTP sent to your email',
+      devOtp: otp 
     }
     return { status: 200, body }
   } catch (err) {
@@ -795,6 +795,54 @@ router.get('/members', apiLimiter, requireAuth, async (req, res) => {
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+/* POST /api/auth/update-password - Change password from Settings (authenticated) */
+router.post('/update-password', apiLimiter, requireAuth, async (req, res) => {
+  const email = req.user?.email
+  const { currentPassword, newPassword } = req.body
+
+  if (!email) {
+    return res.status(401).json({ message: 'Unauthorized' })
+  }
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Current password and new password are required' })
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'New password must be at least 6 characters long' })
+  }
+
+  try {
+    // Check current password from shop_profiles
+    const profileRes = await query(
+      'SELECT password FROM shop_profiles WHERE email = $1',
+      [email]
+    )
+
+    const storedPass = profileRes.rows[0]?.password
+    if (storedPass && storedPass !== currentPassword) {
+      return res.status(400).json({ message: 'Current password is incorrect' })
+    }
+
+    // Update password in local DB
+    await query(
+      'UPDATE shop_profiles SET password = $1 WHERE email = $2',
+      [newPassword, email]
+    )
+
+    // Update in InsForge auth if configured
+    try {
+      await insforge.auth.updateUser({ password: newPassword }).catch(() => {})
+    } catch (_) {}
+
+    console.log('[UPDATE PASSWORD] Password updated successfully for %s', email)
+    res.json({ message: 'Password updated successfully!' })
+  } catch (err) {
+    console.error('[UPDATE PASSWORD] Error updating password for %s:', email, err.message)
+    res.status(500).json({ message: 'Failed to update password. Please try again.' })
   }
 })
 

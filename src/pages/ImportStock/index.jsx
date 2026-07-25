@@ -13,15 +13,14 @@ import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 
 function PricingModal({ product, onClose }) {
-  if (!product) return null
-  const bulkUnit = getBulkUnitDetails(product.unit)
-  const bagWeight = parseFloat(product.bag_weight || 1)
-  const effectivePrice = parseFloat(product.updated_price || product.price || 0)
-  const unitPrice = (effectivePrice / bagWeight).toFixed(2)
-  const updatedDateStr = product.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
-
   const [history, setHistory] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
+
+  const bulkUnit = getBulkUnitDetails(product?.unit)
+  const bagWeight = parseFloat(product?.bag_weight || 1)
+  const effectivePrice = parseFloat(product?.updated_price || product?.price || 0)
+  const unitPrice = (effectivePrice / bagWeight).toFixed(2)
+  const updatedDateStr = product?.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
 
   useEffect(() => {
     let isMounted = true
@@ -57,7 +56,9 @@ function PricingModal({ product, onClose }) {
         if (isMounted) setLoadingHistory(false)
       })
     return () => { isMounted = false }
-  }, [product.id])
+  }, [product?.id])
+
+  if (!product) return null
 
   return (
     <div className="ws-modal-backdrop" onClick={onClose}>

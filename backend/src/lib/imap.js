@@ -13,6 +13,7 @@ import { query } from './db.js'
 
 // ── DNS patch (same as smtp.js) ── Only active in development mode to avoid affecting production
 if (process.env.NODE_ENV === 'development') {
+  // eslint-disable-next-line sonarjs/no-hardcoded-ip -- Google public DNS used only in dev to fix local DNS resolution
   try { dns.setServers(['8.8.8.8', '8.8.4.4']) } catch {}
   const _origLookup = dns.lookup
   dns.lookup = function (hostname, options, callback) {

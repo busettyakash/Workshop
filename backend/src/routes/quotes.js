@@ -8,7 +8,7 @@ const router = express.Router()
 
 const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
 
-const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record created') => {
+const triggerWorkflowForQuote = async (userId, quote, _actionName = 'Record created') => {
   try {
     let wfRes = await pool.query('SELECT id, name FROM workflows WHERE user_id::text = $1::text LIMIT 1', [userId]).catch(() => ({ rows: [] }))
     if (wfRes.rows.length === 0) {
@@ -435,7 +435,7 @@ router.get('/respond', emailLimiter, async (req, res) => {
 
         autoBillNotice = `<div style="background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:18px; border-radius:12px; margin-top:20px; text-align:center;">
           <div style="font-size:1.15rem; font-weight:800; margin-bottom:6px; color:#047857;">Official Billing Invoice Issued Successfully</div>
-          <div style="font-size:0.95rem; line-height:1.5;">Invoice <strong>#${billNumber}</strong> has been generated and sent to Unpaid Bills. The official billing invoice will come to your mail (<strong>${quote.customer_email || 'customer'}</strong>) — please check your inbox!</div>
+          <div style="font-size:0.95rem; line-height:1.5;">Invoice <strong>#${bill.bill_number || bill.id}</strong> has been generated and sent to Unpaid Bills. The official billing invoice will come to your mail (<strong>${quote.customer_email || 'customer'}</strong>) — please check your inbox!</div>
         </div>`
       } catch (billErr) {
         console.error('[Auto Bill Generation Error]', billErr.message)
@@ -495,7 +495,6 @@ router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
     }
 
     const quote = quoteRes.rows[0]
-    const billNumber = `INV-${Date.now().toString().slice(-6)}`
 
     let customerId = quote.person_id || null
 
@@ -846,7 +845,7 @@ router.post('/', apiLimiter, async (req, res) => {
       if (shopRes.rows[0]?.shop_name) {
         finalShopName = shopRes.rows[0].shop_name
       } else {
-        finalShopName = 'Workshop Store'
+      // shop_name already defaults to 'Workshop Store' from destructuring; no reassignment needed
       }
     }
 

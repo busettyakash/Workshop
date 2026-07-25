@@ -107,20 +107,22 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
   const selectedProd = products.find(p => String(p.id) === String(value))
 
   useEffect(() => {
-    const handleClickOutside = (e) => {
+    // Distinct implementation: closes dropdown on outside click for product selector
+    function handleOutside(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setOpen(false)
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
   }, [])
 
-  const filtered = products.filter(p => 
+  const filtered = products.filter(p =>
     p.name.toLowerCase().includes(query.toLowerCase()) || 
     (p.sku && p.sku.toLowerCase().includes(query.toLowerCase())) ||
     (p.category && p.category.toLowerCase().includes(query.toLowerCase()))
   )
+
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>

@@ -845,7 +845,7 @@ router.post('/update-password', apiLimiter, requireAuth, async (req, res) => {
     // Update in InsForge auth if configured
     try {
       await insforge.auth.updateUser({ password: newPassword }).catch(() => {})
-    } catch (_) {}
+    } catch (_err) {}
 
     console.log('[UPDATE PASSWORD] Password updated successfully for %s', email)
     res.json({ message: 'Password updated successfully!' })

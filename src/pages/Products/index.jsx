@@ -93,26 +93,25 @@ function BarcodeModal({ sku, onClose }) {
 }
 
 function PricingModal({ product, onClose }) {
-  if (!product) return null
-  const bulkUnit = getBulkUnitDetails(product.unit)
-  const bagWeight = parseFloat(product.bag_weight || 1)
-  const effectivePrice = parseFloat(product.updated_price || product.price || 0)
-  const unitPrice = (effectivePrice / bagWeight).toFixed(2)
-  const updatedDateStr = product.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
-
   const [history, setHistory] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
 
+  const bulkUnit = getBulkUnitDetails(product?.unit)
+  const bagWeight = parseFloat(product?.bag_weight || 1)
+  const effectivePrice = parseFloat(product?.updated_price || product?.price || 0)
+  const unitPrice = (effectivePrice / bagWeight).toFixed(2)
+  const updatedDateStr = product?.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
+
   useEffect(() => {
     let isMounted = true
-    api.get(`/products/${product.id}/price-history`)
+    api.get(`/products/${product?.id}/price-history`)
       .then(res => {
         if (isMounted) setHistory(res.data || [])
       })
       .catch(() => {
         if (isMounted) {
           const defaultItems = []
-          if (product.updated_price) {
+          if (product?.updated_price) {
             defaultItems.push({
               id: 'h2',
               old_price: product.price,
@@ -121,7 +120,7 @@ function PricingModal({ product, onClose }) {
               notes: 'Updated Price'
             })
           }
-          if (product.price) {
+          if (product?.price) {
             defaultItems.push({
               id: 'h1',
               old_price: null,
@@ -137,7 +136,9 @@ function PricingModal({ product, onClose }) {
         if (isMounted) setLoadingHistory(false)
       })
     return () => { isMounted = false }
-  }, [product.id])
+  }, [product?.id])
+
+  if (!product) return null
 
   return (
     <div className="ws-modal-backdrop" onClick={onClose}>

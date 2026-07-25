@@ -1,8 +1,10 @@
 import express from 'express'
 import pool from '../lib/db.js'
 import { sendEmail } from '../lib/smtp.js'
+import { apiLimiter, emailLimiter } from '../middleware/rateLimit.js'
 
 const router = express.Router()
+
 
 const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
 
@@ -246,7 +248,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
 }
 
 /* ── GET /api/quotes ── */
-router.get('/', async (req, res) => {
+router.get('/', apiLimiter, async (req, res) => {
   try {
     const userId = getUserId(req)
     const page = parseInt(req.query.page, 10) || 1
@@ -298,7 +300,7 @@ router.get('/', async (req, res) => {
 })
 
 /* ── PUBLIC RESPONSE ENDPOINT: GET /api/quotes/respond ── */
-router.get('/respond', async (req, res) => {
+router.get('/respond', emailLimiter, async (req, res) => {
   try {
     const { id, action } = req.query
     if (!id || !['Accepted', 'Declined'].includes(action)) {
@@ -482,7 +484,7 @@ router.get('/respond', async (req, res) => {
 })
 
 /* ── POST /api/quotes/:id/convert-to-bill ── */
-router.post('/:id/convert-to-bill', async (req, res) => {
+router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
   try {
     const userId = getUserId(req)
     const { id } = req.params
@@ -576,7 +578,7 @@ router.post('/:id/convert-to-bill', async (req, res) => {
 })
 
 /* ── POST /api/quotes/:id/send-email ── */
-router.post('/:id/send-email', async (req, res) => {
+router.post('/:id/send-email', emailLimiter, async (req, res) => {
   try {
     const userId = getUserId(req)
     const { id } = req.params
@@ -816,7 +818,7 @@ router.post('/:id/send-email', async (req, res) => {
 })
 
 /* ── POST /api/quotes ── */
-router.post('/', async (req, res) => {
+router.post('/', apiLimiter, async (req, res) => {
   try {
     const userId = getUserId(req)
     const {
@@ -878,7 +880,7 @@ router.post('/', async (req, res) => {
 })
 
 /* ── PUT /api/quotes/:id ── */
-router.put('/:id', async (req, res) => {
+router.put('/:id', apiLimiter, async (req, res) => {
   try {
     const userId = getUserId(req)
     const { id } = req.params
@@ -943,7 +945,7 @@ router.put('/:id', async (req, res) => {
 })
 
 /* ── DELETE /api/quotes/:id ── */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', apiLimiter, async (req, res) => {
   try {
     const userId = getUserId(req)
     const { id } = req.params

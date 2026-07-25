@@ -1,5 +1,22 @@
+/**
+ * Escape user-supplied strings before embedding them in HTML.
+ * Prevents HTML Injection / XSS (CodeQL: js/html-construction-from-input).
+ */
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export const getOtpTemplate = (otp, email = 'User', userName = '') => {
-  const displayName = userName || (email.includes('@') ? email.split('@')[0] : email)
+  const rawDisplayName = userName || (email.includes('@') ? email.split('@')[0] : email)
+  // Escape every user-controlled value before HTML insertion
+  const safeDisplayName = escapeHtml(rawDisplayName)
+  const safeEmail       = escapeHtml(email)
+  const safeOtp         = escapeHtml(otp)
 
   return `
 <!DOCTYPE html>
@@ -38,19 +55,19 @@ export const getOtpTemplate = (otp, email = 'User', userName = '') => {
             <!-- Formal Body -->
             <tr>
               <td style="font-size: 15px; line-height: 1.6; color: #334155;">
-                <p style="margin: 0 0 16px 0; font-size: 15px; font-weight: 700; color: #0f172a;">Dear ${displayName},</p>
+                <p style="margin: 0 0 16px 0; font-size: 15px; font-weight: 700; color: #0f172a;">Dear ${safeDisplayName},</p>
                 
                 <p style="margin: 0 0 16px 0;">
                   Thank you for verifying your profile at <strong>Workshop Platform</strong>.
                 </p>
 
                 <p style="margin: 0 0 16px 0;">
-                  Your registered User ID is <strong style="color: #2563eb;">${email}</strong>.
+                  Your registered User ID is <strong style="color: #2563eb;">${safeEmail}</strong>.
                 </p>
 
                 <!-- OTP Code Block -->
                 <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 24px; margin: 20px 0; text-align: center;">
-                  <span style="font-family: 'SF Mono', Monaco, Consolas, 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 0.25em; color: #0f172a;">${otp}</span>
+                  <span style="font-family: 'SF Mono', Monaco, Consolas, 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 0.25em; color: #0f172a;">${safeOtp}</span>
                 </div>
 
                 <p style="margin: 0 0 16px 0;">
@@ -83,7 +100,11 @@ export const getOtpTemplate = (otp, email = 'User', userName = '') => {
 }
 
 export const getPasswordResetOtpTemplate = (otp, email = 'User', userName = '') => {
-  const displayName = userName || (email.includes('@') ? email.split('@')[0] : email)
+  const rawDisplayName = userName || (email.includes('@') ? email.split('@')[0] : email)
+  // Escape every user-controlled value before HTML insertion
+  const safeDisplayName = escapeHtml(rawDisplayName)
+  const safeEmail       = escapeHtml(email)
+  const safeOtp         = escapeHtml(otp)
 
   return `
 <!DOCTYPE html>
@@ -122,19 +143,19 @@ export const getPasswordResetOtpTemplate = (otp, email = 'User', userName = '') 
             <!-- Formal Letter Body -->
             <tr>
               <td style="font-size: 15px; line-height: 1.6; color: #334155;">
-                <p style="margin: 0 0 16px 0; font-size: 15px; font-weight: 700; color: #0f172a;">Dear ${displayName},</p>
+                <p style="margin: 0 0 16px 0; font-size: 15px; font-weight: 700; color: #0f172a;">Dear ${safeDisplayName},</p>
                 
                 <p style="margin: 0 0 16px 0;">
                   Your request to reset forgotten password on <strong>Workshop Platform</strong> has been generated successfully.
                 </p>
 
                 <p style="margin: 0 0 16px 0;">
-                  Your User ID is <strong style="color: #dc2626;">${email}</strong>.
+                  Your User ID is <strong style="color: #dc2626;">${safeEmail}</strong>.
                 </p>
 
                 <!-- OTP Code Block -->
                 <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 24px; margin: 20px 0; text-align: center;">
-                  <span style="font-family: 'SF Mono', Monaco, Consolas, 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 0.25em; color: #3d68f5;">${otp}</span>
+                  <span style="font-family: 'SF Mono', Monaco, Consolas, 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 0.25em; color: #3d68f5;">${safeOtp}</span>
                 </div>
 
                 <p style="margin: 0 0 16px 0;">

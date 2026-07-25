@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
@@ -13,13 +13,7 @@ import '../Products/Products.css'
 import TablePagination from '../../components/ui/TablePagination'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 
-function SearchableCustomerSelect({ people, value, onSelect }) {
-  const [query, setQuery] = useState('')
-  const [open, setOpen] = useState(false)
-  const containerRef = useRef(null)
-
-  const selectedPerson = people.find(p => String(p.id) === String(value))
-
+function useCloseOnOutsideClick(containerRef, setOpen) {
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
@@ -28,7 +22,17 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [containerRef, setOpen])
+}
+
+function SearchableCustomerSelect({ people, value, onSelect }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef(null)
+
+  const selectedPerson = people.find(p => String(p.id) === String(value))
+
+  useCloseOnOutsideClick(containerRef, setOpen)
 
   const filtered = people.filter(p => 
     p.name?.toLowerCase().includes(query.toLowerCase()) || 
@@ -106,16 +110,7 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
 
   const selectedProd = products.find(p => String(p.id) === String(value))
 
-  useEffect(() => {
-    // Distinct implementation: closes dropdown on outside click for product selector
-    function handleOutside(e) {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleOutside)
-    return () => document.removeEventListener('mousedown', handleOutside)
-  }, [])
+  useCloseOnOutsideClick(containerRef, setOpen)
 
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(query.toLowerCase()) || 

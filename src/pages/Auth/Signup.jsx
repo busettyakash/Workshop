@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { Mail, Lock, ArrowLeft, Phone, CreditCard } from 'lucide-react'
 import WorkshopLogo from '../../components/WorkshopLogo'
 import Notification from '../../components/Notification'

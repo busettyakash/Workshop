@@ -7,7 +7,7 @@ import { Plus, Filter, ArrowUpDown, Loader2, Trash2, Edit2, X } from 'lucide-rea
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import { getAvatarColor, getSingleLetter } from '../../utils/tableHelpers'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 
 const STAGE_OPTIONS = ['Discovery', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost']

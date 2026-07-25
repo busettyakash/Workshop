@@ -14,7 +14,7 @@ import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 import BillPreview from './BillPreview'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 
 const STATUS_MAP = {
   paid: { bg: '#dcfce7', text: '#166534', label: 'Paid' },

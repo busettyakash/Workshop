@@ -4,7 +4,7 @@ import api from '../../api/client'
 import { useAuth } from '../../hooks/useAuth'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { addToast, setActiveNav, selectSidebarOpen } from '../../redux/slices/uiSlice'
-import { useLocation, useNavigate, Link } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router'
 import {
   ChevronDown, ArrowUp, Plus, Bot, Loader2, Star, Clock, Trash2,
   Home, HelpCircle, ChevronLeft, ChevronRight, MoreHorizontal, Compass, Paperclip,

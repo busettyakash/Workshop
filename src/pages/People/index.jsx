@@ -7,7 +7,7 @@ import { Plus, Filter, ArrowUpDown, Loader2, Mail, Phone, Trash2, Edit2, Search 
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 

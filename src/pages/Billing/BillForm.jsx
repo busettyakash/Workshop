@@ -322,7 +322,8 @@ export default function BillForm() {
 
   const addLineItem = (prod) => {
     const bulkUnit = getBulkUnitDetails(prod.unit)
-    const priceToUse = bulkUnit ? (parseFloat(prod.price) / (parseFloat(prod.bag_weight) || 1)).toFixed(2) : prod.price
+    const effectivePrice = prod.updated_price ? parseFloat(prod.updated_price) : parseFloat(prod.price || 0)
+    const priceToUse = bulkUnit ? (effectivePrice / (parseFloat(prod.bag_weight) || 1)).toFixed(2) : effectivePrice
     setLineItems(prev => [...prev, {
       product_id: prod.id,
       name: prod.name,
@@ -833,13 +834,23 @@ export default function BillForm() {
                                 {p.name}
                               </div>
                               <div style={{ fontSize: '0.7rem', color: '#6b7280', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                {bulkUnit && p.bag_weight > 1 ? (
-                                  <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>
-                                    {bulkUnit.name}: {INR(p.price)} ({p.bag_weight}{bulkUnit.short}) • {INR(p.price / p.bag_weight)}/{bulkUnit.short}
-                                  </span>
-                                ) : (
-                                  <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>{INR(p.price)} / {p.unit || 'pcs'}</span>
-                                )}
+                                {(() => {
+                                  const effectivePrice = p.updated_price ? parseFloat(p.updated_price) : parseFloat(p.price || 0)
+                                  if (bulkUnit && p.bag_weight > 1) {
+                                    return (
+                                      <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>
+                                        {bulkUnit.name}: {INR(effectivePrice)} ({p.bag_weight}{bulkUnit.short}) • {INR(effectivePrice / p.bag_weight)}/{bulkUnit.short}
+                                        {p.updated_price && <span style={{ color: '#10b981', fontWeight: 600, marginLeft: 4 }}>(Updated)</span>}
+                                      </span>
+                                    )
+                                  }
+                                  return (
+                                    <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>
+                                      {INR(effectivePrice)} / {p.unit || 'pcs'}
+                                      {p.updated_price && <span style={{ color: '#10b981', fontWeight: 600, marginLeft: 4 }}>(Updated)</span>}
+                                    </span>
+                                  )
+                                })()}
 
                                 <div style={{ marginTop: 1 }}>
                                   {hasNoStock || isStockDepleted ? (

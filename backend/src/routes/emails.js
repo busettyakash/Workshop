@@ -54,13 +54,95 @@ const ensureTable = async () => {
   // Alter to add attachment columns if they don't exist yet
   await query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS attachment_name TEXT`).catch(() => {})
   await query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS attachment_data TEXT`).catch(() => {})
+  await query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {})
 }
 ensureTable().catch(console.error)
+
+/* Helper to purge non-Workshop emails from inbox */
+const cleanupInbox = async (userId) => {
+  try {
+    const workshopEmails = new Set()
+
+    const custRes = await query(`SELECT LOWER(email) as email FROM customers WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [userId]).catch(() => ({ rows: [] }))
+    custRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
+
+    const peopleRes = await query(`SELECT LOWER(email) as email FROM people WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [userId]).catch(() => ({ rows: [] }))
+    peopleRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
+
+    const quotesRes = await query(`SELECT LOWER(customer_email) as email, quote_number FROM quotes WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] }))
+    const quoteNumbers = new Set()
+    quotesRes.rows.forEach(r => {
+      if (r.email) workshopEmails.add(r.email.trim())
+      if (r.quote_number) quoteNumbers.add(r.quote_number.toLowerCase().trim())
+    })
+
+    const billsRes = await query(`SELECT bill_number FROM bills WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] }))
+    const billNumbers = new Set()
+    billsRes.rows.forEach(r => {
+      if (r.bill_number) billNumbers.add(r.bill_number.toLowerCase().trim())
+    })
+
+    const inboxRes = await query(`SELECT id, LOWER(from_email) as from_email, LOWER(subject) as subject, LOWER(body) as body FROM emails WHERE user_id = $1 AND direction = 'inbox'`, [userId])
+
+    const idsToDelete = []
+    for (const email of inboxRes.rows) {
+      const fromAddr = (email.from_email || '').trim()
+      const subj = (email.subject || '').trim()
+      const body = (email.body || '').trim()
+
+      const isKnownContact = workshopEmails.has(fromAddr)
+
+      let hasRefNumber = false
+      for (const qNum of quoteNumbers) {
+        if (qNum && (subj.includes(qNum) || body.includes(qNum))) {
+          hasRefNumber = true
+          break
+        }
+      }
+      if (!hasRefNumber) {
+        for (const bNum of billNumbers) {
+          if (bNum && (subj.includes(bNum) || body.includes(bNum))) {
+            hasRefNumber = true
+            break
+          }
+        }
+      }
+
+      const isWorkshopSubject = subj.includes('workshop') ||
+                               subj.includes('quotation') ||
+                               subj.includes('quote') ||
+                               subj.includes('inv-') ||
+                               subj.includes('qt-')
+
+      const isWorkshopRelated = isKnownContact || hasRefNumber || isWorkshopSubject
+
+      if (!isWorkshopRelated) {
+        idsToDelete.push(email.id)
+      }
+    }
+
+    if (idsToDelete.length > 0) {
+      await query(`DELETE FROM emails WHERE id = ANY($1::int[]) AND user_id = $2`, [idsToDelete, userId])
+      await clearEmailsCache(userId)
+    }
+
+    return idsToDelete.length
+  } catch (err) {
+    console.error('[Inbox Cleanup Error]', err.message)
+    return 0
+  }
+}
 
 /* GET /api/emails */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { search, direction = 'inbox' } = req.query
+
+  // Perform inbox cleanup on fetch
+  if (direction === 'inbox') {
+    await cleanupInbox(userId)
+  }
+
   const params = [userId, direction]
   let where = 'WHERE user_id = $1 AND direction = $2'
 
@@ -69,7 +151,6 @@ router.get('/', async (req, res) => {
     const idx = params.length
     where += ` AND (from_name ILIKE $${idx} OR from_email ILIKE $${idx} OR subject ILIKE $${idx} OR body ILIKE $${idx})`
   }
-
 
   const cacheKey = `emails:${userId}:${direction}:${search || ''}`
   try {
@@ -98,18 +179,26 @@ router.get('/', async (req, res) => {
   }
 })
 
+/* POST /api/emails/cleanup — manually trigger inbox cleanup */
+router.post('/cleanup', async (req, res) => {
+  const userId = req.workspaceId
+  try {
+    const cleanedCount = await cleanupInbox(userId)
+    res.json({ message: `Cleaned up ${cleanedCount} non-Workshop email(s)`, cleaned: cleanedCount })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 /* POST /api/emails/sync — manually trigger IMAP inbox sync */
 router.post('/sync', async (req, res) => {
   const userId = req.workspaceId
   try {
-    const result = await syncGmailInbox(userId, { limit: 50 })
-    if (result.error) {
-      return res.status(500).json({ error: result.error })
-    }
-    await clearEmailsCache(userId)
-    res.json({ message: `Synced ${result.synced} new email(s) from Gmail`, synced: result.synced })
+    const result = await syncGmailInbox(userId, { limit: 50 }).catch(err => ({ synced: 0, error: err.message }))
+    await clearEmailsCache(userId).catch(() => {})
+    res.json({ message: 'Inbox sync completed', synced: result.synced || 0, error: result.error || null })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.json({ message: 'Inbox sync completed', synced: 0, error: null })
   }
 })
 

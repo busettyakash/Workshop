@@ -73,42 +73,26 @@ export function getCategoryTagStyle(category) {
 }
 
 export function getPillStyle(label) {
-  if (!label) return { bg: '#f3f4f6', text: '#1f2937', border: '#e5e7eb' }
+  if (!label) return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }
   const clean = label.toString().toLowerCase().trim()
 
-  if (clean.includes('electronic') || clean.includes('startup') || clean === 'active' || clean === 'paid' || clean === 'in stock') {
-    return { bg: '#ecfdf5', text: '#065f46', border: '#d1fae5' } // Green
-  }
-  if (clean.includes('apparel') || clean.includes('invest') || clean === 'customer story' || clean === 'low stock') {
-    return { bg: '#eff6ff', text: '#1e40af', border: '#dbeafe' } // Blue
-  }
-  if (clean.includes('grocery') || clean.includes('productiv') || clean === 'tutorial') {
-    return { bg: '#faf5ff', text: '#6b21a8', border: '#f3e8ff' } // Purple
-  }
-  if (clean.includes('appliance') || clean.includes('leader')) {
-    return { bg: '#fdf2f8', text: '#9d174d', border: '#fce7f3' } // Pink
-  }
-  if (clean.includes('saas') || clean.includes('management') || clean === 'pending' || clean === 'unpaid') {
-    return { bg: '#fff7ed', text: '#9a3412', border: '#ffedd5' } // Orange
-  }
-  if (clean.includes('out') || clean.includes('cancel') || clean === 'inactive') {
-    return { bg: '#fef2f2', text: '#991b1b', border: '#fee2e2' } // Red
+  // Unified periwinkle status badge style matching exact design image
+  if (['active', 'inactive', 'paid', 'unpaid', 'pending', 'added', 'in stock', 'out of stock', 'low stock', 'draft', 'sent'].includes(clean)) {
+    return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }
   }
 
-  // Fallback hashing
-  let hash = 0
-  for (let i = 0; i < clean.length; i++) {
-    hash = clean.charCodeAt(i) + ((hash << 5) - hash)
+  if (clean.includes('electronic') || clean.includes('startup')) {
+    return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }
   }
-  const colorSchemes = [
-    { bg: '#eff6ff', text: '#1e40af', border: '#dbeafe' }, // blue
-    { bg: '#faf5ff', text: '#6b21a8', border: '#f3e8ff' }, // purple
-    { bg: '#fdf2f8', text: '#9d174d', border: '#fce7f3' }, // pink
-    { bg: '#ecfdf5', text: '#065f46', border: '#d1fae5' }, // green
-    { bg: '#fff7ed', text: '#9a3412', border: '#ffedd5' }, // orange
-    { bg: '#fef2f2', text: '#991b1b', border: '#fee2e2' }, // red
-    { bg: '#f0fdfa', text: '#0f766e', border: '#ccfbf1' }, // teal
-    { bg: '#fffbeb', text: '#b45309', border: '#fef3c7' }, // amber/yellow
-  ]
-  return colorSchemes[Math.abs(hash) % colorSchemes.length]
+  if (clean.includes('apparel') || clean.includes('invest') || clean === 'customer story') {
+    return { bg: '#eff6ff', text: '#1e40af', border: '#dbeafe' }
+  }
+  if (clean.includes('grocery') || clean.includes('productiv') || clean === 'tutorial') {
+    return { bg: '#faf5ff', text: '#6b21a8', border: '#f3e8ff' }
+  }
+  if (clean.includes('appliance') || clean.includes('leader')) {
+    return { bg: '#fdf2f8', text: '#9d174d', border: '#fce7f3' }
+  }
+
+  return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }
 }

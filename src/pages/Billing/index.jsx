@@ -307,7 +307,7 @@ export default function Billing() {
   }
 
   const formatCurrency = (val) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val)
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(val) || 0)
 
   const formatDate = (d) => {
     if (!d) return '—'
@@ -378,7 +378,7 @@ export default function Billing() {
                   <FileText size={13} /> Templates
                 </button>
 
-                <button className="attio-btn attio-btn-primary" onClick={() => navigate('/billing/add')}>
+                <button className="attio-btn attio-btn-primary" onClick={() => navigate('/billing/new')}>
                   <Plus size={13} style={{ marginRight: '4px' }} /> New Bill
                 </button>
               </div>

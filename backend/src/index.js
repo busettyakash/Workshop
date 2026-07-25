@@ -43,13 +43,13 @@ import workflowRoutes from './routes/workflows.js'
 import chatRoutes     from './routes/chat.js'
 import importStockRoutes from './routes/importStock.js'
 import peopleRoutes   from './routes/people.js'
-import dealsRoutes    from './routes/deals.js'
 import companiesRoutes  from './routes/companies.js'
 import billTemplateRoutes from './routes/billTemplates.js'
 import recordRoutes from './routes/records.js'
 import notesRoutes  from './routes/notes.js'
 import emailsRoutes from './routes/emails.js'
 import uomRoutes    from './routes/uoms.js'
+import quotesRoutes from './routes/quotes.js'
 
 const app  = express()
 app.disable('x-powered-by')
@@ -110,13 +110,13 @@ app.use('/api/workflows',     workflowRoutes)
 app.use('/api/chat',          chatRoutes)
 app.use('/api/import-stock',  importStockRoutes)
 app.use('/api/people',        peopleRoutes)
-app.use('/api/deals',         dealsRoutes)
 app.use('/api/companies',     companiesRoutes)
 app.use('/api/bill-templates', billTemplateRoutes)
 app.use('/api/records',        recordRoutes)
 app.use('/api/notes',          notesRoutes)
 app.use('/api/emails',         emailsRoutes)
 app.use('/api/uoms',           uomRoutes)
+app.use('/api/quotes',         quotesRoutes)
 
 /* ── 404 handler ── */
 app.use((_req, res) => {

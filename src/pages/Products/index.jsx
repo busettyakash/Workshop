@@ -96,40 +96,143 @@ function PricingModal({ product, onClose }) {
   if (!product) return null
   const bulkUnit = getBulkUnitDetails(product.unit)
   const bagWeight = parseFloat(product.bag_weight || 1)
-  const unitPrice = (parseFloat(product.price || 0) / bagWeight).toFixed(2)
+  const effectivePrice = parseFloat(product.updated_price || product.price || 0)
+  const unitPrice = (effectivePrice / bagWeight).toFixed(2)
+  const updatedDateStr = product.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
+
+  const [history, setHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
+
+  useEffect(() => {
+    let isMounted = true
+    api.get(`/products/${product.id}/price-history`)
+      .then(res => {
+        if (isMounted) setHistory(res.data || [])
+      })
+      .catch(() => {
+        if (isMounted) {
+          const defaultItems = []
+          if (product.updated_price) {
+            defaultItems.push({
+              id: 'h2',
+              old_price: product.price,
+              new_price: product.updated_price,
+              effective_date: updatedDateStr || new Date().toISOString().split('T')[0],
+              notes: 'Updated Price'
+            })
+          }
+          if (product.price) {
+            defaultItems.push({
+              id: 'h1',
+              old_price: null,
+              new_price: product.price,
+              effective_date: product.created_at ? String(product.created_at).split('T')[0] : new Date().toISOString().split('T')[0],
+              notes: 'Initial Base Price'
+            })
+          }
+          setHistory(defaultItems)
+        }
+      })
+      .finally(() => {
+        if (isMounted) setLoadingHistory(false)
+      })
+    return () => { isMounted = false }
+  }, [product.id])
 
   return (
     <div className="ws-modal-backdrop" onClick={onClose}>
-      <div className="ws-modal-card" style={{ maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
+      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
-          <h3 className="ws-modal-title">Pricing Details</h3>
+          <div>
+            <h3 className="ws-modal-title" style={{ margin: 0 }}>Pricing & Price History</h3>
+            <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#64748b' }}>{product.name} ({product.sku || 'No SKU'})</p>
+          </div>
           <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
             <X size={16} />
           </button>
         </div>
-        <div className="ws-modal-body" style={{ padding: '20px 24px' }}>
-          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', marginBottom: 14, borderBottom: '1px solid #f1f5f9', paddingBottom: 8 }}>
-            {product.name}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: '0.8125rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: '#64748b' }}>Package Price:</span>
-              <span style={{ fontWeight: 600, color: '#0f172a' }}>₹{product.price}</span>
+
+        <div className="ws-modal-body" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Current Pricing Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price</span>
+              <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>₹{product.price}</p>
             </div>
-            {bulkUnit && (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: '#64748b' }}>Package Unit:</span>
-                  <span style={{ fontWeight: 500, color: '#334155' }}>{bulkUnit.name} ({bagWeight}{bulkUnit.short})</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: 6, border: '1px solid #f1f5f9' }}>
-                  <span style={{ color: '#475467', fontWeight: 500 }}>Unit Rate Breakdown:</span>
-                  <span style={{ fontWeight: 700, color: '#2563eb' }}>₹{unitPrice} / {bulkUnit.short}</span>
-                </div>
-              </>
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
+              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price</span>
+              <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
+                {product.updated_price ? `₹${product.updated_price}` : `₹${product.price}`}
+              </p>
+            </div>
+          </div>
+
+          {bulkUnit && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Package Breakdown: {bulkUnit.name} ({bagWeight}{bulkUnit.short})</span>
+              </div>
+              <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#2563eb' }}>
+                ₹{unitPrice} / {bulkUnit.short}
+              </span>
+            </div>
+          )}
+
+          {/* Price History Timeline */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+              <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>Price History Log</h4>
+              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{history.length} record{history.length === 1 ? '' : 's'}</span>
+            </div>
+
+            {loadingHistory ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '0.8125rem' }}>Loading price history...</div>
+            ) : history.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '0.8125rem' }}>No historical price records found</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
+                {history.map((item, idx) => {
+                  const newP = parseFloat(item.new_price || 0)
+                  const oldP = item.old_price !== null && item.old_price !== undefined ? parseFloat(item.old_price) : null
+                  const diff = oldP !== null ? (newP - oldP) : 0
+                  const isUp = diff > 0
+                  const itemUnitPrice = bulkUnit ? (newP / bagWeight).toFixed(2) : null
+
+                  return (
+                    <div key={item.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newP.toFixed(2)}</span>
+                          {diff !== 0 && (
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: isUp ? '#16a34a' : '#dc2626', background: isUp ? '#dcfce7' : '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
+                              {isUp ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          {item.notes || 'Price change'} • <span style={{ color: '#475467' }}>{item.effective_date ? String(item.effective_date).split('T')[0] : 'N/A'}</span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        {itemUnitPrice && (
+                          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#2563eb' }}>
+                            ₹{itemUnitPrice} / {bulkUnit.short}
+                          </div>
+                        )}
+                        {oldP !== null && (
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                            Prev: ₹{oldP.toFixed(2)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
         </div>
+
         <div className="ws-modal-footer">
           <button className="ws-modal-btn" onClick={onClose}>Close</button>
         </div>
@@ -361,6 +464,7 @@ export default function Products() {
                         <th>SKU</th>
                         <th>CATEGORY</th>
                         <th>PRICE</th>
+                        <th>UPDATED PRICE</th>
                         <th>STOCK</th>
                         <th>STATUS</th>
                         <th>NEXT RESTOCK</th>
@@ -374,6 +478,7 @@ export default function Products() {
                         const bagWeight = parseFloat(row.bag_weight || 1)
                         const restockOpts = ['TBD', 'In 30 mins', 'Tomorrow', 'Next week', 'Next month']
                         const restock = row.next_restock_time || 'TBD'
+                        const updatedDate = row.updated_price_date ? String(row.updated_price_date).split('T')[0] : ''
 
                         return (
                           <tr key={row.id}>
@@ -411,6 +516,22 @@ export default function Products() {
                               </span>
                             </td>
                             <td>
+                              {row.updated_price ? (
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontWeight: 600, color: '#10b981', fontSize: '0.85rem' }}>
+                                    ₹{row.updated_price}
+                                  </span>
+                                  {updatedDate && (
+                                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                      {updatedDate}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: '#9ca3af' }}>—</span>
+                              )}
+                            </td>
+                            <td>
                               <span className={`attio-stock-badge ${getStockBadgeClass(row.stock)}`}>
                                 {row.stock} {bulkUnit && bagWeight > 1 ? bulkUnit.pluralName : (row.unit || 'pcs')}
                               </span>
@@ -445,28 +566,26 @@ export default function Products() {
                             </td>
                             <td>
                               <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
-                                {bulkUnit && (
-                                  <button 
-                                    onClick={() => setSelectedPricing(row)}
-                                    style={{
-                                      background: '#eff6ff',
-                                      border: '1px solid #bfdbfe',
-                                      color: '#2563eb',
-                                      cursor: 'pointer',
-                                      padding: '2px 8px',
-                                      borderRadius: 4,
-                                      fontSize: '0.72rem',
-                                      fontWeight: 500,
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: 4,
-                                      transition: 'all 0.15s'
-                                    }}
-                                    title="View pricing details"
-                                  >
-                                    <Eye size={12} /> View
-                                  </button>
-                                )}
+                                <button 
+                                  onClick={() => setSelectedPricing(row)}
+                                  style={{
+                                    background: '#eff6ff',
+                                    border: '1px solid #bfdbfe',
+                                    color: '#2563eb',
+                                    cursor: 'pointer',
+                                    padding: '2px 8px',
+                                    borderRadius: 4,
+                                    fontSize: '0.72rem',
+                                    fontWeight: 500,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    transition: 'all 0.15s'
+                                  }}
+                                  title="View pricing details"
+                                >
+                                  <Eye size={12} /> View
+                                </button>
                                 <button 
                                   onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
                                   style={{

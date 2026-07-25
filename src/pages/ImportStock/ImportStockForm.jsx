@@ -59,8 +59,10 @@ export default function ImportStockForm() {
   const [errors, setErrors] = useState({})
   const [focus, setFocus] = useState(null)
 
+  const todayStr = new Date().toISOString().split('T')[0]
+
   const [form, setForm] = useState({
-    name: '', sku: '', category: '', price: '', stock: 0, status: 'pending', unit: 'pcs', description: '', bag_weight: 100
+    name: '', sku: '', category: '', price: '', updated_price: '', updated_price_date: todayStr, stock: 0, status: 'pending', unit: 'pcs', description: '', bag_weight: 100
   })
 
   const [uomOptions, setUomOptions] = useState(ALL_UOM_OPTIONS)
@@ -91,6 +93,8 @@ export default function ImportStockForm() {
           sku: item.sku || '',
           category: item.category || '',
           price: item.price || '',
+          updated_price: item.updated_price || '',
+          updated_price_date: item.updated_price_date ? String(item.updated_price_date).split('T')[0] : todayStr,
           stock: item.stock || 0,
           status: item.status || 'pending',
           unit: item.unit || 'pcs',
@@ -251,7 +255,7 @@ export default function ImportStockForm() {
                   <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
                     <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.9375rem', margin: 0 }}>Pricing & Stock</p>
                   </div>
-                  <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: getBulkUnitDetails(form.unit) ? '1.2fr 1fr 1.2fr 1fr 1.2fr' : '1fr 1fr 1fr', gap: 14 }}>
+                  <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
                     <div>
                       <label style={S.label}>100-Unit Price (₹) <span style={{ color: '#dc2626' }}>*</span></label>
                       <input
@@ -353,6 +357,39 @@ export default function ImportStockForm() {
                       <input name="stock" type="number" value={form.stock} onChange={handleChange} placeholder="0" style={inp('stock')} onFocus={() => setFocus('stock')} onBlur={() => setFocus(null)} />
                     </div>
                     <div>
+                      <label style={S.label}>Update Price (₹)</label>
+                      <input
+                        name="updated_price"
+                        type="number"
+                        step="0.01"
+                        value={form.updated_price}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setForm(prev => ({
+                            ...prev,
+                            updated_price: val,
+                            updated_price_date: val && !prev.updated_price_date ? new Date().toISOString().split('T')[0] : prev.updated_price_date
+                          }))
+                        }}
+                        placeholder="e.g. 6500"
+                        style={inp('updated_price')}
+                        onFocus={() => setFocus('updated_price')}
+                        onBlur={() => setFocus(null)}
+                      />
+                    </div>
+                    <div>
+                      <label style={S.label}>Updated Date</label>
+                      <input
+                        name="updated_price_date"
+                        type="date"
+                        value={form.updated_price_date}
+                        onChange={handleChange}
+                        style={inp('updated_price_date')}
+                        onFocus={() => setFocus('updated_price_date')}
+                        onBlur={() => setFocus(null)}
+                      />
+                    </div>
+                    <div>
                       <label style={S.label}>Unit of Measure (UOM)</label>
                       <select
                         name="unit"
@@ -370,12 +407,18 @@ export default function ImportStockForm() {
                       </select>
                     </div>
                   </div>
-                  {getBulkUnitDetails(form.unit) && (form.price_100 || form.price) && form.bag_weight && (
-                    <div style={{ padding: '0 20px 20px', fontSize: '0.8125rem', color: '#10b981', fontWeight: 600 }}>
-                      Calculated Unit Rate: ₹{(parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100).toFixed(2)} / {getBulkUnitDetails(form.unit).short}
-                      • {form.bag_weight}{getBulkUnitDetails(form.unit).short} {getBulkUnitDetails(form.unit).name} Price: ₹{((parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100) * parseFloat(form.bag_weight)).toFixed(2)}
+                  {getBulkUnitDetails(form.unit) && (form.price_100 || form.price || form.updated_price) && form.bag_weight && (
+                    <div style={{ padding: '12px 20px', background: '#f0fdf4', borderTop: '1px solid #dcfce7', fontSize: '0.8125rem', color: '#166534', fontWeight: 600, display: 'flex', flexWrap: 'wrap', gap: '8px 16px', alignItems: 'center' }}>
+                      <span>Calculated Unit Rate: ₹{(parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100).toFixed(2)} / {getBulkUnitDetails(form.unit).short}</span>
+                      <span>• {form.bag_weight}{getBulkUnitDetails(form.unit).short} {getBulkUnitDetails(form.unit).name} Price: ₹{((parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100) * parseFloat(form.bag_weight)).toFixed(2)}</span>
+                      {form.updated_price && (
+                        <span style={{ color: '#047857', fontWeight: 700 }}>
+                          • Updated Price: ₹{parseFloat(form.updated_price).toFixed(2)} (₹{(parseFloat(form.updated_price) / parseFloat(form.bag_weight || 1)).toFixed(2)} / {getBulkUnitDetails(form.unit).short})
+                          {form.updated_price_date ? ` as of ${form.updated_price_date}` : ''}
+                        </span>
+                      )}
                       {form.stock && parseFloat(form.stock) > 0 && (
-                        <span style={{ color: '#4b5563', fontWeight: 500, marginLeft: 8 }}>
+                        <span style={{ color: '#4b5563', fontWeight: 500 }}>
                           • Total Inventory: {form.stock} {getBulkUnitDetails(form.unit).pluralName} ({(parseFloat(form.stock) * parseFloat(form.bag_weight)).toLocaleString()} {getBulkUnitDetails(form.unit).short} total)
                         </span>
                       )}

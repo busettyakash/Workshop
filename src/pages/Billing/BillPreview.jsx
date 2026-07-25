@@ -1,5 +1,5 @@
 import React, { useRef } from 'react'
-import { X, Download, Printer } from 'lucide-react'
+import { X, Printer } from 'lucide-react'
 import './BillPreview.css'
 
 const INR = (v) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(v || 0)
@@ -15,58 +15,60 @@ export default function BillPreview({ bill, shopName, shopGstin, shopPhone, shop
     items = typeof bill.items === 'string' ? JSON.parse(bill.items) : (bill.items || [])
   } catch { items = [] }
 
-  const grossSubtotal = items.reduce((s, li) => s + (parseFloat(li.price || 0) * parseFloat(li.qty || 1)), 0)
+  const grossSubtotal = items.reduce((s, li) => {
+    const q = parseFloat(li.qty || li.quantity || 1)
+    const p = parseFloat(li.price || li.rate || 0)
+    return s + (p * q)
+  }, 0)
+
   const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
   const subtotal = Math.max(0, grossSubtotal - lineDiscounts)
   const discount = parseFloat(bill.discount || 0)
-  const taxableValue = Math.max(0, subtotal - Math.min(discount, subtotal))
-  const totalAmount = parseFloat(bill.amount || 0)
-  const taxAmt = totalAmount - taxableValue
-  const taxRate = taxAmt > 0 ? Math.round((taxAmt / taxableValue) * 100) : 0
+  const totalAmount = parseFloat(bill.amount || grossSubtotal || 0)
+  const taxAmt = totalAmount > subtotal ? (totalAmount - subtotal) : 0
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2
-  const invId = `INV-${String(bill.id).padStart(4, '0')}`
+  const invId = bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`
 
   const handlePrint = () => {
     const content = printRef.current.innerHTML
-    const win = window.open('', '_blank', 'width=800,height=900')
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8" />
-          <title>${invId}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Segoe UI', Arial, sans-serif; color: #111827; background: #fff; }
-            .bill-preview-page { padding: 40px; max-width: 800px; margin: 0 auto; }
-            .bill-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #3d68f5; }
-            .bill-company-name { font-size: 22px; font-weight: 800; color: #111827; margin-bottom: 4px; }
-            .bill-company-meta { font-size: 12px; color: #6b7280; line-height: 1.6; }
-            .bill-inv-label { font-size: 28px; font-weight: 800; color: #3d68f5; letter-spacing: -0.02em; }
-            .bill-inv-meta { font-size: 12px; color: #6b7280; text-align: right; margin-top: 4px; line-height: 1.6; }
-            .bill-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
-            .bill-party-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #9ca3af; margin-bottom: 6px; }
-            .bill-party-name { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 2px; }
-            .bill-party-meta { font-size: 12px; color: #6b7280; line-height: 1.6; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            thead tr { background: #f8fafc; }
-            th { padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
-            td { padding: 11px 12px; font-size: 13px; color: #111827; border-bottom: 1px solid #f3f4f6; }
-            .text-right { text-align: right; }
-            .totals { margin-left: auto; width: 280px; }
-            .total-row { display: flex; justify-content: space-between; font-size: 13px; color: #6b7280; padding: 5px 0; }
-            .total-row.grand { font-size: 15px; font-weight: 800; color: #111827; border-top: 2px solid #111827; padding-top: 10px; margin-top: 4px; }
-            .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
-            .status-paid { background: #dcfce7; color: #15803d; }
-            .status-unpaid { background: #fef3c7; color: #92400e; }
-            .bill-footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 11px; color: #9ca3af; }
-            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-          </style>
-        </head>
-        <body>${content}</body>
-      </html>
-    `)
+    const win = window.open('', '_blank', 'width=850,height=950')
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${invId}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:'Segoe UI',Arial,sans-serif;background:#fff;color:#1e293b}
+      .bill-preview-page{max-width:760px;margin:0 auto}
+      .bill-banner{background:linear-gradient(135deg,#1e3a8a,#2563eb 60%,#3d68f5);padding:36px 44px 32px;display:flex;justify-content:space-between;align-items:flex-start}
+      .bill-company-name{font-size:22px;font-weight:800;color:#fff;margin-bottom:8px}
+      .bill-company-meta{font-size:12.5px;color:rgba(255,255,255,0.72);line-height:1.75}
+      .bill-inv-label{font-size:11px;font-weight:800;color:rgba(255,255,255,0.55);letter-spacing:0.18em;text-transform:uppercase;margin-bottom:6px}
+      .bill-inv-number{font-size:30px;font-weight:900;color:#fff;margin-bottom:10px;line-height:1}
+      .bill-inv-meta{font-size:12px;color:rgba(255,255,255,0.7);line-height:1.8;text-align:right}
+      .bill-inv-meta strong{color:#fff}
+      .status-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase}
+      .status-paid{background:rgba(220,252,231,0.95);color:#15803d}
+      .status-unpaid{background:rgba(254,243,199,0.95);color:#92400e}
+      .bill-body{padding:36px 44px}
+      .bill-parties{display:grid;grid-template-columns:1fr 1fr;margin-bottom:36px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+      .bill-party-block{padding:20px 24px}
+      .bill-party-block:first-child{border-right:1px solid #e2e8f0}
+      .bill-party-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;margin-bottom:8px}
+      .bill-party-name{font-size:15px;font-weight:700;color:#0f172a;margin-bottom:4px}
+      .bill-party-meta{font-size:12.5px;color:#64748b;line-height:1.7}
+      table{width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+      thead tr{background:#f8fafc}
+      th{padding:13px 16px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;border-bottom:1px solid #e2e8f0}
+      td{padding:16px;font-size:13.5px;color:#1e293b;border-bottom:1px solid #f1f5f9}
+      .text-center{text-align:center}.text-right{text-align:right}
+      .bill-item-name{font-weight:600;color:#0f172a;font-size:14px}
+      .bill-item-unit{font-size:11.5px;color:#94a3b8;margin-top:2px}
+      .bill-totals-wrap{display:flex;justify-content:flex-end;margin-top:24px}
+      .bill-totals{width:300px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+      .total-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#475569;padding:11px 18px;border-bottom:1px solid #f1f5f9}
+      .total-row.grand{background:#0f172a;font-size:15px;font-weight:800;color:#fff;padding:15px 18px;border-bottom:none}
+      .bill-footer{border-top:1px solid #e2e8f0;margin-top:32px;padding-top:20px;text-align:center;font-size:11.5px;color:#94a3b8;line-height:1.7}
+      @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+    </style></head><body>${content}</body></html>`)
     win.document.close()
     win.focus()
     setTimeout(() => { win.print(); win.close() }, 500)
@@ -80,35 +82,35 @@ export default function BillPreview({ bill, shopName, shopGstin, shopPhone, shop
         <div className="bp-toolbar">
           <span className="bp-toolbar-title">Invoice Preview — {invId}</span>
           <div className="bp-toolbar-actions">
-            <button className="bp-btn" onClick={handlePrint} title="Print / Download PDF">
+            <button className="bp-btn" onClick={handlePrint}>
               <Printer size={15} /> Print / Download
             </button>
-            <button className="bp-close" onClick={onClose} title="Close">
+            <button className="bp-close" onClick={onClose}>
               <X size={16} />
             </button>
           </div>
         </div>
 
-        {/* Invoice Content */}
+        {/* Invoice */}
         <div className="bp-scroll">
           <div className="bill-preview-page" ref={printRef}>
 
-            {/* Header */}
-            <div className="bill-header">
-              <div>
-                <div className="bill-company-name">{shopName || 'Your Company'}</div>
+            {/* Blue Banner Header */}
+            <div className="bill-banner">
+              <div className="bill-banner-left">
+                <div className="bill-company-name">{shopName || 'Busetty Traders'}</div>
                 <div className="bill-company-meta">
                   {shopAddress && <>{shopAddress}<br /></>}
                   {shopPhone && <>Phone: {shopPhone}<br /></>}
                   {shopGstin && <>GSTIN: {shopGstin}</>}
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div className="bill-inv-label">TAX INVOICE</div>
+              <div className="bill-banner-right">
+                <div className="bill-inv-label">Tax Invoice</div>
+                <div className="bill-inv-number">{invId}</div>
                 <div className="bill-inv-meta">
-                  Invoice No: <strong>{invId}</strong><br />
-                  Date: {fmtDate(bill.created_at)}<br />
-                  {bill.due_date && <>Due: {fmtDate(bill.due_date)}<br /></>}
+                  Date: <strong>{fmtDate(bill.created_at)}</strong><br />
+                  {bill.due_date && <>Due: <strong>{fmtDate(bill.due_date)}</strong><br /></>}
                   <span className={`status-badge ${bill.status === 'paid' ? 'status-paid' : 'status-unpaid'}`}>
                     {bill.status === 'paid' ? 'PAID' : 'PENDING'}
                   </span>
@@ -116,105 +118,119 @@ export default function BillPreview({ bill, shopName, shopGstin, shopPhone, shop
               </div>
             </div>
 
-            {/* Bill To */}
-            <div className="bill-parties">
-              <div>
-                <div className="bill-party-label">Bill To</div>
-                <div className="bill-party-name">{bill.customer_name || 'General Customer'}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div className="bill-party-label">Payment</div>
-                <div className="bill-party-meta">
-                  Status: <strong>{bill.status === 'paid' ? 'Paid' : 'Pending'}</strong><br />
-                  {bill.due_date && <>Due by: {fmtDate(bill.due_date)}</>}
-                </div>
-              </div>
-            </div>
+            {/* Body */}
+            <div className="bill-body">
 
-            {/* Line Items Table */}
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Description</th>
-                  <th className="text-right">Qty</th>
-                  <th className="text-right">Unit Price</th>
-                  {lineDiscounts > 0 && <th className="text-right">Discount</th>}
-                  <th className="text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length > 0 ? items.map((li, i) => {
-                  const lineTotal = Math.max(0, (parseFloat(li.price || 0) * parseFloat(li.qty || 1)) - parseFloat(li.discount || 0))
-                  return (
-                    <tr key={i}>
-                      <td style={{ color: '#9ca3af' }}>{i + 1}</td>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{li.name}</div>
-                        {li.unit && <div style={{ fontSize: '11px', color: '#9ca3af' }}>{li.unit}</div>}
-                      </td>
-                      <td className="text-right">{li.qty}</td>
-                      <td className="text-right">{INR(li.price)}</td>
-                      {lineDiscounts > 0 && <td className="text-right" style={{ color: '#16a34a' }}>{li.discount > 0 ? `-${INR(li.discount)}` : '—'}</td>}
-                      <td className="text-right" style={{ fontWeight: 600 }}>{INR(lineTotal)}</td>
-                    </tr>
-                  )
-                }) : (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', color: '#9ca3af', padding: '20px' }}>No items</td></tr>
-                )}
-              </tbody>
-            </table>
-
-            {/* Totals */}
-            <div className="totals">
-              <div className="total-row">
-                <span>Subtotal</span>
-                <span>{INR(grossSubtotal)}</span>
-              </div>
-              {lineDiscounts > 0 && (
-                <div className="total-row" style={{ color: '#16a34a' }}>
-                  <span>Product Discounts</span>
-                  <span>- {INR(lineDiscounts)}</span>
+              {/* Bill To / Payment */}
+              <div className="bill-parties">
+                <div className="bill-party-block">
+                  <div className="bill-party-label">Bill To</div>
+                  <div className="bill-party-name">{bill.customer_name || 'General Customer'}</div>
+                  {bill.customer_company && <div className="bill-party-meta">{bill.customer_company}</div>}
+                  {bill.customer_email && <div className="bill-party-meta">{bill.customer_email}</div>}
+                  {bill.customer_phone && <div className="bill-party-meta">Phone: {bill.customer_phone}</div>}
                 </div>
-              )}
-              {discount > 0 && (
-                <div className="total-row" style={{ color: '#16a34a' }}>
-                  <span>Additional Discount</span>
-                  <span>- {INR(discount)}</span>
-                </div>
-              )}
-              {taxRate > 0 && (
-                <>
-                  <div className="total-row">
-                    <span>CGST ({taxRate / 2}%)</span>
-                    <span>{INR(cgst)}</span>
+                <div className="bill-party-block" style={{ textAlign: 'right' }}>
+                  <div className="bill-party-label">Payment Info</div>
+                  <div className="bill-party-meta">
+                    Status: <strong style={{ color: bill.status === 'paid' ? '#15803d' : '#d97706' }}>
+                      {bill.status === 'paid' ? 'Paid' : 'Pending'}
+                    </strong><br />
+                    {bill.due_date && <>Due by: {fmtDate(bill.due_date)}</>}
                   </div>
+                </div>
+              </div>
+
+              {/* Line Items */}
+              <table className="bill-items-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px' }}>#</th>
+                    <th>Description</th>
+                    <th className="text-center" style={{ width: '80px' }}>Qty</th>
+                    <th className="text-right" style={{ width: '140px' }}>Unit Price</th>
+                    {lineDiscounts > 0 && <th className="text-right" style={{ width: '110px' }}>Discount</th>}
+                    <th className="text-right" style={{ width: '150px' }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.length > 0 ? items.map((li, i) => {
+                    const qty = parseFloat(li.qty || li.quantity || 1)
+                    const price = parseFloat(li.price || li.rate || 0)
+                    const lineTotal = Math.max(0, (price * qty) - parseFloat(li.discount || 0))
+                    const unitStr = li.unit || li.unitLabel || ''
+                    return (
+                      <tr key={i}>
+                        <td style={{ color: '#94a3b8', fontWeight: 500 }}>{i + 1}</td>
+                        <td>
+                          <div className="bill-item-name">{li.name || li.product_name || 'Product'}</div>
+                          {unitStr && <div className="bill-item-unit">{unitStr}</div>}
+                        </td>
+                        <td className="text-center" style={{ fontWeight: 500 }}>{qty}</td>
+                        <td className="text-right">{INR(price)}</td>
+                        {lineDiscounts > 0 && <td className="text-right" style={{ color: '#16a34a' }}>{li.discount > 0 ? `−${INR(li.discount)}` : '—'}</td>}
+                        <td className="text-right" style={{ fontWeight: 700 }}>{INR(lineTotal)}</td>
+                      </tr>
+                    )
+                  }) : (
+                    <tr><td colSpan="6" style={{ textAlign: 'center', color: '#94a3b8', padding: '32px' }}>No line items found</td></tr>
+                  )}
+                </tbody>
+              </table>
+
+              {/* Totals */}
+              <div className="bill-totals-wrap">
+                <div className="bill-totals">
                   <div className="total-row">
-                    <span>SGST ({taxRate / 2}%)</span>
-                    <span>{INR(sgst)}</span>
+                    <span>Subtotal</span>
+                    <span>{INR(grossSubtotal || totalAmount)}</span>
                   </div>
-                </>
+                  {lineDiscounts > 0 && (
+                    <div className="total-row discount">
+                      <span>Product Discounts</span>
+                      <span>− {INR(lineDiscounts)}</span>
+                    </div>
+                  )}
+                  {discount > 0 && (
+                    <div className="total-row discount">
+                      <span>Additional Discount</span>
+                      <span>− {INR(discount)}</span>
+                    </div>
+                  )}
+                  {taxAmt > 0 && (
+                    <>
+                      <div className="total-row">
+                        <span>CGST (9%)</span>
+                        <span>{INR(cgst)}</span>
+                      </div>
+                      <div className="total-row">
+                        <span>SGST (9%)</span>
+                        <span>{INR(sgst)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="total-row grand">
+                    <span>Grand Total</span>
+                    <span>{INR(totalAmount)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              {bill.notes && (
+                <div className="bill-notes">
+                  <div className="bill-notes-label">Notes</div>
+                  <div className="bill-notes-text">{bill.notes}</div>
+                </div>
               )}
-              <div className="total-row grand">
-                <span>Total (GST Incl.)</span>
-                <span>{INR(totalAmount)}</span>
+
+              {/* Footer */}
+              <div className="bill-footer">
+                Thank you for your business! This is a computer-generated invoice and does not require a signature.<br />
+                Generated by <strong>Workshop</strong> · {fmtDate(new Date())}
               </div>
+
             </div>
-
-            {/* Notes */}
-            {bill.notes && (
-              <div style={{ marginTop: 28, padding: '14px', background: '#f9fafb', borderRadius: '8px', borderLeft: '3px solid #3d68f5' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9ca3af', marginBottom: 4 }}>Notes</div>
-                <div style={{ fontSize: '13px', color: '#4b5563', lineHeight: 1.6 }}>{bill.notes}</div>
-              </div>
-            )}
-
-            {/* Footer */}
-            <div className="bill-footer">
-              Thank you for your business! This is a computer-generated invoice and does not require a signature.
-              <br />Generated by Workshop · {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </div>
-
           </div>
         </div>
       </div>

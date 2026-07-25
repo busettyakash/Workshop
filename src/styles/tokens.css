@@ -99,7 +99,7 @@
   --space-24: 96px;
 
   /* ── Z-index ── */
-  --z-sidebar:  100;
+  --z-sidebar:  1001;
   --z-topbar:   200;
   --z-modal:    300;
   --z-toast:    400;

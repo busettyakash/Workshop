@@ -47,6 +47,19 @@ async function createTables() {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'pcs';
       ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS bag_weight NUMERIC DEFAULT 1;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE;
+
+      CREATE TABLE IF NOT EXISTS product_price_history (
+        id SERIAL PRIMARY KEY,
+        product_id INT NOT NULL,
+        user_id TEXT NOT NULL,
+        old_price NUMERIC(10, 2),
+        new_price NUMERIC(10, 2) NOT NULL,
+        effective_date DATE DEFAULT CURRENT_DATE,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
       CREATE TABLE IF NOT EXISTS import_stock (
         id SERIAL PRIMARY KEY,
@@ -66,6 +79,8 @@ async function createTables() {
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'pcs';
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS user_id TEXT;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS bag_weight NUMERIC DEFAULT 1;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE;
 
       CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
@@ -157,14 +172,34 @@ async function createTables() {
 
       CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);
       CREATE INDEX IF NOT EXISTS idx_chat_sessions_conversation_id ON chat_sessions(conversation_id);
+      CREATE TABLE IF NOT EXISTS quotes (
+        id SERIAL PRIMARY KEY,
+        quote_number VARCHAR(50) NOT NULL,
+        customer_name VARCHAR(255) NOT NULL,
+        customer_phone VARCHAR(50),
+        customer_email VARCHAR(255),
+        total_amount NUMERIC(10, 2) DEFAULT 0,
+        tax_amount NUMERIC(10, 2) DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'Draft',
+        issue_date DATE DEFAULT CURRENT_DATE,
+        valid_until DATE DEFAULT (CURRENT_DATE + INTERVAL '30 days'),
+        notes TEXT,
+        line_items JSONB DEFAULT '[]'::jsonb,
+        user_id TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      ALTER TABLE quotes ADD COLUMN IF NOT EXISTS shop_name VARCHAR(255) DEFAULT 'Workshop Store';
+      ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_company VARCHAR(255);
     `);
     console.log('All database tables created successfully!');
 
     // ── Enforce RLS on all tables with user isolation ──
     const allTables = [
       'bill_items', 'companies', 'deals', 'shop_profiles', 'bill_templates', 'deal_logs', 'workspace_members',
-      'products', 'import_stock', 'customers', 'people', 'bills', 'notifications',
-      'workflows', 'workflow_runs', 'chat_sessions', 'notes', 'emails'
+      'products', 'product_price_history', 'import_stock', 'customers', 'people', 'bills', 'notifications',
+      'workflows', 'workflow_runs', 'chat_sessions', 'notes', 'emails', 'uoms', 'quotes'
     ];
 
     console.log('Enforcing Row Level Security (RLS) and policies on all tables...');
@@ -183,13 +218,13 @@ async function createTables() {
         const cols = colsRes.rows.map(r => r.column_name);
         let usingExpr;
         if (cols.includes('user_id')) {
-          usingExpr = `user_id::text = current_setting('app.current_user_id', true) OR current_setting('app.bypass_rls', true) = 'on'`;
+          usingExpr = `(select auth.uid())::text = user_id::text OR user_id::text = current_setting('app.current_user_id', true) OR current_setting('app.bypass_rls', true) = 'on'`;
         } else if (cols.includes('workspace_owner_id')) {
-          usingExpr = `workspace_owner_id::text = current_setting('app.current_user_id', true) OR current_setting('app.bypass_rls', true) = 'on'`;
+          usingExpr = `(select auth.uid())::text = workspace_owner_id::text OR workspace_owner_id::text = current_setting('app.current_user_id', true) OR current_setting('app.bypass_rls', true) = 'on'`;
         } else if (cols.includes('bill_id')) {
-          usingExpr = `EXISTS (SELECT 1 FROM bills WHERE bills.id = ${table}.bill_id AND bills.user_id::text = current_setting('app.current_user_id', true)) OR current_setting('app.bypass_rls', true) = 'on'`;
+          usingExpr = `EXISTS (SELECT 1 FROM bills WHERE bills.id = ${table}.bill_id AND (bills.user_id::text = (select auth.uid())::text OR bills.user_id::text = current_setting('app.current_user_id', true))) OR current_setting('app.bypass_rls', true) = 'on'`;
         } else {
-          usingExpr = `current_setting('app.current_user_id', true) IS NOT NULL OR current_setting('app.bypass_rls', true) = 'on'`;
+          usingExpr = `(select auth.uid()) IS NOT NULL OR current_setting('app.current_user_id', true) IS NOT NULL OR current_setting('app.bypass_rls', true) = 'on'`;
         }
 
         await pool.query(`
@@ -201,6 +236,14 @@ async function createTables() {
       } catch (err) {
         console.warn(`⚠️ Could not apply RLS policy on ${table}:`, err.message);
       }
+    }
+
+    // Config performance timeout
+    try {
+      await pool.query("ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s'");
+      console.log('✅ Set idle_in_transaction_session_timeout = 30s');
+    } catch (tErr) {
+      console.log('ℹ️ Session timeout notice:', tErr.message);
     }
 
     // ── Create missing foreign-key indexes for performance optimization ──

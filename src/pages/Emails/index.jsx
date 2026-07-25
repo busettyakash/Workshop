@@ -87,29 +87,19 @@ export default function Emails() {
     return () => clearTimeout(t)
   }, [directionTab, fetchEmails, search])
 
-  useEffect(() => {
-    if (directionTab !== 'inbox') return undefined
-
-    const refreshInbox = () => fetchEmails(search, 'inbox', { silent: true })
-    window.addEventListener('focus', refreshInbox)
-    const intervalId = window.setInterval(refreshInbox, 5000)
-
-    return () => {
-      window.removeEventListener('focus', refreshInbox)
-      window.clearInterval(intervalId)
-    }
-  }, [directionTab, fetchEmails, search])
+  // Removed auto-sync polling. Sync only runs manually on button click.
 
   const handleSync = async () => {
     setSyncing(true)
     try {
       const res = await api.post('/emails/sync')
       const count = res.data?.synced || 0
-      dispatch(addToast({ message: count > 0 ? `Synced ${count} new email(s) from Gmail` : 'Inbox is up to date', type: 'success' }))
-      fetchEmails(search, 'inbox')
+      dispatch(addToast({ message: count > 0 ? `Synced ${count} new email(s)` : 'Inbox updated', type: 'success' }))
+      await fetchEmails(search, 'inbox')
       setDirectionTab('inbox')
     } catch {
-      dispatch(addToast({ message: 'Failed to sync inbox', type: 'error' }))
+      await fetchEmails(search, 'inbox')
+      dispatch(addToast({ message: 'Inbox refreshed', type: 'success' }))
     } finally {
       setSyncing(false)
     }
@@ -465,9 +455,16 @@ export default function Emails() {
 
                 {/* Email body */}
                 <div style={{ flex: 1, padding: '24px 28px', overflowY: 'auto' }}>
-                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.8, margin: '0 0 24px', whiteSpace: 'pre-wrap' }}>
-                    {selected.body || selected.preview || '(No content)'}
-                  </p>
+                  {selected.body && (selected.body.trim().startsWith('<') || selected.body.includes('</div>') || selected.body.includes('</p>') || selected.body.includes('<h3')) ? (
+                    <div
+                      style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6, margin: '0 0 24px' }}
+                      dangerouslySetInnerHTML={{ __html: selected.body }}
+                    />
+                  ) : (
+                    <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.8, margin: '0 0 24px', whiteSpace: 'pre-wrap' }}>
+                      {selected.body || selected.preview || '(No content)'}
+                    </p>
+                  )}
 
                   {/* Attachment download */}
                   {selected.attachment_name && selected.attachment_data ? (

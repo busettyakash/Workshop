@@ -59,29 +59,39 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
 
   let synced = 0
   try {
-    // 1. Get all unique recipient emails and subjects we have sent emails to
-    const sentEmailsRes = await query(
-      `SELECT DISTINCT from_email, LOWER(subject) as subject FROM emails WHERE user_id = $1 AND direction = 'sent'`,
-      [ownerUserId]
-    ).catch(() => ({ rows: [] }))
+    // 1. Gather all Workshop-related emails (customers, contacts, people, quotes, bills, sent emails)
+    const workshopEmails = new Set()
+    if (user) workshopEmails.add(user.toLowerCase().trim())
 
-    // Map recipient email -> Set of clean lowercase subjects we sent to them
-    const sentMap = new Map()
-    for (const r of sentEmailsRes.rows) {
-      const email = String(r.from_email || '').toLowerCase().trim()
-      const subject = String(r.subject || '').toLowerCase().trim().replace(/^(re|fwd|fw):\s*/i, '').trim()
-      if (!sentMap.has(email)) {
-        sentMap.set(email, new Set())
-      }
-      sentMap.get(email).add(subject)
-    }
+    const custRes = await query(`SELECT LOWER(email) as email FROM customers WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [ownerUserId]).catch(() => ({ rows: [] }))
+    custRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
+
+    const peopleRes = await query(`SELECT LOWER(email) as email FROM people WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [ownerUserId]).catch(() => ({ rows: [] }))
+    peopleRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
+
+    const quotesRes = await query(`SELECT LOWER(customer_email) as email, quote_number FROM quotes WHERE user_id = $1`, [ownerUserId]).catch(() => ({ rows: [] }))
+    const quoteNumbers = new Set()
+    quotesRes.rows.forEach(r => {
+      if (r.email) workshopEmails.add(r.email.trim())
+      if (r.quote_number) quoteNumbers.add(r.quote_number.toLowerCase().trim())
+    })
+
+    const billsRes = await query(`SELECT bill_number FROM bills WHERE user_id = $1`, [ownerUserId]).catch(() => ({ rows: [] }))
+    const billNumbers = new Set()
+    billsRes.rows.forEach(r => {
+      if (r.bill_number) billNumbers.add(r.bill_number.toLowerCase().trim())
+    })
+
+    const existingEmailsRes = await query(`SELECT DISTINCT LOWER(from_email) as email FROM emails WHERE user_id = $1`, [ownerUserId]).catch(() => ({ rows: [] }))
+    existingEmailsRes.rows.forEach(r => {
+      if (r.email) workshopEmails.add(r.email.trim())
+    })
 
     await client.connect()
     const lock = await client.getMailboxLock('INBOX')
 
     try {
       const limit = opts.limit || 50
-      // Fetch the most recent `limit` messages so we don't pull the whole mailbox
       const status = await client.status('INBOX', { messages: true })
       const total = status.messages || 0
       const startSeq = Math.max(1, total - limit + 1)
@@ -96,30 +106,48 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
 
           const fromAddress = (parsed.from?.value?.[0]?.address || '').toLowerCase().trim()
           const subject     = parsed.subject || '(No subject)'
-          const incomingSubjectClean = subject.toLowerCase().trim().replace(/^(re|fwd|fw):\s*/i, '').trim()
-
-          // Filter 1: Must be from someone we sent an email to
-          const sentSubjects = sentMap.get(fromAddress)
-          if (!sentSubjects) {
-            continue
-          }
-
-          // Filter 2: The subject thread (ignoring prefixes like Re:) must match
-          if (!sentSubjects.has(incomingSubjectClean)) {
-            continue
-          }
-
-          // Filter 3: Must be an actual reply (subject starts with "Re:")
-          if (!subject.toLowerCase().trim().startsWith('re:')) {
-            continue
-          }
-
-          const fromName    = parsed.from?.value?.[0]?.name || fromAddress
           const bodyText    = parsed.text || parsed.html || ''
-          const preview     = String(bodyText).slice(0, 150)
-          const date        = parsed.date || new Date()
+          const subjectClean = subject.toLowerCase().trim()
+          const bodyClean    = String(bodyText).toLowerCase()
 
-          // Skip emails we already saved (by matching from + subject + approximate timestamp)
+          // Filter: Is this email Workshop-related?
+          const isKnownContact = workshopEmails.has(fromAddress)
+
+          let hasRefNumber = false
+          for (const qNum of quoteNumbers) {
+            if (qNum && (subjectClean.includes(qNum) || bodyClean.includes(qNum))) {
+              hasRefNumber = true
+              break
+            }
+          }
+          if (!hasRefNumber) {
+            for (const bNum of billNumbers) {
+              if (bNum && (subjectClean.includes(bNum) || bodyClean.includes(bNum))) {
+                hasRefNumber = true
+                break
+              }
+            }
+          }
+
+          // Check subject for explicit Workshop terms or thread replies
+          const isWorkshopSubject = subjectClean.includes('workshop') || 
+                                   subjectClean.includes('quotation') || 
+                                   subjectClean.includes('quote') || 
+                                   subjectClean.includes('inv-') || 
+                                   subjectClean.includes('qt-')
+
+          const isWorkshopRelated = isKnownContact || hasRefNumber || isWorkshopSubject
+
+          // Strictly filter out non-Workshop emails (promotions, random newsletters, personal spam)
+          if (!isWorkshopRelated) {
+            continue
+          }
+
+          const fromName = parsed.from?.value?.[0]?.name || fromAddress
+          const preview  = String(bodyText).slice(0, 150)
+          const date     = parsed.date || new Date()
+
+          // Skip emails we already saved
           const existing = await query(
             `SELECT id FROM emails
              WHERE user_id = $1
@@ -129,7 +157,7 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
                AND ABS(EXTRACT(EPOCH FROM (created_at - $4::timestamptz))) < 300`,
             [ownerUserId, fromAddress, subject, date.toISOString()]
           )
-          if (existing.rows.length > 0) continue  // already in DB
+          if (existing.rows.length > 0) continue
 
           await query(
             `INSERT INTO emails
@@ -152,6 +180,6 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
     return { synced, error: err.message }
   }
 
-  console.log(`[IMAP] Synced ${synced} new emails for user ${ownerUserId}`)
+  console.log(`[IMAP] Synced ${synced} new Workshop emails for user ${ownerUserId}`)
   return { synced }
 }

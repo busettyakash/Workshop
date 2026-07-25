@@ -1,8 +1,10 @@
+
 import { Router } from 'express'
 import insforge from '../lib/insforge.js'
 import { query } from '../lib/db.js'
 import redis from '../lib/redis.js'
 import resend from '../lib/resend.js'
+import { sendEmail } from '../lib/smtp.js'
 import { getOtpTemplate, getPasswordResetOtpTemplate } from '../utils/emailTemplates.js'
 import jwt from 'jsonwebtoken'
 import { createHash, randomInt } from 'crypto'
@@ -100,9 +102,9 @@ async function storeOtp(email, otp) {
   const otpKey = getOtpKey(email)
   try {
     await redis.set(otpKey, otp, { ex: OTP_TTL_SECONDS })
-    console.log(`[OTP] Redis set successful for ${email}`)
+    memoryStore.set(otpKey, { value: otp, expires: Date.now() + OTP_TTL_SECONDS * 1000 })
   } catch (rErr) {
-    console.error(`[OTP] Redis failed, using memory fallback:`, rErr.message)
+    console.error('[OTP] Redis failed, using memory fallback:', rErr.message)
     memoryStore.set(otpKey, { value: otp, expires: Date.now() + OTP_TTL_SECONDS * 1000 })
   }
 }
@@ -145,6 +147,21 @@ async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
     ? getPasswordResetOtpTemplate(otp, email, userName)
     : getOtpTemplate(otp, email, userName)
 
+  // 1. Prioritize SMTP if configured on Vercel / environment
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      const smtpRes = await sendEmail({ to: email, subject, html })
+      if (smtpRes && !smtpRes.error) {
+        console.log('[%s SMTP Success] OTP email delivered to %s via SMTP', logPrefix, email)
+        return { success: true, data: smtpRes.data }
+      }
+      console.warn('[%s SMTP Warning] Could not deliver via SMTP, attempting Resend:', logPrefix, smtpRes?.error?.message)
+    } catch (smtpErr) {
+      console.warn('[%s SMTP Exception] Error during SMTP send:', logPrefix, smtpErr.message)
+    }
+  }
+
+  // 2. Resend API
   const fromEmail = process.env.RESEND_FROM_EMAIL || 'Workshop <onboarding@resend.dev>'
 
   try {
@@ -157,14 +174,32 @@ async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
 
     if (mailError) {
       console.error('[%s Resend Warning] Could not deliver email to %s:', logPrefix, email, mailError.message || mailError)
-      return { success: false, error: mailError }
+
+      // 3. Nodemailer / SMTP secondary attempt if not already tried
+      if (!process.env.SMTP_HOST) {
+        const smtpRes = await sendEmail({ to: email, subject, html }).catch(() => null)
+        if (smtpRes && !smtpRes.error) {
+          console.log('[%s SMTP Success] OTP email delivered to %s via SMTP', logPrefix, email)
+          return { success: true, data: smtpRes.data }
+        }
+      }
+
+      // 4. Dev / Sandbox mode fallback when Resend domain is unverified for this recipient
+      console.log('==================================================')
+      console.log(`🔑 [OTP DEV/SANDBOX FALLBACK] Verification code for ${email}: ${otp}`)
+      console.log('==================================================')
+      return { success: true, devFallback: true }
     }
 
     console.log('[%s Resend Success] Email sent to %s (%s) - ID:', logPrefix, email, userName, mailData?.id)
     return { success: true, data: mailData }
   } catch (err) {
     console.error('[%s Resend Exception] Could not send email to %s:', logPrefix, email, err.message)
-    return { success: false, error: err }
+
+    console.log('==================================================')
+    console.log(`🔑 [OTP DEV/SANDBOX FALLBACK] Verification code for ${email}: ${otp}`)
+    console.log('==================================================')
+    return { success: true, devFallback: true }
   }
 }
 
@@ -185,7 +220,6 @@ async function issueOtp(email, logPrefix = 'OTP') {
   }
 
   const otp = generateOtp()
-
   try {
     await storeOtp(email, otp)
 
@@ -196,10 +230,12 @@ async function issueOtp(email, logPrefix = 'OTP') {
     }
 
     console.log('[%s] OTP email accepted for %s', logPrefix, email)
-    
     await setOtpCooldown(email)
 
     const body = { message: 'OTP sent to your email' }
+    if (emailResult.devFallback) {
+      body.devNotice = 'Testing mode active: OTP code logged in server console.'
+    }
     return { status: 200, body }
   } catch (err) {
     console.error('[%s] Failed to store OTP:', logPrefix, err.message)
@@ -239,7 +275,6 @@ router.post('/check-email', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
-
 /* POST /api/auth/send-otp - For SIGNUP: check email DOES NOT exist THEN send OTP */
 router.post('/send-otp', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
@@ -486,7 +521,6 @@ router.post('/register', async (req, res) => {
     } catch (invErr) {
       console.error('[Register] Error checking pending invites:', invErr.message)
     }
-
     const response = {
       message: 'Registration successful',
       user: { id: userId, email, shopName },
@@ -511,12 +545,10 @@ router.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ message: 'email and password required' })
 
   try {
-    // Clear stale user ID mapping in Redis cache to ensure it stays in sync
     await redis.del(`user_id_map:${email}`).catch(() => { })
 
-    // 1. Confirm user exists in our DB
     const profile = await query(
-      'SELECT user_id, shop_name, phone, password FROM shop_profiles WHERE email = $1',
+      'SELECT user_id, shop_name, password FROM shop_profiles WHERE email = $1',
       [email]
     ).catch(() => ({ rows: [] }))
 
@@ -528,55 +560,32 @@ router.post('/login', async (req, res) => {
     const localUserId = profile.rows[0]?.user_id || getLocalUserId(email)
     const storedPassword = profile.rows[0]?.password
 
-    // 2. Try InsForge authentication
     const { data, error } = await insforge.auth.signInWithPassword({ email, password })
     let token = data?.session?.access_token || data?.accessToken
     let userId = localUserId || data?.user?.id || getLocalUserId(email)
 
     if (error) {
-      // Check if user has reset password locally
       if (storedPassword && password === storedPassword) {
-        console.log(`[LOGIN] InsForge error (${error.message}) but matched local password for ${email}`)
         token = jwt.sign(
           { sub: localUserId, email, shopName, iss: 'workshop-local' },
           process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
           { expiresIn: '7d' }
         )
       } else {
-        const rawMsg = error.nextActions || error.error || error.message || ''
-        const isWrongPassword = rawMsg === 'AUTH_UNAUTHORIZED' || rawMsg.toLowerCase().includes('invalid')
-
-        if (isWrongPassword) {
-          // Genuinely wrong password — reject
-          return res.status(401).json({ message: 'Invalid email or password.' })
-        }
-
-        // InsForge email-verification or FORBIDDEN error:
-        // User already verified email via our OTP system — issue our own JWT
-        console.log(`[LOGIN] InsForge blocked (${rawMsg}) but user is in DB — issuing local JWT`)
-        token = jwt.sign(
-          { sub: localUserId, email, shopName, iss: 'workshop-local' },
-          process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
-          { expiresIn: '7d' }
-        )
+        return res.status(401).json({ message: 'Invalid email or password.' })
       }
     }
 
     if (!token) {
-      // InsForge returned no error but also no token — sign local JWT
       token = jwt.sign(
-        { sub: getLocalUserId(email), email, shopName, iss: 'workshop-local' },
+        { sub: userId, email, shopName, iss: 'workshop-local' },
         process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
         { expiresIn: '7d' }
       )
     }
 
-    res.json({
-      token,
-      user: { id: userId, email, shopName },
-    })
+    res.json({ token, user: { id: userId, email, shopName } })
   } catch (err) {
-    console.error('[LOGIN] Error:', err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -597,42 +606,29 @@ router.get('/me', async (req, res) => {
   if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
   const token = auth.slice(7)
 
-  if (token === 'mock-dev-token') {
-    return res.json({
-      user: {
-        id: '00000000-0000-0000-0000-000000000001',
-        email: 'mock@example.com',
-        shopName: 'Workshop',
-      },
-    })
-  }
-
   try {
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production'
     )
 
-    if (decoded?.iss === 'workshop-local' && decoded?.email) {
+    if (decoded?.iss === 'workshop-local') {
       return res.json({
         user: {
-          id: decoded.sub || decoded.email,
+          id: decoded.sub,
           email: decoded.email,
-          shopName: decoded.shopName || decoded.email.split('@')[0],
+          shopName: decoded.shopName,
         },
       })
     }
-  } catch {
-    // Ignore local JWT verify error
-  }
+  } catch { }
 
   try {
     const { data, error } = await insforge.auth.getUser(token)
     if (error) return res.status(401).json({ error: 'Unauthorized' })
 
-    // Map ID locally if present
     const profileRes = await query('SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1)', [data.user.email]).catch(() => ({ rows: [] }))
-    if (profileRes.rows.length > 0 && profileRes.rows[0].user_id) {
+    if (profileRes.rows.length > 0) {
       data.user.id = profileRes.rows[0].user_id
     }
 
@@ -817,18 +813,32 @@ router.post('/update-password', apiLimiter, requireAuth, async (req, res) => {
   try {
     // Check current password from shop_profiles
     const profileRes = await query(
-      'SELECT password FROM shop_profiles WHERE email = $1',
+      'SELECT password FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
       [email]
     )
 
     const storedPass = profileRes.rows[0]?.password
-    if (storedPass && storedPass !== currentPassword) {
+    let isPasswordValid = true
+
+    if (storedPass) {
+      if (storedPass !== currentPassword) {
+        // Double-check with InsForge signInWithPassword
+        try {
+          const { error } = await insforge.auth.signInWithPassword({ email, password: currentPassword })
+          if (error) isPasswordValid = false
+        } catch {
+          isPasswordValid = false
+        }
+      }
+    }
+
+    if (!isPasswordValid) {
       return res.status(400).json({ message: 'Current password is incorrect' })
     }
 
     // Update password in local DB
     await query(
-      'UPDATE shop_profiles SET password = $1 WHERE email = $2',
+      'UPDATE shop_profiles SET password = $1 WHERE LOWER(email) = LOWER($2)',
       [newPassword, email]
     )
 

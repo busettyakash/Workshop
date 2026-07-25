@@ -64,13 +64,31 @@ export default function Signup() {
     setForm(prev => ({ ...prev, workspaceHandle: e.target.value, workspaceHandleManual: true }))
   }
 
+  // Password strength evaluation
+  const passRules = {
+    length:     form.password.length >= 8,
+    hasUpper:   /[A-Z]/.test(form.password),
+    hasLower:   /[a-z]/.test(form.password),
+    hasNumber:  /[0-9]/.test(form.password),
+    hasSpecial: /[^A-Za-z0-9]/.test(form.password)
+  }
+  const score = Object.values(passRules).filter(Boolean).length
+  const getPassStrength = () => {
+    if (!form.password) return { label: '', percent: '0%', color: '#e2e8f0' }
+    if (score <= 2) return { label: 'Weak', percent: '33%', color: '#ef4444' }
+    if (score <= 4) return { label: 'Medium (Neutral)', percent: '66%', color: '#f59e0b' }
+    return { label: 'Strong', percent: '100%', color: '#10b981' }
+  }
+  const passStrength = getPassStrength()
+
   // ── Step 1: Validate & send OTP ──
   const handleStep1 = async (e) => {
     e.preventDefault()
     clearNotif()
     const newErrors = {}
     if (!form.email || !/\S+@\S+\.\S+/.test(form.email)) newErrors.email = 'Valid email is required.'
-    if (!form.password || form.password.length < 6)       newErrors.password = 'Password must be at least 6 characters.'
+    if (!form.password || form.password.length < 8)       newErrors.password = 'Password must be at least 8 characters.'
+    if (score < 3)                                         newErrors.password = 'Password is too weak. Please meet more criteria below.'
     if (form.password !== form.confirmPassword)           newErrors.confirmPassword = 'Passwords do not match.'
     if (Object.keys(newErrors).length) { setErrors(newErrors); return }
 
@@ -303,8 +321,51 @@ export default function Signup() {
             <form className="ws-auth-form" onSubmit={handleStep1} noValidate>
               <Input name="email" type="email" placeholder="Work email address" icon={Mail}
                 value={form.email} onChange={handleChange} error={errors.email} autoFocus />
-              <Input name="password" type="password" placeholder="Create a password (min 6 chars)" icon={Lock}
+              <Input name="password" type="password" placeholder="Create a password (min 8 chars)" icon={Lock}
                 value={form.password} onChange={handleChange} error={errors.password} />
+
+              {/* Password Strength Meter & Live Checklist */}
+              {form.password && (
+                <div style={{ margin: '2px 0 8px', background: '#f8fafc', padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475467' }}>Password Strength:</span>
+                    <span style={{ 
+                      fontSize: '0.72rem', fontWeight: 700, 
+                      color: passStrength.label === 'Strong' ? '#16a34a' : passStrength.label.includes('Medium') ? '#d97706' : '#dc2626' 
+                    }}>
+                      {passStrength.label}
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div style={{ width: '100%', height: 4, background: '#e2e8f0', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+                    <div style={{ 
+                      width: passStrength.percent, height: '100%', 
+                      background: passStrength.color, transition: 'all 0.3s ease' 
+                    }} />
+                  </div>
+
+                  {/* Checklist */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: '0.68rem' }}>
+                    <div style={{ color: passRules.length ? '#16a34a' : '#94a3b8', fontWeight: passRules.length ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      {passRules.length ? '✔' : '○'} Min 8 chars
+                    </div>
+                    <div style={{ color: passRules.hasUpper ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasUpper ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      {passRules.hasUpper ? '✔' : '○'} 1 Capital (A-Z)
+                    </div>
+                    <div style={{ color: passRules.hasLower ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasLower ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      {passRules.hasLower ? '✔' : '○'} 1 Small (a-z)
+                    </div>
+                    <div style={{ color: passRules.hasNumber ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasNumber ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      {passRules.hasNumber ? '✔' : '○'} 1 Number (0-9)
+                    </div>
+                    <div style={{ color: passRules.hasSpecial ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasSpecial ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3, gridColumn: 'span 2' }}>
+                      {passRules.hasSpecial ? '✔' : '○'} 1 Special (@, #, $, %, etc.)
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <Input name="confirmPassword" type="password" placeholder="Confirm your password" icon={Lock}
                 value={form.confirmPassword} onChange={handleChange} error={errors.confirmPassword} />
               <button type="submit" className="ws-auth-submit-btn" disabled={isLoading}>

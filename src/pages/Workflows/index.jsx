@@ -3,7 +3,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import api from '../../api/client'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
-import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
+import { setActiveNav, selectSidebarOpen, addToast, setSidebarOpen } from '../../redux/slices/uiSlice'
 import {
   GitBranch, HelpCircle, Search, Plus, Star, Filter,
   SlidersHorizontal, ChevronRight, MoreHorizontal, Grid,
@@ -53,6 +53,7 @@ export default function Workflows() {
 
   useEffect(() => {
     dispatch(setActiveNav('Workflows'))
+    dispatch(setSidebarOpen(true))
     fetchWorkflows()
   }, [dispatch])
 

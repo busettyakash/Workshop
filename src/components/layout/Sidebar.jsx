@@ -6,7 +6,7 @@ import {
   Users, UserCheck, GitBranch, Building2,
   Search, ChevronDown, ChevronRight, LogOut, UserPlus, Zap, Menu, X,
   Briefcase, User, CheckSquare, FileText, Mail, Phone, Send, Folder, LayoutGrid, Play, Star,
-  MessageSquare, Upload, UserRound, ScrollText, DollarSign
+  MessageSquare, Upload, UserRound, ScrollText, DollarSign, History
 } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectActiveNav, toggleSidebar, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
@@ -28,19 +28,19 @@ const ICON_MAP = {
   Sequences:     <Send size={14} />,
   Workflows:     <GitBranch size={14} />,
   Folder:        <Folder size={14} />,
-  Deals:         <DollarSign size={14} />,
+  PriceHistory:  <History size={14} />,
   Products:      <Package size={14} />,
   Customers:     <Users size={14} />,
   Companies:     <Building2 size={14} />,
   People:        <User size={14} />,
   Contacts:      <User size={14} />,
   Billing:       <Receipt size={14} />,
+  Quotes:        <ScrollText size={14} />,
   Paid:          <CheckCircle size={14} />,
   Unpaid:        <XCircle size={14} />,
   Settings:      <Settings size={14} />,
   Pipeline:      <Briefcase size={14} />,
   ImportStock:   <Upload size={14} />,
-  DealLogs:      <ScrollText size={14} />,
 }
 
 // All nav items for Favorites lookup
@@ -53,12 +53,12 @@ const ALL_NAV_ITEMS = {
   'Products':      { icon: 'Products',      path: ROUTES.PRODUCTS },
   'Companies':     { icon: 'Companies',     path: '/' },
   'People':        { icon: 'People',        path: '/people' },
-  'Deals':         { icon: 'Deals',         path: '/deals' },
+  'Price History': { icon: 'PriceHistory', path: '/price-history' },
   'Billing':       { icon: 'Billing',       path: ROUTES.BILLING },
+  'Quotes':        { icon: 'Quotes',        path: '/quotes' },
   'Paid':          { icon: 'Paid',          path: ROUTES.PAID },
   'Unpaid':        { icon: 'Unpaid',        path: ROUTES.UNPAID },
   'Import Stock':  { icon: 'ImportStock',   path: ROUTES.IMPORT_STOCK },
-  'Deal Logs':     { icon: 'DealLogs',      path: '/deal-logs' },
   'Settings':      { icon: 'Settings',      path: '/settings' },
 }
 
@@ -70,10 +70,11 @@ const MAIN_NAV = [
 ]
 
 const RECORDS_NAV = [
-  { label: 'Products',     icon: 'Products',    path: ROUTES.PRODUCTS },
-  { label: 'People',       icon: 'People',      path: '/people' },
-  { label: 'Deals',        icon: 'Deals',       path: '/deals' },
-  { label: 'Import Stock', icon: 'ImportStock', path: ROUTES.IMPORT_STOCK },
+  { label: 'Products',      icon: 'Products',     path: ROUTES.PRODUCTS },
+  { label: 'People',        icon: 'People',       path: '/people' },
+  { label: 'Price History', icon: 'PriceHistory', path: '/price-history' },
+  { label: 'Quotes',        icon: 'Quotes',        path: '/quotes' },
+  { label: 'Import Stock',  icon: 'ImportStock',  path: ROUTES.IMPORT_STOCK },
 ]
 
 const INVOICES_NAV = [
@@ -83,7 +84,6 @@ const INVOICES_NAV = [
 ]
 
 const LISTS_NAV = [
-  { label: 'Deal Logs', icon: 'DealLogs', path: '/deal-logs' },
   { label: 'Settings',  icon: 'Settings', path: '/settings' },
 ]
 
@@ -124,10 +124,12 @@ export default function Sidebar() {
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const { shopName } = useAuth()
 
-  const [automationsOpen, setAutomationsOpen] = useState(false)
+  const [automationsOpen, setAutomationsOpen] = useState(() => {
+    return window.location.pathname.startsWith('/workflows')
+  })
   const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [recordsOpen, setRecordsOpen] = useState(() => {
-    return ['/products', '/people', '/deals', '/import-stock'].some(path => window.location.pathname.startsWith(path))
+    return ['/products', '/people', '/price-history', '/quotes', '/import-stock'].some(path => window.location.pathname.startsWith(path))
   })
   const [billingOpen, setBillingOpen] = useState(() => {
     return ['/billing', '/paid', '/unpaid'].some(path => window.location.pathname.startsWith(path))
@@ -135,6 +137,18 @@ export default function Sidebar() {
   const [listsOpen, setListsOpen] = useState(false)
 
   const location = useLocation()
+
+  useEffect(() => {
+    if (['/products', '/people', '/price-history', '/quotes', '/import-stock'].some(path => location.pathname.startsWith(path))) {
+      setRecordsOpen(true)
+    }
+    if (['/billing', '/paid', '/unpaid'].some(path => location.pathname.startsWith(path))) {
+      setBillingOpen(true)
+    }
+    if (location.pathname.startsWith('/workflows')) {
+      setAutomationsOpen(true)
+    }
+  }, [location.pathname])
   const [chats, setChats] = useState([])
   const searchParams = new URLSearchParams(location.search)
   const activeSessionId = searchParams.get('session')

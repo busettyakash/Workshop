@@ -1,0 +1,1434 @@
+import React, { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import Sidebar from '../../components/layout/Sidebar'
+import Topbar from '../../components/layout/Topbar'
+import { useAppDispatch, useAppSelector } from '../../redux/hooks'
+import { setActiveNav, selectSidebarOpen, addToast, setSidebarOpen } from '../../redux/slices/uiSlice'
+import { Plus, Filter, ArrowUpDown, X, Trash2, Loader2, Search, Eye, FileText, Calendar, Edit2, ArrowLeft, User, Package, Calculator, CheckCircle2, Send, Receipt, ArrowRight, ChevronDown } from 'lucide-react'
+import { getAvatarColor, getSingleLetter } from '../../utils/tableHelpers'
+import { getBulkUnitDetails } from '../../utils/unitHelpers'
+import api from '../../api/client'
+import '../Dashboard/Dashboard.css'
+import '../Products/Products.css'
+import TablePagination from '../../components/ui/TablePagination'
+import ConfirmModal from '../../components/ui/ConfirmModal'
+
+function SearchableCustomerSelect({ people, value, onSelect }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef(null)
+
+  const selectedPerson = people.find(p => String(p.id) === String(value))
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filtered = people.filter(p => 
+    p.name?.toLowerCase().includes(query.toLowerCase()) || 
+    (p.phone && p.phone.includes(query)) ||
+    (p.email && p.email.toLowerCase().includes(query.toLowerCase()))
+  )
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      <div 
+        onClick={() => setOpen(prev => !prev)}
+        style={{
+          width: '100%', height: 36, padding: '0 10px', borderRadius: 6,
+          border: '1px solid #d1d5db', background: '#fff', fontSize: '0.8125rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer'
+        }}
+      >
+        <span style={{ 
+          color: selectedPerson ? '#0f172a' : '#94a3b8', fontWeight: selectedPerson ? 600 : 400,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 'calc(100% - 20px)'
+        }}>
+          {selectedPerson ? `${selectedPerson.name} ${selectedPerson.phone ? `(${selectedPerson.phone})` : ''}` : 'Search customer from People...'}
+        </span>
+        <Search size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+      </div>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+          background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6,
+          boxShadow: '0 8px 16px rgba(0,0,0,0.1)', marginTop: 4, maxHeight: 200, overflowY: 'auto', padding: 4
+        }}>
+          <input
+            type="text"
+            placeholder="Type customer name, phone or email..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ width: '100%', height: 30, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.78rem', marginBottom: 4, outline: 'none' }}
+            autoFocus
+          />
+          {filtered.length === 0 ? (
+            <div style={{ padding: '8px 10px', fontSize: '0.78rem', color: '#94a3b8' }}>No customers found</div>
+          ) : (
+            filtered.map(p => (
+              <div
+                key={p.id}
+                onClick={() => {
+                  onSelect(p.id)
+                  setOpen(false)
+                  setQuery('')
+                }}
+                style={{
+                  padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: '0.78rem',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                }}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <span style={{ fontWeight: 600, color: '#1e293b' }}>{p.name}</span>
+                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{p.phone || p.email || ''}</span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SearchableProductSelect({ products, value, onSelect, subtext }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef(null)
+
+  const selectedProd = products.find(p => String(p.id) === String(value))
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filtered = products.filter(p => 
+    p.name.toLowerCase().includes(query.toLowerCase()) || 
+    (p.sku && p.sku.toLowerCase().includes(query.toLowerCase())) ||
+    (p.category && p.category.toLowerCase().includes(query.toLowerCase()))
+  )
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      {selectedProd && !open ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div 
+            onClick={() => setOpen(true)}
+            style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+            title="Click to change product"
+          >
+            <span>{selectedProd.name}</span>
+          </div>
+          {subtext && (
+            <span style={{ fontSize: '0.6875rem', color: '#0d9488', fontWeight: 600 }}>
+              {subtext}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div 
+          onClick={() => setOpen(prev => !prev)}
+          style={{
+            width: '100%', height: 36, padding: '0 12px', borderRadius: 8,
+            border: '1px solid #d1d5db', background: '#fff', fontSize: '0.8125rem',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer'
+          }}
+        >
+          <span style={{ color: selectedProd ? '#0f172a' : '#94a3b8', fontWeight: selectedProd ? 600 : 400 }}>
+            {selectedProd ? selectedProd.name : 'Type to search product...'}
+          </span>
+          <Search size={14} style={{ color: '#64748b' }} />
+        </div>
+      )}
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, width: 340, zIndex: 100,
+          background: '#fff', border: '1px solid #cbd5e1', borderRadius: 8,
+          boxShadow: '0 10px 25px rgba(0,0,0,0.12)', marginTop: 4, maxHeight: 240, overflowY: 'auto', padding: 8
+        }}>
+          <input
+            type="text"
+            placeholder="Search by product name or SKU..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ width: '100%', height: 32, padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: '0.8125rem', marginBottom: 6, outline: 'none' }}
+            autoFocus
+          />
+          {filtered.length === 0 ? (
+            <div style={{ padding: '8px 10px', fontSize: '0.78rem', color: '#94a3b8' }}>No products found</div>
+          ) : (
+            filtered.map(p => (
+              <div
+                key={p.id}
+                onClick={() => {
+                  onSelect(p.id)
+                  setOpen(false)
+                  setQuery('')
+                }}
+                style={{
+                  padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8125rem',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12
+                }}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontWeight: 700, color: '#0f172a' }}>{p.name}</span>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Stock: {p.stock} {p.unit || 'pcs'}</span>
+                </div>
+                <span style={{ fontWeight: 700, color: '#059669', fontSize: '0.825rem', flexShrink: 0 }}>
+                  ₹{parseFloat(p.updated_price || p.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FullPageQuoteStepper({ quote, onBack, onSaved }) {
+  const isEdit = Boolean(quote?.id)
+  const dispatch = useAppDispatch()
+  const navigate = useNavigate()
+
+  const [step, setStep] = useState(1) // Step 1: Customer, Step 2: Line Items, Step 3: Review & Send
+
+  const [formData, setFormData] = useState({
+    quote_number: quote?.quote_number || `QT-${Date.now().toString().slice(-6)}`,
+    shop_name: quote?.shop_name || 'Workshop Store',
+    customer_company: quote?.customer_company || '',
+    person_id: quote?.person_id || '',
+    customer_name: quote?.customer_name || '',
+    customer_phone: quote?.customer_phone || '',
+    customer_email: quote?.customer_email || '',
+    total_amount: quote?.total_amount || 0,
+    tax_amount: quote?.tax_amount || 0,
+    status: quote?.status || 'Draft',
+    issue_date: quote?.issue_date ? String(quote.issue_date).split('T')[0] : new Date().toISOString().split('T')[0],
+    valid_until: quote?.valid_until ? String(quote.valid_until).split('T')[0] : new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+    notes: quote?.notes || 'Validity: 30 days. Payment terms: Net 15 days.'
+  })
+
+  // Line items state
+  const [lineItems, setLineItems] = useState(() => {
+    if (quote?.line_items && Array.isArray(quote.line_items) && quote.line_items.length > 0) {
+      return quote.line_items
+    }
+    return [{ id: 1, product_id: '', name: '', quantity: 1, rate: 0, amount: 0 }]
+  })
+
+  const [people, setPeople] = useState([])
+  const [products, setProducts] = useState([])
+  const [submitting, setSubmitting] = useState(false)
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [converting, setConverting] = useState(false)
+
+  useEffect(() => {
+    api.get('/people?limit=200')
+      .then(res => setPeople(res.data?.data || []))
+      .catch(() => {})
+
+    api.get('/products?limit=200')
+      .then(res => setProducts(res.data?.data || []))
+      .catch(() => {})
+
+    if (!quote?.shop_name || quote.shop_name === 'Workshop Store') {
+      api.get('/auth/workspaces')
+        .then(res => {
+          const workspaces = Array.isArray(res.data) ? res.data : res.data?.workspaces || []
+          const ownWs = workspaces.find(w => w.isOwner) || workspaces[0]
+          if (ownWs?.shopName) {
+            setFormData(prev => ({ ...prev, shop_name: ownWs.shopName }))
+          }
+        })
+        .catch(() => {})
+    }
+  }, [])
+
+  const [gstOption, setGstOption] = useState(() => {
+    return parseFloat(quote?.tax_amount || 0) > 0 ? 'with_gst' : 'without_gst'
+  })
+
+  // Calculate totals whenever items or GST option change
+  useEffect(() => {
+    const subtotal = lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0)
+    let tax = 0
+    if (gstOption === 'with_gst') {
+      tax = subtotal * 0.18 // 18% GST
+    }
+    const finalTotal = subtotal + tax
+    setFormData(prev => ({
+      ...prev,
+      tax_amount: tax.toFixed(2),
+      total_amount: finalTotal.toFixed(2)
+    }))
+  }, [lineItems, gstOption])
+
+  const handlePersonSelect = (personId) => {
+    if (!personId) return
+    const p = people.find(item => String(item.id) === String(personId))
+    if (p) {
+      setFormData(prev => ({
+        ...prev,
+        person_id: p.id,
+        customer_name: p.name,
+        customer_company: p.company || p.company_name || '',
+        customer_phone: p.phone || '',
+        customer_email: p.email || ''
+      }))
+    }
+  }
+
+  const handleProductSelect = (index, productId) => {
+    const prod = products.find(p => String(p.id) === String(productId))
+    if (!prod) return
+
+    const rawPrice = parseFloat(prod.updated_price || prod.price || 0)
+    const bulkUnit = getBulkUnitDetails(prod.unit)
+    const bagWeight = parseFloat(prod.bag_weight || 1)
+
+    let subtext = ''
+    let unitLabel = prod.unit || 'pcs'
+
+    if (bulkUnit && bagWeight > 1) {
+      subtext = `Bag: ₹${rawPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
+      unitLabel = `${bulkUnit.name || 'Bag'} (${bagWeight}${bulkUnit.short})`
+    }
+
+    setLineItems(prev => prev.map((item, i) => {
+      if (i === index) {
+        const qty = parseFloat(item.quantity) || 1
+        const amt = qty * rawPrice
+        return {
+          ...item,
+          product_id: prod.id,
+          name: prod.name,
+          unit: unitLabel,
+          bag_weight: bagWeight,
+          subtext: subtext,
+          rate: rawPrice,
+          amount: amt
+        }
+      }
+      return item
+    }))
+  }
+
+  const handleQtyChange = (index, qty) => {
+    const numQty = parseFloat(qty) || 0
+    setLineItems(prev => prev.map((item, i) => {
+      if (i === index) {
+        const rate = parseFloat(item.rate) || 0
+        const disc = parseFloat(item.discount) || 0
+        return { ...item, quantity: qty, amount: Math.max(0, (numQty * rate) - disc) }
+      }
+      return item
+    }))
+  }
+
+  const handleRateChange = (index, rate) => {
+    const numRate = parseFloat(rate) || 0
+    setLineItems(prev => prev.map((item, i) => {
+      if (i === index) {
+        const qty = parseFloat(item.quantity) || 0
+        const disc = parseFloat(item.discount) || 0
+        return { ...item, rate: rate, amount: Math.max(0, (qty * numRate) - disc) }
+      }
+      return item
+    }))
+  }
+
+  const handleDiscountChange = (index, disc) => {
+    const numDisc = parseFloat(disc) || 0
+    setLineItems(prev => prev.map((item, i) => {
+      if (i === index) {
+        const qty = parseFloat(item.quantity) || 0
+        const rate = parseFloat(item.rate) || 0
+        return { ...item, discount: disc, amount: Math.max(0, (qty * rate) - numDisc) }
+      }
+      return item
+    }))
+  }
+
+  const addLineItem = () => {
+    setLineItems(prev => [...prev, { id: Date.now(), product_id: '', name: '', quantity: 1, rate: 0, discount: 0, amount: 0 }])
+  }
+
+  const removeLineItem = (index) => {
+    if (lineItems.length <= 1) return
+    setLineItems(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const saveQuoteAsync = async (overrideStatus = null) => {
+    const payload = {
+      ...formData,
+      status: overrideStatus || formData.status,
+      line_items: lineItems
+    }
+    if (isEdit) {
+      const res = await api.put(`/quotes/${quote.id}`, payload)
+      return res.data
+    } else {
+      const res = await api.post('/quotes', payload)
+      return res.data
+    }
+  }
+
+  const handleSaveDraft = async () => {
+    if (!formData.customer_name?.trim()) {
+      dispatch(addToast({ message: 'Please enter customer name in Step 1', type: 'error' }))
+      setStep(1)
+      return
+    }
+    setSubmitting(true)
+    try {
+      const saved = await saveQuoteAsync()
+      onSaved(saved)
+    } catch {
+      dispatch(addToast({ message: 'Failed to save quote', type: 'error' }))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleSendEmail = async () => {
+    if (!formData.customer_name?.trim() || !formData.customer_email?.trim()) {
+      dispatch(addToast({ message: 'Please provide customer email in Step 1 to send quotation', type: 'error' }))
+      setStep(1)
+      return
+    }
+    setSendingEmail(true)
+    try {
+      const saved = await saveQuoteAsync('Sent')
+      await api.post(`/quotes/${saved.id}/send-email`)
+      dispatch(addToast({ message: `Quotation email sent to ${formData.customer_email} with Accept/Reject links!`, type: 'success' }))
+      onSaved(saved)
+    } catch (err) {
+      dispatch(addToast({ message: err.response?.data?.error || 'Failed to send email', type: 'error' }))
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
+  const handleConvertToBill = async () => {
+    setConverting(true)
+    try {
+      const saved = await saveQuoteAsync('Accepted')
+      await api.post(`/quotes/${saved.id}/convert-to-bill`)
+      dispatch(addToast({ message: 'Quote Accepted! Invoice generated and moved to Billing', type: 'success' }))
+      navigate('/billing')
+    } catch (err) {
+      dispatch(addToast({ message: 'Failed to convert quote to bill', type: 'error' }))
+    } finally {
+      setConverting(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Top Header Bar */}
+      <div className="ws-unified-page-header" style={{ margin: '12px 0 0', padding: '8px 4px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', paddingLeft: 16 }}>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+            {isEdit ? `Edit Quote (${formData.quote_number})` : 'Create New Quote'}
+          </h2>
+          <span style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 600 }}>
+            {formData.status}
+          </span>
+        </div>
+
+        <div className="ws-unified-header-actions">
+          {step === 3 && (
+            <button
+              type="button"
+              className="attio-btn attio-btn-secondary"
+              onClick={() => setStep(2)}
+              disabled={submitting || sendingEmail}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <ArrowLeft size={14} /> Back to Step 2
+            </button>
+          )}
+          <button 
+            type="button"
+            className="attio-btn attio-btn-primary" 
+            onClick={onBack}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <ArrowLeft size={14} /> Back to Quotes
+          </button>
+        </div>
+      </div>
+
+      {/* Stepper Navigation Bar (Compact Length) */}
+      <div className="attio-table-card" style={{ padding: '8px 16px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 760, margin: '0 auto', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 12 }}>
+        <div 
+          onClick={() => setStep(1)}
+          style={{ 
+            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 6, cursor: 'pointer',
+            background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
+          }}
+        >
+          <div style={{ width: 22, height: 22, borderRadius: '50%', background: step === 1 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', flexShrink: 0 }}>1</div>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: step === 1 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+            Step 1: Customer Details
+          </div>
+        </div>
+
+        <ArrowRight size={14} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+
+        <div 
+          onClick={() => setStep(2)}
+          style={{ 
+            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 6, cursor: 'pointer',
+            background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
+          }}
+        >
+          <div style={{ width: 22, height: 22, borderRadius: '50%', background: step === 2 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', flexShrink: 0 }}>2</div>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: step === 2 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+            Step 2: Products & Line Items
+          </div>
+        </div>
+
+        <ArrowRight size={14} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+
+        <div 
+          onClick={() => setStep(3)}
+          style={{ 
+            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 6, cursor: 'pointer',
+            background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`
+          }}
+        >
+          <div style={{ width: 22, height: 22, borderRadius: '50%', background: step === 3 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', flexShrink: 0 }}>3</div>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: step === 3 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+            Step 3: Review, Send & Bill
+          </div>
+        </div>
+      </div>
+
+      {/* STEP 1: Customer Details */}
+      {step === 1 && (
+        <div className="attio-table-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>
+                My Shop / Company Name (Sender) *
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Busetty Traders"
+                value={formData.shop_name}
+                onChange={(e) => setFormData(p => ({ ...p, shop_name: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem', fontWeight: 600 }}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>
+                Customer Shop / Company Name
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Sri Lakshmi Rice Traders"
+                value={formData.customer_company}
+                onChange={(e) => setFormData(p => ({ ...p, customer_company: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>
+                Search & Select Customer
+              </label>
+              <SearchableCustomerSelect
+                people={people}
+                value={formData.person_id}
+                onSelect={handlePersonSelect}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Customer Name *</label>
+              <input
+                type="text"
+                placeholder="e.g. Vinod Kumar Busetty"
+                value={formData.customer_name}
+                onChange={(e) => setFormData(p => ({ ...p, customer_name: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Phone Number</label>
+              <input
+                type="text"
+                placeholder="+91 9876543210"
+                value={formData.customer_phone}
+                onChange={(e) => setFormData(p => ({ ...p, customer_phone: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Email Address *</label>
+              <input
+                type="email"
+                placeholder="busettyakash@gmail.com"
+                value={formData.customer_email}
+                onChange={(e) => setFormData(p => ({ ...p, customer_email: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Quote #</label>
+              <input
+                type="text"
+                value={formData.quote_number}
+                onChange={(e) => setFormData(p => ({ ...p, quote_number: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem', fontFamily: 'monospace', fontWeight: 600 }}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Issue Date</label>
+              <input
+                type="date"
+                value={formData.issue_date}
+                onChange={(e) => setFormData(p => ({ ...p, issue_date: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Valid Until</label>
+              <input
+                type="date"
+                value={formData.valid_until}
+                onChange={(e) => setFormData(p => ({ ...p, valid_until: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Quote Status</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData(p => ({ ...p, status: e.target.value }))}
+                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem', background: '#fff' }}
+              >
+                <option value="Draft">Draft</option>
+                <option value="Sent">Sent</option>
+                <option value="Accepted">Accepted</option>
+                <option value="Declined">Declined</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+            <button
+              type="button"
+              className="attio-btn attio-btn-primary"
+              onClick={() => {
+                if (!formData.customer_name?.trim()) {
+                  dispatch(addToast({ message: 'Please enter customer name', type: 'error' }))
+                  return
+                }
+                setStep(2)
+              }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 10,
+                padding: '12px 32px', fontSize: '0.95rem', fontWeight: 700, borderRadius: 10,
+                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)'
+              }}
+            >
+              Next: Products & Line Items <ArrowRight size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 2: Products & Line Items */}
+      {step === 2 && (
+        <div className="attio-table-card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="attio-btn attio-btn-secondary"
+              onClick={addLineItem}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem' }}
+            >
+              <Plus size={13} /> Add Line Item
+            </button>
+          </div>
+
+          <table className="attio-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ color: '#64748b', fontSize: '0.68rem', letterSpacing: '0.5px', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ textAlign: 'left', padding: '8px 10px', width: '42%', textTransform: 'uppercase', fontWeight: 700 }}>PRODUCT</th>
+                <th style={{ textAlign: 'center', padding: '8px 10px', width: '28%', textTransform: 'uppercase', fontWeight: 700 }}>QTY / UNIT</th>
+                <th style={{ textAlign: 'center', padding: '8px 10px', width: '15%', textTransform: 'uppercase', fontWeight: 700 }}>UNIT PRICE</th>
+                <th style={{ textAlign: 'right', padding: '8px 10px', width: '15%', textTransform: 'uppercase', fontWeight: 700 }}>TOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lineItems.map((item, index) => {
+                const selectedProd = products.find(p => String(p.id) === String(item.product_id))
+                const bulkUnit = getBulkUnitDetails(item.unit || selectedProd?.unit)
+                const bw = parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
+                const unitLabel = (selectedProd && bw > 1)
+                  ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
+                  : (bulkUnit?.short || item.unit || 'pcs')
+
+                const subtext = item.subtext || (selectedProd && bulkUnit && bw > 1 
+                  ? `Bag: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
+                  : '')
+
+                return (
+                  <tr key={item.id || index} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '10px', verticalAlign: 'middle' }}>
+                      <SearchableProductSelect
+                        products={products}
+                        value={item.product_id}
+                        onSelect={(prodId) => handleProductSelect(index, prodId)}
+                        subtext={subtext}
+                      />
+                    </td>
+
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => handleQtyChange(index, e.target.value)}
+                          style={{
+                            width: 44, height: 28, padding: '0 4px', borderRadius: 5,
+                            border: '1px solid #cbd5e1', fontSize: '0.78rem', textAlign: 'center',
+                            fontWeight: 600, fontFamily: 'inherit', color: '#0f172a', background: '#fff'
+                          }}
+                        />
+                        <span style={{
+                          fontSize: '0.72rem', color: '#475467', fontWeight: 600,
+                          whiteSpace: 'nowrap', userSelect: 'none', background: '#f8fafc',
+                          padding: '2px 6px', borderRadius: 5, border: '1px solid #e2e8f0', height: 28, display: 'inline-flex', alignItems: 'center'
+                        }}>
+                          {unitLabel}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          readOnly
+                          disabled
+                          value={item.rate}
+                          style={{
+                            width: 62, height: 28, padding: '0 4px', borderRadius: 5,
+                            border: '1px solid #cbd5e1', fontSize: '0.78rem', fontWeight: 700,
+                            color: '#334155', textAlign: 'center', fontFamily: 'inherit', background: '#f8fafc',
+                            cursor: 'not-allowed'
+                          }}
+                          title="Price is fixed from catalog"
+                        />
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                        <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                          ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeLineItem(index)}
+                          style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
+                          title="Remove item"
+                          disabled={lineItems.length <= 1}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#dc2626'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 16 }}>
+            <button
+              type="button"
+              className="attio-btn attio-btn-primary"
+              onClick={() => setStep(3)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 10,
+                padding: '13px 36px', fontSize: '1rem', fontWeight: 700, borderRadius: 10,
+                boxShadow: '0 4px 16px rgba(37, 99, 235, 0.35)', cursor: 'pointer'
+              }}
+            >
+              Next: Review, Send & Bill <ArrowRight size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 3: Review, Send & Bill */}
+      {step === 3 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Summary Card */}
+          <div className="attio-table-card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, background: '#f8fafc', padding: '12px 14px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Customer</span>
+                <p style={{ margin: '1px 0 0', fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{formData.customer_name}</p>
+                <p style={{ margin: '1px 0 0', fontSize: '0.78rem', color: '#475467' }}>{formData.customer_phone || 'No phone'} • {formData.customer_email || 'No email'}</p>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Total Quotation Amount</span>
+                <p style={{ margin: '1px 0 0', fontWeight: 800, color: '#15803d', fontSize: '1.25rem' }}>
+                  ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </p>
+                <p style={{ margin: '1px 0 0', fontSize: '0.75rem', color: '#64748b' }}>Quote #{formData.quote_number} • Valid till {formData.valid_until}</p>
+              </div>
+            </div>
+
+            {/* GST Calculation Selection Panel in Step 3 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', marginTop: 4, flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Tax / GST Selection:</span>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', cursor: 'pointer', fontWeight: 600, color: gstOption === 'with_gst' ? '#15803d' : '#475467' }}>
+                  <input
+                    type="radio"
+                    name="gstOptionStep3"
+                    value="with_gst"
+                    checked={gstOption === 'with_gst'}
+                    onChange={() => setGstOption('with_gst')}
+                  />
+                  With GST (18%)
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', cursor: 'pointer', fontWeight: 600, color: gstOption === 'without_gst' ? '#1e40af' : '#475467' }}>
+                  <input
+                    type="radio"
+                    name="gstOptionStep3"
+                    value="without_gst"
+                    checked={gstOption === 'without_gst'}
+                    onChange={() => setGstOption('without_gst')}
+                  />
+                  Without GST (0%)
+                </label>
+              </div>
+
+              <div style={{ textAlign: 'right', fontSize: '0.8rem' }}>
+                <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                <span style={{ margin: '0 6px', color: '#cbd5e1' }}>|</span>
+                <span style={{ color: gstOption === 'with_gst' ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST (18%): ₹{(parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                <span style={{ margin: '0 6px', color: '#cbd5e1' }}>|</span>
+                <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.875rem' }}>
+                  Final Total: ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Line Items Summary List */}
+            <div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '0.78rem', fontWeight: 600, color: '#334155' }}>Items Breakdown</h4>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+                {lineItems.map((item, idx) => (
+                  <div key={idx} style={{ padding: '8px 12px', borderBottom: idx < lineItems.length - 1 ? '1px solid #f1f5f9' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.8rem' }}>{item.name || 'Selected Item'}</span>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 8 }}>Qty: {item.quantity}</span>
+                    </div>
+                    <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.8125rem' }}>
+                      ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Terms & Notes */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>Terms & Conditions / Notes</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))}
+                rows={2}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.78rem' }}
+              />
+            </div>
+          </div>
+
+          {/* Workflow Action Panel */}
+          <div className="attio-table-card" style={{ padding: 20, background: '#faf5ff', border: '1px solid #e9d5ff' }}>
+            <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem', fontWeight: 700, color: '#6b21a8' }}>Quotation Workflow & Billing Automation</h4>
+
+            {/* Status Banner — shown after email response */}
+            {formData.status === 'Accepted' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, marginBottom: 14, background: '#dcfce7', border: '1px solid #86efac', color: '#166534' }}>
+                <CheckCircle2 size={16} />
+                <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                  Customer <strong>Accepted</strong> via email. Invoice auto-generated in Billing. ✅
+                </span>
+              </div>
+            )}
+            {formData.status === 'Declined' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, marginBottom: 14, background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b' }}>
+                <X size={16} />
+                <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                  Customer <strong>Declined</strong> this quotation via email.
+                </span>
+              </div>
+            )}
+            {formData.status === 'Sent' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, marginBottom: 14, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af' }}>
+                <Send size={15} />
+                <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                  Quotation sent to <strong>{formData.customer_email}</strong>. Waiting for customer response…
+                </span>
+              </div>
+            )}
+
+            {formData.status !== 'Accepted' && formData.status !== 'Declined' && (
+              <p style={{ margin: '0 0 14px', fontSize: '0.78rem', color: '#7e22ce', lineHeight: 1.5 }}>
+                Send this quotation to <strong>{formData.customer_email || 'customer'}</strong> via email. The customer will receive Accept / Reject links. When they <strong>Accept</strong>, the system automatically updates the status and generates a billing invoice — no manual action needed.
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* Save Draft / Save Quote — locked if Deal Closed */}
+                <button
+                  type="button"
+                  className="attio-btn attio-btn-secondary"
+                  onClick={handleSaveDraft}
+                  disabled={submitting || sendingEmail || formData.status === 'Accepted'}
+                  title={formData.status === 'Accepted' ? 'Deal is closed - quotation is locked from editing' : 'Save Changes'}
+                  style={{
+                    opacity: formData.status === 'Accepted' ? 0.55 : 1,
+                    cursor: formData.status === 'Accepted' ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {submitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Save Draft'}
+                </button>
+
+                {/* Send Email — only if not yet responded */}
+                <button
+                  type="button"
+                  className="attio-btn"
+                  onClick={handleSendEmail}
+                  disabled={submitting || sendingEmail || formData.status === 'Accepted' || formData.status === 'Declined'}
+                  style={{
+                    background: (formData.status === 'Accepted' || formData.status === 'Declined') ? '#94a3b8' : '#2563eb',
+                    color: '#fff',
+                    borderColor: (formData.status === 'Accepted' || formData.status === 'Declined') ? '#94a3b8' : '#2563eb',
+                    fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6,
+                    opacity: (formData.status === 'Accepted' || formData.status === 'Declined') ? 0.55 : 1,
+                    cursor: (formData.status === 'Accepted' || formData.status === 'Declined') ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <Send size={14} />
+                  {sendingEmail ? 'Sending…' : formData.status === 'Sent' ? 'Resend Email' : 'Send Email to Customer'}
+                </button>
+
+                {/* Accept & Convert to Bill — disabled: only triggers via customer email link */}
+                <div style={{ position: 'relative', display: 'inline-flex' }} title="Billing invoices trigger automatically ONLY when the customer ACCEPTS the quotation. Rejected quotes do not generate bills.">
+                  <button
+                    type="button"
+                    disabled
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '8px 16px', borderRadius: 6, border: '1px solid #cbd5e1',
+                      background: '#f1f5f9', color: '#64748b',
+                      fontWeight: 600, fontSize: '0.8125rem', cursor: 'not-allowed',
+                      opacity: 0.85
+                    }}
+                  >
+                    <Receipt size={14} />
+                    {formData.status === 'Accepted' ? 'Auto-Billed on Acceptance ✅' : formData.status === 'Declined' ? 'Quotation Declined (No Bill) ❌' : 'Auto-Billed on Acceptance ⚡'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Quotes() {
+  const dispatch = useAppDispatch()
+  const sidebarOpen = useAppSelector(selectSidebarOpen)
+  
+  const [quotes, setQuotes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [editingQuote, setEditingQuote] = useState(null)
+  const [viewingQuote, setViewingQuote] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, number: '' })
+
+  const [page, setPage] = useState(1)
+  const [limit] = useState(20)
+  const [total, setTotal] = useState(0)
+
+  const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [showFilterBar, setShowFilterBar] = useState(false)
+
+  const totalPages = Math.ceil(total / limit) || 1
+  const getPageNumbers = () => {
+    const pages = []
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      if (page <= 2) {
+        pages.push(1, 2, 3, '...', totalPages)
+      } else if (page >= totalPages - 1) {
+        pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
+      } else {
+        pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
+      }
+    }
+    return pages
+  }
+
+  const fetchQuotes = async (currentPage = page) => {
+    setLoading(true)
+    try {
+      const res = await api.get(`/quotes?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&status=${filterStatus}`)
+      setQuotes(res.data?.data || [])
+      setTotal(res.data?.total || 0)
+    } catch (err) {
+      dispatch(addToast({ message: 'Failed to load quotes', type: 'error' }))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { 
+    dispatch(setActiveNav('Quotes'))
+    dispatch(setSidebarOpen(true))
+    fetchQuotes(page)
+  }, [dispatch, page, search, filterStatus])
+
+  const handleSaveQuote = (savedQuote) => {
+    setIsFormOpen(false)
+    setEditingQuote(null)
+    fetchQuotes(page)
+  }
+
+  const handleDelete = async () => {
+    const { id, number } = confirmDelete
+    setConfirmDelete({ isOpen: false, id: null, number: '' })
+    try {
+      await api.delete(`/quotes/${id}`)
+      dispatch(addToast({ message: `Quote ${number} deleted`, type: 'success' }))
+      fetchQuotes(page)
+    } catch (err) {
+      dispatch(addToast({ message: 'Failed to delete quote', type: 'error' }))
+    }
+  }
+
+  const getStatusBadge = (status = 'Draft') => {
+    const st = status.toLowerCase()
+    if (st === 'accepted') {
+      return { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0', label: 'Accepted' }
+    }
+    if (st === 'sent') {
+      return { bg: '#dbeafe', text: '#1e40af', border: '#bfdbfe', label: 'Sent' }
+    }
+    if (st === 'declined') {
+      return { bg: '#fee2e2', text: '#b91c1c', border: '#fecaca', label: 'Declined' }
+    }
+    return { bg: '#f1f5f9', text: '#475467', border: '#cbd5e1', label: 'Draft' }
+  }
+
+  return (
+    <div className="ws-dash-layout">
+      <Sidebar />
+      <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
+        <Topbar />
+        <main className="ws-dash-body">
+          <div className="attio-products-container">
+            {isFormOpen || editingQuote ? (
+              <FullPageQuoteStepper 
+                quote={editingQuote} 
+                onBack={() => { setIsFormOpen(false); setEditingQuote(null); }} 
+                onSaved={handleSaveQuote} 
+              />
+            ) : (
+              <>
+                {/* Top Toolbar */}
+                <div className="ws-unified-page-header">
+                  <div className="ws-unified-header-left">
+                    <span className="ws-unified-header-title">Quotes</span>
+                    <span className="ws-unified-header-badge">{total} quotes</span>
+                  </div>
+                  <div className="ws-unified-header-actions">
+                    {/* Search box */}
+                    <div className="attio-search-box">
+                      <Search size={14} className="attio-search-icon" />
+                      <input
+                        type="text"
+                        className="attio-input-search"
+                        placeholder="Search quote # or customer..."
+                        value={search}
+                        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                      />
+                    </div>
+
+                    {/* Filter button */}
+                    <button 
+                      className="attio-btn"
+                      onClick={() => setShowFilterBar(prev => !prev)}
+                      style={{
+                        background: showFilterBar || filterStatus ? '#f1f5f9' : '#ffffff',
+                        borderColor: showFilterBar || filterStatus ? '#0f172a' : '#cbd5e1',
+                        fontWeight: showFilterBar || filterStatus ? 600 : 500
+                      }}
+                    >
+                      <Filter size={13} /> Filter
+                    </button>
+
+                    <button 
+                      className="attio-btn attio-btn-primary" 
+                      onClick={() => setIsFormOpen(true)}
+                    >
+                      <Plus size={14} /> Create Quote
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expandable Filter Box */}
+                {showFilterBar && (
+                  <div className="attio-filter-box">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: '#475467' }}>
+                      <span>Status:</span>
+                      <select
+                        className="attio-select"
+                        value={filterStatus}
+                        onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+                      >
+                        <option value="">All Statuses</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Sent">Sent</option>
+                        <option value="Accepted">Accepted</option>
+                        <option value="Declined">Declined</option>
+                      </select>
+                    </div>
+
+                    {filterStatus && (
+                      <button 
+                        onClick={() => { setFilterStatus(''); setPage(1); }}
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
+                      >
+                        Reset Filters
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* CRM Table Card Box */}
+                <div className="attio-table-card">
+                  <div className="attio-table-wrap">
+                    {loading ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
+                        <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
+                      </div>
+                    ) : quotes.length === 0 ? (
+                      <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
+                        No quotes found. Click "+ Create Quote" to create your first quote.
+                      </div>
+                    ) : (
+                      <table className="attio-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: 28, textAlign: 'left', paddingLeft: 4 }}>
+                              <input type="checkbox" className="attio-chk" readOnly />
+                            </th>
+                            <th>QUOTE #</th>
+                            <th>CUSTOMER</th>
+                            <th>SHOP / COMPANY</th>
+                            <th>TOTAL AMOUNT</th>
+                            <th>ISSUE DATE</th>
+                            <th>VALID UNTIL</th>
+                            <th>STATUS</th>
+                            <th>DEAL CLOSED</th>
+                            <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {quotes.map(row => {
+                            const stBadge = getStatusBadge(row.status)
+                            const issueStr = row.issue_date ? String(row.issue_date).split('T')[0] : '—'
+                            const validStr = row.valid_until ? String(row.valid_until).split('T')[0] : '—'
+                            const isClosed = row.status === 'Accepted'
+
+                            return (
+                              <tr key={row.id}>
+                                <td style={{ textAlign: 'left', paddingLeft: 4 }}>
+                                  <input type="checkbox" className="attio-chk" readOnly />
+                                </td>
+                                <td>
+                                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1e293b', fontSize: '0.85rem' }}>
+                                    {row.quote_number}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div className="attio-avatar" style={{ background: getAvatarColor(row.customer_name) }}>
+                                      {getSingleLetter(row.customer_name)}
+                                    </div>
+                                    <div>
+                                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{row.customer_name}</div>
+                                      {row.customer_phone && <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{row.customer_phone}</div>}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div style={{ fontSize: '0.8125rem' }}>
+                                    <div style={{ fontWeight: 600, color: '#1e40af' }}>
+                                      From: {row.shop_name || 'Workshop Store'}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: '#475467' }}>
+                                      To: {row.customer_company || row.customer_name}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                                    ₹{parseFloat(row.total_amount || 0).toFixed(2)}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: '0.8125rem', color: '#475467' }}>
+                                    {issueStr}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: '0.8125rem', color: '#475467' }}>
+                                    {validStr}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ 
+                                    background: stBadge.bg, 
+                                    color: stBadge.text, 
+                                    border: `1px solid ${stBadge.border}`, 
+                                    padding: '3px 10px', 
+                                    borderRadius: '6px', 
+                                    fontSize: '0.75rem', 
+                                    fontWeight: 600, 
+                                    display: 'inline-block' 
+                                  }}>
+                                    {stBadge.label}
+                                  </span>
+                                </td>
+                                <td>
+                                  {isClosed ? (
+                                    <span style={{ 
+                                      background: '#fee2e2', 
+                                      color: '#dc2626', 
+                                      border: '1px solid #fecaca', 
+                                      padding: '3px 10px', 
+                                      borderRadius: '6px', 
+                                      fontSize: '0.75rem', 
+                                      fontWeight: 700, 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: 4 
+                                    }}>
+                                      ✓ Deal Closed
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
+                                      Open
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                    <button
+                                      className="ws-table-btn ws-table-btn--secondary"
+                                      style={{ padding: '3px 8px', gap: 4, display: 'inline-flex', alignItems: 'center' }}
+                                      onClick={() => setViewingQuote(row)}
+                                      title="View Quote Details"
+                                    >
+                                      <Eye size={12} /> View
+                                    </button>
+                                    <button
+                                      className="ws-table-btn ws-table-btn--secondary"
+                                      style={{
+                                        padding: '3px 8px', gap: 4, display: 'inline-flex', alignItems: 'center',
+                                        opacity: isClosed ? 0.5 : 1, cursor: isClosed ? 'not-allowed' : 'pointer'
+                                      }}
+                                      onClick={() => { if (!isClosed) setEditingQuote(row) }}
+                                      disabled={isClosed}
+                                      title={isClosed ? "Deal is closed - quotation is locked from editing" : "Edit Quote"}
+                                    >
+                                      <Edit2 size={12} /> Edit
+                                    </button>
+                                    <button
+                                      className="ws-table-btn ws-table-btn--danger"
+                                      style={{ padding: '3px 8px', color: '#dc2626' }}
+                                      onClick={() => setConfirmDelete({ isOpen: true, id: row.id, number: row.quote_number })}
+                                      title="Delete Quote"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Table Footer */}
+                  <TablePagination
+                    page={page}
+                    setPage={setPage}
+                    total={total}
+                    limit={limit}
+                    getPageNumbers={getPageNumbers}
+                    totalPages={totalPages}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </main>
+      </div>
+
+      {/* View Quote Details Modal */}
+      {viewingQuote && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '90vh',
+            overflowY: 'auto', border: '1px solid #e2e8f0', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
+          }}>
+            <div style={{
+              padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex',
+              alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Quote #{viewingQuote.quote_number}</span>
+                <span style={{
+                  background: viewingQuote.status === 'Accepted' ? '#dcfce7' : viewingQuote.status === 'Sent' ? '#dbeafe' : viewingQuote.status === 'Declined' ? '#fee2e2' : '#f1f5f9',
+                  color: viewingQuote.status === 'Accepted' ? '#15803d' : viewingQuote.status === 'Sent' ? '#1e40af' : viewingQuote.status === 'Declined' ? '#b91c1c' : '#475467',
+                  padding: '3px 10px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 700
+                }}>
+                  {viewingQuote.status}
+                </span>
+              </div>
+              <button onClick={() => setViewingQuote(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ background: '#f8fafc', padding: 16, borderRadius: 10, border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>FROM (SHOP / SUPPLIER)</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e40af', marginTop: 2 }}>{viewingQuote.shop_name || 'Workshop Store'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>TO (CUSTOMER / COMPANY)</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{viewingQuote.customer_name} {viewingQuote.customer_company ? `(${viewingQuote.customer_company})` : ''}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>ISSUE DATE</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', marginTop: 2 }}>{viewingQuote.issue_date ? String(viewingQuote.issue_date).split('T')[0] : '—'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>VALID UNTIL</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', marginTop: 2 }}>{viewingQuote.valid_until ? String(viewingQuote.valid_until).split('T')[0] : '—'}</div>
+                </div>
+              </div>
+
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                  <thead>
+                    <tr style={{ background: '#f1f5f9', color: '#475467', textTransform: 'uppercase', fontSize: '0.72rem' }}>
+                      <th style={{ padding: '10px 14px', textAlign: 'left' }}>ITEM</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'center' }}>QTY</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>RATE</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>AMOUNT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(Array.isArray(viewingQuote.line_items) ? viewingQuote.line_items : []).map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 600, color: '#1e293b' }}>{item.name || 'Product'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center', color: '#475467' }}>{item.quantity || 1}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#475467' }}>₹{parseFloat(item.rate || 0).toFixed(2)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>₹{parseFloat(item.amount || 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ textAlign: 'right', padding: '12px 16px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Total Amount: ₹{parseFloat(viewingQuote.total_amount || 0).toFixed(2)}</span>
+              </div>
+
+              {viewingQuote.status === 'Accepted' && (
+                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: 14, borderRadius: 8, fontSize: '0.875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>✓ Deal Closed & Billing Invoice Generated & Emailed to Customer!</span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 10, background: '#f8fafc' }}>
+              <button className="attio-btn attio-btn-primary" onClick={() => setViewingQuote(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={confirmDelete.isOpen}
+        title="Delete Quote"
+        message={`Are you sure you want to delete quote ${confirmDelete.number}? This action cannot be undone.`}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDelete({ isOpen: false, id: null, number: '' })}
+      />
+    </div>
+  )
+}

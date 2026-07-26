@@ -54,7 +54,12 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
     if (hsnCode === '—' || hsnCode === '-') hsnCode = ''
 
     const pId = item.product_id || item.productId || item.id
-    const catProd = (pId && catalogMap[String(pId)]) ? catalogMap[String(pId)] : (name ? catalogMap[name.toLowerCase().trim()] : null)
+    let catProd = null
+    if (pId && catalogMap[String(pId)]) {
+      catProd = catalogMap[String(pId)]
+    } else if (name && catalogMap[name.toLowerCase().trim()]) {
+      catProd = catalogMap[name.toLowerCase().trim()]
+    }
 
     if (catProd) {
       if (!name) name = catProd.name

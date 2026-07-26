@@ -7,7 +7,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;')
 }
 
-export const getQuoteEmailTemplate = ({ quote, itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt }) => {
+export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt }) => {
   let items = []
   if (Array.isArray(quote.line_items)) {
     items = quote.line_items

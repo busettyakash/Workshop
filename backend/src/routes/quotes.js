@@ -508,7 +508,13 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
     const issueDateFmt = formatPrettyDate(quote.issue_date)
     const validUntilFmt = formatPrettyDate(quote.valid_until)
 
-    const rawItems = Array.isArray(quote.line_items) ? quote.line_items : (typeof quote.line_items === 'string' ? JSON.parse(quote.line_items) : [])
+    let rawItems = []
+    if (Array.isArray(quote.line_items)) {
+      rawItems = quote.line_items
+    } else if (typeof quote.line_items === 'string') {
+      try { rawItems = JSON.parse(quote.line_items) } catch {}
+    }
+    if (!Array.isArray(rawItems)) rawItems = []
     const catalogMap = await getProductHsnMap()
     const enrichedItems = enrichItemsWithCache(rawItems || [], catalogMap)
 

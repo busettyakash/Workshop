@@ -74,7 +74,7 @@ if (isDevelopment) {
 
 /* ── Middleware ── */
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => callback(null, true),
   credentials: true,
 }))
 app.use(express.json({ limit: '10mb' }))

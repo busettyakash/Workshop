@@ -19,6 +19,9 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const customerPhone = quote?.customer_phone || bill?.customer_phone || ''
   const customerCompany = quote?.customer_company || bill?.customer_company || ''
 
+  const sellerGstinPrefix = sellerPhone ? '· ' : ''
+  const sellerGstinHtml = sellerGstin ? `${sellerGstinPrefix}GSTIN: ${escapeHtml(sellerGstin).toUpperCase()}` : ''
+
   const invNum = bill?.bill_number || `INV-${String(bill?.id || 1).padStart(4, '0')}`
   const totalAmount = parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
   const taxAmt = parseFloat(quote?.tax_amount || 0)
@@ -34,7 +37,12 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const dueDateStr = dueDateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const items = (billItems && billItems.length > 0) ? billItems : (quote?.line_items || [])
-  const itemsList = Array.isArray(items) ? items : (typeof items === 'string' ? JSON.parse(items) : [])
+  let itemsList = []
+  if (Array.isArray(items)) {
+    itemsList = items
+  } else if (typeof items === 'string') {
+    try { itemsList = JSON.parse(items) } catch {}
+  }
 
   const rowsHtml = itemsList.length > 0 ? itemsList.map(item => {
     const qty = parseFloat(item.quantity || item.qty || 1)
@@ -98,7 +106,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
                           <div style="font-size:24px; font-weight:800; color:#ffffff; margin-bottom:4px; letter-spacing:-0.03em;">${escapeHtml(sellerName)}</div>
                           <div style="font-size:12.5px; color:rgba(255,255,255,0.8); line-height:1.5;">
                             ${sellerPhone ? `Phone: ${escapeHtml(sellerPhone)} ` : ''}
-                            ${sellerGstin ? `${sellerPhone ? '· ' : ''}GSTIN: ${escapeHtml(sellerGstin).toUpperCase()}` : ''}
+                            ${sellerGstinHtml}
                           </div>
                         </td>
                         <td align="right" valign="top" style="text-align:right;">
@@ -154,6 +162,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
                           <div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; border-bottom:1px solid #f1f5f9; padding-bottom:6px; margin-bottom:8px;">FROM (SUPPLIER)</div>
                           <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px;">${escapeHtml(sellerName)}</div>
                           ${sellerGstin ? `<div style="font-size:12px; color:#475569;">GSTIN: ${escapeHtml(sellerGstin).toUpperCase()}</div>` : ''}
+                          ${sellerAddress ? `<div style="font-size:12px; color:#475569; margin-top:2px;">${escapeHtml(sellerAddress)}</div>` : ''}
                           ${sellerPhone ? `<div style="font-size:12px; color:#475569; margin-top:2px;">Phone: ${escapeHtml(sellerPhone)}</div>` : ''}
                         </td>
                         <td width="2%">&nbsp;</td>
@@ -161,6 +170,8 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
                           <div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; border-bottom:1px solid #f1f5f9; padding-bottom:6px; margin-bottom:8px;">TO (BUYER)</div>
                           <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px;">${escapeHtml(customerName || '—')}</div>
                           ${customerCompany ? `<div style="font-size:12px; color:#475569;">${escapeHtml(customerCompany)}</div>` : ''}
+                          ${customerGstin ? `<div style="font-size:12px; color:#475569;">GSTIN: ${escapeHtml(customerGstin).toUpperCase()}</div>` : ''}
+                          ${customerAddress ? `<div style="font-size:12px; color:#475569; margin-top:2px;">${escapeHtml(customerAddress)}</div>` : ''}
                           ${customerPhone ? `<div style="font-size:12px; color:#475569; margin-top:2px;">Phone: ${escapeHtml(customerPhone)}</div>` : ''}
                         </td>
                       </tr>

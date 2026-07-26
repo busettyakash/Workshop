@@ -170,7 +170,12 @@ router.get('/:id/price-history', async (req, res) => {
     if (updatedPriceNum !== null && !isNaN(updatedPriceNum)) {
       const hasUpdated = rows.some(r => parseFloat(r.new_price) === updatedPriceNum)
       if (!hasUpdated) {
-        const updatedTime = prod.updated_at ? new Date(prod.updated_at).toISOString() : (prod.updated_price_date ? new Date(prod.updated_price_date).toISOString() : new Date().toISOString())
+        let updatedTime = new Date().toISOString()
+        if (prod.updated_at) {
+          updatedTime = new Date(prod.updated_at).toISOString()
+        } else if (prod.updated_price_date) {
+          updatedTime = new Date(prod.updated_price_date).toISOString()
+        }
         try {
           const insertedUpd = await query(
             `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
@@ -298,6 +303,11 @@ router.put('/:id', async (req, res) => {
       ? todayStr
       : (updated_price_date || oldProduct?.updated_price_date || todayStr)
 
+    let finalUpdatedPrice = oldProduct?.updated_price
+    if (updated_price !== undefined) {
+      finalUpdatedPrice = updated_price ? parseFloat(updated_price) : null
+    }
+
     const { rows } = await query(
       `UPDATE products SET
          name=COALESCE($1,name),
@@ -305,8 +315,8 @@ router.put('/:id', async (req, res) => {
          hsn_code=COALESCE($3,hsn_code),
          category=COALESCE($4,category),
          price=COALESCE($5,price),
-         updated_price=$6,
-         updated_price_date=$7,
+         updated_price=COALESCE($6,updated_price),
+         updated_price_date=COALESCE($7,updated_price_date),
          stock=COALESCE($8,stock),
          status=COALESCE($9,status),
          description=COALESCE($10,description),
@@ -316,7 +326,7 @@ router.put('/:id', async (req, res) => {
        WHERE id=$13 AND user_id=$14 RETURNING *`,
       [
         name, sku || finalHsn, finalHsn, category, price,
-        updated_price !== undefined ? (updated_price ? parseFloat(updated_price) : null) : oldProduct?.updated_price,
+        finalUpdatedPrice,
         finalUpdatedPriceDate,
         stock, status, description, next_restock_time, bag_weight ? parseFloat(bag_weight) : oldProduct?.bag_weight,
         req.params.id, userId

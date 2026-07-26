@@ -289,7 +289,11 @@ export default function Sidebar() {
       <aside className={`ws-sidebar${sidebarOpen ? ' ws-sidebar--open' : ''}`}>
         {/* Workspace Header */}
         <div className="ws-sb-header" style={{ position: 'relative' }}>
-          <button className="ws-sb-workspace-btn" onClick={() => setWorkspaceDropdownOpen(!workspaceDropdownOpen)}>
+          <button
+            className="ws-sb-workspace-btn"
+            onClick={() => setWorkspaceDropdownOpen(!workspaceDropdownOpen)}
+            title={activeWorkspaceName}
+          >
             <div className="ws-sb-ws-icon" style={{ textTransform: 'uppercase', color: '#fff', fontWeight: '800', fontSize: '11px', fontFamily: 'sans-serif' }}>
               {logoLetter}
             </div>
@@ -325,6 +329,7 @@ export default function Sidebar() {
                 return (
                   <button
                     key={w.id}
+                    title={w.shopName}
                     onClick={() => {
                       sessionStorage.setItem('ws_active_workspace_id', w.id)
                       sessionStorage.setItem('ws_active_workspace_name', w.shopName)
@@ -350,7 +355,7 @@ export default function Sidebar() {
                     onMouseEnter={e => e.currentTarget.style.background = isActive ? '#eff6ff' : '#f9fafb'}
                     onMouseLeave={e => e.currentTarget.style.background = isActive ? '#eff6ff' : 'transparent'}
                   >
-                    <span style={{ fontWeight: isActive ? '600' : '400', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '6px', flex: 1 }}>
+                    <span title={w.shopName} style={{ fontWeight: isActive ? '600' : '400', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '6px', flex: 1 }}>
                       {w.shopName}
                     </span>
                     {w.isOwner && (

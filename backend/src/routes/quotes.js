@@ -492,9 +492,13 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Customer email is missing for this quote' })
     }
 
-    const reqHost = req.get('host') || 'localhost:5000'
-    const reqProtocol = req.headers['x-forwarded-proto'] || req.protocol || 'http'
-    const backendBase = process.env.BACKEND_URL || `${reqProtocol}://${reqHost}`
+    let backendBase = process.env.BACKEND_URL
+    if (!backendBase) {
+      const rawHost = req.get('host') || 'localhost:5000'
+      const safeHost = (/^[a-zA-Z0-9.-]+(:\d+)?$/).test(rawHost) ? rawHost : 'localhost:5000'
+      const reqProtocol = (req.headers['x-forwarded-proto'] === 'https' || req.protocol === 'https') ? 'https' : 'http'
+      backendBase = `${reqProtocol}://${safeHost}`
+    }
     const acceptUrl  = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Accepted`
     const declineUrl = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Declined`
 

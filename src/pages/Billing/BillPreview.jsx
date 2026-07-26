@@ -86,7 +86,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
 
   const docId = isQuote 
     ? (doc.quote_number || `QT-${doc.id || '649067'}`)
-    : (doc.bill_number || `INV-${String(doc.id || 1).padStart(4, '0')}`)
+    : (doc.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(doc.id || 1) * 899999))}`)
 
   const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
   const sectionTitle1 = isQuote ? '1. QUOTATION DETAILS' : '1. INVOICE DETAILS'

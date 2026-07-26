@@ -478,7 +478,7 @@ export default function Billing() {
                                 onChange={() => handleSelectRow(bill.id)}
                               />
                             </td>
-                            <td className="ws-td-mono">INV-{String(bill.id).padStart(3, '0')}</td>
+                            <td className="ws-td-mono">{bill.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill.id || 1) * 899999))}`}</td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                 <div className="attio-avatar" style={{ background: getAvatarColor(name) }}>

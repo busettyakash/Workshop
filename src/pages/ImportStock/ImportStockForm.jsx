@@ -632,7 +632,7 @@ export default function ImportStockForm() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
                     <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#334155', fontWeight: 600, fontSize: '0.8125rem', marginBottom: 8 }}>
-                        <User size={15} color="#3d68f5" /> Supplier / Buyer Details
+                        Supplier / Buyer Details
                       </div>
                       <div style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div><strong style={{ color: '#1e293b' }}>Name:</strong> {form.buyer_name || 'Not provided'}</div>
@@ -643,7 +643,7 @@ export default function ImportStockForm() {
 
                     <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#334155', fontWeight: 600, fontSize: '0.8125rem', marginBottom: 8 }}>
-                        <Package size={15} color="#3d68f5" /> Product Specifications
+                        Product Specifications
                       </div>
                       <div style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div><strong style={{ color: '#1e293b' }}>Product Name:</strong> {form.name}</div>
@@ -657,11 +657,11 @@ export default function ImportStockForm() {
                   <div style={{ marginTop: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#166534', fontWeight: 700, fontSize: '0.85rem' }}>
-                        <DollarSign size={16} color="#10b981" /> Pricing & Unit Rate Analysis
+                        Pricing & Unit Rate Analysis
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                       <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
                         <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Buyer Price (Supplier)</div>
                         <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b' }}>
@@ -689,16 +689,6 @@ export default function ImportStockForm() {
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
                           {form.updated_price_date ? `as of ${form.updated_price_date}` : 'No revision'}
-                        </div>
-                      </div>
-
-                      <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
-                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Profit Margin</div>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: profitMarginPer100 && parseFloat(profitMarginPer100) >= 0 ? '#10b981' : '#dc2626' }}>
-                          {profitMarginPer100 ? `${parseFloat(profitMarginPer100) >= 0 ? '+' : ''}₹${parseFloat(profitMarginPer100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}
-                        </div>
-                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
-                          {profitMarginPerUnit ? `${parseFloat(profitMarginPerUnit) >= 0 ? '+' : ''}₹${profitMarginPerUnit} / ${getBulkUnitDetails(form.unit)?.short || 'unit'}` : 'Per 100 units'}
                         </div>
                       </div>
                     </div>

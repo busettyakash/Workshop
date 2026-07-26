@@ -276,13 +276,15 @@ router.get('/respond', emailLimiter, async (req, res) => {
 
         const catalogMap = await getProductHsnMap()
         const enrichedItems = enrichItemsWithCache(items, catalogMap)
+        const autoBillNum = `INV-${Math.floor(100000 + Math.random() * 900000)}`
 
         const billRes = await pool.query(
-          `INSERT INTO bills (customer_id, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
-           VALUES ($1, $2, $3, 0, 'unpaid', NOW() + INTERVAL '15 days', $4, $5, NULL, NOW())
+          `INSERT INTO bills (customer_id, bill_number, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
+           VALUES ($1, $2, $3, $4, 0, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NULL, NOW())
            RETURNING *`,
           [
             customerId,
+            autoBillNum,
             JSON.stringify(enrichedItems),
             parseFloat(quote.total_amount || 0),
             `Generated from Quotation #${quote.quote_number}`,
@@ -490,7 +492,9 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Customer email is missing for this quote' })
     }
 
-    const backendBase = process.env.BACKEND_URL || 'http://localhost:5000'
+    const reqHost = req.get('host') || 'localhost:5000'
+    const reqProtocol = req.headers['x-forwarded-proto'] || req.protocol || 'http'
+    const backendBase = process.env.BACKEND_URL || `${reqProtocol}://${reqHost}`
     const acceptUrl  = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Accepted`
     const declineUrl = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Declined`
 

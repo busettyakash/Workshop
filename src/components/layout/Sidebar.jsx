@@ -309,7 +309,9 @@ export default function Sidebar() {
               position: 'absolute',
               top: '55px',
               left: '12px',
-              width: '216px',
+              width: 'max-content',
+              minWidth: '220px',
+              maxWidth: '320px',
               background: '#fff',
               border: '1px solid #e5e7eb',
               borderRadius: '8px',
@@ -350,7 +352,7 @@ export default function Sidebar() {
                     onMouseEnter={e => e.currentTarget.style.background = isActive ? '#eff6ff' : '#f9fafb'}
                     onMouseLeave={e => e.currentTarget.style.background = isActive ? '#eff6ff' : 'transparent'}
                   >
-                    <span style={{ fontWeight: isActive ? '600' : '400', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '6px' }}>
+                    <span style={{ fontWeight: isActive ? '600' : '400', whiteSpace: 'normal', wordBreak: 'break-word', marginRight: '6px' }}>
                       {w.shopName}
                     </span>
                     {w.isOwner && (

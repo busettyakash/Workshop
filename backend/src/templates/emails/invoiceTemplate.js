@@ -22,7 +22,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const sellerGstinPrefix = sellerPhone ? '· ' : ''
   const sellerGstinHtml = sellerGstin ? `${sellerGstinPrefix}GSTIN: ${escapeHtml(sellerGstin).toUpperCase()}` : ''
 
-  const invNum = bill?.bill_number || `INV-${String(bill?.id || 1).padStart(4, '0')}`
+  const invNum = bill?.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill?.id || 1) * 899999))}`
   const totalAmount = parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
   const taxAmt = parseFloat(quote?.tax_amount || 0)
   const subtotal = Math.max(0, taxAmt > 0 ? totalAmount - taxAmt : totalAmount)

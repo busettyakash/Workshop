@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Filter, ArrowUpDown, X, Loader2, Search, Eye, ArrowLeft, History, TrendingUp, TrendingDown, DollarSign, Calendar, Tag } from 'lucide-react'
+import { Filter, ArrowUpDown, X, Loader2, Search, Eye, ArrowLeft, History, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, ShoppingCart } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getCategoryTagStyle, getPillStyle } from '../../utils/tableHelpers'
 import { getBulkUnitDetails } from '../../utils/unitHelpers'
 import api from '../../api/client'
@@ -12,47 +12,186 @@ import '../Dashboard/Dashboard.css'
 import '../Products/Products.css'
 import TablePagination from '../../components/ui/TablePagination'
 
-const formatDateStr = (raw) => {
+const formatINR = (val) => {
+  if (val === null || val === undefined || val === '') return '—'
+  const num = parseFloat(val)
+  if (isNaN(num)) return '—'
+  return '₹' + num.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
+}
+
+const formatIndianDateTime = (raw) => {
   if (!raw) return 'N/A'
   try {
     const d = new Date(raw)
-    if (isNaN(d.getTime())) return String(raw).split('T')[0]
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
+    if (isNaN(d.getTime())) return String(raw)
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })
   } catch {
-    return String(raw).split('T')[0]
+    return String(raw)
   }
 }
 
+const formatIndianDateOnly = (raw) => {
+  if (!raw) return 'N/A'
+  try {
+    const d = new Date(raw)
+    if (isNaN(d.getTime())) return String(raw)
+    return d.toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+  } catch {
+    return String(raw)
+  }
+}
+
+const renderPriceTrendGraph = (baseP, updatedP, rowId) => {
+  const b = parseFloat(baseP || 0)
+  const u = updatedP !== null && updatedP !== undefined && updatedP !== '' ? parseFloat(updatedP) : null
+  const diff = u !== null ? (u - b) : 0
+  const pct = b > 0 && u !== null ? ((diff / b) * 100).toFixed(1) : '0.0'
+  const isUp = diff > 0
+  const isDrop = diff < 0
+
+  let color = '#6366f1'
+  let pathD = 'M 4 15 Q 22 10, 42 15 T 80 15'
+  let areaD = 'M 4 15 Q 22 10, 42 15 T 80 15 L 80 26 L 4 26 Z'
+  let endX = 80
+  let endY = 15
+
+  if (isUp) {
+    color = '#10b981'
+    pathD = 'M 4 21 C 22 19, 32 13, 52 14 C 62 15, 70 7, 80 5'
+    areaD = 'M 4 21 C 22 19, 32 13, 52 14 C 62 15, 70 7, 80 5 L 80 26 L 4 26 Z'
+    endY = 5
+  } else if (isDrop) {
+    color = '#ef4444'
+    pathD = 'M 4 5 C 22 7, 32 13, 52 12 C 62 11, 70 19, 80 21'
+    areaD = 'M 4 5 C 22 7, 32 13, 52 12 C 62 11, 70 19, 80 21 L 80 26 L 4 26 Z'
+    endY = 21
+  }
+
+  const gradId = `spark-grad-${rowId}`
+  const absDiffFormatted = Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ minWidth: 105 }}>
+        {isUp ? (
+          <span style={{ 
+            fontSize: '0.72rem', 
+            fontWeight: 700, 
+            color: '#15803d', 
+            background: '#dcfce7', 
+            border: '1px solid #bbf7d0',
+            padding: '2px 7px', 
+            borderRadius: 6,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            whiteSpace: 'nowrap'
+          }}>
+            <TrendingUp size={11} /> +₹{absDiffFormatted} ({pct}%)
+          </span>
+        ) : isDrop ? (
+          <span style={{ 
+            fontSize: '0.72rem', 
+            fontWeight: 700, 
+            color: '#dc2626', 
+            background: '#fee2e2', 
+            border: '1px solid #fecaca',
+            padding: '2px 7px', 
+            borderRadius: 6,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            whiteSpace: 'nowrap'
+          }}>
+            <TrendingDown size={11} /> -₹{absDiffFormatted} ({pct}%)
+          </span>
+        ) : (
+          <span style={{ 
+            fontSize: '0.72rem', 
+            fontWeight: 600, 
+            color: '#475467', 
+            background: '#f1f5f9', 
+            border: '1px solid #e2e8f0',
+            padding: '2px 7px', 
+            borderRadius: 6,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            whiteSpace: 'nowrap'
+          }}>
+            Stable (0.0%)
+          </span>
+        )}
+      </div>
+
+      <svg width="84" height="26" viewBox="0 0 84 26" style={{ overflow: 'visible' }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+        <path d={areaD} fill={`url(#${gradId})`} />
+        <path d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx={endX} cy={endY} r="3" fill={color} />
+      </svg>
+    </div>
+  )
+}
+
 function ProductPriceHistoryDetail({ product, onBack }) {
+  const [history, setHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
+
   const bulkUnit = getBulkUnitDetails(product.unit)
   const bagWeight = parseFloat(product.bag_weight || 1)
   const effectivePrice = parseFloat(product.updated_price || product.price || 0)
   const unitPrice = (effectivePrice / bagWeight).toFixed(2)
-  const updatedDateStr = formatDateStr(product.updated_price_date)
+  const latestLog = history.find(h => h.notes !== 'Initial Base Price') || history[0]
+  const updatedDateStr = formatIndianDateOnly(latestLog?.created_at || latestLog?.effective_date || product.updated_at || product.updated_price_date)
   const catStyle = getCategoryTagStyle(product.category)
-
-  const [history, setHistory] = useState([])
-  const [loadingHistory, setLoadingHistory] = useState(true)
 
   useEffect(() => {
     let isMounted = true
     api.get(`/products/${product.id}/price-history`)
       .then(res => {
-        if (isMounted) setHistory(res.data || [])
+        if (isMounted) {
+          const items = res.data || []
+          items.sort((a, b) => new Date(b.created_at || b.effective_date || 0) - new Date(a.created_at || a.effective_date || 0))
+          setHistory(items)
+        }
       })
       .catch(() => {
         if (isMounted) {
           const defaultItems = []
+          const createdTime = product.created_at || new Date().toISOString()
+          const updatedTime = product.updated_at || product.updated_price_date || createdTime
+
           if (product.updated_price) {
             defaultItems.push({
               id: 'h2',
               old_price: product.price,
               new_price: product.updated_price,
-              effective_date: updatedDateStr !== 'N/A' ? updatedDateStr : new Date().toISOString().split('T')[0],
-              notes: 'Import Stock Price Revision'
+              effective_date: updatedTime,
+              created_at: updatedTime,
+              notes: 'Updated Price'
             })
           }
           if (product.price) {
@@ -60,10 +199,12 @@ function ProductPriceHistoryDetail({ product, onBack }) {
               id: 'h1',
               old_price: null,
               new_price: product.price,
-              effective_date: product.created_at ? formatDateStr(product.created_at) : new Date().toISOString().split('T')[0],
-              notes: 'Initial Base Benchmark Price'
+              effective_date: createdTime,
+              created_at: createdTime,
+              notes: 'Initial Base Price'
             })
           }
+          defaultItems.sort((a, b) => new Date(b.created_at || b.effective_date || 0) - new Date(a.created_at || a.effective_date || 0))
           setHistory(defaultItems)
         }
       })
@@ -125,7 +266,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
             <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Base Benchmark Price</span>
             <DollarSign size={16} style={{ color: '#64748b' }} />
           </div>
-          <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#0f172a' }}>₹{product.price}</p>
+          <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#0f172a' }}>{formatINR(product.price)}</p>
           <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Original master list price</span>
         </div>
 
@@ -135,7 +276,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
             <TrendingUp size={16} style={{ color: '#15803d' }} />
           </div>
           <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>
-            {product.updated_price ? `₹${product.updated_price}` : `₹${product.price}`}
+            {formatINR(product.updated_price || product.price)}
           </p>
           <span style={{ fontSize: '0.75rem', color: '#166534' }}>
             {product.updated_price ? `Updated on ${updatedDateStr}` : 'No price revision yet'}
@@ -148,7 +289,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
             <Tag size={16} style={{ color: '#2563eb' }} />
           </div>
           <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#2563eb' }}>
-            ₹{unitPrice} <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1e40af' }}>/ {bulkUnit ? bulkUnit.short : 'pcs'}</span>
+            {formatINR(unitPrice)} <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1e40af' }}>/ {bulkUnit ? bulkUnit.short : 'pcs'}</span>
           </p>
           <span style={{ fontSize: '0.75rem', color: '#1e40af' }}>
             {bulkUnit ? `${bulkUnit.name} (${bagWeight}${bulkUnit.short} pack)` : 'Individual Unit'}
@@ -190,11 +331,17 @@ function ProductPriceHistoryDetail({ product, onBack }) {
               <tbody>
                 {history.map((row, idx) => {
                   const newP = parseFloat(row.new_price || 0)
-                  const oldP = row.old_price !== null && row.old_price !== undefined ? parseFloat(row.old_price) : null
-                  const diff = oldP !== null ? (newP - oldP) : 0
+                  let oldP = row.old_price !== null && row.old_price !== undefined ? parseFloat(row.old_price) : null
+                  if ((oldP === null || oldP === newP) && idx < history.length - 1) {
+                    const nextOldItem = history[idx + 1]
+                    if (nextOldItem && nextOldItem.new_price && parseFloat(nextOldItem.new_price) !== newP) {
+                      oldP = parseFloat(nextOldItem.new_price)
+                    }
+                  }
+                  const diff = oldP !== null && oldP !== newP ? (newP - oldP) : 0
                   const isUp = diff > 0
                   const itemUnitPrice = bulkUnit ? (newP / bagWeight).toFixed(2) : null
-                  const dateStr = formatDateStr(row.effective_date)
+                  const dateStr = formatIndianDateTime(row.created_at || row.effective_date)
 
                   return (
                     <tr key={row.id || idx}>
@@ -206,12 +353,12 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                       </td>
                       <td>
                         <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
-                          ₹{newP.toFixed(2)}
+                          {formatINR(newP)}
                         </span>
                       </td>
                       <td>
-                        <span style={{ color: oldP !== null ? '#64748b' : '#9ca3af', fontSize: '0.85rem' }}>
-                          {oldP !== null ? `₹${oldP.toFixed(2)}` : '—'}
+                        <span style={{ color: oldP !== null && oldP !== newP ? '#64748b' : '#9ca3af', fontSize: '0.85rem' }}>
+                          {oldP !== null && oldP !== newP ? formatINR(oldP) : '—'}
                         </span>
                       </td>
                       <td>
@@ -229,7 +376,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                             gap: 4
                           }}>
                             {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                            {isUp ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`}
+                            {isUp ? `+${formatINR(diff)}` : `-${formatINR(Math.abs(diff))}`}
                           </span>
                         ) : (
                           <span style={{ color: '#9ca3af', fontSize: '0.8125rem' }}>Initial Benchmark</span>
@@ -238,7 +385,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                       <td>
                         {itemUnitPrice ? (
                           <span style={{ fontWeight: 600, color: '#2563eb', fontSize: '0.85rem' }}>
-                            ₹{itemUnitPrice} / {bulkUnit.short}
+                            {formatINR(itemUnitPrice)} / {bulkUnit.short}
                           </span>
                         ) : (
                           <span style={{ color: '#9ca3af' }}>—</span>
@@ -454,19 +601,15 @@ export default function PriceHistory() {
                             <th>CATEGORY</th>
                             <th>PRICE</th>
                             <th>UPDATED PRICE</th>
+                            <th>PRICE TREND</th>
                             <th>STOCK</th>
-                            <th>STATUS</th>
-                            <th>NEXT RESTOCK</th>
-                            <th style={{ textAlign: 'right' }}>ACTIONS</th>
                           </tr>
                         </thead>
                         <tbody>
                           {products.map(row => {
                             const bulkUnit = getBulkUnitDetails(row.unit)
                             const bagWeight = parseFloat(row.bag_weight || 1)
-                            const restock = row.next_restock_time || 'TBD'
-                            const updatedDate = row.updated_price ? (row.updated_price_date ? String(row.updated_price_date).split('T')[0] : '') : ''
-                            
+                            const updatedDateFormatted = row.updated_price ? formatIndianDateOnly(row.updated_price_date || row.updated_at) : ''
                             const catStyle = getCategoryTagStyle(row.category)
 
                             return (
@@ -475,11 +618,23 @@ export default function PriceHistory() {
                                   <input type="checkbox" className="attio-chk" readOnly />
                                 </td>
                                 <td>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div 
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+                                    onClick={() => setSelectedPricing(row)}
+                                    title="Click to view detailed price history"
+                                  >
                                     <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
                                       {getSingleLetter(row.name)}
                                     </div>
-                                    <span style={{ fontWeight: 500, color: '#1e293b' }}>
+                                    <span 
+                                      style={{ 
+                                        fontWeight: 600, 
+                                        color: '#2563eb',
+                                        transition: 'color 0.15s ease'
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                                      onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                                    >
                                       {row.name}
                                     </span>
                                   </div>
@@ -500,18 +655,18 @@ export default function PriceHistory() {
                                 </td>
                                 <td>
                                   <span style={{ fontWeight: 500, color: '#1e293b' }}>
-                                    ₹{row.price} <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{row.unit ? `/ ${row.unit}` : ''}</span>
+                                    {formatINR(row.price)} <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{row.unit ? `/ ${row.unit}` : ''}</span>
                                   </span>
                                 </td>
                                 <td>
                                   {row.updated_price ? (
                                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                                       <span style={{ fontWeight: 600, color: '#10b981', fontSize: '0.85rem' }}>
-                                        ₹{row.updated_price}
+                                        {formatINR(row.updated_price)}
                                       </span>
-                                      {updatedDate && (
+                                      {updatedDateFormatted && (
                                         <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                          {updatedDate}
+                                          {updatedDateFormatted}
                                         </span>
                                       )}
                                     </div>
@@ -520,44 +675,12 @@ export default function PriceHistory() {
                                   )}
                                 </td>
                                 <td>
+                                  {renderPriceTrendGraph(row.price, row.updated_price, row.id)}
+                                </td>
+                                <td>
                                   <span className={`attio-stock-badge ${getStockBadgeClass(row.stock)}`}>
                                     {row.stock} {bulkUnit && bagWeight > 1 ? (row.stock === 1 ? 'Bag' : 'Bags') : (row.unit || 'pcs')}
                                   </span>
-                                </td>
-                                <td>
-                                  <span style={{ 
-                                    background: '#e0e7ff', 
-                                    color: '#3730a3', 
-                                    border: '1px solid #c7d2fe', 
-                                    padding: '3px 10px', 
-                                    borderRadius: '6px', 
-                                    fontSize: '0.75rem', 
-                                    fontWeight: 600, 
-                                    display: 'inline-block',
-                                    textTransform: 'lowercase' 
-                                  }}>
-                                    {row.status || 'added'}
-                                  </span>
-                                </td>
-                                <td>
-                                  <span style={{ fontSize: '0.8125rem', color: '#64748b' }}>
-                                    {restock}
-                                  </span>
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                    <button
-                                      className="ws-table-btn ws-table-btn--secondary"
-                                      style={{ padding: '3px 8px', gap: 4, display: 'inline-flex', alignItems: 'center' }}
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setSelectedPricing(row)
-                                      }}
-                                      title="View Full Price History Page"
-                                    >
-                                      <Eye size={12} /> View
-                                    </button>
-                                  </div>
                                 </td>
                               </tr>
                             )

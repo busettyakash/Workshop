@@ -12,6 +12,7 @@ import '../Dashboard/Dashboard.css'
 import '../Products/Products.css'
 import TablePagination from '../../components/ui/TablePagination'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import BillPreview from '../Billing/BillPreview'
 
 function useCloseOnOutsideClick(containerRef, setOpen) {
   useEffect(() => {
@@ -45,8 +46,8 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
       <div 
         onClick={() => setOpen(prev => !prev)}
         style={{
-          width: '100%', height: 36, padding: '0 10px', borderRadius: 6,
-          border: '1px solid #d1d5db', background: '#fff', fontSize: '0.8125rem',
+          width: '100%', height: 32, padding: '0 8px', borderRadius: 5,
+          border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.78rem',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer'
         }}
       >
@@ -56,7 +57,7 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
         }}>
           {selectedPerson ? `${selectedPerson.name} ${selectedPerson.phone ? `(${selectedPerson.phone})` : ''}` : 'Search customer from People...'}
         </span>
-        <Search size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+        <Search size={12} style={{ color: '#64748b', flexShrink: 0 }} />
       </div>
 
       {open && (
@@ -118,20 +119,19 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
     (p.category && p.category.toLowerCase().includes(query.toLowerCase()))
   )
 
-
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: 240 }}>
       {selectedProd && !open ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <div 
             onClick={() => setOpen(true)}
-            style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+            style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
             title="Click to change product"
           >
             <span>{selectedProd.name}</span>
           </div>
           {subtext && (
-            <span style={{ fontSize: '0.6875rem', color: '#0d9488', fontWeight: 600 }}>
+            <span style={{ fontSize: '0.68rem', color: '#0d9488', fontWeight: 600 }}>
               {subtext}
             </span>
           )}
@@ -140,34 +140,34 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
         <div 
           onClick={() => setOpen(prev => !prev)}
           style={{
-            width: '100%', height: 36, padding: '0 12px', borderRadius: 8,
-            border: '1px solid #d1d5db', background: '#fff', fontSize: '0.8125rem',
+            width: '100%', height: 28, padding: '0 8px', borderRadius: 5,
+            border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.75rem',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer'
           }}
         >
-          <span style={{ color: selectedProd ? '#0f172a' : '#94a3b8', fontWeight: selectedProd ? 600 : 400 }}>
+          <span style={{ color: selectedProd ? '#0f172a' : '#94a3b8', fontWeight: selectedProd ? 600 : 400, fontSize: '0.75rem' }}>
             {selectedProd ? selectedProd.name : 'Type to search product...'}
           </span>
-          <Search size={14} style={{ color: '#64748b' }} />
+          <Search size={12} style={{ color: '#64748b' }} />
         </div>
       )}
 
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', left: 0, width: 340, zIndex: 100,
-          background: '#fff', border: '1px solid #cbd5e1', borderRadius: 8,
-          boxShadow: '0 10px 25px rgba(0,0,0,0.12)', marginTop: 4, maxHeight: 240, overflowY: 'auto', padding: 8
+          position: 'absolute', top: '100%', left: 0, width: 320, zIndex: 100,
+          background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6,
+          boxShadow: '0 8px 20px rgba(0,0,0,0.12)', marginTop: 4, maxHeight: 220, overflowY: 'auto', padding: 6
         }}>
           <input
             type="text"
             placeholder="Search by product name or SKU..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            style={{ width: '100%', height: 32, padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: '0.8125rem', marginBottom: 6, outline: 'none' }}
+            style={{ width: '100%', height: 28, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.75rem', marginBottom: 4, outline: 'none' }}
             autoFocus
           />
           {filtered.length === 0 ? (
-            <div style={{ padding: '8px 10px', fontSize: '0.78rem', color: '#94a3b8' }}>No products found</div>
+            <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#94a3b8' }}>No products found</div>
           ) : (
             filtered.map(p => (
               <div
@@ -178,18 +178,18 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
                   setQuery('')
                 }}
                 style={{
-                  padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8125rem',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12
+                  padding: '6px 8px', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8
                 }}
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <span style={{ fontWeight: 700, color: '#0f172a' }}>{p.name}</span>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Stock: {p.stock} {p.unit || 'pcs'}</span>
+                  <span style={{ fontSize: '0.68rem', color: '#64748b' }}>Stock: {p.stock} {p.unit || 'pcs'}</span>
                 </div>
-                <span style={{ fontWeight: 700, color: '#059669', fontSize: '0.825rem', flexShrink: 0 }}>
+                <span style={{ fontWeight: 700, color: '#059669', fontSize: '0.78rem', flexShrink: 0 }}>
                   ₹{parseFloat(p.updated_price || p.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -283,11 +283,12 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     if (!personId) return
     const p = people.find(item => String(item.id) === String(personId))
     if (p) {
+      const companyVal = p.company || p.company_name || p.shop_name || ''
       setFormData(prev => ({
         ...prev,
         person_id: p.id,
         customer_name: p.name,
-        customer_company: p.company || p.company_name || '',
+        customer_company: companyVal,
         customer_phone: p.phone || '',
         customer_email: p.email || ''
       }))
@@ -370,8 +371,12 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   }
 
   const removeLineItem = (index) => {
-    if (lineItems.length <= 1) return
-    setLineItems(prev => prev.filter((_, i) => i !== index))
+    if (lineItems.length > 1) {
+      setLineItems(prev => prev.filter((_, i) => i !== index))
+    } else {
+      setLineItems([{ id: Date.now(), product_id: '', name: '', quantity: 1, rate: 0, discount: 0, amount: 0 }])
+      dispatch(addToast({ message: 'Line item cleared', type: 'info' }))
+    }
   }
 
   const saveQuoteAsync = async (overrideStatus = null) => {
@@ -440,14 +445,14 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Top Header Bar */}
-      <div className="ws-unified-page-header" style={{ margin: '12px 0 0', padding: '8px 4px 12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', paddingLeft: 16 }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+      <div className="ws-unified-page-header" style={{ margin: '8px 0 0', padding: '6px 4px 8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingLeft: 12 }}>
+          <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
             {isEdit ? `Edit Quote (${formData.quote_number})` : 'Create New Quote'}
           </h2>
-          <span style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 600 }}>
+          <span style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: 6, fontSize: '0.7rem', fontWeight: 600 }}>
             {formData.status}
           </span>
         </div>
@@ -459,63 +464,63 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               className="attio-btn attio-btn-secondary"
               onClick={() => setStep(2)}
               disabled={submitting || sendingEmail}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, fontSize: '0.78rem', padding: '0 10px' }}
             >
-              <ArrowLeft size={14} /> Back to Step 2
+              <ArrowLeft size={13} /> Back to Step 2
             </button>
           )}
           <button 
             type="button"
             className="attio-btn attio-btn-primary" 
             onClick={onBack}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, fontSize: '0.78rem', padding: '0 12px' }}
           >
-            <ArrowLeft size={14} /> Back to Quotes
+            <ArrowLeft size={13} /> Back to Quotes
           </button>
         </div>
       </div>
 
-      {/* Stepper Navigation Bar (Compact Length) */}
-      <div className="attio-table-card" style={{ padding: '8px 16px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 760, margin: '0 auto', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 12 }}>
+      {/* Stepper Navigation Bar (Increased box sizes by 2%) */}
+      <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 10 }}>
         <div 
           onClick={() => setStep(1)}
           style={{ 
-            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 6, cursor: 'pointer',
+            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
           }}
         >
-          <div style={{ width: 22, height: 22, borderRadius: '50%', background: step === 1 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', flexShrink: 0 }}>1</div>
-          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: step === 1 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+          <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 1 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>1</div>
+          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 1 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
             Step 1: Customer Details
           </div>
         </div>
 
-        <ArrowRight size={14} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+        <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
         <div 
           onClick={() => setStep(2)}
           style={{ 
-            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 6, cursor: 'pointer',
+            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
           }}
         >
-          <div style={{ width: 22, height: 22, borderRadius: '50%', background: step === 2 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', flexShrink: 0 }}>2</div>
-          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: step === 2 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+          <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 2 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>2</div>
+          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 2 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
             Step 2: Products & Line Items
           </div>
         </div>
 
-        <ArrowRight size={14} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+        <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
         <div 
           onClick={() => setStep(3)}
           style={{ 
-            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 6, cursor: 'pointer',
+            flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`
           }}
         >
-          <div style={{ width: 22, height: 22, borderRadius: '50%', background: step === 3 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', flexShrink: 0 }}>3</div>
-          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: step === 3 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+          <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 3 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>3</div>
+          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 3 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
             Step 3: Review, Send & Bill
           </div>
         </div>
@@ -523,10 +528,10 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
       {/* STEP 1: Customer Details */}
       {step === 1 && (
-        <div className="attio-table-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+        <div className="attio-table-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
                 My Shop / Company Name (Sender) *
               </label>
               <input
@@ -534,26 +539,13 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                 placeholder="e.g. Busetty Traders"
                 value={formData.shop_name}
                 onChange={(e) => setFormData(p => ({ ...p, shop_name: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem', fontWeight: 600 }}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem', fontWeight: 600 }}
                 required
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>
-                Customer Shop / Company Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Sri Lakshmi Rice Traders"
-                value={formData.customer_company}
-                onChange={(e) => setFormData(p => ({ ...p, customer_company: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
                 Search & Select Customer
               </label>
               <SearchableCustomerSelect
@@ -564,77 +556,90 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Customer Name *</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                Customer Shop / Company Name
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Sri Lakshmi Rice Traders"
+                value={formData.customer_company}
+                onChange={(e) => setFormData(p => ({ ...p, customer_company: e.target.value }))}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Customer Name *</label>
               <input
                 type="text"
                 placeholder="e.g. Vinod Kumar Busetty"
                 value={formData.customer_name}
                 onChange={(e) => setFormData(p => ({ ...p, customer_name: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
                 required
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Phone Number</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Phone Number</label>
               <input
                 type="text"
                 placeholder="+91 9876543210"
                 value={formData.customer_phone}
                 onChange={(e) => setFormData(p => ({ ...p, customer_phone: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Email Address *</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Email Address *</label>
               <input
                 type="email"
                 placeholder="busettyakash@gmail.com"
                 value={formData.customer_email}
                 onChange={(e) => setFormData(p => ({ ...p, customer_email: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
                 required
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Quote #</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Quote #</label>
               <input
                 type="text"
                 value={formData.quote_number}
                 onChange={(e) => setFormData(p => ({ ...p, quote_number: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem', fontFamily: 'monospace', fontWeight: 600 }}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem', fontFamily: 'monospace', fontWeight: 600 }}
                 required
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Issue Date</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Issue Date</label>
               <input
                 type="date"
                 value={formData.issue_date}
                 onChange={(e) => setFormData(p => ({ ...p, issue_date: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Valid Until</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Valid Until</label>
               <input
                 type="date"
                 value={formData.valid_until}
                 onChange={(e) => setFormData(p => ({ ...p, valid_until: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem' }}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Quote Status</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Quote Status</label>
               <select
                 value={formData.status}
                 onChange={(e) => setFormData(p => ({ ...p, status: e.target.value }))}
-                style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8125rem', background: '#fff' }}
+                style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem', background: '#fff' }}
               >
                 <option value="Draft">Draft</option>
                 <option value="Sent">Sent</option>
@@ -644,7 +649,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
             <button
               type="button"
               className="attio-btn attio-btn-primary"
@@ -656,12 +661,11 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                 setStep(2)
               }}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 10,
-                padding: '12px 32px', fontSize: '0.95rem', fontWeight: 700, borderRadius: 10,
-                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)'
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '8px 20px', fontSize: '0.8125rem', fontWeight: 600, borderRadius: 6, height: 34
               }}
             >
-              Next: Products & Line Items <ArrowRight size={18} />
+              Next: Products & Line Items <ArrowRight size={15} />
             </button>
           </div>
         </div>
@@ -669,25 +673,25 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
       {/* STEP 2: Products & Line Items */}
       {step === 2 && (
-        <div className="attio-table-card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="attio-table-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
             <button
               type="button"
               className="attio-btn attio-btn-secondary"
               onClick={addLineItem}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', height: 28, padding: '0 10px' }}
             >
-              <Plus size={13} /> Add Line Item
+              <Plus size={12} /> Add Line Item
             </button>
           </div>
 
           <table className="attio-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ color: '#64748b', fontSize: '0.68rem', letterSpacing: '0.5px', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '8px 10px', width: '42%', textTransform: 'uppercase', fontWeight: 700 }}>PRODUCT</th>
-                <th style={{ textAlign: 'center', padding: '8px 10px', width: '28%', textTransform: 'uppercase', fontWeight: 700 }}>QTY / UNIT</th>
-                <th style={{ textAlign: 'center', padding: '8px 10px', width: '15%', textTransform: 'uppercase', fontWeight: 700 }}>UNIT PRICE</th>
-                <th style={{ textAlign: 'right', padding: '8px 10px', width: '15%', textTransform: 'uppercase', fontWeight: 700 }}>TOTAL</th>
+              <tr style={{ color: '#64748b', fontSize: '0.65rem', letterSpacing: '0.5px', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ textAlign: 'left', padding: '6px 8px', width: '40%', textTransform: 'uppercase', fontWeight: 700 }}>PRODUCT</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px', width: '25%', textTransform: 'uppercase', fontWeight: 700 }}>QTY / UNIT</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px', width: '20%', textTransform: 'uppercase', fontWeight: 700 }}>UNIT PRICE</th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', width: '15%', textTransform: 'uppercase', fontWeight: 700 }}>TOTAL</th>
               </tr>
             </thead>
             <tbody>
@@ -705,7 +709,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
                 return (
                   <tr key={item.id || index} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '10px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '8px', verticalAlign: 'middle' }}>
                       <SearchableProductSelect
                         products={products}
                         value={item.product_id}
@@ -714,40 +718,39 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                       />
                     </td>
 
-                    <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <td style={{ padding: '6px 8px', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                         <input
                           type="number"
                           min="1"
                           value={item.quantity}
                           onChange={(e) => handleQtyChange(index, e.target.value)}
                           style={{
-                            width: 44, height: 28, padding: '0 4px', borderRadius: 5,
-                            border: '1px solid #cbd5e1', fontSize: '0.78rem', textAlign: 'center',
+                            width: 40, height: 26, padding: '0 3px', borderRadius: 4,
+                            border: '1px solid #cbd5e1', fontSize: '0.75rem', textAlign: 'center',
                             fontWeight: 600, fontFamily: 'inherit', color: '#0f172a', background: '#fff'
                           }}
                         />
                         <span style={{
-                          fontSize: '0.72rem', color: '#475467', fontWeight: 600,
+                          fontSize: '0.7rem', color: '#475467', fontWeight: 600,
                           whiteSpace: 'nowrap', userSelect: 'none', background: '#f8fafc',
-                          padding: '2px 6px', borderRadius: 5, border: '1px solid #e2e8f0', height: 28, display: 'inline-flex', alignItems: 'center'
+                          padding: '2px 5px', borderRadius: 4, border: '1px solid #e2e8f0', height: 26, display: 'inline-flex', alignItems: 'center'
                         }}>
                           {unitLabel}
                         </span>
                       </div>
                     </td>
 
-                    <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '6px 8px', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <input
-                          type="number"
-                          step="0.01"
+                          type="text"
                           readOnly
                           disabled
-                          value={item.rate}
+                          value={item.rate ? `₹${(parseFloat(item.rate) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
                           style={{
-                            width: 62, height: 28, padding: '0 4px', borderRadius: 5,
-                            border: '1px solid #cbd5e1', fontSize: '0.78rem', fontWeight: 700,
+                            width: 85, height: 26, padding: '0 4px', borderRadius: 4,
+                            border: '1px solid #cbd5e1', fontSize: '0.75rem', fontWeight: 700,
                             color: '#334155', textAlign: 'center', fontFamily: 'inherit', background: '#f8fafc',
                             cursor: 'not-allowed'
                           }}
@@ -756,21 +759,20 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                       </div>
                     </td>
 
-                    <td style={{ padding: '8px 10px', verticalAlign: 'middle', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                        <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '6px 8px', verticalAlign: 'middle', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                        <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
                           ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </span>
                         <button
                           type="button"
                           onClick={() => removeLineItem(index)}
-                          style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
+                          style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 3, display: 'flex', alignItems: 'center' }}
                           title="Remove item"
-                          disabled={lineItems.length <= 1}
                           onMouseEnter={(e) => e.currentTarget.style.color = '#dc2626'}
                           onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </td>
@@ -780,18 +782,17 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             </tbody>
           </table>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 10 }}>
             <button
               type="button"
               className="attio-btn attio-btn-primary"
               onClick={() => setStep(3)}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 10,
-                padding: '13px 36px', fontSize: '1rem', fontWeight: 700, borderRadius: 10,
-                boxShadow: '0 4px 16px rgba(37, 99, 235, 0.35)', cursor: 'pointer'
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '8px 22px', fontSize: '0.8125rem', fontWeight: 600, borderRadius: 6, height: 36, cursor: 'pointer'
               }}
             >
-              Next: Review, Send & Bill <ArrowRight size={18} />
+              Next: Review, Send & Bill <ArrowRight size={15} />
             </button>
           </div>
         </div>
@@ -799,30 +800,30 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
       {/* STEP 3: Review, Send & Bill */}
       {step === 3 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* Summary Card */}
-          <div className="attio-table-card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, background: '#f8fafc', padding: '12px 14px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+          <div className="attio-table-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: '#f8fafc', padding: '10px 12px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
               <div>
-                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Customer</span>
-                <p style={{ margin: '1px 0 0', fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{formData.customer_name}</p>
-                <p style={{ margin: '1px 0 0', fontSize: '0.78rem', color: '#475467' }}>{formData.customer_phone || 'No phone'} • {formData.customer_email || 'No email'}</p>
+                <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600 }}>Customer</span>
+                <p style={{ margin: '1px 0 0', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>{formData.customer_name}</p>
+                <p style={{ margin: '1px 0 0', fontSize: '0.75rem', color: '#475467' }}>{formData.customer_phone || 'No phone'} • {formData.customer_email || 'No email'}</p>
               </div>
 
               <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Total Quotation Amount</span>
-                <p style={{ margin: '1px 0 0', fontWeight: 800, color: '#15803d', fontSize: '1.25rem' }}>
+                <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600 }}>Total Quotation Amount</span>
+                <p style={{ margin: '1px 0 0', fontWeight: 800, color: '#15803d', fontSize: '1.1rem' }}>
                   ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
-                <p style={{ margin: '1px 0 0', fontSize: '0.75rem', color: '#64748b' }}>Quote #{formData.quote_number} • Valid till {formData.valid_until}</p>
+                <p style={{ margin: '1px 0 0', fontSize: '0.72rem', color: '#64748b' }}>Quote #{formData.quote_number} • Valid till {formData.valid_until}</p>
               </div>
             </div>
 
             {/* GST Calculation Selection Panel in Step 3 */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', marginTop: 4, flexWrap: 'wrap', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Tax / GST Selection:</span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', cursor: 'pointer', fontWeight: 600, color: gstOption === 'with_gst' ? '#15803d' : '#475467' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0', marginTop: 2, flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#334155' }}>Tax / GST Selection:</span>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, color: gstOption === 'with_gst' ? '#15803d' : '#475467' }}>
                   <input
                     type="radio"
                     name="gstOptionStep3"
@@ -832,7 +833,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                   />
                   With GST (18%)
                 </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', cursor: 'pointer', fontWeight: 600, color: gstOption === 'without_gst' ? '#1e40af' : '#475467' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, color: gstOption === 'without_gst' ? '#1e40af' : '#475467' }}>
                   <input
                     type="radio"
                     name="gstOptionStep3"
@@ -844,12 +845,12 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                 </label>
               </div>
 
-              <div style={{ textAlign: 'right', fontSize: '0.8rem' }}>
+              <div style={{ textAlign: 'right', fontSize: '0.78rem' }}>
                 <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                <span style={{ margin: '0 6px', color: '#cbd5e1' }}>|</span>
+                <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
                 <span style={{ color: gstOption === 'with_gst' ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST (18%): ₹{(parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                <span style={{ margin: '0 6px', color: '#cbd5e1' }}>|</span>
-                <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.875rem' }}>
+                <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
+                <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.82rem' }}>
                   Final Total: ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -857,17 +858,37 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
             {/* Line Items Summary List */}
             <div>
-              <h4 style={{ margin: '0 0 6px', fontSize: '0.78rem', fontWeight: 600, color: '#334155' }}>Items Breakdown</h4>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+              <h4 style={{ margin: '0 0 5px', fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>Items Breakdown</h4>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 6, overflow: 'hidden' }}>
                 {lineItems.map((item, idx) => (
-                  <div key={idx} style={{ padding: '8px 12px', borderBottom: idx < lineItems.length - 1 ? '1px solid #f1f5f9' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
+                  <div key={idx} style={{ padding: '8px 12px', borderBottom: idx < lineItems.length - 1 ? '1px solid #f1f5f9' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.8rem' }}>{item.name || 'Selected Item'}</span>
-                      <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 8 }}>Qty: {item.quantity}</span>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f8fafc', padding: '2px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>Qty: {item.quantity}</span>
                     </div>
-                    <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.8125rem' }}>
-                      ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569' }}>DISCOUNT (₹):</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          placeholder="0"
+                          value={item.discount === 0 ? '' : item.discount}
+                          onChange={(e) => handleDiscountChange(idx, e.target.value === '' ? 0 : e.target.value)}
+                          style={{
+                            width: 65, height: 26, padding: '0 5px', borderRadius: 4,
+                            border: '1px solid #cbd5e1', fontSize: '0.75rem', fontWeight: 600,
+                            color: '#0f172a', textAlign: 'center', fontFamily: 'inherit', background: '#fff'
+                          }}
+                        />
+                      </div>
+
+                      <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.82rem', minWidth: 80, textAlign: 'right' }}>
+                        ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -875,18 +896,18 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
             {/* Terms & Notes */}
             <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>Terms & Conditions / Notes</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 2 }}>Terms & Conditions / Notes</label>
               <textarea
                 value={formData.notes}
                 onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))}
                 rows={2}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.78rem' }}
+                style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.75rem' }}
               />
             </div>
           </div>
 
           {/* Workflow Action Panel */}
-          <div className="attio-table-card" style={{ padding: 20, background: '#faf5ff', border: '1px solid #e9d5ff' }}>
+          <div className="attio-table-card" style={{ padding: 14, background: '#faf5ff', border: '1px solid #e9d5ff' }}>
             <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem', fontWeight: 700, color: '#6b21a8' }}>Quotation Workflow & Billing Automation</h4>
 
             {/* Status Banner — shown after email response */}
@@ -921,40 +942,39 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               </p>
             )}
 
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                {/* Save Draft / Save Quote — locked if Deal Closed */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* Save Draft / Save Quote */}
                 <button
                   type="button"
                   className="attio-btn attio-btn-secondary"
                   onClick={handleSaveDraft}
-                  disabled={submitting || sendingEmail || formData.status === 'Accepted'}
-                  title={formData.status === 'Accepted' ? 'Deal is closed - quotation is locked from editing' : 'Save Changes'}
+                  disabled={submitting || sendingEmail}
+                  title="Save Quote Changes"
                   style={{
-                    opacity: formData.status === 'Accepted' ? 0.55 : 1,
-                    cursor: formData.status === 'Accepted' ? 'not-allowed' : 'pointer'
+                    height: 32, fontSize: '0.78rem', padding: '0 12px', cursor: 'pointer'
                   }}
                 >
                   {submitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Save Draft'}
                 </button>
 
-                {/* Send Email — only if not yet responded */}
+                {/* Send / Resend Email */}
                 <button
                   type="button"
                   className="attio-btn"
                   onClick={handleSendEmail}
-                  disabled={submitting || sendingEmail || formData.status === 'Accepted' || formData.status === 'Declined'}
+                  disabled={submitting || sendingEmail}
                   style={{
-                    background: (formData.status === 'Accepted' || formData.status === 'Declined') ? '#94a3b8' : '#2563eb',
+                    height: 32, fontSize: '0.78rem', padding: '0 14px',
+                    background: '#2563eb',
                     color: '#fff',
-                    borderColor: (formData.status === 'Accepted' || formData.status === 'Declined') ? '#94a3b8' : '#2563eb',
-                    fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6,
-                    opacity: (formData.status === 'Accepted' || formData.status === 'Declined') ? 0.55 : 1,
-                    cursor: (formData.status === 'Accepted' || formData.status === 'Declined') ? 'not-allowed' : 'pointer'
+                    borderColor: '#2563eb',
+                    fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5,
+                    cursor: 'pointer'
                   }}
                 >
-                  <Send size={14} />
-                  {sendingEmail ? 'Sending…' : formData.status === 'Sent' ? 'Resend Email' : 'Send Email to Customer'}
+                  {sendingEmail ? <Loader2 size={14} className="ws-chat-loader-spin" /> : <Send size={14} />}
+                  {sendingEmail ? 'Sending…' : (isEdit || formData.status === 'Sent' || formData.status === 'Declined' ? 'Resend Quotation to Customer' : 'Save & Send Email')}
                 </button>
 
                 {/* Accept & Convert to Bill — disabled: only triggers via customer email link */}
@@ -963,14 +983,14 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                     type="button"
                     disabled
                     style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '8px 16px', borderRadius: 6, border: '1px solid #cbd5e1',
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '0 12px', height: 32, borderRadius: 5, border: '1px solid #cbd5e1',
                       background: '#f1f5f9', color: '#64748b',
-                      fontWeight: 600, fontSize: '0.8125rem', cursor: 'not-allowed',
+                      fontWeight: 600, fontSize: '0.78rem', cursor: 'not-allowed',
                       opacity: 0.85
                     }}
                   >
-                    <Receipt size={14} />
+                    <Receipt size={13} />
                     {formData.status === 'Accepted' ? 'Auto-Billed on Acceptance ✅' : formData.status === 'Declined' ? 'Quotation Declined (No Bill) ❌' : 'Auto-Billed on Acceptance ⚡'}
                   </button>
                 </div>
@@ -1189,7 +1209,7 @@ export default function Quotes() {
                             const stBadge = getStatusBadge(row.status)
                             const issueStr = row.issue_date ? String(row.issue_date).split('T')[0] : '—'
                             const validStr = row.valid_until ? String(row.valid_until).split('T')[0] : '—'
-                            const isClosed = row.status === 'Accepted'
+                            const isClosed = row.status === 'Accepted' || row.status === 'Declined' || row.status === 'Rejected'
 
                             return (
                               <tr key={row.id}>
@@ -1224,7 +1244,7 @@ export default function Quotes() {
                                 </td>
                                 <td>
                                   <span style={{ fontWeight: 700, color: '#0f172a' }}>
-                                    ₹{parseFloat(row.total_amount || 0).toFixed(2)}
+                                    ₹{parseFloat(row.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                 </td>
                                 <td>
@@ -1283,18 +1303,16 @@ export default function Quotes() {
                                     >
                                       <Eye size={12} /> View
                                     </button>
-                                    <button
-                                      className="ws-table-btn ws-table-btn--secondary"
-                                      style={{
-                                        padding: '3px 8px', gap: 4, display: 'inline-flex', alignItems: 'center',
-                                        opacity: isClosed ? 0.5 : 1, cursor: isClosed ? 'not-allowed' : 'pointer'
-                                      }}
-                                      onClick={() => { if (!isClosed) setEditingQuote(row) }}
-                                      disabled={isClosed}
-                                      title={isClosed ? "Deal is closed - quotation is locked from editing" : "Edit Quote"}
-                                    >
-                                      <Edit2 size={12} /> Edit
-                                    </button>
+                                    {row.status !== 'Accepted' && (
+                                      <button
+                                        className="ws-table-btn ws-table-btn--secondary"
+                                        style={{ padding: '3px 8px', gap: 4, display: 'inline-flex', alignItems: 'center' }}
+                                        onClick={() => setEditingQuote(row)}
+                                        title="Edit & Resend Quote"
+                                      >
+                                        <Edit2 size={12} /> Edit
+                                      </button>
+                                    )}
                                     <button
                                       className="ws-table-btn ws-table-btn--danger"
                                       style={{ padding: '3px 8px', color: '#dc2626' }}
@@ -1329,94 +1347,13 @@ export default function Quotes() {
         </main>
       </div>
 
-      {/* View Quote Details Modal */}
+      {/* View Quote Modal — Uses exact BillPreview component */}
       {viewingQuote && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15, 23, 42, 0.6)',
-          backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-        }}>
-          <div style={{
-            background: '#fff', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '90vh',
-            overflowY: 'auto', border: '1px solid #e2e8f0', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{
-              padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex',
-              alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Quote #{viewingQuote.quote_number}</span>
-                <span style={{
-                  background: viewingQuote.status === 'Accepted' ? '#dcfce7' : viewingQuote.status === 'Sent' ? '#dbeafe' : viewingQuote.status === 'Declined' ? '#fee2e2' : '#f1f5f9',
-                  color: viewingQuote.status === 'Accepted' ? '#15803d' : viewingQuote.status === 'Sent' ? '#1e40af' : viewingQuote.status === 'Declined' ? '#b91c1c' : '#475467',
-                  padding: '3px 10px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 700
-                }}>
-                  {viewingQuote.status}
-                </span>
-              </div>
-              <button onClick={() => setViewingQuote(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ background: '#f8fafc', padding: 16, borderRadius: 10, border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>FROM (SHOP / SUPPLIER)</div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e40af', marginTop: 2 }}>{viewingQuote.shop_name || 'Workshop Store'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>TO (CUSTOMER / COMPANY)</div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{viewingQuote.customer_name} {viewingQuote.customer_company ? `(${viewingQuote.customer_company})` : ''}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>ISSUE DATE</div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', marginTop: 2 }}>{viewingQuote.issue_date ? String(viewingQuote.issue_date).split('T')[0] : '—'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>VALID UNTIL</div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', marginTop: 2 }}>{viewingQuote.valid_until ? String(viewingQuote.valid_until).split('T')[0] : '—'}</div>
-                </div>
-              </div>
-
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
-                  <thead>
-                    <tr style={{ background: '#f1f5f9', color: '#475467', textTransform: 'uppercase', fontSize: '0.72rem' }}>
-                      <th style={{ padding: '10px 14px', textAlign: 'left' }}>ITEM</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'center' }}>QTY</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>RATE</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>AMOUNT</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(Array.isArray(viewingQuote.line_items) ? viewingQuote.line_items : []).map((item, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px 14px', fontWeight: 600, color: '#1e293b' }}>{item.name || 'Product'}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'center', color: '#475467' }}>{item.quantity || 1}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#475467' }}>₹{parseFloat(item.rate || 0).toFixed(2)}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>₹{parseFloat(item.amount || 0).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div style={{ textAlign: 'right', padding: '12px 16px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Total Amount: ₹{parseFloat(viewingQuote.total_amount || 0).toFixed(2)}</span>
-              </div>
-
-              {viewingQuote.status === 'Accepted' && (
-                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: 14, borderRadius: 8, fontSize: '0.875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>✓ Deal Closed & Billing Invoice Generated & Emailed to Customer!</span>
-                </div>
-              )}
-            </div>
-
-            <div style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 10, background: '#f8fafc' }}>
-              <button className="attio-btn attio-btn-primary" onClick={() => setViewingQuote(null)}>Close</button>
-            </div>
-          </div>
-        </div>
+        <BillPreview
+          quote={viewingQuote}
+          type="quotation"
+          onClose={() => setViewingQuote(null)}
+        />
       )}
 
       <ConfirmModal

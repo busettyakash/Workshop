@@ -2,7 +2,7 @@ import rateLimit from 'express-rate-limit'
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per window
+  max: 5000, // High throughput limit for team operations
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' }
@@ -10,16 +10,16 @@ export const apiLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Stricter limit for auth routes
+  max: 2000, // High throughput limit for multiple user/team logins
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests to auth endpoints, please try again later.' }
 })
 
-// Stricter limiter for email/notification-sending routes
+// Limiter for email/notification-sending routes
 export const emailLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Max 10 email sends per IP per window
+  max: 500, // High limit for team emails
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many email requests. Please try again later.' }

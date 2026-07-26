@@ -7,6 +7,28 @@ const router = Router()
 router.use(apiLimiter)
 router.use(requireAuth)
 
+/* GET /api/companies/my-profile - get current workspace shop profile from DB */
+router.get('/my-profile', async (req, res) => {
+  try {
+    const targetId = req.workspaceId || 'default-user'
+    const userEmail = req.user?.email || ''
+    const { rows } = await query(
+      `SELECT user_id AS id, shop_name AS name, shop_name, email, phone, gstin, address 
+       FROM shop_profiles 
+       WHERE user_id::text = $1::text OR (email IS NOT NULL AND email != '' AND LOWER(email) = LOWER($2)) 
+       LIMIT 1`,
+      [targetId, userEmail]
+    )
+    if (!rows.length) {
+      const fallback = await query(`SELECT user_id AS id, shop_name AS name, shop_name, email, phone, gstin, address FROM shop_profiles ORDER BY id ASC LIMIT 1`).catch(() => ({ rows: [] }))
+      return res.json({ data: fallback.rows[0] || {} })
+    }
+    res.json({ data: rows[0] })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 /* GET /api/companies - list all shop profiles as companies */
 router.get('/', async (req, res) => {
   const { search } = req.query

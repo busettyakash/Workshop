@@ -12,6 +12,25 @@ import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 
+const formatIndianDateOnly = (raw) => {
+  if (!raw) return ''
+  try {
+    let str = String(raw)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      str = str + 'T00:00:00'
+    }
+    const d = new Date(str)
+    if (isNaN(d.getTime())) return String(raw)
+    return d.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+  } catch {
+    return String(raw)
+  }
+}
+
 function PricingModal({ product, onClose }) {
   const [history, setHistory] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
@@ -66,7 +85,7 @@ function PricingModal({ product, onClose }) {
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title" style={{ margin: 0 }}>Pricing & Price History</h3>
-            <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#64748b' }}>{product.name} ({product.sku || 'No SKU'})</p>
+            <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#64748b' }}>{product.name} {product.hsn_code || product.sku ? `(HSN: ${product.hsn_code || product.sku})` : ''}</p>
           </div>
           <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
             <X size={16} />
@@ -78,12 +97,14 @@ function PricingModal({ product, onClose }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
               <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price</span>
-              <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>₹{product.price}</p>
+              <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+                ₹{parseFloat(product.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
             </div>
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
               <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
-                {product.updated_price ? `₹${product.updated_price}` : `₹${product.price}`}
+                {product.updated_price ? `₹${parseFloat(product.updated_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `₹${parseFloat(product.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               </p>
             </div>
           </div>
@@ -94,7 +115,7 @@ function PricingModal({ product, onClose }) {
                 <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Package Breakdown: {bulkUnit.name} ({bagWeight}{bulkUnit.short})</span>
               </div>
               <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#2563eb' }}>
-                ₹{unitPrice} / {bulkUnit.short}
+                ₹{parseFloat(unitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
               </span>
             </div>
           )}
@@ -123,10 +144,10 @@ function PricingModal({ product, onClose }) {
                     <div key={item.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newP.toFixed(2)}</span>
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           {diff !== 0 && (
                             <span style={{ fontSize: '0.7rem', fontWeight: 600, color: isUp ? '#16a34a' : '#dc2626', background: isUp ? '#dcfce7' : '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
-                              {isUp ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`}
+                              {isUp ? `+₹${diff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             </span>
                           )}
                         </div>
@@ -137,12 +158,12 @@ function PricingModal({ product, onClose }) {
                       <div style={{ textAlign: 'right' }}>
                         {itemUnitPrice && (
                           <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#2563eb' }}>
-                            ₹{itemUnitPrice} / {bulkUnit.short}
+                            ₹{parseFloat(itemUnitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
                           </div>
                         )}
                         {oldP !== null && (
                           <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                            Prev: ₹{oldP.toFixed(2)}
+                            Prev: ₹{oldP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         )}
                       </div>
@@ -394,7 +415,7 @@ export default function ImportStock() {
                         />
                       </th>
                       <th>PRODUCT NAME</th>
-                      <th>SKU</th>
+                      <th>HSN CODE</th>
                       <th>CATEGORY</th>
                       <th>PRICE</th>
                       <th>UPDATED PRICE</th>
@@ -453,7 +474,9 @@ export default function ImportStock() {
                               </span>
                             </div>
                           </td>
-                          <td className="ws-td-mono">{row.sku || '—'}</td>
+                          <td className="ws-td-mono" style={{ fontFamily: 'monospace', color: '#475569', fontWeight: 600 }}>
+                            {row.hsn_code || row.sku || '—'}
+                          </td>
                           <td>
                             {(() => {
                               const catStyle = getCategoryTagStyle(row.category)
@@ -466,18 +489,18 @@ export default function ImportStock() {
                           </td>
                           <td className="ws-td-price">
                             <span style={{ fontWeight: 500, color: '#1e293b' }}>
-                              ₹{row.price} <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{row.unit ? `/ ${row.unit}` : ''}</span>
+                              ₹{parseFloat(row.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{row.unit ? `/ ${row.unit}` : ''}</span>
                             </span>
                           </td>
                           <td className="ws-td-price">
                             {row.updated_price ? (
                               <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontWeight: 600, color: '#10b981', fontSize: '0.85rem' }}>
-                                  ₹{row.updated_price}
+                                  ₹{parseFloat(row.updated_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
-                                {updatedDate && (
-                                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                    {updatedDate}
+                                {(row.updated_price_date || row.updated_at) && (
+                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                    {formatIndianDateOnly(row.updated_price_date || row.updated_at)}
                                   </span>
                                 )}
                               </div>

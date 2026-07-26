@@ -116,11 +116,13 @@ function QuickAddProductModal({ onClose, onSaved }) {
               <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={S.input} autoFocus />
             </div>
             <div>
-              <label style={S.label}>SKU</label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} style={{ ...S.input, flex: 1 }} placeholder="e.g. SKU-1234" />
-                <button type="button" onClick={generateSKU} style={{ padding: '0 8px', height: 40, background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>Gen</button>
-              </div>
+              <label style={S.label}>HSN Code</label>
+              <input
+                value={form.hsn_code || form.sku || ''}
+                onChange={e => setForm({ ...form, hsn_code: e.target.value, sku: e.target.value })}
+                style={{ ...S.input, fontFamily: 'monospace', color: '#1e293b', fontWeight: 600 }}
+                placeholder="e.g. 10064000"
+              />
             </div>
             <div>
               <label style={S.label}>Category</label>
@@ -232,8 +234,8 @@ function QuickAddProductModal({ onClose, onSaved }) {
           </div>
           {bulkUnit && (form.price_100 || form.price) && form.bag_weight && (
             <div style={{ marginTop: 12, fontSize: '0.8125rem', color: '#10b981', fontWeight: 600 }}>
-              Calculated Unit Rate: ₹{(parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100).toFixed(2)} / {bulkUnit.short}
-              • {form.bag_weight}{bulkUnit.short} {bulkUnit.name} Price: ₹{((parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100) * parseFloat(form.bag_weight)).toFixed(2)}
+              Calculated Unit Rate: ₹{(parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
+              • {form.bag_weight}{bulkUnit.short} {bulkUnit.name} Price: ₹{(((parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100) * parseFloat(form.bag_weight))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           )}
         </form>
@@ -252,6 +254,7 @@ export default function BillForm() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const createdPersonId = searchParams.get('createdPersonId')
+  const initialProductId = searchParams.get('productId')
   const sidebarOpen = useAppSelector(selectSidebarOpen)
 
   const [step, setStep] = useState(1) // 1: Cart & Products, 2: Checkout Details & Summary
@@ -293,13 +296,35 @@ export default function BillForm() {
         api.get('/products?status=active&limit=500')
       ])
       const custs = resCust.data?.data || []
+      const prods = resProd.data?.data || []
       setCustomers(custs)
-      setProducts(resProd.data?.data || [])
+      setProducts(prods)
 
       if (createdPersonId) {
         const found = custs.find(c => String(c.id) === String(createdPersonId))
         if (found) {
           setForm(prev => ({ ...prev, customer_id: found.id }))
+        }
+      }
+
+      if (initialProductId && prods.length > 0) {
+        const foundProd = prods.find(p => String(p.id) === String(initialProductId))
+        if (foundProd) {
+          const bulkUnit = getBulkUnitDetails(foundProd.unit)
+          const effectivePrice = foundProd.updated_price ? parseFloat(foundProd.updated_price) : parseFloat(foundProd.price || 0)
+          const priceToUse = bulkUnit ? (effectivePrice / (parseFloat(foundProd.bag_weight) || 1)).toFixed(2) : effectivePrice
+          setLineItems([{
+            product_id: foundProd.id,
+            name: foundProd.name,
+            product_name: foundProd.name,
+            productName: foundProd.name,
+            hsn_code: foundProd.hsn_code || foundProd.sku || '10064000',
+            hsn: foundProd.hsn_code || foundProd.sku || '10064000',
+            price: priceToUse,
+            qty: 1,
+            discount: 0,
+            unit: foundProd.unit || 'pcs'
+          }])
         }
       }
 
@@ -327,6 +352,10 @@ export default function BillForm() {
     setLineItems(prev => [...prev, {
       product_id: prod.id,
       name: prod.name,
+      product_name: prod.name,
+      productName: prod.name,
+      hsn_code: prod.hsn_code || prod.sku || '10064000',
+      hsn: prod.hsn_code || prod.sku || '10064000',
       price: priceToUse,
       qty: 1,
       discount: 0,
@@ -399,9 +428,15 @@ export default function BillForm() {
         notes: form.notes,
         items: lineItems.map(li => ({
           product_id: li.product_id,
+          name: li.name || li.product_name || li.productName || 'Product',
+          product_name: li.name || li.product_name || li.productName || 'Product',
+          productName: li.name || li.product_name || li.productName || 'Product',
+          hsn_code: li.hsn_code || li.hsn || '10064000',
+          hsn: li.hsn_code || li.hsn || '10064000',
           qty: parseFloat(li.qty || 1),
           price: parseFloat(li.price || 0),
-          discount: parseFloat(li.discount || 0)
+          discount: parseFloat(li.discount || 0),
+          unit: li.unit || 'pcs'
         }))
       }
       await api.post('/billing', payload)
@@ -435,27 +470,60 @@ export default function BillForm() {
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
         <main className="ws-dash-body">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <button
-              onClick={() => step === 2 ? setStep(1) : navigate('/billing')}
-              style={{ background: '#f3f4f6', border: 'none', borderRadius: '6px', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6b7280', flexShrink: 0 }}
-              onMouseEnter={e => e.currentTarget.style.background = '#e5e7eb'}
-              onMouseLeave={e => e.currentTarget.style.background = '#f3f4f6'}
+          {/* ── Top Bar Header (Quotes & Import Stock Style) ── */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                Create New Billing Invoice
+              </h2>
+              <span className="attio-badge attio-badge-blue" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                Draft
+              </span>
+            </div>
+
+            <button 
+              type="button"
+              className="attio-btn attio-btn-primary" 
+              onClick={() => navigate('/billing')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, fontSize: '0.78rem', padding: '0 12px' }}
             >
-              <ArrowLeft size={14} />
+              <ArrowLeft size={13} /> Back to Billing
             </button>
-            <div>
-              <h1 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#111827', letterSpacing: '-0.01em', margin: 0 }}>
-                {step === 1 ? 'Step 1: Add Products' : 'Step 2: Checkout Details'}
-              </h1>
-              <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: '1px 0 0' }}>
-                Billing / New Invoice / Step {step}
-              </p>
+          </div>
+
+          {/* ── Stepper Navigation Bar (Increased box sizes by 2%) ── */}
+          <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto 16px', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 12 }}>
+            <div 
+              onClick={() => setStep(1)}
+              style={{ 
+                flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
+                background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
+              }}
+            >
+              <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 1 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>1</div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 1 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+                Step 1: Add Products & Customer
+              </div>
+            </div>
+
+            <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+
+            <div 
+              onClick={() => { if (lineItems.length > 0) setStep(2) }}
+              style={{ 
+                flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
+                background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
+              }}
+            >
+              <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 2 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>2</div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 2 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+                Step 2: Payment, Tax & Finalize
+              </div>
             </div>
           </div>
 
           {step === 1 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 290px', gap: 16, alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, alignItems: 'start' }}>
               {/* ── LEFT COLUMN (Cart) ── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -570,186 +638,176 @@ export default function BillForm() {
 
               {/* ── RIGHT COLUMN (Customer & Catalog) ── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {/* Customer */}
+                {/* Customer Selection Card */}
                 <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                  <div style={{ padding: '10px 14px', borderBottom: '1px solid #f3f4f6' }}>
+                  <div style={{ padding: '10px 14px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem', margin: 0 }}>Select Customer</p>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/people/add?returnUrl=/billing/add')}
+                      style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}
+                    >
+                      <UserPlus size={13} /> + Add Customer
+                    </button>
                   </div>
-                  <div style={{ padding: '12px 14px' }}>
+
+                  <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {loadingCusts ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 36, color: '#9ca3af', fontSize: '0.8125rem' }}>
-                        <Loader2 size={14} className="ws-chat-loader-spin" /> Loading...
+                        <Loader2 size={14} className="ws-chat-loader-spin" /> Loading customers...
                       </div>
                     ) : (
                       <>
-                        {/* Customer row: dropdown + action buttons */}
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {/* Full-width Searchable Dropdown trigger */}
+                        <div style={{ position: 'relative', width: '100%' }}>
+                          {showCustDropdown && (
+                            <div
+                              style={{ position: 'fixed', inset: 0, zIndex: 9990 }}
+                              onClick={() => { setShowCustDropdown(false); setCustSearch('') }}
+                            />
+                          )}
 
-                          {/* Dropdown trigger */}
-                          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                            {/* Click-outside overlay */}
-                            {showCustDropdown && (
-                              <div
-                                style={{ position: 'fixed', inset: 0, zIndex: 9990 }}
-                                onClick={() => { setShowCustDropdown(false); setCustSearch('') }}
-                              />
-                            )}
-
-                            {/* Trigger button */}
-                            <button
-                              type="button"
-                              onClick={() => setShowCustDropdown(v => !v)}
-                              style={{
-                                width: '100%', boxSizing: 'border-box',
-                                height: 36, padding: '0 10px',
-                                border: `1px solid ${errors.customer_id ? '#dc2626' : '#d1d5db'}`,
-                                borderRadius: '8px', outline: 'none',
-                                cursor: 'pointer', display: 'flex',
-                                justifyContent: 'space-between', alignItems: 'center',
-                                background: '#fff', fontFamily: 'inherit',
-                                textTransform: 'none', letterSpacing: 'normal',
-                              }}
-                            >
-                              <span style={{
-                                flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                fontSize: '0.8125rem',
-                                fontWeight: selectedCustomer ? 600 : 400,
-                                color: selectedCustomer ? '#111827' : '#9ca3af',
-                                textTransform: 'none',
-                              }}>
-                                {selectedCustomer
-                                  ? `${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
-                                  : 'Select customer...'}
-                              </span>
-                              <ChevronDown size={13} color="#9ca3af" style={{ flexShrink: 0, marginLeft: 6 }} />
-                            </button>
-
-                            {/* Absolute-position dropdown */}
-                            {showCustDropdown && (
-                              <div style={{
-                                position: 'absolute',
-                                top: 'calc(100% + 4px)',
-                                left: 0,
-                                width: '100%',
-                                minWidth: '240px',
-                                background: '#fff',
-                                border: '1px solid #d1d5db',
-                                borderRadius: '10px',
-                                boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
-                                zIndex: 9999,
-                                padding: '6px',
-                                boxSizing: 'border-box',
-                              }}>
-                                {/* Search inside dropdown */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', background: '#f9fafb', borderRadius: '6px', marginBottom: 6 }}>
-                                  <Search size={13} color="#9ca3af" />
-                                  <input
-                                    type="text"
-                                    placeholder="Search by name or phone..."
-                                    value={custSearch}
-                                    onChange={e => setCustSearch(e.target.value)}
-                                    style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.8125rem', width: '100%', fontFamily: 'inherit', color: '#111827' }}
-                                    onClick={e => e.stopPropagation()}
-                                    autoFocus
-                                  />
-                                  {custSearch && (
-                                    <button type="button" onClick={() => setCustSearch('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', padding: 2 }}>
-                                      <X size={12} />
-                                    </button>
-                                  )}
-                                </div>
-
-                                <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
-                                  {customers.filter(c =>
-                                    c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
-                                    (c.phone && c.phone.includes(custSearch))
-                                  ).length === 0 ? (
-                                    <div style={{ padding: '12px 8px', fontSize: '0.8125rem', color: '#9ca3af', textAlign: 'center' }}>No matches found</div>
-                                  ) : (
-                                    customers
-                                      .filter(c =>
-                                        c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
-                                        (c.phone && c.phone.includes(custSearch))
-                                      )
-                                      .map(c => {
-                                        const isSelected = String(c.id) === String(form.customer_id)
-                                        return (
-                                          <button
-                                            key={c.id}
-                                            type="button"
-                                            onClick={() => {
-                                              setForm(prev => ({ ...prev, customer_id: c.id }))
-                                              setShowCustDropdown(false)
-                                              setCustSearch('')
-                                            }}
-                                            style={{
-                                              width: '100%', padding: '8px 10px', border: 'none',
-                                              background: isSelected ? '#eff6ff' : 'transparent',
-                                              textAlign: 'left', cursor: 'pointer', borderRadius: '6px',
-                                              display: 'flex', flexDirection: 'column', gap: 2,
-                                              fontFamily: 'inherit',
-                                            }}
-                                            onMouseEnter={e => !isSelected && (e.currentTarget.style.background = '#f9fafb')}
-                                            onMouseLeave={e => !isSelected && (e.currentTarget.style.background = 'transparent')}
-                                          >
-                                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#111827', textTransform: 'none' }}>{c.name}</span>
-                                            {c.phone && (
-                                              <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>{c.phone}</span>
-                                            )}
-                                          </button>
-                                        )
-                                      })
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Quick-add person icon button */}
                           <button
                             type="button"
-                            onClick={() => navigate('/people/add?returnUrl=/billing/add')}
+                            onClick={() => setShowCustDropdown(v => !v)}
                             style={{
-                              flexShrink: 0, width: 36, height: 36,
-                              background: '#eff6ff', border: '1px solid #bfdbfe',
-                              borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              cursor: 'pointer', color: '#2563eb',
+                              width: '100%', boxSizing: 'border-box',
+                              height: 38, padding: '0 12px',
+                              border: `1px solid ${errors.customer_id ? '#dc2626' : '#d1d5db'}`,
+                              borderRadius: '8px', outline: 'none',
+                              cursor: 'pointer', display: 'flex',
+                              justify: 'space-between', alignItems: 'center',
+                              background: '#fff', fontFamily: 'inherit',
                             }}
-                            title="Quick Add Customer"
                           >
-                            <UserPlus size={15} />
+                            <span style={{
+                              flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              fontSize: '0.8125rem',
+                              fontWeight: selectedCustomer ? 600 : 400,
+                              color: selectedCustomer ? '#111827' : '#64748b',
+                              textAlign: 'left',
+                            }}>
+                              {selectedCustomer
+                                ? `${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
+                                : 'Search & select customer...'}
+                            </span>
+                            <ChevronDown size={14} color="#9ca3af" style={{ flexShrink: 0, marginLeft: 8 }} />
                           </button>
 
-                          {/* Walk-in button — always blue */}
+                          {/* Absolute Dropdown list */}
+                          {showCustDropdown && (
+                            <div style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 4px)',
+                              left: 0,
+                              width: '100%',
+                              background: '#fff',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '8px',
+                              boxShadow: '0 10px 25px rgba(0,0,0,0.12)',
+                              zIndex: 9999,
+                              padding: '6px',
+                              boxSizing: 'border-box',
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: '#f8fafc', borderRadius: '6px', marginBottom: 6, border: '1px solid #e2e8f0' }}>
+                                <Search size={13} color="#9ca3af" />
+                                <input
+                                  type="text"
+                                  placeholder="Search name or phone..."
+                                  value={custSearch}
+                                  onChange={e => setCustSearch(e.target.value)}
+                                  style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.8125rem', width: '100%', fontFamily: 'inherit', color: '#111827' }}
+                                  onClick={e => e.stopPropagation()}
+                                  autoFocus
+                                />
+                                {custSearch && (
+                                  <button type="button" onClick={() => setCustSearch('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', padding: 2 }}>
+                                    <X size={12} />
+                                  </button>
+                                )}
+                              </div>
+
+                              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                {customers.filter(c =>
+                                  c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
+                                  (c.phone && c.phone.includes(custSearch))
+                                ).length === 0 ? (
+                                  <div style={{ padding: '12px 8px', fontSize: '0.8125rem', color: '#9ca3af', textAlign: 'center' }}>No matches found</div>
+                                ) : (
+                                  customers
+                                    .filter(c =>
+                                      c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
+                                      (c.phone && c.phone.includes(custSearch))
+                                    )
+                                    .map(c => {
+                                      const isSelected = String(c.id) === String(form.customer_id)
+                                      return (
+                                        <button
+                                          key={c.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setForm(prev => ({ ...prev, customer_id: c.id }))
+                                            setShowCustDropdown(false)
+                                            setCustSearch('')
+                                          }}
+                                          style={{
+                                            width: '100%', padding: '8px 10px', border: 'none',
+                                            background: isSelected ? '#eff6ff' : 'transparent',
+                                            textAlign: 'left', cursor: 'pointer', borderRadius: '6px',
+                                            display: 'flex', flexDirection: 'column', gap: 2,
+                                            fontFamily: 'inherit',
+                                          }}
+                                          onMouseEnter={e => !isSelected && (e.currentTarget.style.background = '#f8fafc')}
+                                          onMouseLeave={e => !isSelected && (e.currentTarget.style.background = 'transparent')}
+                                        >
+                                          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#111827' }}>{c.name}</span>
+                                          {c.phone && <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{c.phone}</span>}
+                                        </button>
+                                      )
+                                    })
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Customer Quick Options Row: Walk-in toggle button */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                           <button
                             type="button"
                             onClick={() => setForm(prev => ({ ...prev, customer_id: null }))}
-                            className="btn-blue"
-                            style={{ flexShrink: 0, padding: '0 14px', height: 36, whiteSpace: 'nowrap' }}
-                            title="Walk-in Customer"
+                            style={{
+                              flex: 1, height: 32, borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
+                              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                              background: form.customer_id === null ? '#2563eb' : '#f8fafc',
+                              color: form.customer_id === null ? '#fff' : '#334155',
+                              border: `1px solid ${form.customer_id === null ? '#2563eb' : '#cbd5e1'}`,
+                            }}
                           >
-                            Walk-in
+                            🚶 Walk-in Customer
                           </button>
                         </div>
 
-                        {/* Show selected or Walk-in badge */}
+                        {/* Selected Customer Pill Badge */}
                         {(form.customer_id || form.customer_id === null) && (
-                          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <div style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6,
-                              padding: '3px 10px', borderRadius: '99px',
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+                              padding: '5px 10px', borderRadius: '6px',
                               background: form.customer_id === null ? '#eff6ff' : '#f0fdf4',
                               border: `1px solid ${form.customer_id === null ? '#bfdbfe' : '#bbf7d0'}`,
-                              fontSize: '0.75rem', fontWeight: 600,
+                              fontSize: '0.78rem', fontWeight: 600,
                               color: form.customer_id === null ? '#1d4ed8' : '#15803d',
                             }}>
-                              {form.customer_id === null ? '🚶 Walk-in Customer' : `✓ ${selectedCustomer?.name}`}
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {form.customer_id === null ? '✓ Walk-in Customer Selected' : `✓ ${selectedCustomer?.name}`}
+                              </span>
                               <button
                                 type="button"
                                 onClick={() => setForm(prev => ({ ...prev, customer_id: '' }))}
-                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'inherit', opacity: 0.6 }}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, display: 'flex', color: 'inherit', opacity: 0.7 }}
                               >
-                                <X size={11} />
+                                <X size={12} />
                               </button>
                             </div>
                           </div>

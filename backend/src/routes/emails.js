@@ -56,7 +56,20 @@ const ensureTable = async () => {
   await query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS attachment_data TEXT`).catch(() => {})
   await query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {})
 }
-ensureTable().catch(console.error)
+
+let ensureTablePromise
+router.use(async (_req, _res, next) => {
+  try {
+    ensureTablePromise ||= ensureTable().catch((err) => {
+      ensureTablePromise = null
+      throw err
+    })
+    await ensureTablePromise
+    next()
+  } catch (err) {
+    next(err)
+  }
+})
 
 /* Helper to purge non-Workshop emails from inbox */
 const cleanupInbox = async (userId) => {

@@ -7,23 +7,29 @@ const router = Router()
 router.use(requireAuth)
 router.use(apiLimiter)
 
-// Initialize uoms table
-query(`
-  CREATE TABLE IF NOT EXISTS uoms (
-    id SERIAL PRIMARY KEY,
-    user_id UUID,
-    code VARCHAR(50) NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    category VARCHAR(50) DEFAULT 'Count',
-    is_bulk BOOLEAN DEFAULT false,
-    presets TEXT DEFAULT '1',
-    status VARCHAR(20) DEFAULT 'Active',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  )
-`).catch((err) => {
-  console.error('[DB] uoms table creation warning:', err.message)
-})
+let ensureUomsTablePromise
+
+function ensureUomsTable() {
+  ensureUomsTablePromise ||= query(`
+    CREATE TABLE IF NOT EXISTS uoms (
+      id SERIAL PRIMARY KEY,
+      user_id UUID,
+      code VARCHAR(50) NOT NULL,
+      name VARCHAR(100) NOT NULL,
+      category VARCHAR(50) DEFAULT 'Count',
+      is_bulk BOOLEAN DEFAULT false,
+      presets TEXT DEFAULT '1',
+      status VARCHAR(20) DEFAULT 'Active',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `).catch((err) => {
+    ensureUomsTablePromise = null
+    throw err
+  })
+
+  return ensureUomsTablePromise
+}
 
 const DEFAULT_UOMS = [
   { code: 'pcs', name: 'Pieces', category: 'Count', is_bulk: false, presets: '1' },
@@ -39,6 +45,7 @@ const DEFAULT_UOMS = [
 
 async function seedDefaultUoms(userId) {
   try {
+    await ensureUomsTable()
     const { rows } = await query('SELECT COUNT(*) FROM uoms WHERE user_id = $1', [userId])
     if (parseInt(rows[0].count) === 0) {
       for (const u of DEFAULT_UOMS) {
@@ -73,6 +80,7 @@ router.post('/', async (req, res) => {
   if (!code || !name) return res.status(400).json({ error: 'code and name are required' })
 
   try {
+    await ensureUomsTable()
     const { rows } = await query(
       `INSERT INTO uoms (user_id, code, name, category, is_bulk, presets, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING *`,
@@ -89,6 +97,7 @@ router.put('/:id', async (req, res) => {
   const userId = req.workspaceId
   const { code, name, category, is_bulk, presets, status } = req.body
   try {
+    await ensureUomsTable()
     const { rows } = await query(
       `UPDATE uoms SET code=$1, name=$2, category=$3, is_bulk=$4, presets=$5, status=$6, updated_at=NOW()
        WHERE id=$7 AND user_id=$8 RETURNING *`,
@@ -105,6 +114,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const userId = req.workspaceId
   try {
+    await ensureUomsTable()
     await query('DELETE FROM uoms WHERE id = $1 AND user_id = $2', [req.params.id, userId])
     res.json({ message: 'UOM deleted' })
   } catch (err) {

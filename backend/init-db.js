@@ -192,6 +192,19 @@ async function createTables() {
 
       ALTER TABLE quotes ADD COLUMN IF NOT EXISTS shop_name VARCHAR(255) DEFAULT 'Workshop Store';
       ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_company VARCHAR(255);
+
+      CREATE TABLE IF NOT EXISTS uoms (
+        id SERIAL PRIMARY KEY,
+        user_id UUID,
+        code VARCHAR(50) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        category VARCHAR(50) DEFAULT 'Count',
+        is_bulk BOOLEAN DEFAULT false,
+        presets TEXT DEFAULT '1',
+        status VARCHAR(20) DEFAULT 'Active',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
     `);
     console.log('All database tables created successfully!');
 
@@ -241,6 +254,8 @@ async function createTables() {
     // Config performance timeout
     try {
       await pool.query("ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s'");
+      await pool.query("ALTER SYSTEM SET idle_session_timeout = '10min'");
+      await pool.query("SELECT pg_reload_conf()");
       console.log('✅ Set idle_in_transaction_session_timeout = 30s');
     } catch (tErr) {
       console.log('ℹ️ Session timeout notice:', tErr.message);

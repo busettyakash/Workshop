@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import redis from '../lib/redis.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -25,13 +26,41 @@ const ensureTable = async () => {
   `)
   await query(`ALTER TABLE people ADD COLUMN IF NOT EXISTS user_id TEXT`).catch(() => {})
 }
-ensureTable().catch(console.error)
+
+let ensureTablePromise
+router.use(async (_req, _res, next) => {
+  try {
+    ensureTablePromise ||= ensureTable().catch((err) => {
+      ensureTablePromise = null
+      throw err
+    })
+    await ensureTablePromise
+    next()
+  } catch (err) {
+    next(err)
+  }
+})
+
+async function clearPeopleCache(userId) {
+  try {
+    const keys = await redis.keys(`people:${userId}:*`).catch(() => [])
+    for (const k of keys) { await redis.del(k).catch(() => {}) }
+  } catch (_e) {}
+}
 
 /* GET /api/people */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
-  const { search, status, persona, sort } = req.query
+  const { search = '', status = '', persona = '', sort = '' } = req.query
+
+  const cacheKey = `people:${userId}:${search}:${status}:${persona}:${page}:${limit}:${sort}`
+  try {
+    const cached = await redis.get(cacheKey).catch(() => null)
+    if (cached) {
+      return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
+    }
+  } catch (_e) {}
 
   const params = [userId]
   const conditions = ['user_id = $1']
@@ -70,12 +99,14 @@ router.get('/', async (req, res) => {
         ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
         : null
 
-      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+      const responsePayload = { data: rows, limit, hasNextPage, nextCursor }
+      redis.set(cacheKey, JSON.stringify(responsePayload), { ex: 60 }).catch(() => {})
+      return res.json(responsePayload)
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`
     const countRes = await query(`SELECT COUNT(*) FROM people ${where}`, params)
-    const total = parseInt(countRes.rows[0].count, 10) || 0
+    const total = parseInt(countRes.rows[0].count, 10)
     const totalPages = Math.ceil(total / limit) || 1
 
     params.push(limit, offset)
@@ -84,21 +115,9 @@ router.get('/', async (req, res) => {
       params
     )
 
-    const hasNextPage = page < totalPages
-    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
-    const nextCursor = (hasNextPage && lastRow)
-      ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
-      : null
-
-    res.json({
-      data: rows,
-      total,
-      page,
-      limit,
-      totalPages,
-      hasNextPage,
-      nextCursor
-    })
+    const responsePayload = { data: rows, total, page, limit, totalPages }
+    redis.set(cacheKey, JSON.stringify(responsePayload), { ex: 60 }).catch(() => {})
+    return res.json(responsePayload)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -115,6 +134,7 @@ router.post('/', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING *`,
       [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', userId]
     )
+    clearPeopleCache(userId)
     res.status(201).json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -145,6 +165,7 @@ router.put('/:id', async (req, res) => {
       [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Person not found' })
+    clearPeopleCache(userId)
     res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -156,6 +177,7 @@ router.delete('/:id', async (req, res) => {
   const userId = req.workspaceId
   try {
     await query('DELETE FROM people WHERE id=$1 AND user_id = $2', [req.params.id, userId])
+    clearPeopleCache(userId)
     res.json({ message: 'Person deleted' })
   } catch (err) {
     res.status(500).json({ error: err.message })

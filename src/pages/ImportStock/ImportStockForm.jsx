@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { ArrowLeft, Loader2, Info } from 'lucide-react'
+import { ArrowLeft, Loader2, Info, Check, User, Package, DollarSign, FileText, ArrowRight } from 'lucide-react'
 import api from '../../api/client'
 import { getBulkUnitDetails, ALL_UOM_OPTIONS } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
@@ -13,11 +13,11 @@ const S = {
   input: {
     width: '100%',
     boxSizing: 'border-box',
-    height: '40px',
-    padding: '0 12px',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
+    height: '32px',
+    padding: '0 8px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '5px',
+    fontSize: '0.78rem',
     color: '#111827',
     background: '#fff',
     outline: 'none',
@@ -34,18 +34,18 @@ const S = {
   },
   label: {
     display: 'block',
-    fontSize: '0.8125rem',
+    fontSize: '0.72rem',
     fontWeight: 600,
-    color: '#374151',
-    marginBottom: '6px',
+    color: '#475569',
+    marginBottom: '3px',
   },
   error: {
     color: '#dc2626',
-    fontSize: '0.75rem',
-    marginTop: '4px',
+    fontSize: '0.72rem',
+    marginTop: '2px',
     display: 'block',
   },
-  field: { marginBottom: '20px' },
+  field: { marginBottom: '12px' },
 }
 
 export default function ImportStockForm() {
@@ -54,15 +54,32 @@ export default function ImportStockForm() {
   const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
 
+  const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState({})
   const [focus, setFocus] = useState(null)
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
 
   const [form, setForm] = useState({
-    name: '', sku: '', category: '', price: '', updated_price: '', updated_price_date: todayStr, stock: 0, status: 'pending', unit: 'pcs', description: '', bag_weight: 100
+    buyer_name: '',
+    buyer_phone: '',
+    buyer_city: '',
+    buyer_state: '',
+    name: '',
+    sku: '',
+    category: '',
+    buying_price: '',
+    price_100: '',
+    price: '',
+    updated_price: '',
+    updated_price_date: todayStr,
+    stock: 0,
+    status: 'pending',
+    unit: 'kgs',
+    description: '',
+    bag_weight: 100
   })
 
   const [uomOptions, setUomOptions] = useState(ALL_UOM_OPTIONS)
@@ -89,15 +106,20 @@ export default function ImportStockForm() {
       const item = res.data?.data
       if (item) {
         setForm({
+          buyer_name: item.buyer_name || '',
+          buyer_phone: item.buyer_phone || '',
+          buyer_city: item.buyer_city || '',
+          buyer_state: item.buyer_state || '',
           name: item.name || '',
           sku: item.sku || '',
           category: item.category || '',
+          buying_price: item.buying_price || '',
           price: item.price || '',
           updated_price: item.updated_price || '',
           updated_price_date: item.updated_price_date ? String(item.updated_price_date).split('T')[0] : todayStr,
           stock: item.stock || 0,
           status: item.status || 'pending',
-          unit: item.unit || 'pcs',
+          unit: item.unit || 'kgs',
           description: item.description || '',
           bag_weight: item.bag_weight || 100
         })
@@ -133,29 +155,58 @@ export default function ImportStockForm() {
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }))
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const validateStep1 = () => {
+    const err = {}
+    if (form.buyer_phone && !/^[0-9+\-\s()]{7,15}$/.test(form.buyer_phone.trim())) {
+      err.buyer_phone = 'Enter a valid phone number'
+    }
+    setErrors(err)
+    return Object.keys(err).length === 0
+  }
+
+  const validateStep2 = () => {
     const err = {}
     const bulkUnit = getBulkUnitDetails(form.unit)
     if (!form.name.trim()) err.name = 'Product name is required'
-    if (!form.price || isNaN(form.price) || parseFloat(form.price) <= 0) err.price = 'Enter a valid price'
+    if (!form.price || isNaN(form.price) || parseFloat(form.price) <= 0) err.price = 'Enter a valid selling price'
     if (bulkUnit && (!form.bag_weight || isNaN(form.bag_weight) || parseFloat(form.bag_weight) <= 0)) {
-      err.bag_weight = `Enter a valid ${bulkUnit.label.toLowerCase()} (e.g. 25)`
+      err.bag_weight = `Enter a valid ${bulkUnit.label.toLowerCase()} size (e.g. 25)`
     }
-    if (Object.keys(err).length) { setErrors(err); return }
+    setErrors(err)
+    return Object.keys(err).length === 0
+  }
+
+  const handleNextStep1 = () => {
+    if (validateStep1()) {
+      setStep(2)
+    }
+  }
+
+  const handleNextStep2 = () => {
+    if (validateStep2()) {
+      setStep(3)
+    }
+  }
+
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault()
+    if (!validateStep2()) {
+      setStep(2)
+      return
+    }
 
     setSaving(true)
     try {
       if (id) {
         await api.put(`/import-stock/${id}`, form)
-        dispatch(addToast({ message: 'Updated successfully!', type: 'success' }))
+        dispatch(addToast({ message: 'Stock product updated successfully!', type: 'success' }))
       } else {
         await api.post('/import-stock', form)
-        dispatch(addToast({ message: 'Pending product added!', type: 'success' }))
+        dispatch(addToast({ message: 'Stock product added successfully!', type: 'success' }))
       }
       navigate('/import-stock')
     } catch {
-      dispatch(addToast({ message: 'Failed to save', type: 'error' }))
+      dispatch(addToast({ message: 'Failed to save product', type: 'error' }))
     } finally {
       setSaving(false)
     }
@@ -167,6 +218,15 @@ export default function ImportStockForm() {
     ...(errors[field] ? S.inputError : {}),
   })
 
+  // Unit rate and margin calculations
+  const bw = parseFloat(form.bag_weight || 100)
+  const sell100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / bw) * 100) : 0))
+  const buy100 = parseFloat(form.buying_price || 0)
+  const sellRatePerUnit = sell100 > 0 ? (sell100 / 100).toFixed(2) : '0.00'
+  const buyRatePerUnit = buy100 > 0 ? (buy100 / 100).toFixed(2) : '0.00'
+  const profitMarginPer100 = buy100 > 0 && sell100 > 0 ? (sell100 - buy100).toFixed(2) : null
+  const profitMarginPerUnit = buy100 > 0 && sell100 > 0 ? ((sell100 - buy100) / 100).toFixed(2) : null
+
   return (
     <div className="ws-dash-layout">
       <Sidebar />
@@ -174,23 +234,70 @@ export default function ImportStockForm() {
         <Topbar />
         <main className="ws-dash-body">
 
-          {/* ── Header ── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
-            <button
+          {/* ── Top Bar Header (Quotes Style) ── */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                {id ? 'Edit Import Stock Product' : 'Add Import Stock Product'}
+              </h2>
+              <span className="attio-badge attio-badge-blue" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                {form.status ? (form.status.charAt(0).toUpperCase() + form.status.slice(1)) : 'Draft'}
+              </span>
+            </div>
+
+            <button 
+              type="button"
+              className="attio-btn attio-btn-primary" 
               onClick={() => navigate('/import-stock')}
-              style={{ background: '#f3f4f6', border: 'none', borderRadius: '8px', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6b7280', flexShrink: 0 }}
-              onMouseEnter={e => e.currentTarget.style.background = '#e5e7eb'}
-              onMouseLeave={e => e.currentTarget.style.background = '#f3f4f6'}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, fontSize: '0.78rem', padding: '0 12px' }}
             >
-              <ArrowLeft size={15} />
+              <ArrowLeft size={13} /> Back to Import Stock
             </button>
-            <div>
-              <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#111827', letterSpacing: '-0.02em', margin: 0 }}>
-                {id ? 'Edit Pending Product' : 'Add Pending Product'}
-              </h1>
-              <p style={{ fontSize: '0.8125rem', color: '#6b7280', margin: '1px 0 0' }}>
-                Import Stock / {id ? 'Edit' : 'Add'}
-              </p>
+          </div>
+
+          {/* ── Stepper Navigation Bar (Increased box sizes by 2%) ── */}
+          <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto 16px', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 10 }}>
+            <div 
+              onClick={() => setStep(1)}
+              style={{ 
+                flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
+                background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
+              }}
+            >
+              <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 1 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>1</div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 1 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+                Step 1: Supplier & Buyer Details
+              </div>
+            </div>
+
+            <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+
+            <div 
+              onClick={() => { if (validateStep1()) setStep(2) }}
+              style={{ 
+                flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
+                background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
+              }}
+            >
+              <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 2 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>2</div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 2 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+                Step 2: Products & Line Items
+              </div>
+            </div>
+
+            <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+
+            <div 
+              onClick={() => { if (validateStep1() && validateStep2()) setStep(3) }}
+              style={{ 
+                flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
+                background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`
+              }}
+            >
+              <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 3 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>3</div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 3 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
+                Step 3: Review & Save
+              </div>
             </div>
           </div>
 
@@ -199,198 +306,143 @@ export default function ImportStockForm() {
               <Loader2 size={28} className="ws-chat-loader-spin" style={{ color: '#9ca3af' }} />
             </div>
           ) : (
-            <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
+            <div>
 
-              {/* ── Left: Main Fields ── */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-                {/* Basic Info */}
-                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
-                    <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.9375rem', margin: 0 }}>Basic Information</p>
-                  </div>
-                  <div style={{ padding: '20px' }}>
-                    <div style={S.field}>
-                      <label style={S.label}>Product Name <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Wireless Mouse" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
-                      {errors.name && <span style={S.error}>{errors.name}</span>}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                          <label style={{ ...S.label, marginBottom: 0 }}>SKU / Barcode</label>
-                          <button
-                            type="button"
-                            onClick={handleGenerateMainSKU}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#3d68f5',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              padding: 0,
-                              textDecoration: 'underline'
-                            }}
-                          >
-                            Auto Generate
-                          </button>
-                        </div>
-                        <input name="sku" value={form.sku} onChange={handleChange} placeholder="e.g. SKU-1234" style={inp('sku')} onFocus={() => setFocus('sku')} onBlur={() => setFocus(null)} />
-                      </div>
-                      <div>
-                        <label style={S.label}>Category</label>
-                        <input name="category" value={form.category} onChange={handleChange} placeholder="e.g. Electronics" style={inp('category')} onFocus={() => setFocus('category')} onBlur={() => setFocus(null)} />
-                      </div>
-                    </div>
+              {/* ── STEP 1: Supplier & Buyer Details (4-column row 1 + Stock Status bottom Box 1) ── */}
+              {step === 1 && (
+                <div className="attio-table-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                     <div>
-                      <label style={S.label}>Description</label>
-                      <textarea name="description" value={form.description} onChange={handleChange} placeholder="Brief product description..." rows={4} style={{ ...inp('description'), height: 'auto', padding: '10px 12px', resize: 'vertical' }} onFocus={() => setFocus('description')} onBlur={() => setFocus(null)} />
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                        Supplier / Buyer Name
+                      </label>
+                      <input 
+                        name="buyer_name" 
+                        value={form.buyer_name} 
+                        onChange={handleChange} 
+                        placeholder="e.g. Lalitha Traders / John Doe" 
+                        style={inp('buyer_name')} 
+                        onFocus={() => setFocus('buyer_name')} 
+                        onBlur={() => setFocus(null)} 
+                      />
                     </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                        Phone Number
+                      </label>
+                      <input 
+                        name="buyer_phone" 
+                        value={form.buyer_phone} 
+                        onChange={handleChange} 
+                        placeholder="e.g. +91 9876543210" 
+                        style={inp('buyer_phone')} 
+                        onFocus={() => setFocus('buyer_phone')} 
+                        onBlur={() => setFocus(null)} 
+                      />
+                      {errors.buyer_phone && <span style={S.error}>{errors.buyer_phone}</span>}
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                        City
+                      </label>
+                      <input 
+                        name="buyer_city" 
+                        value={form.buyer_city} 
+                        onChange={handleChange} 
+                        placeholder="e.g. Hyderabad / Vijayawada" 
+                        style={inp('buyer_city')} 
+                        onFocus={() => setFocus('buyer_city')} 
+                        onBlur={() => setFocus(null)} 
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                        State
+                      </label>
+                      <input 
+                        name="buyer_state" 
+                        value={form.buyer_state} 
+                        onChange={handleChange} 
+                        placeholder="e.g. Telangana / Andhra Pradesh" 
+                        style={inp('buyer_state')} 
+                        onFocus={() => setFocus('buyer_state')} 
+                        onBlur={() => setFocus(null)} 
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 4 }}>
+                    <div style={{ width: 'calc(25% - 9px)' }}>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                        Stock Status
+                      </label>
+                      <select
+                        name="status"
+                        value={form.status}
+                        onChange={handleChange}
+                        style={{ ...inp('status'), cursor: 'pointer', background: '#fff' }}
+                        onFocus={() => setFocus('status')}
+                        onBlur={() => setFocus(null)}
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="draft">Draft</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="attio-btn attio-btn-primary"
+                      onClick={handleNextStep1}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '8px 20px', fontSize: '0.8125rem', fontWeight: 600, borderRadius: 6, height: 34
+                      }}
+                    >
+                      Next: Products & Line Items <ArrowRight size={15} />
+                    </button>
                   </div>
                 </div>
+              )}
 
-                {/* Pricing & Stock */}
-                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
-                    <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.9375rem', margin: 0 }}>Pricing & Stock</p>
-                  </div>
-                  <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              {/* ── STEP 2: Products & Line Items (Quotes Style) ── */}
+              {step === 2 && (
+                <div className="attio-table-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
                     <div>
-                      <label style={S.label}>100-Unit Price (₹) <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input
-                        name="price_100"
-                        type="number"
-                        step="0.01"
-                        value={form.price_100 !== undefined ? form.price_100 : (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : '')}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          const bw = parseFloat(form.bag_weight || 100)
-                          const calculatedPrice = val ? ((parseFloat(val) / 100) * bw).toFixed(2) : ''
-                          setForm(prev => ({ ...prev, price_100: val, price: calculatedPrice }))
-                          if (errors.price) setErrors(prev => ({ ...prev, price: '' }))
-                        }}
-                        placeholder="e.g. 6000"
-                        style={inp('price_100')}
-                        onFocus={() => setFocus('price_100')}
-                        onBlur={() => setFocus(null)}
-                      />
-                      {errors.price && <span style={S.error}>{errors.price}</span>}
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Product Name *</label>
+                      <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Lalitha-Rice / Wireless Mouse" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
+                      {errors.name && <span style={S.error}>{errors.name}</span>}
                     </div>
-                    {getBulkUnitDetails(form.unit) && (
-                      <div>
-                        <label style={S.label}>Pack / Container Size <span style={{ color: '#dc2626' }}>*</span></label>
-                        <input
-                          name="bag_weight"
-                          type="number"
-                          step="0.1"
-                          value={form.bag_weight}
-                          onChange={(e) => {
-                            const bw = e.target.value
-                            const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
-                            const calculatedPrice = p100 && bw ? ((p100 / 100) * parseFloat(bw)).toFixed(2) : form.price
-                            setForm(prev => ({ ...prev, bag_weight: bw, price: calculatedPrice }))
-                            if (errors.bag_weight) setErrors(prev => ({ ...prev, bag_weight: '' }))
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                        <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 0 }}>HSN Code</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const code = String(Math.floor(10000000 + Math.random() * 90000000))
+                            setForm(prev => ({ ...prev, hsn_code: code, sku: code }))
                           }}
-                          placeholder="e.g. 25, 50, 75, 100"
-                          style={inp('bag_weight')}
-                          onFocus={() => setFocus('bag_weight')}
-                          onBlur={() => setFocus(null)}
-                        />
-                        {getBulkUnitDetails(form.unit).quickSizes && (
-                          <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
-                            {getBulkUnitDetails(form.unit).quickSizes.map(size => {
-                              const isSelected = Number(form.bag_weight) === size
-                              return (
-                                <button
-                                  key={size}
-                                  type="button"
-                                  onClick={() => {
-                                    const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
-                                    const calculatedPrice = p100 ? ((p100 / 100) * size).toFixed(2) : form.price
-                                    setForm(prev => ({ ...prev, bag_weight: size, price: calculatedPrice }))
-                                  }}
-                                  style={{
-                                    padding: '2px 7px',
-                                    borderRadius: 5,
-                                    border: isSelected ? '1px solid #3d68f5' : '1px solid #e5e7eb',
-                                    background: isSelected ? '#eff6ff' : '#f9fafb',
-                                    color: isSelected ? '#3d68f5' : '#4b5563',
-                                    fontSize: '0.72rem',
-                                    fontWeight: isSelected ? 600 : 500,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.12s'
-                                  }}
-                                >
-                                  {size}{getBulkUnitDetails(form.unit).short}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                        {errors.bag_weight && <span style={S.error}>{errors.bag_weight}</span>}
+                          style={{ background: 'none', border: 'none', color: '#3d68f5', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                        >
+                          Auto Generate
+                        </button>
                       </div>
-                    )}
-                    {getBulkUnitDetails(form.unit) && (
-                      <div>
-                        <label style={S.label}>Calculated Pack Price (₹)</label>
-                        <input
-                          type="text"
-                          readOnly
-                          value={
-                            (() => {
-                              const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
-                              const bw = parseFloat(form.bag_weight || 100)
-                              return p100 > 0 ? `₹${((p100 / 100) * bw).toFixed(2)}` : '₹0.00'
-                            })()
-                          }
-                          style={{ ...inp('calc_price'), background: '#f8fafc', color: '#10b981', fontWeight: 700 }}
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <label style={S.label}>
-                        {getBulkUnitDetails(form.unit) && parseFloat(form.bag_weight) > 1
-                          ? `Stock Quantity (${getBulkUnitDetails(form.unit).pluralName})`
-                          : `Stock Quantity (${getBulkUnitDetails(form.unit)?.short || form.unit || 'pcs'})`}
-                      </label>
-                      <input name="stock" type="number" value={form.stock} onChange={handleChange} placeholder="0" style={inp('stock')} onFocus={() => setFocus('stock')} onBlur={() => setFocus(null)} />
+                      <input name="hsn_code" value={form.hsn_code || form.sku || ''} onChange={e => setForm({ ...form, hsn_code: e.target.value, sku: e.target.value })} placeholder="e.g. 10064000" style={{ ...inp('hsn_code'), fontFamily: 'monospace', color: '#475569', fontWeight: 600 }} onFocus={() => setFocus('hsn_code')} onBlur={() => setFocus(null)} />
                     </div>
+
                     <div>
-                      <label style={S.label}>Update Price (₹)</label>
-                      <input
-                        name="updated_price"
-                        type="number"
-                        step="0.01"
-                        value={form.updated_price}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          setForm(prev => ({
-                            ...prev,
-                            updated_price: val,
-                            updated_price_date: val && !prev.updated_price_date ? new Date().toISOString().split('T')[0] : prev.updated_price_date
-                          }))
-                        }}
-                        placeholder="e.g. 6500"
-                        style={inp('updated_price')}
-                        onFocus={() => setFocus('updated_price')}
-                        onBlur={() => setFocus(null)}
-                      />
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Category</label>
+                      <input name="category" value={form.category} onChange={handleChange} placeholder="e.g. Food / Rice" style={inp('category')} onFocus={() => setFocus('category')} onBlur={() => setFocus(null)} />
                     </div>
+
                     <div>
-                      <label style={S.label}>Updated Date</label>
-                      <input
-                        name="updated_price_date"
-                        type="date"
-                        value={form.updated_price_date}
-                        onChange={handleChange}
-                        style={inp('updated_price_date')}
-                        onFocus={() => setFocus('updated_price_date')}
-                        onBlur={() => setFocus(null)}
-                      />
-                    </div>
-                    <div>
-                      <label style={S.label}>Unit of Measure (UOM)</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Unit of Measure (UOM)</label>
                       <select
                         name="unit"
                         value={form.unit}
@@ -406,82 +458,291 @@ export default function ImportStockForm() {
                         ))}
                       </select>
                     </div>
-                  </div>
-                  {getBulkUnitDetails(form.unit) && (form.price_100 || form.price || form.updated_price) && form.bag_weight && (
-                    <div style={{ padding: '12px 20px', background: '#f0fdf4', borderTop: '1px solid #dcfce7', fontSize: '0.8125rem', color: '#166534', fontWeight: 600, display: 'flex', flexWrap: 'wrap', gap: '8px 16px', alignItems: 'center' }}>
-                      <span>Calculated Unit Rate: ₹{(parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100).toFixed(2)} / {getBulkUnitDetails(form.unit).short}</span>
-                      <span>• {form.bag_weight}{getBulkUnitDetails(form.unit).short} {getBulkUnitDetails(form.unit).name} Price: ₹{((parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100) * parseFloat(form.bag_weight)).toFixed(2)}</span>
-                      {form.updated_price && (
-                        <span style={{ color: '#047857', fontWeight: 700 }}>
-                          • Updated Price: ₹{parseFloat(form.updated_price).toFixed(2)} (₹{(parseFloat(form.updated_price) / parseFloat(form.bag_weight || 1)).toFixed(2)} / {getBulkUnitDetails(form.unit).short})
-                          {form.updated_price_date ? ` as of ${form.updated_price_date}` : ''}
-                        </span>
-                      )}
-                      {form.stock && parseFloat(form.stock) > 0 && (
-                        <span style={{ color: '#4b5563', fontWeight: 500 }}>
-                          • Total Inventory: {form.stock} {getBulkUnitDetails(form.unit).pluralName} ({(parseFloat(form.stock) * parseFloat(form.bag_weight)).toLocaleString()} {getBulkUnitDetails(form.unit).short} total)
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              {/* ── Right: Status + Actions ── */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-                {/* Status */}
-                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
-                    <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.9375rem', margin: 0 }}>Status</p>
-                  </div>
-                  <div style={{ padding: '16px 20px' }}>
-                    <select name="status" value={form.status} onChange={handleChange} style={{ ...S.input, cursor: 'pointer' }}>
-                      <option value="pending">Pending</option>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="draft">Draft</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Info box */}
-                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '16px' }}>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <Info size={16} color="#3b82f6" style={{ flexShrink: 0, marginTop: 1 }} />
                     <div>
-                      <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1e40af', margin: '0 0 4px' }}>Pending Products</p>
-                      <p style={{ fontSize: '0.7875rem', color: '#3b82f6', margin: 0, lineHeight: 1.5 }}>
-                        Products staged here are reviewed before being added to your live inventory. Use the "Add to Products" button on the list page to approve them.
-                      </p>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Buyer Price (100 Units, ₹)</label>
+                      <input
+                        name="buying_price"
+                        type="number"
+                        step="0.01"
+                        value={form.buying_price}
+                        onChange={handleChange}
+                        placeholder="e.g. 5500"
+                        style={inp('buying_price')}
+                        onFocus={() => setFocus('buying_price')}
+                        onBlur={() => setFocus(null)}
+                      />
+                      <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3, display: 'block' }}>
+                        {form.buying_price ? `₹${(parseFloat(form.buying_price) / 100).toFixed(2)} / ${getBulkUnitDetails(form.unit)?.short || 'unit'} cost` : 'Purchase cost paid to supplier'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>My Selling Price (100 Units, ₹) *</label>
+                      <input
+                        name="price_100"
+                        type="number"
+                        step="0.01"
+                        value={form.price_100 !== undefined ? form.price_100 : (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : '')}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          const bw = parseFloat(form.bag_weight || 100)
+                          const calculatedPrice = val ? ((parseFloat(val) / 100) * bw).toFixed(2) : ''
+                          setForm(prev => ({ ...prev, price_100: val, price: calculatedPrice }))
+                          if (errors.price) setErrors(prev => ({ ...prev, price: '' }))
+                        }}
+                        placeholder="e.g. 6150"
+                        style={inp('price_100')}
+                        onFocus={() => setFocus('price_100')}
+                        onBlur={() => setFocus(null)}
+                      />
+                      {errors.price && <span style={S.error}>{errors.price}</span>}
+                      <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3, display: 'block' }}>
+                        {sell100 > 0 ? `₹${(sell100 / 100).toFixed(2)} / ${getBulkUnitDetails(form.unit)?.short || 'unit'} selling rate` : 'Base market price'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Pack Weight ({getBulkUnitDetails(form.unit)?.short || 'kg'}) *</label>
+                      <input
+                        name="bag_weight"
+                        type="number"
+                        step="0.1"
+                        value={form.bag_weight}
+                        onChange={(e) => {
+                          const bw = e.target.value
+                          const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
+                          const calculatedPrice = p100 && bw ? ((p100 / 100) * parseFloat(bw)).toFixed(2) : form.price
+                          setForm(prev => ({ ...prev, bag_weight: bw, price: calculatedPrice }))
+                          if (errors.bag_weight) setErrors(prev => ({ ...prev, bag_weight: '' }))
+                        }}
+                        placeholder="e.g. 10, 25, 50, 100"
+                        style={inp('bag_weight')}
+                        onFocus={() => setFocus('bag_weight')}
+                        onBlur={() => setFocus(null)}
+                      />
+                      {getBulkUnitDetails(form.unit)?.quickSizes && (
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                          {getBulkUnitDetails(form.unit).quickSizes.map(size => {
+                            const isSelected = Number(form.bag_weight) === size
+                            return (
+                              <button
+                                key={size}
+                                type="button"
+                                onClick={() => {
+                                  const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
+                                  const calculatedPrice = p100 ? ((p100 / 100) * size).toFixed(2) : form.price
+                                  setForm(prev => ({ ...prev, bag_weight: size, price: calculatedPrice }))
+                                }}
+                                style={{
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  border: isSelected ? '1px solid #3d68f5' : '1px solid #e5e7eb',
+                                  background: isSelected ? '#eff6ff' : '#f9fafb',
+                                  color: isSelected ? '#3d68f5' : '#4b5563',
+                                  fontSize: '0.7rem',
+                                  fontWeight: isSelected ? 600 : 500,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {size}{getBulkUnitDetails(form.unit).short}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {errors.bag_weight && <span style={S.error}>{errors.bag_weight}</span>}
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Stock Quantity ({getBulkUnitDetails(form.unit)?.pluralName || 'Units'})</label>
+                      <input name="stock" type="number" value={form.stock} onChange={handleChange} placeholder="0" style={inp('stock')} onFocus={() => setFocus('stock')} onBlur={() => setFocus(null)} />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Updated Price (₹)</label>
+                      <input
+                        name="updated_price"
+                        type="number"
+                        step="0.01"
+                        value={form.updated_price}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setForm(prev => ({
+                            ...prev,
+                            updated_price: val,
+                            updated_price_date: val ? todayStr : prev.updated_price_date
+                          }))
+                        }}
+                        placeholder="e.g. 6000"
+                        style={inp('updated_price')}
+                        onFocus={() => setFocus('updated_price')}
+                        onBlur={() => setFocus(null)}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Updated Date</label>
+                      <input
+                        name="updated_price_date"
+                        type="date"
+                        value={form.updated_price_date}
+                        onChange={handleChange}
+                        style={inp('updated_price_date')}
+                        onFocus={() => setFocus('updated_price_date')}
+                        onBlur={() => setFocus(null)}
+                      />
                     </div>
                   </div>
-                </div>
 
-                {/* Actions */}
-                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="btn-blue"
-                    style={{ width: '100%', justifyContent: 'center', background: saving ? '#9ca3af' : undefined, cursor: saving ? 'not-allowed' : 'pointer' }}
-                  >
-                    {saving && <Loader2 size={14} className="ws-chat-loader-spin" />}
-                    {saving ? 'Saving...' : id ? 'Update Product' : 'Save Product'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/import-stock')}
-                    style={{ width: '100%', height: 38, border: '1px solid #e5e7eb', borderRadius: '8px', background: '#fff', color: '#6b7280', fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#fff'}
-                  >
-                    Cancel
-                  </button>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Description / Notes</label>
+                    <textarea name="description" value={form.description} onChange={handleChange} placeholder="Add product notes or batch details..." rows={2} style={{ ...inp('description'), height: 'auto', padding: '6px 8px', resize: 'vertical' }} onFocus={() => setFocus('description')} onBlur={() => setFocus(null)} />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      style={{ height: 34, padding: '0 16px', border: '1px solid #e5e7eb', borderRadius: 5, background: '#fff', color: '#4b5563', fontSize: '0.78rem', fontWeight: 500, cursor: 'pointer' }}
+                    >
+                      ← Back to Supplier Info
+                    </button>
+
+                    <button
+                      type="button"
+                      className="attio-btn attio-btn-primary"
+                      onClick={handleNextStep2}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 20px', fontSize: '0.8125rem', fontWeight: 600, borderRadius: 6, height: 34, cursor: 'pointer' }}
+                    >
+                      Next: Review & Save <ArrowRight size={15} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </form>
+              )}
+
+              {/* ── STEP 3: Summary & Confirmation (Quotes Style) ── */}
+              {step === 3 && (
+                <div className="attio-table-card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ borderBottom: '1px solid #f3f4f6', paddingBottom: 10, marginBottom: 10 }}>
+                    <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>Review Import Stock Summary</h2>
+                    <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: '2px 0 0' }}>Confirm supplier details, unit pricing, profit margins, and stock quantities before saving.</p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#334155', fontWeight: 600, fontSize: '0.8125rem', marginBottom: 8 }}>
+                        <User size={15} color="#3d68f5" /> Supplier / Buyer Details
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div><strong style={{ color: '#1e293b' }}>Name:</strong> {form.buyer_name || 'Not provided'}</div>
+                        <div><strong style={{ color: '#1e293b' }}>Phone:</strong> {form.buyer_phone || 'Not provided'}</div>
+                        <div><strong style={{ color: '#1e293b' }}>Location:</strong> {[form.buyer_city, form.buyer_state].filter(Boolean).join(', ') || 'Not provided'}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#334155', fontWeight: 600, fontSize: '0.8125rem', marginBottom: 8 }}>
+                        <Package size={15} color="#3d68f5" /> Product Specifications
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div><strong style={{ color: '#1e293b' }}>Product Name:</strong> {form.name}</div>
+                        <div><strong style={{ color: '#1e293b' }}>SKU / Barcode:</strong> {form.sku || 'N/A'}</div>
+                        <div><strong style={{ color: '#1e293b' }}>Category:</strong> {form.category || 'General'}</div>
+                        <div><strong style={{ color: '#1e293b' }}>Pack Weight:</strong> {form.bag_weight} {getBulkUnitDetails(form.unit)?.short || form.unit} per pack</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#166534', fontWeight: 700, fontSize: '0.85rem' }}>
+                        <DollarSign size={16} color="#10b981" /> Pricing & Unit Rate Analysis
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                      <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Buyer Price (Supplier)</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b' }}>
+                          {form.buying_price ? `₹${parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
+                          ₹{parseFloat(buyRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {getBulkUnitDetails(form.unit)?.short || 'unit'} cost
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Selling Price (My Rate)</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#10b981' }}>
+                          ₹{sell100 > 0 ? sell100.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
+                          ₹{parseFloat(sellRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {getBulkUnitDetails(form.unit)?.short || 'unit'} selling
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Updated Market Price</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#059669' }}>
+                          {form.updated_price ? `₹${parseFloat(form.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
+                          {form.updated_price_date ? `as of ${form.updated_price_date}` : 'No revision'}
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Profit Margin</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: profitMarginPer100 && parseFloat(profitMarginPer100) >= 0 ? '#10b981' : '#dc2626' }}>
+                          {profitMarginPer100 ? `${parseFloat(profitMarginPer100) >= 0 ? '+' : ''}₹${parseFloat(profitMarginPer100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
+                          {profitMarginPerUnit ? `${parseFloat(profitMarginPerUnit) >= 0 ? '+' : ''}₹${profitMarginPerUnit} / ${getBulkUnitDetails(form.unit)?.short || 'unit'}` : 'Per 100 units'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Total Inventory Stock</div>
+                      <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1e3a8a', marginTop: 2 }}>
+                        {form.stock} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags / Units'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '0.75rem', color: '#2563eb' }}>
+                      <div>Pack Size: <strong>{form.bag_weight} {getBulkUnitDetails(form.unit)?.short || 'kg'}</strong> / pack</div>
+                      <div>Total Weight: <strong>{(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} {getBulkUnitDetails(form.unit)?.short || 'kg'}</strong></div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+                    <button
+                      type="button"
+                      onClick={() => setStep(2)}
+                      style={{ height: 34, padding: '0 16px', border: '1px solid #e5e7eb', borderRadius: 5, background: '#fff', color: '#4b5563', fontSize: '0.78rem', fontWeight: 500, cursor: 'pointer' }}
+                    >
+                      ← Back to Product Details
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={saving}
+                      className="attio-btn attio-btn-primary"
+                      style={{ height: 34, padding: '0 22px', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', borderRadius: 6, cursor: saving ? 'not-allowed' : 'pointer' }}
+                    >
+                      {saving && <Loader2 size={15} className="ws-chat-loader-spin" />}
+                      {saving ? 'Saving Product...' : (id ? 'Update Product' : 'Save Product to Stock')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
           )}
+
         </main>
       </div>
     </div>

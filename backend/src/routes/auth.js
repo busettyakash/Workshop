@@ -38,7 +38,20 @@ const ensureWorkspaceTable = async () => {
     ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
   `).catch(err => console.error('[DB] Error ensuring password column on shop_profiles:', err.message))
 }
-ensureWorkspaceTable()
+
+let ensureWorkspaceTablePromise
+router.use(async (_req, _res, next) => {
+  try {
+    ensureWorkspaceTablePromise ||= ensureWorkspaceTable().catch((err) => {
+      ensureWorkspaceTablePromise = null
+      throw err
+    })
+    await ensureWorkspaceTablePromise
+    next()
+  } catch (err) {
+    next(err)
+  }
+})
 
 
 function normalizeEmail(email = '') {

@@ -1,18 +1,73 @@
-import React, { useRef } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import { X, Printer } from 'lucide-react'
 import './BillPreview.css'
 
-const INR = (v) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(v || 0)
+const INR = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
 
-export default function BillPreview({ bill, shopName, shopGstin, shopPhone, shopAddress, onClose }) {
+export default function BillPreview({ bill, quote, type, shopName, shopGstin, shopPhone, shopAddress, onClose }) {
   const printRef = useRef(null)
 
-  if (!bill) return null
+  const doc = quote || bill || {}
+  const isQuote = type === 'quotation' || Boolean(doc.quote_number) || Boolean(quote)
+
+  const [profile, setProfile] = useState({
+    shopName: shopName || doc.shop_name || '',
+    shopGstin: shopGstin || doc.shop_gstin || '',
+    shopPhone: shopPhone || doc.shop_phone || '',
+    shopAddress: shopAddress || doc.shop_address || ''
+  })
+  const [productsMap, setProductsMap] = useState({})
+
+  useEffect(() => {
+    // Dynamically fetch company profile and products from backend DB
+    const fetchData = async () => {
+      try {
+        const token = sessionStorage.getItem('ws_token') || localStorage.getItem('token') || localStorage.getItem('jwt')
+        const wsId = sessionStorage.getItem('ws_active_workspace_id') || ''
+        const headers = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        if (wsId) headers['x-workspace-id'] = wsId
+
+        const [resProfile, resProds] = await Promise.all([
+          fetch('/api/companies/my-profile', { headers }).catch(() => null),
+          fetch('/api/products?limit=500', { headers }).catch(() => null)
+        ])
+
+        if (resProfile && resProfile.ok) {
+          const jsonProf = await resProfile.json()
+          if (jsonProf.data) {
+            setProfile(prev => ({
+              shopName: jsonProf.data.name || jsonProf.data.shop_name || prev.shopName,
+              shopGstin: jsonProf.data.gstin || prev.shopGstin,
+              shopPhone: jsonProf.data.phone || prev.shopPhone,
+              shopAddress: jsonProf.data.address || prev.shopAddress
+            }))
+          }
+        }
+
+        if (resProds && resProds.ok) {
+          const jsonProds = await resProds.json()
+          const prods = jsonProds.data || []
+          const pMap = {}
+          prods.forEach(p => {
+            if (p.id) pMap[String(p.id)] = p
+            if (p.name) pMap[p.name.toLowerCase().trim()] = p
+          })
+          setProductsMap(pMap)
+        }
+      } catch (_e) { }
+    }
+
+    fetchData()
+  }, [])
+
+  if (!bill && !quote) return null
 
   let items = []
   try {
-    items = typeof bill.items === 'string' ? JSON.parse(bill.items) : (bill.items || [])
+    const rawItems = doc.line_items || doc.items || []
+    items = typeof rawItems === 'string' ? JSON.parse(rawItems) : (rawItems || [])
   } catch { items = [] }
 
   const grossSubtotal = items.reduce((s, li) => {
@@ -23,134 +78,194 @@ export default function BillPreview({ bill, shopName, shopGstin, shopPhone, shop
 
   const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
   const subtotal = Math.max(0, grossSubtotal - lineDiscounts)
-  const discount = parseFloat(bill.discount || 0)
-  const totalAmount = parseFloat(bill.amount || grossSubtotal || 0)
-  const taxAmt = totalAmount > subtotal ? (totalAmount - subtotal) : 0
+  const discount = parseFloat(doc.discount || 0)
+  const totalAmount = parseFloat(doc.amount || doc.total_amount || grossSubtotal || 0)
+  const taxAmt = parseFloat(doc.tax_amount || (totalAmount > subtotal ? (totalAmount - subtotal) : 0))
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2
-  const invId = bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`
+
+  const docId = isQuote 
+    ? (doc.quote_number || `QT-${doc.id || '649067'}`)
+    : (doc.bill_number || `INV-${String(doc.id || 1).padStart(4, '0')}`)
+
+  const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
+  const sectionTitle1 = isQuote ? '1. QUOTATION DETAILS' : '1. INVOICE DETAILS'
+  const docTypeTitle = isQuote ? 'Commercial Quotation' : 'Tax Invoice'
+
+  // Company details dynamically retrieved from DB for all companies
+  const companyName = profile.shopName || shopName || doc.shop_name || localStorage.getItem('company_name') || 'Capabel'
+  const companyGstin = profile.shopGstin || shopGstin || doc.shop_gstin || localStorage.getItem('company_gstin') || ''
+  const companyPhone = profile.shopPhone || shopPhone || doc.shop_phone || ''
+  const companyAddress = profile.shopAddress || shopAddress || doc.shop_address || ''
+
+  // Customer details
+  const customerName = doc.customer_name || ''
+  const customerGstin = doc.customer_gstin || ''
+  const customerAddress = doc.customer_address || (doc.customer_city ? `${doc.customer_city}${doc.customer_state ? `, ${doc.customer_state}` : ''}` : '')
+  const customerPhone = doc.customer_phone || ''
+  const customerCompany = doc.customer_company || ''
 
   const handlePrint = () => {
     const content = printRef.current.innerHTML
     const win = window.open('', '_blank', 'width=850,height=950')
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${invId}</title>
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${docId}</title>
     <style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:'Segoe UI',Arial,sans-serif;background:#fff;color:#1e293b}
-      .bill-preview-page{max-width:760px;margin:0 auto}
-      .bill-banner{background:linear-gradient(135deg,#1e3a8a,#2563eb 60%,#3d68f5);padding:36px 44px 32px;display:flex;justify-content:space-between;align-items:flex-start}
-      .bill-company-name{font-size:22px;font-weight:800;color:#fff;margin-bottom:8px}
-      .bill-company-meta{font-size:12.5px;color:rgba(255,255,255,0.72);line-height:1.75}
-      .bill-inv-label{font-size:11px;font-weight:800;color:rgba(255,255,255,0.55);letter-spacing:0.18em;text-transform:uppercase;margin-bottom:6px}
-      .bill-inv-number{font-size:30px;font-weight:900;color:#fff;margin-bottom:10px;line-height:1}
-      .bill-inv-meta{font-size:12px;color:rgba(255,255,255,0.7);line-height:1.8;text-align:right}
-      .bill-inv-meta strong{color:#fff}
-      .status-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase}
-      .status-paid{background:rgba(220,252,231,0.95);color:#15803d}
-      .status-unpaid{background:rgba(254,243,199,0.95);color:#92400e}
-      .bill-body{padding:36px 44px}
-      .bill-parties{display:grid;grid-template-columns:1fr 1fr;margin-bottom:36px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
-      .bill-party-block{padding:20px 24px}
-      .bill-party-block:first-child{border-right:1px solid #e2e8f0}
-      .bill-party-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;margin-bottom:8px}
-      .bill-party-name{font-size:15px;font-weight:700;color:#0f172a;margin-bottom:4px}
-      .bill-party-meta{font-size:12.5px;color:#64748b;line-height:1.7}
-      table{width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
-      thead tr{background:#f8fafc}
-      th{padding:13px 16px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;border-bottom:1px solid #e2e8f0}
-      td{padding:16px;font-size:13.5px;color:#1e293b;border-bottom:1px solid #f1f5f9}
-      .text-center{text-align:center}.text-right{text-align:right}
-      .bill-item-name{font-weight:600;color:#0f172a;font-size:14px}
-      .bill-item-unit{font-size:11.5px;color:#94a3b8;margin-top:2px}
-      .bill-totals-wrap{display:flex;justify-content:flex-end;margin-top:24px}
-      .bill-totals{width:300px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
-      .total-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#475569;padding:11px 18px;border-bottom:1px solid #f1f5f9}
-      .total-row.grand{background:#0f172a;font-size:15px;font-weight:800;color:#fff;padding:15px 18px;border-bottom:none}
-      .bill-footer{border-top:1px solid #e2e8f0;margin-top:32px;padding-top:20px;text-align:center;font-size:11.5px;color:#94a3b8;line-height:1.7}
-      @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-    </style></head><body>${content}</body></html>`)
+      @page { margin: 0; }
+      *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
+      body{font-family:'Inter','Segoe UI',Arial,sans-serif;background:#fff;color:#0f172a;padding:20px;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .bill-preview-page{max-width:800px;margin:0 auto;border:1px solid #cbd5e1;border-radius:12px;overflow:hidden}
+      .bill-banner{background:#1e3a8a!important;background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 60%,#3d68f5 100%)!important;padding:36px 44px 32px;display:flex;justify-content:space-between;align-items:flex-start;position:relative;overflow:hidden;color:#fff!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .bill-banner::before{content:'';position:absolute;top:-40px;right:-40px;width:180px;height:180px;background:rgba(255,255,255,0.12)!important;border-radius:50%;pointer-events:none;-webkit-print-color-adjust:exact!important;display:block!important}
+      .bill-banner::after{content:'';position:absolute;bottom:-60px;right:60px;width:130px;height:130px;background:rgba(255,255,255,0.08)!important;border-radius:50%;pointer-events:none;-webkit-print-color-adjust:exact!important;display:block!important}
+      .bill-banner-left{position:relative;z-index:1}
+      .bill-banner-right{text-align:right;position:relative;z-index:1}
+      .bill-company-name{font-size:24px;font-weight:800;color:#fff!important;margin-bottom:6px;letter-spacing:-0.03em}
+      .bill-company-meta{font-size:12.5px;color:rgba(255,255,255,0.85)!important;line-height:1.6}
+      .bill-inv-label{font-size:11px;font-weight:800;color:rgba(255,255,255,0.75)!important;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:6px}
+      .bill-inv-number{font-size:30px;font-weight:900;color:#fff!important;line-height:1.1;margin-bottom:8px}
+      .bill-inv-meta{font-size:12px;color:rgba(255,255,255,0.9)!important;line-height:1.7}
+      .status-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;-webkit-print-color-adjust:exact!important}
+      .status-paid{background:rgba(220,252,231,0.95)!important;color:#15803d!important}
+      .bill-body{padding:28px 40px}
+      .section-title{font-size:12px;font-weight:800;color:#334155;text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
+      .eway-meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;background:#f8fafc!important;border:1px solid #cbd5e1;border-radius:6px;padding:12px 16px;font-size:12px;margin-bottom:16px;-webkit-print-color-adjust:exact!important}
+      .eway-meta-item label{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:2px}
+      .eway-meta-item span{font-weight:700;color:#0f172a}
+      .address-parties-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+      .address-card{border:1px solid #cbd5e1;border-radius:6px;padding:14px;background:#fff}
+      .address-card-header{font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;border-bottom:1px solid #f1f5f9;padding-bottom:6px;margin-bottom:8px}
+      .address-card-name{font-size:14px;font-weight:800;color:#0f172a;margin-bottom:4px}
+      .address-card-text{font-size:12px;color:#475569;line-height:1.6}
+      .bill-items-table{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #cbd5e1}
+      .bill-items-table th{background:#f8fafc!important;padding:10px 12px;font-size:11px;font-weight:800;color:#475569;border:1px solid #cbd5e1;text-align:left;-webkit-print-color-adjust:exact!important}
+      .bill-items-table td{padding:10px 12px;font-size:12px;border:1px solid #cbd5e1;color:#0f172a}
+      .totals-summary-grid{display:grid;grid-template-columns:repeat(8,1fr);border:1px solid #cbd5e1;background:#f8fafc!important;margin-bottom:20px;text-align:center;-webkit-print-color-adjust:exact!important}
+      .summary-cell{padding:8px 4px;border-right:1px solid #cbd5e1}
+      .summary-cell:last-child{border-right:none}
+      .summary-cell label{font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;display:block}
+      .summary-cell span{font-size:11.5px;font-weight:800;color:#0f172a;display:block;margin-top:2px}
+      .barcode-wrapper{text-align:center;margin:20px 0 10px}
+      .bill-footer{border-top:1px solid #e2e8f0;padding-top:14px;text-align:center;font-size:11px;color:#94a3b8}
+      @media print{
+        @page { margin: 0; }
+        body{padding:15px;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+        .bill-preview-page{border:none}
+        .bill-banner{background:#1e3a8a!important;background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 60%,#3d68f5 100%)!important;color:#ffffff!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+        .totals-summary-grid .summary-cell:last-child{background:#0f172a!important;color:#ffffff!important;-webkit-print-color-adjust:exact!important}
+      }
+    </style></head><body><div className="bill-preview-page">${content}</div></body></html>`)
     win.document.close()
-    win.focus()
-    setTimeout(() => { win.print(); win.close() }, 500)
+    setTimeout(() => { win.focus(); win.print() }, 300)
   }
 
   return (
     <div className="bp-overlay" onClick={onClose}>
-      <div className="bp-modal" onClick={e => e.stopPropagation()}>
-
-        {/* Toolbar */}
+      <div className="bp-modal" onClick={(e) => e.stopPropagation()}>
+        
+        {/* Top Controls Bar */}
         <div className="bp-toolbar">
-          <span className="bp-toolbar-title">Invoice Preview — {invId}</span>
+          <div className="bp-toolbar-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>{bannerLabel} Preview</span>
+            <span style={{ background: '#e2e8f0', color: '#334155', padding: '2px 8px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700 }}>{docId}</span>
+          </div>
           <div className="bp-toolbar-actions">
             <button className="bp-btn" onClick={handlePrint}>
-              <Printer size={15} /> Print / Download
+              <Printer size={15} /> Print / Save PDF
             </button>
-            <button className="bp-close" onClick={onClose}>
+            <button className="bp-close" onClick={onClose} title="Close Preview">
               <X size={16} />
             </button>
           </div>
         </div>
 
-        {/* Invoice */}
+        {/* Scrollable Container */}
         <div className="bp-scroll">
           <div className="bill-preview-page" ref={printRef}>
 
-            {/* Blue Banner Header */}
+            {/* Top Blue Header Banner with Decorative Design Bubbles (Matching Image Shape) */}
             <div className="bill-banner">
               <div className="bill-banner-left">
-                <div className="bill-company-name">{shopName || 'Busetty Traders'}</div>
+                <div className="bill-company-name">{companyName}</div>
                 <div className="bill-company-meta">
-                  {shopAddress && <>{shopAddress}<br /></>}
-                  {shopPhone && <>Phone: {shopPhone}<br /></>}
-                  {shopGstin && <>GSTIN: {shopGstin}</>}
+                  {companyAddress && <>{companyAddress}<br /></>}
+                  {companyPhone && <>Phone: {companyPhone} </>}
+                  {companyGstin && <>{companyPhone ? '· ' : ''}GSTIN: {companyGstin.toUpperCase()}</>}
+                  {isQuote && !companyGstin && <>Official Supplier & Goods Provider</>}
                 </div>
               </div>
               <div className="bill-banner-right">
-                <div className="bill-inv-label">Tax Invoice</div>
-                <div className="bill-inv-number">{invId}</div>
+                <div className="bill-inv-label">{bannerLabel}</div>
+                <div className="bill-inv-number">{docId}</div>
                 <div className="bill-inv-meta">
-                  Date: <strong>{fmtDate(bill.created_at)}</strong><br />
-                  {bill.due_date && <>Due: <strong>{fmtDate(bill.due_date)}</strong><br /></>}
-                  <span className={`status-badge ${bill.status === 'paid' ? 'status-paid' : 'status-unpaid'}`}>
-                    {bill.status === 'paid' ? 'PAID' : 'PENDING'}
-                  </span>
+                  Date: <strong>{fmtDate(doc.issue_date || doc.created_at)}</strong><br />
+                  {isQuote ? (
+                    <>Valid Until: <strong>{fmtDate(doc.valid_until || doc.due_date)}</strong><br /></>
+                  ) : (
+                    doc.due_date && <>Due: <strong>{fmtDate(doc.due_date)}</strong><br /></>
+                  )}
+                  {doc.status === 'paid' && (
+                    <span className="status-badge status-paid">PAID</span>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Body */}
+            {/* Document Body */}
             <div className="bill-body">
 
-              {/* Bill To / Payment */}
-              <div className="bill-parties">
-                <div className="bill-party-block">
-                  <div className="bill-party-label">Bill To</div>
-                  <div className="bill-party-name">{bill.customer_name || 'General Customer'}</div>
-                  {bill.customer_company && <div className="bill-party-meta">{bill.customer_company}</div>}
-                  {bill.customer_email && <div className="bill-party-meta">{bill.customer_email}</div>}
-                  {bill.customer_phone && <div className="bill-party-meta">Phone: {bill.customer_phone}</div>}
-                </div>
-                <div className="bill-party-block" style={{ textAlign: 'right' }}>
-                  <div className="bill-party-label">Payment Info</div>
-                  <div className="bill-party-meta">
-                    Status: <strong style={{ color: bill.status === 'paid' ? '#15803d' : '#d97706' }}>
-                      {bill.status === 'paid' ? 'Paid' : 'Pending'}
-                    </strong><br />
-                    {bill.due_date && <>Due by: {fmtDate(bill.due_date)}</>}
-                  </div>
-                </div>
+              {/* 1. Details Grid */}
+              <div className="section-title">{sectionTitle1}</div>
+              <div className="eway-meta-grid">
+                <div className="eway-meta-item"><label>{isQuote ? 'Quotation No' : 'Invoice No'}</label><span>{docId}</span></div>
+                <div className="eway-meta-item"><label>Generated Date</label><span>{fmtDate(doc.issue_date || doc.created_at)}</span></div>
+                {isQuote ? (
+                  <div className="eway-meta-item"><label>Valid Until</label><span>{fmtDate(doc.valid_until || doc.due_date)}</span></div>
+                ) : (
+                  companyGstin && <div className="eway-meta-item"><label>Company GSTIN</label><span>{companyGstin.toUpperCase()}</span></div>
+                )}
+                <div className="eway-meta-item"><label>Document Type</label><span>{docTypeTitle}</span></div>
               </div>
 
-              {/* Line Items */}
+              {/* 2. Address Details (From & To Boxes) */}
+              <div className="section-title">2. ADDRESS DETAILS</div>
+              <div className="address-parties-grid">
+                
+                {/* FROM BOX */}
+                <div className="address-card">
+                  <div className="address-card-header">FROM (SUPPLIER)</div>
+                  <div className="address-card-name">{companyName}</div>
+                  <div className="address-card-text">
+                    {companyGstin && <div><strong>GSTIN:</strong> {companyGstin.toUpperCase()}</div>}
+                    {companyAddress && <div style={{ marginTop: 4 }}><strong style={{ color: '#0f172a' }}>:: Dispatch From ::</strong><br />{companyAddress}</div>}
+                    {companyPhone && <div style={{ marginTop: 4 }}>Phone: {companyPhone}</div>}
+                    {!companyGstin && !companyAddress && <div style={{ color: '#64748b' }}>Official Registered Supplier</div>}
+                  </div>
+                </div>
+
+                {/* TO BOX */}
+                <div className="address-card">
+                  <div className="address-card-header">TO (BUYER)</div>
+                  <div className="address-card-name">{customerName || '—'}</div>
+                  <div className="address-card-text">
+                    {customerGstin && <div><strong>GSTIN:</strong> {customerGstin.toUpperCase()}</div>}
+                    {customerCompany && <div style={{ marginTop: 2 }}>{customerCompany}</div>}
+                    {customerAddress && <div style={{ marginTop: 4 }}><strong style={{ color: '#0f172a' }}>:: Ship To ::</strong><br />{customerAddress}</div>}
+                    {customerPhone && <div style={{ marginTop: 4 }}>Phone: {customerPhone}</div>}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* 3. Goods Details Table */}
+              <div className="section-title">3. GOODS DETAILS</div>
               <table className="bill-items-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '40px' }}>#</th>
-                    <th>Description</th>
-                    <th className="text-center" style={{ width: '80px' }}>Qty</th>
-                    <th className="text-right" style={{ width: '140px' }}>Unit Price</th>
-                    {lineDiscounts > 0 && <th className="text-right" style={{ width: '110px' }}>Discount</th>}
-                    <th className="text-right" style={{ width: '150px' }}>Amount</th>
+                    <th style={{ width: 95 }}>HSN CODE</th>
+                    <th>PRODUCT NAME & DESC.</th>
+                    <th style={{ width: 110, textAlign: 'center' }}>QUANTITY</th>
+                    <th style={{ width: 130, textAlign: 'right' }}>TAXABLE AMOUNT</th>
+                    <th style={{ width: 150, textAlign: 'right' }}>TAX RATE (C+S+I)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -158,76 +273,128 @@ export default function BillPreview({ bill, shopName, shopGstin, shopPhone, shop
                     const qty = parseFloat(li.qty || li.quantity || 1)
                     const price = parseFloat(li.price || li.rate || 0)
                     const lineTotal = Math.max(0, (price * qty) - parseFloat(li.discount || 0))
-                    const unitStr = li.unit || li.unitLabel || ''
+                    const pId = li.product_id || li.productId || li.id
+                    const prodNameRaw = (typeof li === 'string' && li.trim())
+                      ? li 
+                      : (li.name || li.product_name || li.productName || li.product || li.item_name || li.title || li.description || '')
+                    
+                    const dbProd = pId 
+                      ? productsMap[String(pId)] 
+                      : Object.values(productsMap).find(p => p.name && prodNameRaw && p.name.toLowerCase().trim() === prodNameRaw.toLowerCase().trim())
+                    
+                    const unitStr = li.unit || li.unitLabel || li.subtext || (dbProd?.unit ? `${dbProd.unit}${dbProd.bag_weight > 1 ? ` (${dbProd.bag_weight}kg)` : ''}` : '')
+                    const rawHsn = li.hsn_code || li.hsn || li.sku || dbProd?.hsn_code || dbProd?.sku || ''
+                    const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-') 
+                      ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
+                      : rawHsn
+                    const prodName = prodNameRaw || dbProd?.name || 'Product Item'
+
                     return (
                       <tr key={i}>
-                        <td style={{ color: '#94a3b8', fontWeight: 500 }}>{i + 1}</td>
+                        <td style={{ fontWeight: 600, color: '#475569', fontSize: 12, fontFamily: 'monospace' }}>{hsnCode}</td>
                         <td>
-                          <div className="bill-item-name">{li.name || li.product_name || 'Product'}</div>
-                          {unitStr && <div className="bill-item-unit">{unitStr}</div>}
+                          <div style={{ fontWeight: 700, color: '#0f172a' }}>{prodName}</div>
+                          {unitStr && <div style={{ fontSize: 11, color: '#64748b' }}>{unitStr}</div>}
                         </td>
-                        <td className="text-center" style={{ fontWeight: 500 }}>{qty}</td>
-                        <td className="text-right">{INR(price)}</td>
-                        {lineDiscounts > 0 && <td className="text-right" style={{ color: '#16a34a' }}>{li.discount > 0 ? `−${INR(li.discount)}` : '—'}</td>}
+                        <td style={{ textAlign: 'center', fontWeight: 600 }}>{qty} {unitStr}</td>
                         <td className="text-right" style={{ fontWeight: 700 }}>{INR(lineTotal)}</td>
+                        <td className="text-right" style={{ fontSize: 11.5, color: '#475569' }}>
+                          {taxAmt > 0 ? `CGST (9%) + SGST (9%)` : `0.00% + 0.00%`}
+                        </td>
                       </tr>
                     )
                   }) : (
-                    <tr><td colSpan="6" style={{ textAlign: 'center', color: '#94a3b8', padding: '32px' }}>No line items found</td></tr>
+                    <tr>
+                      <td colSpan="5" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px' }}>No line items found</td>
+                    </tr>
                   )}
                 </tbody>
               </table>
 
-              {/* Totals */}
-              <div className="bill-totals-wrap">
-                <div className="bill-totals">
-                  <div className="total-row">
-                    <span>Subtotal</span>
-                    <span>{INR(grossSubtotal || totalAmount)}</span>
-                  </div>
-                  {lineDiscounts > 0 && (
-                    <div className="total-row discount">
-                      <span>Product Discounts</span>
-                      <span>− {INR(lineDiscounts)}</span>
-                    </div>
-                  )}
-                  {discount > 0 && (
-                    <div className="total-row discount">
-                      <span>Additional Discount</span>
-                      <span>− {INR(discount)}</span>
-                    </div>
-                  )}
-                  {taxAmt > 0 && (
-                    <>
-                      <div className="total-row">
-                        <span>CGST (9%)</span>
-                        <span>{INR(cgst)}</span>
-                      </div>
-                      <div className="total-row">
-                        <span>SGST (9%)</span>
-                        <span>{INR(sgst)}</span>
-                      </div>
-                    </>
-                  )}
-                  <div className="total-row grand">
-                    <span>Grand Total</span>
-                    <span>{INR(totalAmount)}</span>
-                  </div>
+              {/* Totals Summary Row Box */}
+              <div className="totals-summary-grid">
+                <div className="summary-cell">
+                  <label>Tot. Tax'ble Amt</label>
+                  <span>{INR(subtotal)}</span>
+                </div>
+                <div className="summary-cell">
+                  <label>CGST Amt</label>
+                  <span>{taxAmt > 0 ? INR(cgst) : '₹0.00'}</span>
+                </div>
+                <div className="summary-cell">
+                  <label>SGST Amt</label>
+                  <span>{taxAmt > 0 ? INR(sgst) : '₹0.00'}</span>
+                </div>
+                <div className="summary-cell">
+                  <label>IGST Amt</label>
+                  <span>₹0.00</span>
+                </div>
+                <div className="summary-cell">
+                  <label>CESS Amt</label>
+                  <span>₹0.00</span>
+                </div>
+                <div className="summary-cell">
+                  <label>CESS Non-Advol</label>
+                  <span>₹0.00</span>
+                </div>
+                <div className="summary-cell">
+                  <label>Other Amt</label>
+                  <span>₹0.00</span>
+                </div>
+                <div className="summary-cell" style={{ background: '#0f172a', color: '#fff' }}>
+                  <label style={{ color: '#94a3b8' }}>{isQuote ? 'Total Quote.Amt' : 'Total Inv.Amt'}</label>
+                  <span style={{ color: '#ffffff', fontSize: 13 }}>{INR(totalAmount)}</span>
                 </div>
               </div>
 
-              {/* Notes */}
-              {bill.notes && (
-                <div className="bill-notes">
-                  <div className="bill-notes-label">Notes</div>
-                  <div className="bill-notes-text">{bill.notes}</div>
-                </div>
-              )}
+              {/* Barcode Graphic */}
+              <div className="barcode-wrapper">
+                <svg width="220" height="40" viewBox="0 0 220 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="0" width="3" height="30" fill="black"/>
+                  <rect x="5" width="1" height="30" fill="black"/>
+                  <rect x="8" width="4" height="30" fill="black"/>
+                  <rect x="15" width="2" height="30" fill="black"/>
+                  <rect x="20" width="5" height="30" fill="black"/>
+                  <rect x="28" width="1" height="30" fill="black"/>
+                  <rect x="32" width="3" height="30" fill="black"/>
+                  <rect x="38" width="2" height="30" fill="black"/>
+                  <rect x="44" width="4" height="30" fill="black"/>
+                  <rect x="50" width="1" height="30" fill="black"/>
+                  <rect x="54" width="5" height="30" fill="black"/>
+                  <rect x="62" width="2" height="30" fill="black"/>
+                  <rect x="68" width="3" height="30" fill="black"/>
+                  <rect x="74" width="1" height="30" fill="black"/>
+                  <rect x="78" width="4" height="30" fill="black"/>
+                  <rect x="85" width="2" height="30" fill="black"/>
+                  <rect x="90" width="5" height="30" fill="black"/>
+                  <rect x="98" width="1" height="30" fill="black"/>
+                  <rect x="102" width="3" height="30" fill="black"/>
+                  <rect x="108" width="2" height="30" fill="black"/>
+                  <rect x="114" width="4" height="30" fill="black"/>
+                  <rect x="120" width="1" height="30" fill="black"/>
+                  <rect x="124" width="5" height="30" fill="black"/>
+                  <rect x="132" width="2" height="30" fill="black"/>
+                  <rect x="138" width="3" height="30" fill="black"/>
+                  <rect x="144" width="1" height="30" fill="black"/>
+                  <rect x="148" width="4" height="30" fill="black"/>
+                  <rect x="155" width="2" height="30" fill="black"/>
+                  <rect x="160" width="5" height="30" fill="black"/>
+                  <rect x="168" width="1" height="30" fill="black"/>
+                  <rect x="172" width="3" height="30" fill="black"/>
+                  <rect x="178" width="2" height="30" fill="black"/>
+                  <rect x="184" width="4" height="30" fill="black"/>
+                  <rect x="190" width="1" height="30" fill="black"/>
+                  <rect x="194" width="5" height="30" fill="black"/>
+                  <rect x="202" width="2" height="30" fill="black"/>
+                  <rect x="208" width="3" height="30" fill="black"/>
+                  <rect x="214" width="2" height="30" fill="black"/>
+                  <text x="110" y="38" fontSize="9" textAnchor="middle" fill="#475569" fontFamily="monospace">{String(docId).replace(/\D/g, '') || '112157195020'}</text>
+                </svg>
+              </div>
 
-              {/* Footer */}
+              {/* Disclaimer Footer */}
               <div className="bill-footer">
-                Thank you for your business! This is a computer-generated invoice and does not require a signature.<br />
-                Generated by <strong>Workshop</strong> · {fmtDate(new Date())}
+                Official {docTypeTitle} generated by <strong>Workshop</strong> · {fmtDate(new Date())}
               </div>
 
             </div>

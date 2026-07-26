@@ -1,6 +1,8 @@
 import 'dotenv/config'
 import dns from 'dns'
-if (process.env.NODE_ENV === 'development') {
+const isDevelopment = process.env.NODE_ENV === 'development' && !process.env.VERCEL
+
+if (isDevelopment) {
   try {
     dns.setServers(['8.8.8.8', '8.8.4.4'])
   } catch (e) {
@@ -56,33 +58,23 @@ app.disable('x-powered-by')
 const PORT = process.env.PORT || 5000
 
 /* ── Request Logger Middleware ── */
-app.use((req, res, next) => {
-  const start = Date.now()
-  const originalSend = res.send
-  res.send = function (...args) {
-    const duration = Date.now() - start
-    const logLine = `[Request] ${req.method} ${req.originalUrl} - Status: ${res.statusCode} (${duration}ms) - Auth: ${req.headers.authorization ? 'Yes' : 'No'} - Workspace: ${req.headers['x-workspace-id'] || 'None'}`
-    console.log(logLine)
-    return originalSend.apply(res, args)
-  }
-  next()
-})
+if (isDevelopment) {
+  app.use((req, res, next) => {
+    const start = Date.now()
+    const originalSend = res.send
+    res.send = function (...args) {
+      const duration = Date.now() - start
+      const logLine = `[Request] ${req.method} ${req.originalUrl} - Status: ${res.statusCode} (${duration}ms) - Auth: ${req.headers.authorization ? 'Yes' : 'No'} - Workspace: ${req.headers['x-workspace-id'] || 'None'}`
+      console.log(logLine)
+      return originalSend.apply(res, args)
+    }
+    next()
+  })
+}
 
 /* ── Middleware ── */
 app.use(cors({
-  origin: (origin, callback) => {
-    const allowed = [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      process.env.FRONTEND_URL,
-    ].filter(Boolean)
-    // Allow any vercel.app preview/production URL
-    if (!origin || allowed.includes(origin) || origin.endsWith('.vercel.app')) {
-      callback(null, true)
-    } else {
-      callback(new Error('Not allowed by CORS'))
-    }
-  },
+  origin: true,
   credentials: true,
 }))
 app.use(express.json({ limit: '10mb' }))
@@ -118,22 +110,20 @@ app.use('/api/emails',         emailsRoutes)
 app.use('/api/uoms',           uomRoutes)
 app.use('/api/quotes',         quotesRoutes)
 
-/* ── 404 handler ── */
+/* ── 404 Handler ── */
 app.use((_req, res) => {
-  res.status(404).json({ error: 'Route not found' })
+  res.status(404).json({ error: 'Endpoint not found' })
 })
 
-/* ── Global error handler ── */
+/* ── Global Error Handler ── */
 app.use((err, _req, res, _next) => {
-  console.error('[Error]', err.message)
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' })
+  console.error('[Unhandled Error]', err)
+  res.status(500).json({ error: err.message || 'Internal server error' })
 })
 
-// Only listen in local dev — Vercel handles routing in production
-if (!process.env.VERCEL) {
+if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`✅ Workshop Backend running on http://localhost:${PORT}`)
-    console.log(`   InsForge: ${process.env.INSFORGE_API_BASE_URL}`)
+    console.log(`Server running on port ${PORT}`)
   })
 }
 

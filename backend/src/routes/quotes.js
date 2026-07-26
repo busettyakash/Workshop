@@ -2,8 +2,25 @@ import express from 'express'
 import pool from '../lib/db.js'
 import { sendEmail } from '../lib/smtp.js'
 import { apiLimiter, emailLimiter } from '../middleware/rateLimit.js'
+import { getInvoiceEmailTemplate, getQuoteEmailTemplate } from '../utils/emailTemplates.js'
+import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 
 const router = express.Router()
+
+pool.query(`
+  CREATE TABLE IF NOT EXISTS bill_items (
+    id SERIAL PRIMARY KEY,
+    bill_id INT,
+    product_id INT,
+    product_name TEXT,
+    quantity NUMERIC(10,2),
+    price NUMERIC(10,2),
+    line_total NUMERIC(10,2),
+    created_at TIMESTAMP DEFAULT NOW()
+  )
+`).catch(() => {})
+pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT`).catch(() => {})
+pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => {})
 
 
 const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
@@ -54,164 +71,15 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
   const shopProfileRes = await pool.query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles WHERE user_id::text = $1::text LIMIT 1', [quote.user_id || 'default-user']).catch(() => ({ rows: [] }))
   const shop = shopProfileRes.rows[0] || {}
   const sellerName = shop.shop_name || quote.shop_name || 'Busetty Traders'
-  const sellerPhone = shop.phone || ''
-  const sellerGstin = shop.gstin || ''
-  const sellerAddress = shop.address || ''
-
   const invNum = bill?.bill_number || `INV-${String(bill?.id || 1).padStart(4, '0')}`
   const totalAmount = parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
-  const taxAmt = parseFloat(quote?.tax_amount || 0)
-  const subtotal = taxAmt > 0 ? totalAmount - taxAmt : totalAmount
-  const cgst = taxAmt / 2
-  const sgst = taxAmt / 2
-
-  const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-  const dueDateObj = bill?.due_date ? new Date(bill.due_date) : new Date(Date.now() + 15 * 86400000)
-  const dueDateStr = dueDateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-
-  const subtotalFormatted = subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const cgstFormatted = cgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const sgstFormatted = sgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const totalFormatted = totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const itemsHtml = (billItems || []).map((item, idx) => {
-    const qty = parseFloat(item.quantity || item.qty || 1)
-    const rate = parseFloat(item.price || item.rate || 0)
-    const lineTotal = parseFloat(item.line_total || item.amount || (qty * rate))
-    const unitStr = item.unit ? `<br/><span style="font-size:11px; color:#9ca3af;">${item.unit}</span>` : ''
-    const formattedRate = rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    const formattedTotal = lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const catalogMap = await getProductHsnMap()
+  const enrichedBillItems = enrichItemsWithCache(billItems || [], catalogMap)
 
-    return `
-    <tr>
-      <td style="padding:11px 12px; border-bottom:1px solid #f3f4f6; color:#9ca3af; font-size:13px;">${idx + 1}</td>
-      <td style="padding:11px 12px; border-bottom:1px solid #f3f4f6; color:#111827; font-size:13px;">
-        <div style="font-weight:600;">${item.product_name || item.name || 'Product'}</div>${unitStr}
-      </td>
-      <td style="padding:11px 12px; border-bottom:1px solid #f3f4f6; text-align:right; color:#111827; font-size:13px;">${qty}</td>
-      <td style="padding:11px 12px; border-bottom:1px solid #f3f4f6; text-align:right; color:#111827; font-size:13px;">₹${formattedRate}</td>
-      <td style="padding:11px 12px; border-bottom:1px solid #f3f4f6; text-align:right; font-weight:600; color:#111827; font-size:13px;">₹${formattedTotal}</td>
-    </tr>
-  `}).join('')
-
-  const invoiceHtml = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>${invNum}</title>
-      </head>
-      <body style="margin:0; padding:0; background:#f8fafc; font-family:'Segoe UI', Arial, sans-serif; color:#111827;">
-        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background:#f8fafc; padding:32px 16px;">
-          <tr>
-            <td align="center">
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:720px; background:#ffffff; border-radius:12px; border:1px solid #e2e8f0; padding:40px; box-shadow:0 4px 20px rgba(0,0,0,0.05); text-align:left;">
-                <tr>
-                  <td>
-                    <!-- Header: Seller & TAX INVOICE -->
-                    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:28px; padding-bottom:20px; border-bottom:2px solid #3d68f5;">
-                      <tr>
-                        <td align="left" valign="top">
-                          <div style="font-size:22px; font-weight:800; color:#111827; margin-bottom:4px;">${sellerName}</div>
-                          <div style="font-size:12px; color:#6b7280; line-height:1.6;">
-                            ${sellerAddress ? `${sellerAddress}<br/>` : ''}
-                            ${sellerPhone ? `Phone: ${sellerPhone}<br/>` : ''}
-                            ${sellerGstin ? `GSTIN: ${sellerGstin}` : ''}
-                          </div>
-                        </td>
-                        <td align="right" valign="top" style="text-align:right;">
-                          <div style="font-size:28px; font-weight:800; color:#3d68f5; letter-spacing:-0.02em;">TAX INVOICE</div>
-                          <div style="font-size:12px; color:#6b7280; margin-top:4px; line-height:1.6;">
-                            Invoice No: <strong>${invNum}</strong><br/>
-                            Date: ${dateStr}<br/>
-                            Due: ${dueDateStr}<br/>
-                            <span style="display:inline-block; padding:3px 12px; border-radius:20px; font-size:11px; font-weight:700; background:#fef3c7; color:#92400e; margin-top:6px;">PENDING</span>
-                          </div>
-                        </td>
-                      </tr>
-                    </table>
-
-                    <!-- Buyer & Payment Details -->
-                    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:28px;">
-                      <tr>
-                        <td align="left" valign="top" width="60%">
-                          <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:6px;">BILL TO</div>
-                          <div style="font-size:15px; font-weight:700; color:#111827; margin-bottom:2px;">${quote.customer_name || 'General Customer'}</div>
-                          <div style="font-size:12px; color:#6b7280; line-height:1.6;">
-                            ${quote.customer_company ? `${quote.customer_company}<br/>` : ''}
-                            ${quote.customer_email ? `${quote.customer_email}<br/>` : ''}
-                            ${quote.customer_phone ? `Phone: ${quote.customer_phone}` : ''}
-                          </div>
-                        </td>
-                        <td align="right" valign="top" width="40%" style="text-align:right;">
-                          <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:6px;">PAYMENT</div>
-                          <div style="font-size:12px; color:#6b7280; line-height:1.6;">
-                            Status: <strong style="color:#d97706;">Pending</strong><br/>
-                            Due by: ${dueDateStr}
-                          </div>
-                        </td>
-                      </tr>
-                    </table>
-
-                    <!-- Line Items Table -->
-                    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse:collapse; margin-bottom:24px; width:100%;">
-                      <thead>
-                        <tr style="background:#f8fafc;">
-                          <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; border-bottom:1px solid #e5e7eb; width:35px;">#</th>
-                          <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; border-bottom:1px solid #e5e7eb;">DESCRIPTION</th>
-                          <th style="padding:10px 12px; text-align:right; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; border-bottom:1px solid #e5e7eb;">QTY</th>
-                          <th style="padding:10px 12px; text-align:right; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; border-bottom:1px solid #e5e7eb;">UNIT PRICE</th>
-                          <th style="padding:10px 12px; text-align:right; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; border-bottom:1px solid #e5e7eb;">AMOUNT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${itemsHtml}
-                      </tbody>
-                    </table>
-
-                    <!-- Totals Breakdown -->
-                    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:28px;">
-                      <tr>
-                        <td width="40%"></td>
-                        <td width="60%" align="right">
-                          <table width="260" border="0" cellspacing="0" cellpadding="0" style="font-size:13px; color:#6b7280; margin-left:auto;">
-                            <tr>
-                              <td style="padding:5px 0;" align="left">Subtotal</td>
-                              <td style="padding:5px 0;" align="right">₹${subtotalFormatted}</td>
-                            </tr>
-                            ${taxAmt > 0 ? `
-                            <tr>
-                              <td style="padding:5px 0;" align="left">CGST (9%)</td>
-                              <td style="padding:5px 0;" align="right">₹${cgstFormatted}</td>
-                            </tr>
-                            <tr>
-                              <td style="padding:5px 0;" align="left">SGST (9%)</td>
-                              <td style="padding:5px 0;" align="right">₹${sgstFormatted}</td>
-                            </tr>
-                            ` : ''}
-                            <tr>
-                              <td style="padding:10px 0 4px; font-size:15px; font-weight:800; color:#111827; border-top:2px solid #111827;" align="left">Grand Total</td>
-                              <td style="padding:10px 0 4px; font-size:15px; font-weight:800; color:#111827; border-top:2px solid #111827;" align="right">₹${totalFormatted}</td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>
-                    </table>
-
-                    <!-- Footer -->
-                    <div style="margin-top:36px; padding-top:16px; border-top:1px solid #e5e7eb; text-align:center; font-size:11px; color:#9ca3af;">
-                      Thank you for your business! This is an official tax invoice generated by <strong>Workshop</strong>.
-                    </div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </body>
-    </html>
-  `
+  // Generate Email HTML using external template file (invoiceTemplate.js)
+  const invoiceHtml = getInvoiceEmailTemplate({ quote, bill, billItems: enrichedBillItems, shop })
 
   // 1. Send invoice email to Customer
   await sendEmail({
@@ -341,6 +209,19 @@ router.get('/respond', emailLimiter, async (req, res) => {
       [action, id]
     )
 
+    // Update associated deal stage in CRM
+    if (action === 'Accepted') {
+      await pool.query(
+        "UPDATE deals SET stage = 'Closed Won', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
+        [quote.customer_name || '', `%${quote.quote_number}%`, quote.user_id || 'default-user']
+      ).catch(() => {})
+    } else if (action === 'Declined' || action === 'Rejected') {
+      await pool.query(
+        "UPDATE deals SET stage = 'Closed Lost', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
+        [quote.customer_name || '', `%${quote.quote_number}%`, quote.user_id || 'default-user']
+      ).catch(() => {})
+    }
+
     // Insert notification record into emails table so it immediately appears in the workspace Inbox
     await pool.query(
       `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, is_read, user_id, created_at, updated_at)
@@ -393,13 +274,16 @@ router.get('/respond', emailLimiter, async (req, res) => {
         }
         if (!Array.isArray(items)) items = []
 
+        const catalogMap = await getProductHsnMap()
+        const enrichedItems = enrichItemsWithCache(items, catalogMap)
+
         const billRes = await pool.query(
           `INSERT INTO bills (customer_id, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
            VALUES ($1, $2, $3, 0, 'unpaid', NOW() + INTERVAL '15 days', $4, $5, NULL, NOW())
            RETURNING *`,
           [
             customerId,
-            JSON.stringify(items),
+            JSON.stringify(enrichedItems),
             parseFloat(quote.total_amount || 0),
             `Generated from Quotation #${quote.quote_number}`,
             quote.user_id || 'default-user'
@@ -410,27 +294,41 @@ router.get('/respond', emailLimiter, async (req, res) => {
         const createdItems = []
         for (const item of items) {
           if (item && (item.name || item.product_id)) {
-            const itemRes = await pool.query(
-              `INSERT INTO bill_items (bill_id, product_id, product_name, quantity, price, line_total)
-               VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-              [
-                bill.id,
-                item.product_id || null,
-                item.name || 'Custom Item',
-                parseFloat(item.quantity || 1),
-                parseFloat(item.rate || item.price || 0),
-                parseFloat(item.amount || item.line_total || 0)
-              ]
-            ).catch(e => console.error('[Bill Item Insert Error]', e.message))
-            if (itemRes?.rows[0]) createdItems.push(itemRes.rows[0])
+            try {
+              const itemRes = await pool.query(
+                `INSERT INTO bill_items (bill_id, product_id, product_name, quantity, price, line_total)
+                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+                [
+                  bill.id,
+                  item.product_id || null,
+                  item.name || 'Custom Item',
+                  parseFloat(item.quantity || 1),
+                  parseFloat(item.rate || item.price || 0),
+                  parseFloat(item.amount || item.line_total || 0)
+                ]
+              ).catch(async () => {
+                // Fallback insert if product_name column missing
+                return pool.query(
+                  `INSERT INTO bill_items (bill_id, product_id, quantity, price)
+                   VALUES ($1, $2, $3, $4) RETURNING *`,
+                  [
+                    bill.id,
+                    item.product_id || null,
+                    parseFloat(item.quantity || 1),
+                    parseFloat(item.rate || item.price || 0)
+                  ]
+                ).catch(() => null)
+              })
+              if (itemRes?.rows?.[0]) createdItems.push(itemRes.rows[0])
+            } catch (_itemErr) {}
           }
         }
 
         // Decrease product inventory stock for accepted quotation line items
         await decreaseProductStockForQuote(items, quote.user_id)
 
-        // Send invoice email to customer asynchronously and trigger workflow automation safely
-        sendInvoiceEmailToCustomer(quote, bill, createdItems.length > 0 ? createdItems : items).catch(e => console.error('[Invoice Email Send Error]', e.message))
+        // Send invoice email to customer synchronously and trigger workflow automation safely
+        await sendInvoiceEmailToCustomer(quote, bill, createdItems.length > 0 ? createdItems : items).catch(e => console.error('[Invoice Email Send Error]', e.message))
         triggerWorkflowForQuote(quote.user_id || 'default-user', quote, 'Accepted').catch(e => console.error('[Workflow Trigger Error]', e.message))
 
         autoBillNotice = `<div style="background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:18px; border-radius:12px; margin-top:20px; text-align:center;">
@@ -610,178 +508,12 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
     const issueDateFmt = formatPrettyDate(quote.issue_date)
     const validUntilFmt = formatPrettyDate(quote.valid_until)
 
-    const items = Array.isArray(quote.line_items) ? quote.line_items : []
-    const itemsHtml = items.map(item => {
-      const unitStr = item.unit ? ` ${item.unit}` : ''
-      const subtextStr = item.subtext ? `<br/><span style="font-size:11px; color:#0d9488; font-weight:600;">${item.subtext}</span>` : ''
-      return `
-      <tr>
-        <td style="padding:10px 14px; border-bottom:1px solid #e2e8f0; color:#1e293b;">
-          <strong>${item.name || 'Product'}</strong>${subtextStr}
-        </td>
-        <td style="padding:10px 14px; border-bottom:1px solid #e2e8f0; text-align:center; color:#475467;">${item.quantity || 1}${unitStr}</td>
-        <td style="padding:10px 14px; border-bottom:1px solid #e2e8f0; text-align:right; color:#475467;">₹${parseFloat(item.rate || 0).toFixed(2)}</td>
-        <td style="padding:10px 14px; border-bottom:1px solid #e2e8f0; text-align:right; font-weight:bold; color:#0f172a;">₹${parseFloat(item.amount || 0).toFixed(2)}</td>
-      </tr>
-    `}).join('')
+    const rawItems = Array.isArray(quote.line_items) ? quote.line_items : (typeof quote.line_items === 'string' ? JSON.parse(quote.line_items) : [])
+    const catalogMap = await getProductHsnMap()
+    const enrichedItems = enrichItemsWithCache(rawItems || [], catalogMap)
 
-    const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <title>Quotation #${quote.quote_number}</title>
-        </head>
-        <body style="margin:0; padding:0; background:#f1f5f9; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-          <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background:#f1f5f9; padding:24px 12px;">
-            <tr>
-              <td align="center">
-                <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:600px; text-align:left;">
-
-                  <!-- Header Logo Bar -->
-                  <tr>
-                    <td align="center" style="padding:12px 0 20px;">
-                      <table border="0" cellspacing="0" cellpadding="0" align="center">
-                        <tr>
-                          <td style="vertical-align:middle; padding-right:10px;">
-                            <div style="width:34px; height:34px; background:#2563eb; border-radius:8px; color:#ffffff; font-weight:900; font-size:18px; line-height:34px; text-align:center;">W</div>
-                          </td>
-                          <td style="vertical-align:middle;">
-                            <span style="font-size:20px; font-weight:800; color:#1e293b; letter-spacing:-0.5px;">Workshop</span>
-                          </td>
-                        </tr>
-                      </table>
-                    </td>
-                  </tr>
-
-                  <!-- Main Card -->
-                  <tr>
-                    <td>
-                      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background:#ffffff; border-radius:14px; border:1px solid #e2e8f0; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.06);">
-                        
-                        <!-- Header Blue Banner -->
-                        <tr>
-                          <td style="background:#2563eb; background:linear-gradient(135deg, #1d4ed8, #2563eb); padding:28px 32px; color:#ffffff;">
-                            <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                              <tr>
-                                <td align="left" valign="top">
-                                  <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:#ffffff; opacity:0.85; margin-bottom:4px;">QUOTATION</div>
-                                  <div style="font-size:22px; font-weight:800; color:#ffffff; line-height:28px; margin:0;">#${quote.quote_number}</div>
-                                </td>
-                                <td align="right" valign="top" style="text-align:right;">
-                                  <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:#ffffff; opacity:0.85; margin-bottom:4px;">Total Amount</div>
-                                  <div style="font-size:26px; font-weight:900; color:#ffffff; line-height:32px; margin:0;">₹${parseFloat(quote.total_amount || 0).toFixed(2)}</div>
-                                </td>
-                              </tr>
-                            </table>
-                          </td>
-                        </tr>
-
-                        <!-- Body Content -->
-                        <tr>
-                          <td style="padding:28px 32px;">
-                            <p style="font-size:15px; color:#1e293b; margin:0 0 6px;">Dear <strong>${quote.customer_name}</strong>,</p>
-                            <p style="font-size:14px; color:#475467; margin:0 0 24px; line-height:1.6;">
-                              We are pleased to share your quotation. Please review the details below and respond with your decision.
-                            </p>
-
-                             <!-- Meta Info Table (2-column layout in email HTML) -->
-                            <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; margin-bottom:24px; border-collapse:collapse;">
-                              <tr>
-                                <td width="50%" valign="top" style="padding:14px 16px; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0;">
-                                  <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">FROM (SHOP / SUPPLIER)</div>
-                                  <div style="font-size:13px; font-weight:700; color:#1e40af;">${quote.shop_name || 'Workshop Store'}</div>
-                                </td>
-                                <td width="50%" valign="top" style="padding:14px 16px; border-bottom:1px solid #e2e8f0;">
-                                  <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">TO (CUSTOMER / COMPANY)</div>
-                                  <div style="font-size:13px; font-weight:700; color:#0f172a;">${quote.customer_name} ${quote.customer_company ? `(${quote.customer_company})` : ''}</div>
-                                </td>
-                              </tr>
-                              <tr>
-                                <td width="50%" valign="top" style="padding:14px 16px; border-right:1px solid #e2e8f0;">
-                                  <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">ISSUE DATE</div>
-                                  <div style="font-size:13px; font-weight:700; color:#0f172a;">${issueDateFmt}</div>
-                                </td>
-                                <td width="50%" valign="top" style="padding:14px 16px;">
-                                  <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">VALID UNTIL</div>
-                                  <div style="font-size:13px; font-weight:700; color:#0f172a;">${validUntilFmt}</div>
-                                </td>
-                              </tr>
-                            </table>
-
-                            <!-- Line Items Table -->
-                            <div style="border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; margin-bottom:20px;">
-                              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse:collapse; font-size:13px;">
-                                <thead>
-                                  <tr style="background:#f1f5f9;">
-                                    <th style="padding:10px 14px; text-align:left; font-weight:700; color:#374151; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">ITEM</th>
-                                    <th style="padding:10px 14px; text-align:center; font-weight:700; color:#374151; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">QTY</th>
-                                    <th style="padding:10px 14px; text-align:right; font-weight:700; color:#374151; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">RATE</th>
-                                    <th style="padding:10px 14px; text-align:right; font-weight:700; color:#374151; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">AMOUNT</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  ${itemsHtml}
-                                </tbody>
-                              </table>
-                            </div>
-
-                            <!-- Total Row -->
-                            <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; padding:12px 16px; margin-bottom:28px;">
-                              <tr>
-                                <td align="right" style="text-align:right;">
-                                  ${parseFloat(quote.tax_amount || 0) > 0 ? `<div style="font-size:13px; color:#64748b; margin-bottom:4px;">Tax: ₹${parseFloat(quote.tax_amount).toFixed(2)}</div>` : ''}
-                                  <div style="font-size:20px; font-weight:800; color:#0f172a;">Total: ₹${parseFloat(quote.total_amount || 0).toFixed(2)}</div>
-                                </td>
-                              </tr>
-                            </table>
-
-                            <!-- CTA Buttons -->
-                            <div style="text-align:center; margin-bottom:24px;">
-                              <p style="font-size:14px; font-weight:700; color:#1e293b; margin:0 0 16px; text-align:center;">Please respond to this quotation:</p>
-                              <table border="0" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto;">
-                                <tr>
-                                  <td align="center" style="padding:0 8px;">
-                                    <a href="${acceptUrl}" target="_blank" style="background:#16a34a; color:#ffffff; text-decoration:none; padding:13px 28px; border-radius:8px; font-weight:700; font-size:14px; display:inline-block; line-height:20px; box-shadow:0 3px 10px rgba(22,163,74,0.25);">
-                                      ✓ Accept Quotation
-                                    </a>
-                                  </td>
-                                  <td align="center" style="padding:0 8px;">
-                                    <a href="${declineUrl}" target="_blank" style="background:#dc2626; color:#ffffff; text-decoration:none; padding:13px 28px; border-radius:8px; font-weight:700; font-size:14px; display:inline-block; line-height:20px; box-shadow:0 3px 10px rgba(220,38,38,0.25);">
-                                      ✕ Reject Quotation
-                                    </a>
-                                  </td>
-                                </tr>
-                              </table>
-                              <p style="font-size:12px; color:#94a3b8; margin:16px 0 0; text-align:center;">Clicking <strong>Accept</strong> will automatically confirm this quotation and generate your billing invoice.</p>
-                            </div>
-
-                            ${quote.notes ? `<div style="background:#fafafa; border-left:3px solid #2563eb; border-radius:6px; padding:12px 16px; font-size:13px; color:#475467; line-height:1.5; margin-top:16px;"><strong style="color:#1e293b;">Notes:</strong> ${quote.notes}</div>` : ''}
-
-                          </td>
-                        </tr>
-
-                        <!-- Footer -->
-                        <tr>
-                          <td style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:16px 32px; text-align:center;">
-                            <p style="margin:0; font-size:12px; color:#94a3b8;">
-                              This is an automated quotation email from <strong style="color:#64748b;">Workshop</strong>. Please do not reply to this email.
-                            </p>
-                          </td>
-                        </tr>
-
-                      </table>
-                    </td>
-                  </tr>
-
-                </table>
-              </td>
-            </tr>
-          </table>
-        </body>
-      </html>
-    `
+    const quoteWithEnriched = { ...quote, line_items: enrichedItems }
+    const emailHtml = getQuoteEmailTemplate({ quote: quoteWithEnriched, acceptUrl, declineUrl, issueDateFmt, validUntilFmt })
 
     const { data, error } = await sendEmail({
       to: quote.customer_email,
@@ -794,6 +526,12 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
     }
 
     await pool.query("UPDATE quotes SET status = 'Sent', updated_at = NOW() WHERE id = $1", [id])
+
+    // Reopen deal stage in CRM when quotation is resent
+    await pool.query(
+      "UPDATE deals SET stage = 'Proposal/Price Quote', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
+      [quote.customer_name || '', `%${quote.quote_number}%`, userId]
+    ).catch(() => {})
 
     // Save outgoing email into emails table so it appears in Sent tab
     await pool.query(
@@ -932,6 +670,19 @@ router.put('/:id', apiLimiter, async (req, res) => {
     }
 
     const updatedQuote = result.rows[0]
+
+    // Update deal stage if quote is Declined, Rejected, or Accepted
+    if (updatedQuote.status === 'Declined' || updatedQuote.status === 'Rejected') {
+      await pool.query(
+        "UPDATE deals SET stage = 'Closed Lost', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
+        [updatedQuote.customer_name || '', `%${updatedQuote.quote_number}%`, userId]
+      ).catch(() => {})
+    } else if (updatedQuote.status === 'Accepted') {
+      await pool.query(
+        "UPDATE deals SET stage = 'Closed Won', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
+        [updatedQuote.customer_name || '', `%${updatedQuote.quote_number}%`, userId]
+      ).catch(() => {})
+    }
 
     // Trigger workflow automation
     await triggerWorkflowForQuote(userId, updatedQuote, 'Record updated')

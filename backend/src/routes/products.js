@@ -1,28 +1,49 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import { clearProductHsnCache } from '../lib/productCache.js'
 
 const router = Router()
 router.use(requireAuth)
 
-
-
 import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
 
-// Add schema update
-query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS next_restock_time TEXT DEFAULT 'TBD'`).catch(() => {})
-query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2)`).catch(() => {})
-query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE`).catch(() => {})
-query(`CREATE TABLE IF NOT EXISTS product_price_history (
-  id SERIAL PRIMARY KEY,
-  product_id INT NOT NULL,
-  user_id TEXT NOT NULL,
-  old_price NUMERIC(10, 2),
-  new_price NUMERIC(10, 2) NOT NULL,
-  effective_date DATE DEFAULT CURRENT_DATE,
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-)`).catch(() => {})
+let ensureProductsSchemaPromise
+
+async function ensureProductsSchema() {
+  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS next_restock_time TEXT DEFAULT 'TBD'`).catch(() => {})
+  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2)`).catch(() => {})
+  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE`).catch(() => {})
+  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50)`).catch(() => {})
+  await query(`CREATE TABLE IF NOT EXISTS product_price_history (
+    id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL,
+    user_id TEXT NOT NULL,
+    old_price NUMERIC(10, 2),
+    new_price NUMERIC(10, 2) NOT NULL,
+    effective_date DATE DEFAULT CURRENT_DATE,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+  )`).catch(() => {})
+  await query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
+}
+
+router.use(async (_req, _res, next) => {
+  try {
+    ensureProductsSchemaPromise ||= ensureProductsSchema().catch((err) => {
+      ensureProductsSchemaPromise = null
+      throw err
+    })
+    await ensureProductsSchemaPromise
+    next()
+  } catch (err) {
+    next(err)
+  }
+})
+
+function getIndianDateStr() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
+}
 
 async function logPriceHistory(productId, userId, oldPrice, newPrice, effectiveDate, notes = 'Price update') {
   if (!newPrice || isNaN(parseFloat(newPrice))) return
@@ -46,7 +67,7 @@ router.get('/', async (req, res) => {
   const params = [userId]
   const conditions = ['user_id = $1']
 
-  if (search) { params.push(`%${search}%`); conditions.push(`(name ILIKE $${params.length} OR sku ILIKE $${params.length})`) }
+  if (search) { params.push(`%${search}%`); conditions.push(`(name ILIKE $${params.length} OR sku ILIKE $${params.length} OR hsn_code ILIKE $${params.length})`) }
   if (category) { params.push(category); conditions.push(`category = $${params.length}`) }
   
   const finalStatus = status === 'all' ? null : (status || 'active')
@@ -56,8 +77,10 @@ router.get('/', async (req, res) => {
   }
 
   let orderCol = 'created_at DESC, id DESC'
-  if (sort === 'name_asc') orderCol = 'name ASC, id DESC'
-  else if (sort === 'name_desc') orderCol = 'name DESC, id DESC'
+  if (sort === 'price_asc') orderCol = 'price ASC, id DESC'
+  else if (sort === 'price_desc') orderCol = 'price DESC, id DESC'
+  else if (sort === 'stock_asc') orderCol = 'stock ASC, id DESC'
+  else if (sort === 'stock_desc') orderCol = 'stock DESC, id DESC'
 
   try {
     if (cursor) {
@@ -81,8 +104,8 @@ router.get('/', async (req, res) => {
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`
-    const countRow = await query(`SELECT COUNT(*) FROM products ${where}`, params)
-    const total = parseInt(countRow.rows[0].count, 10) || 0
+    const count = await query(`SELECT COUNT(*) FROM products ${where}`, params)
+    const total = parseInt(count.rows[0].count, 10) || 0
     const totalPages = Math.ceil(total / limit) || 1
 
     params.push(limit, offset)
@@ -90,7 +113,7 @@ router.get('/', async (req, res) => {
       `SELECT * FROM products ${where} ORDER BY ${orderCol} LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
-    
+
     const hasNextPage = page < totalPages
     const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
     const nextCursor = (hasNextPage && lastRow)
@@ -115,43 +138,58 @@ router.get('/', async (req, res) => {
 router.get('/:id/price-history', async (req, res) => {
   const userId = req.workspaceId
   const productId = req.params.id
+
   try {
-    const { rows: productRows } = await query('SELECT * FROM products WHERE id = $1 AND user_id = $2', [productId, userId])
-    if (!productRows.length) return res.status(404).json({ error: 'Product not found' })
-    const prod = productRows[0]
+    const { rows: prodRows } = await query('SELECT * FROM products WHERE id = $1 AND user_id = $2', [productId, userId])
+    if (!prodRows.length) return res.status(404).json({ error: 'Product not found' })
+    const prod = prodRows[0]
 
     const { rows } = await query(
-      'SELECT * FROM product_price_history WHERE product_id = $1 AND user_id = $2 ORDER BY effective_date DESC, created_at DESC',
+      `SELECT * FROM product_price_history WHERE product_id = $1 AND user_id = $2 ORDER BY created_at DESC`,
       [productId, userId]
     )
 
-    if (!rows.length) {
-      // Dynamic fallback items from product record
-      const fallbackList = []
-      if (prod.updated_price) {
-        fallbackList.push({
-          id: 'ph-2',
-          product_id: prod.id,
-          old_price: prod.price,
-          new_price: prod.updated_price,
-          effective_date: prod.updated_price_date ? String(prod.updated_price_date).split('T')[0] : new Date().toISOString().split('T')[0],
-          notes: 'Updated Price'
-        })
+    const hasBaseLog = rows.some(r => r.old_price === null)
+    if (!hasBaseLog) {
+      const createdTime = prod.created_at ? new Date(prod.created_at).toISOString() : new Date().toISOString()
+      try {
+        const insertedBase = await query(
+          `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
+           VALUES ($1, $2, NULL, $3, $4, 'Initial Base Price', $5) RETURNING *`,
+          [prod.id, userId, parseFloat(prod.price), createdTime.split('T')[0], createdTime]
+        )
+        if (insertedBase.rows.length) {
+          rows.push(insertedBase.rows[0])
+        }
+      } catch (e) {
+        console.warn('[Products] Failed to persist initial base price log:', e.message)
       }
-      if (prod.price) {
-        fallbackList.push({
-          id: 'ph-1',
-          product_id: prod.id,
-          old_price: null,
-          new_price: prod.price,
-          effective_date: prod.created_at ? String(prod.created_at).split('T')[0] : new Date().toISOString().split('T')[0],
-          notes: 'Initial Base Price'
-        })
-      }
-      return res.json(fallbackList)
     }
 
-    res.json(rows)
+    const updatedPriceNum = prod.updated_price ? parseFloat(prod.updated_price) : null
+    if (updatedPriceNum !== null && !isNaN(updatedPriceNum)) {
+      const hasUpdated = rows.some(r => parseFloat(r.new_price) === updatedPriceNum)
+      if (!hasUpdated) {
+        const updatedTime = prod.updated_at ? new Date(prod.updated_at).toISOString() : (prod.updated_price_date ? new Date(prod.updated_price_date).toISOString() : new Date().toISOString())
+        try {
+          const insertedUpd = await query(
+            `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
+             VALUES ($1, $2, $3, $4, $5, 'Updated Price', $6) RETURNING *`,
+            [prod.id, userId, parseFloat(prod.price), updatedPriceNum, updatedTime.split('T')[0], updatedTime]
+          )
+          if (insertedUpd.rows.length) {
+            rows.unshift(insertedUpd.rows[0])
+          }
+        } catch (e) {
+          console.warn('[Products] Failed to persist active updated price log:', e.message)
+        }
+      }
+    }
+
+    const finalHistory = [...rows]
+    finalHistory.sort((a, b) => new Date(b.created_at || b.effective_date || 0) - new Date(a.created_at || a.effective_date || 0))
+
+    return res.json(finalHistory)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -172,20 +210,22 @@ router.get('/:id', async (req, res) => {
 /* POST /api/products */
 router.post('/', async (req, res) => {
   const userId = req.workspaceId
-  const { name, sku, category, price, updated_price, updated_price_date, stock, status, description, next_restock_time, bag_weight } = req.body
+  const { name, sku, hsn_code, category, price, updated_price, updated_price_date, stock, status, description, next_restock_time, bag_weight } = req.body
   if (!name || !price) return res.status(400).json({ error: 'name and price are required' })
+  const finalHsn = hsn_code || sku || '10064000'
   try {
     const { rows } = await query(
-      `INSERT INTO products (name, sku, category, price, updated_price, updated_price_date, stock, status, description, next_restock_time, user_id, bag_weight, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW()) RETURNING *`,
+      `INSERT INTO products (name, sku, hsn_code, category, price, updated_price, updated_price_date, stock, status, description, next_restock_time, user_id, bag_weight, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW()) RETURNING *`,
       [
-        name, sku, category, price,
+        name, sku || finalHsn, finalHsn, category, price,
         updated_price ? parseFloat(updated_price) : null,
         updated_price_date || new Date().toISOString().split('T')[0],
         stock || 0, status || 'active', description, next_restock_time || 'TBD', userId, parseFloat(bag_weight) || 1
       ]
     )
     const newProduct = rows[0]
+    clearProductHsnCache()
     await logPriceHistory(newProduct.id, userId, null, newProduct.price, new Date().toISOString().split('T')[0], 'Initial Base Price')
     if (newProduct.updated_price) {
       await logPriceHistory(newProduct.id, userId, newProduct.price, newProduct.updated_price, newProduct.updated_price_date, 'Updated Price')
@@ -197,34 +237,102 @@ router.post('/', async (req, res) => {
   }
 })
 
+/* POST /api/products/:id/price-history */
+router.post('/:id/price-history', async (req, res) => {
+  const userId = req.workspaceId
+  const productId = req.params.id
+  const { old_price, new_price, effective_date, notes } = req.body
+  if (!new_price || isNaN(parseFloat(new_price))) {
+    return res.status(400).json({ error: 'Valid new_price is required' })
+  }
+  try {
+    const effDate = effective_date || new Date().toISOString()
+    const { rows } = await query(
+      `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        productId,
+        userId,
+        old_price !== null && old_price !== undefined && !isNaN(parseFloat(old_price)) ? parseFloat(old_price) : null,
+        parseFloat(new_price),
+        effDate.split('T')[0],
+        notes || 'Price adjustment log',
+        effDate
+      ]
+    )
+    res.status(201).json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* DELETE /api/products/:id/price-history/:logId */
+router.delete('/:id/price-history/:logId', async (req, res) => {
+  const userId = req.workspaceId
+  try {
+    await query(
+      'DELETE FROM product_price_history WHERE id = $1 AND product_id = $2 AND user_id = $3',
+      [req.params.logId, req.params.id, userId]
+    )
+    res.json({ message: 'Price history log deleted' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 /* PUT /api/products/:id */
 router.put('/:id', async (req, res) => {
   const userId = req.workspaceId
-  const { name, sku, category, price, updated_price, updated_price_date, stock, status, description, next_restock_time, bag_weight } = req.body
+  const { name, sku, hsn_code, category, price, updated_price, updated_price_date, stock, status, description, next_restock_time, bag_weight } = req.body
+  const finalHsn = hsn_code || sku || '10064000'
   try {
     const { rows: existingRows } = await query('SELECT * FROM products WHERE id = $1 AND user_id = $2', [req.params.id, userId])
+    if (!existingRows.length) return res.status(404).json({ error: 'Product not found' })
     const oldProduct = existingRows[0]
 
+    const isUpdatedPriceChanged = updated_price !== undefined && updated_price !== null && String(updated_price) !== String(oldProduct?.updated_price)
+    const isPriceChanged = price !== undefined && price !== null && String(price) !== String(oldProduct?.price)
+
+    const todayStr = getIndianDateStr()
+    const finalUpdatedPriceDate = (isUpdatedPriceChanged || isPriceChanged)
+      ? todayStr
+      : (updated_price_date || oldProduct?.updated_price_date || todayStr)
+
     const { rows } = await query(
-      `UPDATE products SET name=$1,sku=$2,category=$3,price=$4,updated_price=$5,updated_price_date=$6,stock=$7,status=$8,description=$9,next_restock_time=$10,bag_weight=$11,updated_at=NOW()
-       WHERE id=$12 AND user_id = $13 RETURNING *`,
+      `UPDATE products SET
+         name=COALESCE($1,name),
+         sku=COALESCE($2,sku),
+         hsn_code=COALESCE($3,hsn_code),
+         category=COALESCE($4,category),
+         price=COALESCE($5,price),
+         updated_price=$6,
+         updated_price_date=$7,
+         stock=COALESCE($8,stock),
+         status=COALESCE($9,status),
+         description=COALESCE($10,description),
+         next_restock_time=COALESCE($11,next_restock_time),
+         bag_weight=COALESCE($12,bag_weight),
+         updated_at=NOW()
+       WHERE id=$13 AND user_id=$14 RETURNING *`,
       [
-        name, sku, category, price,
-        updated_price ? parseFloat(updated_price) : null,
-        updated_price_date || new Date().toISOString().split('T')[0],
-        stock, status, description, next_restock_time, parseFloat(bag_weight) || 1, req.params.id, userId
+        name, sku || finalHsn, finalHsn, category, price,
+        updated_price !== undefined ? (updated_price ? parseFloat(updated_price) : null) : oldProduct?.updated_price,
+        finalUpdatedPriceDate,
+        stock, status, description, next_restock_time, bag_weight ? parseFloat(bag_weight) : oldProduct?.bag_weight,
+        req.params.id, userId
       ]
     )
-    if (!rows.length) return res.status(404).json({ error: 'Product not found' })
-    const updatedProduct = rows[0]
 
-    if (updated_price && String(updated_price) !== String(oldProduct?.updated_price)) {
-      await logPriceHistory(updatedProduct.id, userId, oldProduct?.updated_price || oldProduct?.price, updated_price, updated_price_date, 'Updated Price')
-    } else if (price && String(price) !== String(oldProduct?.price)) {
-      await logPriceHistory(updatedProduct.id, userId, oldProduct?.price, price, null, 'Price Modified')
+    const updatedProd = rows[0]
+    clearProductHsnCache()
+
+    if (isUpdatedPriceChanged && updatedProd.updated_price) {
+      await logPriceHistory(updatedProd.id, userId, oldProduct?.updated_price || oldProduct?.price, updatedProd.updated_price, finalUpdatedPriceDate, 'Updated Price Changed')
+    } else if (isPriceChanged && updatedProd.price) {
+      await logPriceHistory(updatedProd.id, userId, oldProduct?.price, updatedProd.price, todayStr, 'Base Price Changed')
     }
 
-    res.json(updatedProduct)
+    res.json(updatedProd)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -234,8 +342,10 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const userId = req.workspaceId
   try {
-    await query('DELETE FROM products WHERE id = $1 AND user_id = $2', [req.params.id, userId])
-    res.json({ message: 'Product deleted' })
+    const { rows } = await query('DELETE FROM products WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, userId])
+    if (!rows.length) return res.status(404).json({ error: 'Product not found' })
+    clearProductHsnCache()
+    res.json({ message: 'Product deleted successfully' })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

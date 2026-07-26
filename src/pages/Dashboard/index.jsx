@@ -67,6 +67,8 @@ export default function Dashboard() {
     fetchRecentEmails()
   }, [dispatch])
 
+  const processedPromptRef = useRef(null)
+
   // Scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -81,21 +83,11 @@ export default function Dashboard() {
     if (sessionId) {
       fetchSessionById(sessionId)
     } else if (chatActive) {
-      const initialPrompt = location.state?.initialPrompt
-      if (initialPrompt) {
-        handleNewChat()
-        setView('chat')
-        // Clear location state to avoid double send on reload
-        navigate(location.pathname + location.search, { replace: true, state: {} })
-        sendMessage(initialPrompt)
-      } else if (view !== 'chat') {
-        handleNewChat()
-        setView('chat')
-      }
+      setView('chat')
     } else {
       setView('home')
     }
-  }, [location])
+  }, [location.search])
 
   const fetchSessions = async () => {
     try {
@@ -234,7 +226,9 @@ export default function Dashboard() {
     const text = homeInputText.trim()
     if (!text) return
     setHomeInputText('')
-    navigate('/dashboard?chat=true', { state: { initialPrompt: text } })
+    handleNewChat()
+    setView('chat')
+    sendMessage(text)
   }
 
   const handleKey = (e, target) => {

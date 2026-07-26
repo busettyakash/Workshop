@@ -2,16 +2,35 @@ import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
+import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 
 const router = Router()
 router.use(requireAuth)
 
-query(
-  `ALTER TABLE bill_items
-   ALTER COLUMN quantity TYPE NUMERIC(10, 2)
-   USING quantity::numeric(10, 2)`
-).catch((err) => {
-  console.warn('[Billing] Could not migrate bill_items.quantity to NUMERIC(10,2):', err.message)
+let ensureBillingSchemaPromise
+
+async function ensureBillingSchema() {
+  await query(
+    `ALTER TABLE bill_items
+     ALTER COLUMN quantity TYPE NUMERIC(10, 2)
+     USING quantity::numeric(10, 2)`
+  ).catch(() => {})
+  await query(`ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => {})
+  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50)`).catch(() => {})
+  await query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => {})
+}
+
+router.use(async (_req, _res, next) => {
+  try {
+    ensureBillingSchemaPromise ||= ensureBillingSchema().catch((err) => {
+      ensureBillingSchemaPromise = null
+      throw err
+    })
+    await ensureBillingSchemaPromise
+    next()
+  } catch (err) {
+    next(err)
+  }
 })
 
 import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
@@ -45,10 +64,16 @@ router.get('/', async (req, res) => {
       const where = `WHERE ${conditions.join(' AND ')}`
       params.push(limit + 1)
       const { rows } = await query(
-        `SELECT b.*, COALESCE(p.name, cust.name, 'General Customer') AS customer_name
+        `SELECT b.*,
+           COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
+           COALESCE(p.phone, cust.phone, '') AS customer_phone,
+           sp.shop_name,
+           sp.gstin AS shop_gstin,
+           sp.phone AS shop_phone
          FROM bills b
          LEFT JOIN people p ON b.customer_id = p.id
          LEFT JOIN customers cust ON b.customer_id = cust.id
+         LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
          ${where} ORDER BY ${orderCol}
          LIMIT $${params.length}`,
         params
@@ -75,10 +100,16 @@ router.get('/', async (req, res) => {
 
     params.push(limit, offset)
     const { rows } = await query(
-      `SELECT b.*, COALESCE(p.name, cust.name, 'General Customer') AS customer_name
+      `SELECT b.*,
+         COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
+         COALESCE(p.phone, cust.phone, '') AS customer_phone,
+         sp.shop_name,
+         sp.gstin AS shop_gstin,
+         sp.phone AS shop_phone
        FROM bills b
        LEFT JOIN people p ON b.customer_id = p.id
        LEFT JOIN customers cust ON b.customer_id = cust.id
+       LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
        ${where} ORDER BY ${orderCol}
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
@@ -100,6 +131,7 @@ router.get('/', async (req, res) => {
       nextCursor
     })
   } catch (err) {
+    console.error('[Billing GET Error]', err)
     res.status(500).json({ error: err.message })
   }
 })
@@ -124,9 +156,16 @@ router.get('/:id', async (req, res) => {
   const userId = req.workspaceId
   try {
     const { rows } = await query(
-      `SELECT b.*, COALESCE(p.name, cust.name, 'General Customer') AS customer_name FROM bills b
+      `SELECT b.*,
+         COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
+         COALESCE(p.phone, cust.phone, '') AS customer_phone,
+         sp.shop_name,
+         sp.gstin AS shop_gstin,
+         sp.phone AS shop_phone
+       FROM bills b
        LEFT JOIN people p ON b.customer_id = p.id
        LEFT JOIN customers cust ON b.customer_id = cust.id
+       LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
        WHERE b.id=$1 AND (b.user_id::text = $2::text OR b.user_id = 'default-user' OR $2 = 'default-user')`,
       [req.params.id, userId]
     )
@@ -148,77 +187,102 @@ router.post('/', async (req, res) => {
     const itemDisc = parseFloat(item.discount || 0)
     return acc + Math.max(0, (qty * price) - itemDisc)
   }, 0)
+  const finalAmount = amount !== undefined ? parseFloat(amount) : Math.max(0, computedAmount - parseFloat(discount || 0))
 
-  const finalAmount = amount !== undefined && amount !== null && amount !== ''
-    ? parseFloat(amount)
-    : Math.max(0, computedAmount - parseFloat(discount || 0))
+  const parsedCustomerId = Number.isInteger(Number(customer_id)) && Number(customer_id) > 0 ? parseInt(customer_id, 10) : null
 
-  if (isNaN(finalAmount)) return res.status(400).json({ error: 'A valid amount is required' })
-  const billStatus = status === 'paid' ? 'paid' : 'unpaid'
-  const paidAt = billStatus === 'paid' ? 'NOW()' : 'NULL'
+  // Generate unique random 5-digit invoice number (e.g. INV-84920)
+  let billNumber = `INV-${Math.floor(10000 + Math.random() * 90000)}`
   try {
-    const { rows } = await query(
-      `INSERT INTO bills (customer_id, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,${paidAt},NOW()) RETURNING *`,
-      [customer_id || null, JSON.stringify(items || []), finalAmount, discount || 0, billStatus, due_date || null, notes, userId]
-    )
-
-    // Update stock for both products and import_stock tables and insert to bill_items
-    const itemsList = items || []
-    for (const item of itemsList) {
-      if (item.product_id) {
-        const qty = parseFloat(item.qty || 1)
-        
-        // 1. Decrement products table stock
-        await query(
-          "UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE id = $2 AND user_id = $3",
-          [qty, item.product_id, userId]
-        )
-
-        // 2. Insert into bill_items table
-        await query(
-          "INSERT INTO bill_items (bill_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)",
-          [rows[0].id, item.product_id, qty, item.price || 0]
-        ).catch(() => {})
-        
-        // 3. Query product to find its SKU and decrement matching stock in import_stock table
-        const prodRes = await query("SELECT sku, name FROM products WHERE id = $1 AND user_id = $2", [item.product_id, userId])
-        if (prodRes.rows.length > 0) {
-          const { sku, name } = prodRes.rows[0]
-          if (sku) {
-            await query(
-              "UPDATE import_stock SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE sku = $2 AND user_id = $3",
-              [qty, sku, userId]
-            )
-          } else if (name) {
-            await query(
-              "UPDATE import_stock SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE name = $2 AND user_id = $3",
-              [qty, name, userId]
-            )
-          }
-        }
+    let isUnique = false
+    let attempts = 0
+    while (!isUnique && attempts < 5) {
+      const check = await query("SELECT id FROM bills WHERE bill_number = $1 LIMIT 1", [billNumber]).catch(() => ({ rows: [] }))
+      if (!check.rows.length) {
+        isUnique = true
+      } else {
+        billNumber = `INV-${Math.floor(10000 + Math.random() * 90000)}`
+        attempts++
       }
     }
+  } catch (_e) {}
 
-    // Invalidate import_stock Redis cache
-    await redis.del(`import_stock:${userId}`).catch(() => {})
+  // Enrich items with actual product names and HSN codes from fast Redis/In-Memory Cache (Zero DB load)
+  const catalogMap = await getProductHsnMap()
+  const enrichedItems = enrichItemsWithCache(items || [], catalogMap)
 
-    res.status(201).json(rows[0])
+  const finalItemsJson = JSON.stringify(enrichedItems)
+
+  try {
+    let insertedRows
+    try {
+      const resDb = await query(
+        `INSERT INTO bills (customer_id, bill_number, items, amount, discount, due_date, notes, status, user_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+         RETURNING *`,
+        [
+          parsedCustomerId,
+          billNumber,
+          finalItemsJson,
+          finalAmount,
+          parseFloat(discount || 0),
+          due_date || null,
+          notes || '',
+          status || 'unpaid',
+          userId
+        ]
+      )
+      insertedRows = resDb.rows
+    } catch (_insertErr) {
+      // Fallback insert if bill_number column missing
+      const resDb = await query(
+        `INSERT INTO bills (customer_id, items, amount, discount, due_date, notes, status, user_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+         RETURNING *`,
+        [
+          parsedCustomerId,
+          finalItemsJson,
+          finalAmount,
+          parseFloat(discount || 0),
+          due_date || null,
+          notes || '',
+          status || 'unpaid',
+          userId
+        ]
+      )
+      insertedRows = resDb.rows
+    }
+
+    // Clear redis billing cache
+    try {
+      const keys = await redis.keys(`billing:${userId}:*`).catch(() => [])
+      for (const key of keys) { await redis.del(key).catch(() => {}) }
+    } catch (_err) {}
+
+    res.status(201).json(insertedRows[0])
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('[Create Bill Error]', err)
+    res.status(500).json({ error: 'Failed to create bill: ' + err.message })
   }
 })
 
-/* PATCH /api/billing/:id/pay */
+/* PATCH /api/billing/:id/pay — Mark bill as paid */
 router.patch('/:id/pay', async (req, res) => {
   const userId = req.workspaceId
   try {
     const { rows } = await query(
-      `UPDATE bills SET status='paid', paid_at=NOW(), updated_at=NOW()
-       WHERE id=$1 AND user_id = $2 RETURNING *`,
+      `UPDATE bills SET status = 'paid', updated_at = NOW()
+       WHERE id = $1 AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user')
+       RETURNING *`,
       [req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
+
+    try {
+      const keys = await redis.keys(`billing:${userId}:*`).catch(() => [])
+      for (const key of keys) { await redis.del(key).catch(() => {}) }
+    } catch (_err) {}
+
     res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -229,8 +293,18 @@ router.patch('/:id/pay', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const userId = req.workspaceId
   try {
-    await query('DELETE FROM bills WHERE id=$1 AND user_id = $2', [req.params.id, userId])
-    res.json({ message: 'Bill deleted' })
+    const { rows } = await query(
+      `DELETE FROM bills WHERE id = $1 AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') RETURNING id`,
+      [req.params.id, userId]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
+
+    try {
+      const keys = await redis.keys(`billing:${userId}:*`).catch(() => [])
+      for (const key of keys) { await redis.del(key).catch(() => {}) }
+    } catch (_err) {}
+
+    res.json({ message: 'Bill deleted successfully' })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

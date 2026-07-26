@@ -2,30 +2,48 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 import pg from 'pg'
 
-const { Pool } = pg
+const { Pool, types } = pg
+
+// Return PostgreSQL DATE columns (OID 1082) as plain YYYY-MM-DD strings without JS Date timezone shifts
+types.setTypeParser(1082, (val) => val)
 
 const dbUrl = process.env.DATABASE_URL
+const isDevelopment = process.env.NODE_ENV === 'development' && !process.env.VERCEL
 
 const getPoolMax = () => {
-  if (process.env.NODE_ENV === 'development') return 5
-  if (process.env.NODE_ENV === 'production') return 10
+  const configuredMax = Number.parseInt(process.env.PG_POOL_MAX, 10)
+  if (Number.isInteger(configuredMax) && configuredMax > 0) return configuredMax
+  if (process.env.VERCEL) return 1
+  if (isDevelopment) return 5
+  if (process.env.NODE_ENV === 'production') return 3
   return 3 // fallback for test/staging/unset NODE_ENV — stay conservative
 }
 
-const pool = new Pool({
+const createPool = () => new Pool({
   connectionString: dbUrl,
+  application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
   ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 30000,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 10000,
+  statement_timeout: 30000,
+  idle_in_transaction_session_timeout: 30000,
+  query_timeout: 30000,
+  allowExitOnIdle: true,
+  maxUses: 500,
 })
+
+const pool = globalThis.__workshopPgPool || createPool()
+globalThis.__workshopPgPool = pool
 
 pool.on('error', (err) => {
   console.error('[DB Pool Error]', err.message)
 })
 
 pool.on('connect', () => {
-  console.log('[DB] New client connected to pool')
+  if (isDevelopment) {
+    console.log('[DB] New client connected to pool')
+  }
 })
 
 let poolClosed = false
@@ -55,11 +73,6 @@ process.once('SIGUSR2', async () => {
   process.kill(process.pid, 'SIGUSR2')
 })
 
-pool.query('SELECT NOW()').then(() => {
-  console.log('[DB] ✅ Database connection verified successfully')
-}).catch((err) => {
-  console.error('[DB] ❌ Database connection FAILED on startup:', err.message)
-})
 
 import { AsyncLocalStorage } from 'async_hooks'
 
@@ -87,7 +100,7 @@ export const query = async (text, params) => {
     const result = await client.query(text, params)
     const duration = Date.now() - start
 
-    if (process.env.NODE_ENV === 'development') {
+    if (isDevelopment) {
       const displayQuery = text.replace(/\s+/g, ' ').trim()
       console.log(`[DB Query] (${duration}ms) ${displayQuery.substring(0, 150)}${displayQuery.length > 150 ? '...' : ''}`)
       if (params && params.length > 0) {

@@ -268,7 +268,7 @@ export default function Sidebar() {
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('ws_sidebar_width')
-    return saved ? parseInt(saved, 10) : 200
+    return saved ? parseInt(saved, 10) : 235
   })
 
   useEffect(() => {
@@ -293,7 +293,7 @@ export default function Sidebar() {
             <div className="ws-sb-ws-icon" style={{ textTransform: 'uppercase', color: '#fff', fontWeight: '800', fontSize: '11px', fontFamily: 'sans-serif' }}>
               {logoLetter}
             </div>
-            <span className="ws-sb-ws-name">{activeWorkspaceName}</span>
+            <span className="ws-sb-ws-name" title={activeWorkspaceName}>{activeWorkspaceName}</span>
             <ChevronDown size={13} className="ws-sb-chevron" />
           </button>
           <button
@@ -307,19 +307,17 @@ export default function Sidebar() {
           {workspaceDropdownOpen && (
             <div className="ws-sb-ws-dropdown" style={{
               position: 'absolute',
-              top: '55px',
-              left: '12px',
-              width: 'max-content',
-              minWidth: '220px',
-              maxWidth: '320px',
+              top: '50px',
+              left: '8px',
+              right: '8px',
               background: '#fff',
               border: '1px solid #e5e7eb',
               borderRadius: '8px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
               zIndex: 1000,
               padding: '6px 0'
             }}>
-              <div style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af', borderBottom: '1px solid #f3f4f6' }}>
+              <div style={{ padding: '6px 12px', fontSize: '0.72rem', fontWeight: 600, color: '#9ca3af', borderBottom: '1px solid #f3f4f6' }}>
                 Switch Workspace
               </div>
               {workspaces.map(w => {
@@ -340,23 +338,23 @@ export default function Sidebar() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      padding: '8px 12px',
+                      padding: '7px 10px',
                       border: 'none',
                       background: isActive ? '#eff6ff' : 'transparent',
                       color: isActive ? '#3d68f5' : '#374151',
                       cursor: 'pointer',
-                      fontSize: '0.825rem',
+                      fontSize: '0.78rem',
                       textAlign: 'left',
                       transition: 'background 0.1s'
                     }}
                     onMouseEnter={e => e.currentTarget.style.background = isActive ? '#eff6ff' : '#f9fafb'}
                     onMouseLeave={e => e.currentTarget.style.background = isActive ? '#eff6ff' : 'transparent'}
                   >
-                    <span style={{ fontWeight: isActive ? '600' : '400', whiteSpace: 'normal', wordBreak: 'break-word', marginRight: '6px' }}>
+                    <span style={{ fontWeight: isActive ? '600' : '400', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '6px', flex: 1 }}>
                       {w.shopName}
                     </span>
                     {w.isOwner && (
-                      <span style={{ fontSize: '0.65rem', background: '#f3f4f6', color: '#6b7280', padding: '1px 4px', borderRadius: '4px' }}>
+                      <span style={{ fontSize: '0.62rem', background: '#f3f4f6', color: '#6b7280', padding: '1px 4px', borderRadius: '4px', flexShrink: 0 }}>
                         Owner
                       </span>
                     )}

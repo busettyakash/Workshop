@@ -44,27 +44,6 @@ const triggerWorkflowForQuote = async (userId, quote, _actionName = 'Record crea
   }
 }
 
-const decreaseProductStockForQuote = async (items, userId) => {
-  if (!Array.isArray(items)) return
-  for (const item of items) {
-    if (!item) continue
-    const qty = parseFloat(item.quantity || item.qty || 1)
-    const prodId = item.product_id || item.id
-
-    if (prodId) {
-      await pool.query(
-        `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE id = $2`,
-        [qty, prodId]
-      ).catch(e => console.error('[Stock Decrease Error by ID]', e.message))
-    } else if (item.name) {
-      await pool.query(
-        `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE name ILIKE $2 AND (user_id::text = $3::text OR user_id = 'default-user' OR $3 = 'default-user')`,
-        [qty, item.name.trim(), userId || 'default-user']
-      ).catch(e => console.error('[Stock Decrease Error by Name]', e.message))
-    }
-  }
-}
-
 const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
   if (!quote?.customer_email) return
 

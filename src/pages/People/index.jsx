@@ -7,13 +7,14 @@ import { Plus, Filter, ArrowUpDown, Loader2, Mail, Phone, Trash2, Edit2, Search 
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
-import { useNavigate } from 'react-router'
+import { useNavigate, useLocation } from 'react-router'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 
 export default function People() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
+  const location = useLocation()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const [people, setPeople] = useState([])
   const [loading, setLoading] = useState(true)
@@ -65,7 +66,7 @@ export default function People() {
   useEffect(() => {
     dispatch(setActiveNav('People'))
     fetchPeople(page)
-  }, [dispatch, page, search, sort, filterPersona, filterStatus])
+  }, [dispatch, page, search, sort, filterPersona, filterStatus, location.key])
 
   const fetchPeople = async (currentPage = page) => {
     setLoading(true)

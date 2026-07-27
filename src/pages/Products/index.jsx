@@ -7,7 +7,7 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import { Plus, Filter, ArrowUpDown, Package, X, Edit2, Trash2, Loader2, Search, Eye } from 'lucide-react'
 import { drawBarcode } from '../../utils/barcode'
 import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
-import { getBulkUnitDetails } from '../../utils/unitHelpers'
+import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import './Products.css'
@@ -176,13 +176,13 @@ function PricingModal({ product, onClose }) {
           {/* Current Pricing Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price</span>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price {bagWeight > 1 ? `(${bagWeight} ${bulkUnit?.short || product?.unit || 'kgs'})` : ''}</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
                 ₹{parseFloat(product.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
-              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price</span>
+              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price {bagWeight > 1 ? `(${bagWeight} ${bulkUnit?.short || product?.unit || 'kgs'})` : ''}</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
                 {product.updated_price ? `₹${parseFloat(product.updated_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `₹${parseFloat(product.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               </p>
@@ -225,6 +225,11 @@ function PricingModal({ product, onClose }) {
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                           <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          {bagWeight > 1 && (
+                            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                              ({bagWeight} {bulkUnit?.short || product?.unit || 'kgs'} price)
+                            </span>
+                          )}
                           {diff !== 0 && (
                             <span style={{ fontSize: '0.7rem', fontWeight: 600, color: isUp ? '#16a34a' : '#dc2626', background: isUp ? '#dcfce7' : '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
                               {isUp ? `+₹${diff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -512,16 +517,16 @@ export default function Products() {
                                 <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
                                   {getSingleLetter(row.name)}
                                 </div>
-                                <span style={{ fontWeight: 500, color: '#1e293b' }}>
+                                <span style={{ fontWeight: 535, fontSize: '0.89rem', color: '#1e293b' }}>
                                   {row.name}
                                 </span>
                               </div>
                             </td>
-                            <td>
-                              <span style={{ fontFamily: 'monospace', color: '#64748b', fontSize: '0.8rem' }}>
-                                {row.hsn_code || row.sku || '10064000'}
-                              </span>
-                            </td>
+                             <td>
+                               <span style={{ color: '#1e293b', fontWeight: 600, fontSize: '0.85rem' }}>
+                                 {row.hsn_code || row.sku || '10064000'}
+                               </span>
+                             </td>
                              <td>
                                {(() => {
                                  const catStyle = getCategoryTagStyle(row.category)
@@ -532,30 +537,60 @@ export default function Products() {
                                  )
                                })()}
                              </td>
-                            <td>
-                              <span style={{ fontWeight: 500, color: '#1e293b' }}>
-                                ₹{parseFloat(row.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{row.unit ? `/ ${row.unit}` : ''}</span>
-                              </span>
-                            </td>
-                            <td>
-                              {row.updated_price ? (
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span style={{ fontWeight: 600, color: '#10b981', fontSize: '0.85rem' }}>
-                                    ₹{parseFloat(row.updated_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                  {(row.updated_price_date || row.updated_at) && (
-                                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                      {formatIndianDateOnly(row.updated_price_date || row.updated_at)}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span style={{ color: '#9ca3af' }}>—</span>
-                              )}
-                            </td>
+                             <td>
+                               {(() => {
+                                 const bulkUnit = getBulkUnitDetails(row.unit)
+                                 const uomShort = bulkUnit?.short || row.unit || 'kg'
+                                 const bw = parseFloat(row.bag_weight || 1)
+                                 const rawP = parseFloat(row.price || 0)
+
+                                 const price100 = (rawP > 1000 && bw > 1 && (rawP / bw) > 60)
+                                   ? rawP
+                                   : (bw > 0 ? (rawP / bw) * 100 : rawP)
+
+                                 return (
+                                   <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                     <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                       ₹{price100.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                     </span>
+                                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                       100 {uomShort} price
+                                     </span>
+                                   </div>
+                                 )
+                               })()}
+                             </td>
+                             <td>
+                               {(() => {
+                                 if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
+                                 const bulkUnit = getBulkUnitDetails(row.unit)
+                                 const uomShort = bulkUnit?.short || row.unit || 'kg'
+                                 const bw = parseFloat(row.bag_weight || 1)
+                                 const rawP = parseFloat(row.price || 0)
+                                 const rawUP = parseFloat(row.updated_price || 0)
+
+                                 const price100 = (rawP > 1000 && bw > 1 && (rawP / bw) > 60) ? rawP : (bw > 0 ? (rawP / bw) * 100 : rawP)
+                                 const updatedPrice100 = (rawUP > 1000 && bw > 1 && (rawUP / bw) > 60) ? rawUP : (bw > 0 ? (rawUP / bw) * 100 : rawUP)
+
+                                 const isUp = updatedPrice100 > price100
+                                 const isDrop = updatedPrice100 < price100
+                                 const textColor = isDrop ? '#dc2626' : (isUp ? '#10b981' : '#475569')
+
+                                 return (
+                                   <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                     <span style={{ fontWeight: 700, color: textColor, fontSize: '0.85rem' }}>
+                                       ₹{updatedPrice100.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                     </span>
+                                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                       {formatIndianDateOnly(row.updated_price_date || row.updated_at)} (100 {uomShort})
+                                     </span>
+                                   </div>
+                                 )
+                               })()}
+                             </td>
                             <td>
                               <span className={`attio-stock-badge ${getStockBadgeClass(row.stock)}`}>
-                                {row.stock} {bulkUnit && bagWeight > 1 ? bulkUnit.pluralName : (row.unit || 'pcs')}
+                                {formatStockDisplay(row.stock, row.bag_weight, row.unit)}
                               </span>
                             </td>
                             <td>

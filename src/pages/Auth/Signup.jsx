@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { Mail, Lock, ArrowLeft, Phone, CreditCard } from 'lucide-react'
+import { Mail, Lock, ArrowLeft, Phone, CreditCard, User } from 'lucide-react'
 import WorkshopLogo from '../../components/WorkshopLogo'
 import Notification from '../../components/Notification'
 import AuthLayout from '../../components/layout/AuthLayout'
@@ -21,7 +21,7 @@ export default function Signup() {
     email: inviteFrom ? '' : '', password: '', confirmPassword: '',
     companyName: '', workspaceHandle: '', workspaceHandleManual: false,
     billingCountry: 'India', referralSource: '',
-    phone: '', gstin: '',
+    firstName: '', lastName: '', phone: '', gstin: '',
     usageType: 'Sales', inviteEmail: '', otp: ''
   })
   const [errors, setErrors] = useState({})
@@ -157,11 +157,17 @@ export default function Signup() {
     setStep(4)
   }
 
-  // ── Step 4: Business details ──
+  // ── Step 4: Personal & Business details ──
   const handleStep4 = (e) => {
     e.preventDefault()
     clearNotif()
     const newErrors = {}
+    if (!form.firstName?.trim()) {
+      newErrors.firstName = 'First name is required.'
+    }
+    if (!form.lastName?.trim()) {
+      newErrors.lastName = 'Last name is required.'
+    }
     if (!form.phone) {
       newErrors.phone = 'Phone number is required.'
     } else if (!/^[+\d\s\-()]{7,15}$/.test(form.phone)) {
@@ -174,7 +180,7 @@ export default function Signup() {
     }
     if (Object.keys(newErrors).length) {
       setErrors(newErrors)
-      showNotif('Please fill in all required business details.', 'warning')
+      showNotif('Please fill in all 4 required details (First Name, Last Name, Phone Number, GSTIN).', 'warning')
       return
     }
     setStep(5)
@@ -186,17 +192,23 @@ export default function Signup() {
     clearNotif()
     setIsLoading(true)
     try {
+      const derivedShopName = (form.companyName || form.workspaceHandle || (form.firstName ? `${form.firstName}'s Workshop` : '') || (form.email ? form.email.split('@')[0] : '') || 'My Workshop').trim()
+
       const payload = {
         email:           form.email,
         password:        form.password,
-        shopName:        form.companyName,
-        companyName:     form.companyName,
+        firstName:       form.firstName,
+        lastName:        form.lastName,
+        first_name:      form.firstName,
+        last_name:       form.lastName,
+        shopName:        derivedShopName,
+        companyName:     derivedShopName,
         phone:           form.phone,
         gstin:           form.gstin,
         billingCountry:  form.billingCountry,
         referralSource:  form.referralSource,
         usageType:       form.usageType,
-        workspaceHandle: form.workspaceHandle,
+        workspaceHandle: form.workspaceHandle || derivedShopName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
         inviteEmail:     form.inviteEmail,
       }
       const resultAction = await dispatch(registerThunk(payload))
@@ -513,16 +525,29 @@ export default function Signup() {
               </div>
             </div>
 
-            <div className="ws-step4-divider"><span>Business identity</span></div>
+            <div className="ws-step4-divider"><span>Personal & Business identity</span></div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="ws-form-field">
+                <label className="ws-field-label">First name *</label>
+                <Input name="firstName" type="text" placeholder="John" icon={User}
+                  value={form.firstName} onChange={handleChange} error={errors.firstName} />
+              </div>
+              <div className="ws-form-field">
+                <label className="ws-field-label">Last name *</label>
+                <Input name="lastName" type="text" placeholder="Doe" icon={User}
+                  value={form.lastName} onChange={handleChange} error={errors.lastName} />
+              </div>
+            </div>
 
             <div className="ws-form-field">
-              <label className="ws-field-label">Phone number</label>
+              <label className="ws-field-label">Phone number *</label>
               <Input name="phone" type="tel" placeholder="+91 98765 43210" icon={Phone}
                 value={form.phone} onChange={handleChange} error={errors.phone} />
             </div>
 
             <div className="ws-form-field">
-              <label className="ws-field-label">GSTIN</label>
+              <label className="ws-field-label">GSTIN *</label>
               <Input name="gstin" type="text" placeholder="22AAAAA0000A1Z5" icon={CreditCard}
                 value={form.gstin}
                 onChange={e => {

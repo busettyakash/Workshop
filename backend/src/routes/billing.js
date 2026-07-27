@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 
+
 const router = Router()
 router.use(requireAuth)
 
@@ -14,10 +15,10 @@ async function ensureBillingSchema() {
     `ALTER TABLE bill_items
      ALTER COLUMN quantity TYPE NUMERIC(10, 2)
      USING quantity::numeric(10, 2)`
-  ).catch(() => {})
-  await query(`ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => {})
-  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50)`).catch(() => {})
-  await query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => {})
+  ).catch(() => { })
+  await query(`ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => { })
+  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50)`).catch(() => { })
+  await query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => { })
 }
 
 router.use(async (_req, _res, next) => {
@@ -92,7 +93,7 @@ router.get('/', async (req, res) => {
       `SELECT COUNT(*) FROM bills b 
        LEFT JOIN people p ON b.customer_id = p.id
        LEFT JOIN customers cust ON b.customer_id = cust.id
-       ${where}`, 
+       ${where}`,
       params
     )
     const total = parseInt(count.rows[0].count, 10) || 0
@@ -205,7 +206,7 @@ router.post('/', async (req, res) => {
         attempts++
       }
     }
-  } catch (_e) {}
+  } catch (_e) { }
 
   // Enrich items with actual product names and HSN codes from fast Redis/In-Memory Cache (Zero DB load)
   const catalogMap = await getProductHsnMap()
@@ -253,11 +254,66 @@ router.post('/', async (req, res) => {
       insertedRows = resDb.rows
     }
 
-    // Clear redis billing cache
+    // Deduct stock for items in the bill based on purchased quantity and UOM
+    for (const item of (enrichedItems || [])) {
+      if (!item) continue
+      const qty = parseFloat(item.qty || item.quantity || 0)
+      const prodId = item.product_id || item.id || item.productId
+      const itemName = item.name || item.product_name || item.productName || ''
+      if (qty <= 0) continue
+
+      let prodRes = null
+      if (prodId) {
+        prodRes = await query(
+          `SELECT id, name, sku, stock, bag_weight, unit FROM products 
+           WHERE (id::text = $1::text OR ($2 <> '' AND name ILIKE $2))
+             AND (user_id::text = $3::text OR user_id = 'default-user' OR $3 = 'default-user') 
+           LIMIT 1`,
+          [String(prodId), itemName.trim(), userId || 'default-user']
+        ).catch(e => { console.error('[Stock Lookup Error]', e.message); return null })
+      } else if (itemName) {
+        prodRes = await query(
+          `SELECT id, name, sku, stock, bag_weight, unit FROM products 
+           WHERE name ILIKE $1 
+             AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') 
+           LIMIT 1`,
+          [itemName.trim(), userId || 'default-user']
+        ).catch(e => { console.error('[Stock Lookup Error by Name]', e.message); return null })
+      }
+
+      const prod = prodRes?.rows?.[0]
+      if (!prod) {
+        console.warn('[Stock Deduction Warning] Product not found for stock deduction:', prodId, itemName)
+        continue
+      }
+
+      const bw = parseFloat(prod.bag_weight || 1)
+      const unitStr = String(item.unit || prod.unit || '').toLowerCase()
+      const isBaseUnit = ['kgs', 'kg', 'ltr', 'mtr', 'g', 'gm'].some(u => unitStr.includes(u))
+
+      let bagsToDeduct = qty
+      if (isBaseUnit && bw > 1) {
+        bagsToDeduct = qty / bw
+      }
+
+      if (bagsToDeduct > 0) {
+        await query(
+          `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE id = $2`,
+          [bagsToDeduct, prod.id]
+        ).catch(e => console.error('[Billing Products Stock Decrease Error]', e.message))
+
+        await query(
+          `UPDATE import_stock SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') AND (name ILIKE $3 OR (sku <> '' AND sku = $4))`,
+          [bagsToDeduct, userId || 'default-user', prod.name || itemName, prod.sku || '']
+        ).catch(e => console.error('[Billing ImportStock Stock Decrease Error]', e.message))
+      }
+    }
+
+    // Clear redis cache
     try {
-      const keys = await redis.keys(`billing:${userId}:*`).catch(() => [])
-      for (const key of keys) { await redis.del(key).catch(() => {}) }
-    } catch (_err) {}
+      const keys = await redis.keys(`*${userId}*`).catch(() => [])
+      for (const key of keys) { await redis.del(key).catch(() => { }) }
+    } catch (_err) { }
 
     res.status(201).json(insertedRows[0])
   } catch (err) {
@@ -280,8 +336,8 @@ router.patch('/:id/pay', async (req, res) => {
 
     try {
       const keys = await redis.keys(`billing:${userId}:*`).catch(() => [])
-      for (const key of keys) { await redis.del(key).catch(() => {}) }
-    } catch (_err) {}
+      for (const key of keys) { await redis.del(key).catch(() => { }) }
+    } catch (_err) { }
 
     res.json(rows[0])
   } catch (err) {
@@ -301,8 +357,8 @@ router.delete('/:id', async (req, res) => {
 
     try {
       const keys = await redis.keys(`billing:${userId}:*`).catch(() => [])
-      for (const key of keys) { await redis.del(key).catch(() => {}) }
-    } catch (_err) {}
+      for (const key of keys) { await redis.del(key).catch(() => { }) }
+    } catch (_err) { }
 
     res.json({ message: 'Bill deleted successfully' })
   } catch (err) {

@@ -28,6 +28,8 @@ async function createTables() {
 
       ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(20);
       ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
 
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,

@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Plus, Trash2, Search, UserPlus, AlertCircle, X, ChevronDown, PackagePlus, ArrowRight, Check } from 'lucide-react'
 import api from '../../api/client'
-import { getBulkUnitDetails, ALL_UOM_OPTIONS } from '../../utils/unitHelpers'
+import { getBulkUnitDetails, ALL_UOM_OPTIONS, formatStockDisplay, formatStockDisplayFromBase } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
 
 const S = {
@@ -368,7 +368,56 @@ export default function BillForm() {
     setLineItems(prev => prev.filter((_, i) => i !== index))
   }
 
+const calcMaxStock = (prod, itemUnit) => {
+  if (!prod || prod.stock === undefined || prod.stock === null) return null
+  const stockBags = parseFloat(prod.stock) || 0
+  const bw = parseFloat(prod.bag_weight) || 1
+  const bulkUnit = getBulkUnitDetails(prod.unit)
+  const unitStr = String(itemUnit || prod.unit || '').toLowerCase()
+
+  const isBaseUnit = bulkUnit && (
+    unitStr === bulkUnit.short?.toLowerCase() ||
+    unitStr === 'kgs' || unitStr === 'kg' || unitStr === 'ltr' || unitStr === 'mtr'
+  )
+
+  if (isBaseUnit && bw > 1) {
+    const maxBase = stockBags * bw
+    return {
+      maxStock: maxBase,
+      displayLabel: `${maxBase} ${bulkUnit.short || 'kg'} (${stockBags} ${bulkUnit.name || 'Bags'})`
+    }
+  } else {
+    const label = (bulkUnit && bw > 1)
+      ? `${bulkUnit.name || 'Bag'} (${bw}${bulkUnit.short || 'kg'})`
+      : (bulkUnit?.short || prod.unit || 'pcs')
+    return {
+      maxStock: stockBags,
+      displayLabel: `${stockBags} ${label}`
+    }
+  }
+}
+
   const updateLineItem = (index, field, value) => {
+    if (field === 'qty') {
+      const numQty = parseFloat(value) || 0
+      const targetItem = lineItems[index]
+      const selectedProd = products.find(p => String(p.id) === String(targetItem?.product_id))
+      const stockInfo = calcMaxStock(selectedProd, targetItem?.unit)
+
+      if (stockInfo && stockInfo.maxStock >= 0 && numQty > stockInfo.maxStock) {
+        dispatch(addToast({
+          message: `We have only ${stockInfo.displayLabel} available in stock for ${selectedProd?.name || 'this product'}.`,
+          type: 'warning'
+        }))
+
+        setLineItems(prev => {
+          const newItems = [...prev]
+          newItems[index] = { ...newItems[index], qty: stockInfo.maxStock }
+          return newItems
+        })
+        return
+      }
+    }
     setLineItems(prev => {
       const newItems = [...prev]
       newItems[index] = { ...newItems[index], [field]: value }
@@ -389,6 +438,18 @@ export default function BillForm() {
   const handleNextStep = () => {
     const err = {}
     if (lineItems.length === 0) err.items = 'Add at least one product'
+    for (const item of lineItems) {
+      const selectedProd = products.find(p => String(p.id) === String(item.product_id))
+      const stockInfo = calcMaxStock(selectedProd, item?.unit)
+      const qty = parseFloat(item.qty) || 0
+      if (stockInfo && stockInfo.maxStock >= 0 && qty > stockInfo.maxStock) {
+        dispatch(addToast({
+          message: `Cannot proceed: We have only ${stockInfo.displayLabel} available in stock for ${selectedProd?.name || 'this product'}.`,
+          type: 'error'
+        }))
+        return
+      }
+    }
     if (Object.keys(err).length) {
       setErrors(err)
       return
@@ -565,11 +626,6 @@ export default function BillForm() {
                               {bulkUnit && productObj && productObj.bag_weight > 1 && (
                                 <span style={{ fontSize: '0.69rem', color: '#059669', display: 'block', marginTop: 2, fontWeight: 500 }}>
                                   {bulkUnit.name}: {INR(parseFloat(li.price || 0) * productObj.bag_weight)} ({productObj.bag_weight}{bulkUnit.short})
-                                </span>
-                              )}
-                              {exceedsStock && (
-                                <span style={{ fontSize: '0.7rem', color: '#dc2626', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                  <AlertCircle size={10} /> Max available: {stockAvailable}
                                 </span>
                               )}
                             </div>
@@ -856,20 +912,29 @@ export default function BillForm() {
                       filteredProducts.map(p => {
                         const lineItem = lineItems.find(li => li.product_id === p.id)
                         const qtyAdded = lineItem ? parseFloat(lineItem.qty || 0) : 0
-                        const remainingStock = p.stock - qtyAdded
                         const alreadyAdded = qtyAdded > 0
+                        const bulkUnit = getBulkUnitDetails(p.unit)
+                        const bw = parseFloat(p.bag_weight || 1)
+                        const unitStr = String(lineItem?.unit || p.unit || '').toLowerCase()
+
+                        const isBaseUnit = bulkUnit && (
+                          unitStr === bulkUnit.short?.toLowerCase() ||
+                          unitStr === 'kgs' || unitStr === 'kg' || unitStr === 'ltr' || unitStr === 'mtr'
+                        )
+
+                        const totalAvailableBase = (parseFloat(p.stock || 0)) * (bulkUnit && bw > 1 ? bw : 1)
+                        const qtyAddedBase = isBaseUnit ? qtyAdded : (qtyAdded * bw)
+                        const remainingBaseQty = Math.max(0, totalAvailableBase - qtyAddedBase)
 
                         const hasNoStock = p.stock <= 0
-                        const isStockDepleted = remainingStock <= 0
-                        const isLowStock = remainingStock > 0 && remainingStock < 5
-                        const bulkUnit = getBulkUnitDetails(p.unit)
+                        const isStockDepleted = remainingBaseQty <= 0
 
                         return (
                           <button
                             key={p.id}
                             type="button"
                             onClick={() => {
-                              if (hasNoStock || isStockDepleted) {
+                              if (hasNoStock || (isStockDepleted && !alreadyAdded)) {
                                 if (!alreadyAdded) dispatch(addToast({ message: 'Product is out of stock', type: 'error' }))
                                 return
                               }
@@ -913,10 +978,10 @@ export default function BillForm() {
                                 <div style={{ marginTop: 1 }}>
                                   {hasNoStock || isStockDepleted ? (
                                     <span style={{ color: '#b91c1c', fontWeight: 600, background: '#fee2e2', padding: '1px 5px', borderRadius: 4, fontSize: '0.68rem' }}>Out of Stock</span>
-                                  ) : isLowStock ? (
-                                    <span style={{ color: '#b45309', fontWeight: 600, background: '#fef3c7', padding: '1px 5px', borderRadius: 4, fontSize: '0.68rem' }}>Stock: {remainingStock}</span>
                                   ) : (
-                                    <span style={{ color: '#4b5563', background: '#f3f4f6', padding: '1px 5px', borderRadius: 4, fontSize: '0.68rem' }}>Stock: {remainingStock}</span>
+                                    <span style={{ color: '#4b5563', background: '#f3f4f6', padding: '1px 5px', borderRadius: 4, fontSize: '0.68rem' }}>
+                                      Stock: {formatStockDisplayFromBase(remainingBaseQty, p.bag_weight, p.unit)}
+                                    </span>
                                   )}
                                 </div>
                               </div>

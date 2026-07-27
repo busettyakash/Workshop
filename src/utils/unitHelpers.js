@@ -7,7 +7,6 @@ export const ALL_UOM_OPTIONS = [
   { value: 'ltr', label: 'Liters (ltr)', category: 'Volume', isBulk: true },
   { value: 'doz', label: 'Dozen (doz)', category: 'Count' },
   { value: 'set', label: 'Set / Kit (set)', category: 'Count' },
-  { value: 'g',   label: 'Grams (g)', category: 'Weight' },
   { value: 'ml',  label: 'Milliliters (ml)', category: 'Volume' },
   { value: 'ft',  label: 'Feet (ft)', category: 'Length' }
 ];
@@ -149,4 +148,60 @@ export const formatProductUnitPrice = (price, unit, packCapacity = 1) => {
     return `${cap}${details.short} ${details.name} • ₹${unitPrice}/${details.short}`;
   }
   return details ? `₹${p.toFixed(2)} / ${details.short}` : `₹${p.toFixed(2)} / ${unit || 'pcs'}`;
+};
+
+export const formatStockDisplay = (stock, bagWeight = 1, unit = '') => {
+  if (stock === undefined || stock === null) return '0';
+  const numStock = parseFloat(stock);
+  if (isNaN(numStock)) return '0';
+
+  const bw = parseFloat(bagWeight) || 1;
+  const bulkUnit = getBulkUnitDetails(unit);
+
+  if (bulkUnit && bw > 1) {
+    const fullBags = Math.floor(numStock);
+    const looseQty = Math.round((numStock - fullBags) * bw);
+    const containerName = bulkUnit.name || 'Bag';
+    const containerPlural = bulkUnit.pluralName || `${containerName}s`;
+    const shortUnit = bulkUnit.short || 'kg';
+
+    if (looseQty > 0 && fullBags > 0) {
+      return `${fullBags} ${fullBags === 1 ? containerName : containerPlural} ${looseQty} ${shortUnit}`;
+    } else if (fullBags > 0) {
+      return `${fullBags} ${fullBags === 1 ? containerName : containerPlural}`;
+    } else {
+      return `${looseQty} ${shortUnit}`;
+    }
+  }
+
+  const unitLabel = unit || 'pcs';
+  return `${numStock} ${unitLabel}`;
+};
+
+export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '') => {
+  if (totalBaseQty === undefined || totalBaseQty === null) return '0';
+  const total = parseFloat(totalBaseQty);
+  if (isNaN(total)) return '0';
+
+  const bw = parseFloat(bagWeight) || 1;
+  const bulkUnit = getBulkUnitDetails(unit);
+
+  if (bulkUnit && bw > 1) {
+    const fullBags = Math.floor(total / bw);
+    const looseQty = Math.round(total % bw);
+    const containerName = bulkUnit.name || 'Bag';
+    const containerPlural = bulkUnit.pluralName || `${containerName}s`;
+    const shortUnit = bulkUnit.short || 'kg';
+
+    if (looseQty > 0 && fullBags > 0) {
+      return `${fullBags} ${fullBags === 1 ? containerName : containerPlural} ${looseQty} ${shortUnit}`;
+    } else if (fullBags > 0) {
+      return `${fullBags} ${fullBags === 1 ? containerName : containerPlural}`;
+    } else {
+      return `${looseQty} ${shortUnit}`;
+    }
+  }
+
+  const unitLabel = unit || 'pcs';
+  return `${total} ${unitLabel}`;
 };

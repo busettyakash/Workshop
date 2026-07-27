@@ -136,6 +136,33 @@ export default function Sidebar() {
   })
   const [listsOpen, setListsOpen] = useState(false)
 
+  const toggleAutomations = () => {
+    const next = !automationsOpen
+    setAutomationsOpen(next)
+    if (next) {
+      setRecordsOpen(false)
+      setBillingOpen(false)
+    }
+  }
+
+  const toggleRecords = () => {
+    const next = !recordsOpen
+    setRecordsOpen(next)
+    if (next) {
+      setBillingOpen(false)
+      setAutomationsOpen(false)
+    }
+  }
+
+  const toggleBilling = () => {
+    const next = !billingOpen
+    setBillingOpen(next)
+    if (next) {
+      setRecordsOpen(false)
+      setAutomationsOpen(false)
+    }
+  }
+
   const location = useLocation()
 
   useEffect(() => {
@@ -399,14 +426,14 @@ export default function Sidebar() {
               <div className={`ws-sb-nav-item-wrapper ${activeNav === 'Workflows' ? 'active' : ''}`}>
                 <button 
                   className="ws-sb-nav-item-btn"
-                  onClick={() => setAutomationsOpen(!automationsOpen)}
+                  onClick={toggleAutomations}
                 >
                   {ICON_MAP.Automations}
                   <span>Automations</span>
                 </button>
                 <button 
                   className={`ws-sb-arrow-btn ${automationsOpen ? 'rotated' : ''}`}
-                  onClick={() => setAutomationsOpen(!automationsOpen)}
+                  onClick={toggleAutomations}
                   aria-label="Toggle sublist"
                 >
                   <ChevronRight size={12} className="ws-sb-arrow" />
@@ -475,14 +502,14 @@ export default function Sidebar() {
             <div className="ws-sb-nav-item-wrapper">
               <button 
                 className="ws-sb-nav-item-btn"
-                onClick={() => setRecordsOpen(!recordsOpen)}
+                onClick={toggleRecords}
               >
                 {ICON_MAP.Folder}
                 <span>Records</span>
               </button>
               <button 
                 className={`ws-sb-arrow-btn ${recordsOpen ? 'rotated' : ''}`}
-                onClick={() => setRecordsOpen(!recordsOpen)}
+                onClick={toggleRecords}
                 aria-label="Toggle sublist"
               >
                 <ChevronRight size={12} className="ws-sb-arrow" />
@@ -514,14 +541,14 @@ export default function Sidebar() {
             <div className="ws-sb-nav-item-wrapper">
               <button 
                 className="ws-sb-nav-item-btn"
-                onClick={() => setBillingOpen(!billingOpen)}
+                onClick={toggleBilling}
               >
                 {ICON_MAP.Billing}
                 <span>Billing</span>
               </button>
               <button 
                 className={`ws-sb-arrow-btn ${billingOpen ? 'rotated' : ''}`}
-                onClick={() => setBillingOpen(!billingOpen)}
+                onClick={toggleBilling}
                 aria-label="Toggle sublist"
               >
                 <ChevronRight size={12} className="ws-sb-arrow" />

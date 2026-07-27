@@ -36,7 +36,9 @@ const ensureWorkspaceTable = async () => {
 
   await query(`
     ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
-  `).catch(err => console.error('[DB] Error ensuring password column on shop_profiles:', err.message))
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
+  `).catch(err => console.error('[DB] Error ensuring columns on shop_profiles:', err.message))
 }
 
 let ensureWorkspaceTablePromise
@@ -400,6 +402,118 @@ router.post('/reset-password', async (req, res) => {
     res.status(500).json({ message: 'Failed to reset password. Please try again.' })
   }
 })
+/* POST /api/auth/send-otp - For SIGNUP: check email DOES NOT exist THEN send OTP */
+router.post('/send-otp', async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  if (!email) return res.status(400).json({ message: 'Email is required' })
+
+  try {
+    // Check if email already exists
+    const result = await query(
+      'SELECT email FROM shop_profiles WHERE email = $1',
+      [email]
+    ).catch(() => ({ rows: [] }))
+
+    if (result.rows.length > 0) {
+      return res.status(409).json({ message: 'An account with this email already exists. Please log in instead.' })
+    }
+
+    console.log('[OTP] Request for email: %s', email)
+    const otpResult = await issueOtp(email, 'OTP')
+    res.status(otpResult.status).json(otpResult.body)
+  } catch (err) {
+    console.error('[OTP] Unexpected error:', err.message)
+    res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
+  }
+})
+
+/* POST /api/auth/send-login-otp - For LOGIN: check email exists THEN send OTP */
+router.post('/send-login-otp', async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  if (!email) return res.status(400).json({ message: 'Email is required' })
+
+  try {
+    // Check if email is registered
+    const result = await query(
+      'SELECT email FROM shop_profiles WHERE email = $1',
+      [email]
+    ).catch(() => ({ rows: [] }))
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'No account found with this email. Please sign up first.' })
+    }
+
+    const otpResult = await issueOtp(email, 'LOGIN OTP')
+    res.status(otpResult.status).json(otpResult.body)
+  } catch (err) {
+    console.error('[LOGIN OTP] Unexpected error:', err.message)
+    res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
+  }
+})
+
+/* POST /api/auth/send-reset-otp - For FORGOT PASSWORD: check email exists THEN send OTP */
+router.post('/send-reset-otp', async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  if (!email) return res.status(400).json({ message: 'Email is required' })
+
+  try {
+    const result = await query(
+      'SELECT email FROM shop_profiles WHERE email = $1',
+      [email]
+    ).catch(() => ({ rows: [] }))
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'No account found with this email.' })
+    }
+
+    const otpResult = await issueOtp(email, 'RESET OTP')
+    res.status(otpResult.status).json(otpResult.body)
+  } catch (err) {
+    console.error('[RESET OTP] Unexpected error:', err.message)
+    res.status(500).json({ message: 'Failed to send OTP. Please try again.' })
+  }
+})
+
+/* POST /api/auth/reset-password - Verify OTP and update password */
+router.post('/reset-password', async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  const otp = normalizeOtp(req.body?.otp)
+  const { newPassword } = req.body
+
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({ message: 'Email, OTP, and new password are required' })
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters long' })
+  }
+
+  try {
+    let storedOtp = await redis.get(`otp:${email}`).catch(() => null)
+    if (!storedOtp) {
+      storedOtp = getMemoryValue(getOtpKey(email))
+    }
+
+    if (String(storedOtp) !== otp) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' })
+    }
+
+    // Clear OTP after successful check
+    await clearOtp(email)
+
+    // Update password in DB
+    await query(
+      'UPDATE shop_profiles SET password = $1 WHERE email = $2',
+      [newPassword, email]
+    )
+
+    console.log('[RESET PASSWORD] Password updated successfully for %s', email)
+    res.json({ message: 'Password reset successfully. You can now log in with your new password.' })
+  } catch (err) {
+    console.error('[RESET PASSWORD] Error:', err.message)
+    res.status(500).json({ message: 'Failed to reset password. Please try again.' })
+  }
+})
 
 
 /* POST /api/auth/verify-otp */
@@ -419,7 +533,6 @@ router.post('/verify-otp', async (req, res) => {
     console.log('[OTP VERIFY] Attempt for %s: input=%s, stored=%s', email, otp, storedOtp)
 
     if (String(storedOtp) === otp) {
-      // Success - now delete
       await redis.del(`otp:${email}`).catch(() => { })
       memoryStore.delete(`otp:${email}`)
       res.json({ message: 'OTP verified successfully' })
@@ -434,21 +547,30 @@ router.post('/verify-otp', async (req, res) => {
 /* POST /api/auth/register */
 router.post('/register', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
-  const { password, shopName, phone, mobileNumber, gstin, workspaceHandle, billingCountry, referralSource, usageType, inviteEmail } = req.body
-  const actualPhone = phone || mobileNumber
-  if (!email || !password || !shopName || !actualPhone || !gstin) {
-    return res.status(400).json({ message: 'Email, password, shopName, phone, and GSTIN are required' })
+  const {
+    password, shopName, phone, mobileNumber, gstin, workspaceHandle,
+    billingCountry, referralSource, usageType, inviteEmail,
+    firstName, lastName, first_name, last_name
+  } = req.body
+
+  const actualFirstName = (firstName || first_name || (email ? email.split('@')[0] : '') || 'User').trim()
+  const actualLastName = (lastName || last_name || 'Account').trim()
+  const actualPhone = (phone || mobileNumber || '').trim()
+  const actualGstin = (gstin || '').trim()
+  const actualShopName = (shopName || req.body?.companyName || workspaceHandle || `${actualFirstName}'s Workshop`).trim()
+
+  if (!email || !password || !actualFirstName || !actualLastName || !actualPhone || !actualGstin) {
+    return res.status(400).json({ message: 'First name, Last name, Email, password, phone, and GSTIN are required' })
   }
-  if (gstin.trim().length !== 15) {
+  if (actualGstin.length !== 15) {
     return res.status(400).json({ message: 'GSTIN must be exactly 15 characters' })
   }
+
   try {
     const { data, error } = await insforge.auth.signUp({ email, password })
     if (error) {
       const msg = error.nextActions || error.error || error.message || 'Registration failed'
 
-      // If the email exists in InsForge cloud, but not in our local DB (because it was cleared),
-      // gracefully proceed to create the local profile to fix the deadlock.
       if (msg === 'AUTH_EMAIL_EXISTS' || msg.toLowerCase().includes('already registered')) {
         console.log(`[Register] User exists in InsForge Cloud but not locally. Proceeding to create local profile.`)
       } else {
@@ -459,13 +581,15 @@ router.post('/register', async (req, res) => {
 
     const userId = data?.user?.id || getLocalUserId(email)
 
-    // Store extra profile in DB with GSTIN and Workspace details
+    // Store extra profile in DB with First Name, Last Name, GSTIN, Phone and Workspace details
     await query(
-      `INSERT INTO shop_profiles (email, user_id, shop_name, phone, gstin, workspace_handle, billing_country, referral_source, usage_type, password, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+      `INSERT INTO shop_profiles (email, user_id, shop_name, first_name, last_name, phone, gstin, workspace_handle, billing_country, referral_source, usage_type, password, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
        ON CONFLICT (email) DO UPDATE SET 
          user_id = COALESCE(shop_profiles.user_id, EXCLUDED.user_id),
          shop_name = EXCLUDED.shop_name, 
+         first_name = COALESCE(EXCLUDED.first_name, shop_profiles.first_name),
+         last_name = COALESCE(EXCLUDED.last_name, shop_profiles.last_name),
          phone = EXCLUDED.phone,
          gstin = COALESCE(EXCLUDED.gstin, shop_profiles.gstin),
          workspace_handle = COALESCE(shop_profiles.workspace_handle, EXCLUDED.workspace_handle),
@@ -475,9 +599,11 @@ router.post('/register', async (req, res) => {
       [
         email,
         userId,
-        shopName,
+        actualShopName,
+        actualFirstName,
+        actualLastName,
         actualPhone || null,
-        gstin || null,
+        actualGstin || null,
         workspaceHandle || null,
         billingCountry || null,
         referralSource || null,
@@ -489,11 +615,11 @@ router.post('/register', async (req, res) => {
     // Clear stale user ID mapping in Redis cache
     await redis.del(`user_id_map:${email.toLowerCase()}`).catch(() => { })
 
-    // Generate local JWT token if InsForge signUp doesn't return one directly
+    // Generate local JWT token
     let token = data?.accessToken || data?.session?.access_token
     if (!token) {
       token = jwt.sign(
-        { sub: userId, email, shopName, iss: 'workshop-local' },
+        { sub: userId, email, shopName: actualShopName, firstName: actualFirstName, lastName: actualLastName, iss: 'workshop-local' },
         process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
         { expiresIn: '7d' }
       )
@@ -512,8 +638,6 @@ router.post('/register', async (req, res) => {
       }
     }
 
-    // Check if this user was previously invited to another workspace
-    // If so, return that workspace as the default so the frontend auto-switches
     let defaultWorkspaceId = null
     let defaultWorkspaceName = null
     try {
@@ -534,9 +658,20 @@ router.post('/register', async (req, res) => {
     } catch (invErr) {
       console.error('[Register] Error checking pending invites:', invErr.message)
     }
+
     const response = {
       message: 'Registration successful',
-      user: { id: userId, email, shopName },
+      user: {
+        id: userId,
+        email,
+        shopName: actualShopName,
+        firstName: actualFirstName,
+        lastName: actualLastName,
+        first_name: actualFirstName,
+        last_name: actualLastName,
+        phone: actualPhone,
+        gstin
+      },
       token,
     }
 
@@ -561,7 +696,7 @@ router.post('/login', async (req, res) => {
     await redis.del(`user_id_map:${email}`).catch(() => { })
 
     const profile = await query(
-      'SELECT user_id, shop_name, password FROM shop_profiles WHERE email = $1',
+      'SELECT user_id, shop_name, first_name, last_name, phone, gstin, password FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
       [email]
     ).catch(() => ({ rows: [] }))
 
@@ -569,9 +704,14 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })
     }
 
-    const shopName = profile.rows[0]?.shop_name || email.split('@')[0]
-    const localUserId = profile.rows[0]?.user_id || getLocalUserId(email)
-    const storedPassword = profile.rows[0]?.password
+    const prof = profile.rows[0] || {}
+    const shopName = prof.shop_name || email.split('@')[0]
+    const firstName = prof.first_name || ''
+    const lastName = prof.last_name || ''
+    const phoneVal = prof.phone || ''
+    const gstinVal = prof.gstin || ''
+    const localUserId = prof.user_id || getLocalUserId(email)
+    const storedPassword = prof.password
 
     const { data, error } = await insforge.auth.signInWithPassword({ email, password })
     let token = data?.session?.access_token || data?.accessToken
@@ -580,7 +720,7 @@ router.post('/login', async (req, res) => {
     if (error) {
       if (storedPassword && password === storedPassword) {
         token = jwt.sign(
-          { sub: localUserId, email, shopName, iss: 'workshop-local' },
+          { sub: localUserId, email, shopName, firstName, lastName, iss: 'workshop-local' },
           process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
           { expiresIn: '7d' }
         )
@@ -591,13 +731,26 @@ router.post('/login', async (req, res) => {
 
     if (!token) {
       token = jwt.sign(
-        { sub: userId, email, shopName, iss: 'workshop-local' },
+        { sub: userId, email, shopName, firstName, lastName, iss: 'workshop-local' },
         process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production',
         { expiresIn: '7d' }
       )
     }
 
-    res.json({ token, user: { id: userId, email, shopName } })
+    res.json({
+      token,
+      user: {
+        id: userId,
+        email,
+        shopName,
+        firstName,
+        lastName,
+        first_name: firstName,
+        last_name: lastName,
+        phone: phoneVal,
+        gstin: gstinVal
+      }
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -625,27 +778,44 @@ router.get('/me', async (req, res) => {
       process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production'
     )
 
-    if (decoded?.iss === 'workshop-local') {
-      return res.json({
-        user: {
-          id: decoded.sub,
-          email: decoded.email,
-          shopName: decoded.shopName,
-        },
-      })
-    }
+    const profileRes = await query('SELECT user_id, shop_name, first_name, last_name, phone, gstin FROM shop_profiles WHERE LOWER(email) = LOWER($1)', [decoded.email || '']).catch(() => ({ rows: [] }))
+    const p = profileRes.rows[0] || {}
+
+    return res.json({
+      user: {
+        id: p.user_id || decoded.sub,
+        email: decoded.email,
+        shopName: p.shop_name || decoded.shopName || 'My Shop',
+        firstName: p.first_name || decoded.firstName || '',
+        lastName: p.last_name || decoded.lastName || '',
+        first_name: p.first_name || decoded.firstName || '',
+        last_name: p.last_name || decoded.lastName || '',
+        phone: p.phone || '',
+        gstin: p.gstin || ''
+      },
+    })
   } catch { }
 
   try {
     const { data, error } = await insforge.auth.getUser(token)
     if (error) return res.status(401).json({ error: 'Unauthorized' })
 
-    const profileRes = await query('SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1)', [data.user.email]).catch(() => ({ rows: [] }))
-    if (profileRes.rows.length > 0) {
-      data.user.id = profileRes.rows[0].user_id
+    const profileRes = await query('SELECT user_id, shop_name, first_name, last_name, phone, gstin FROM shop_profiles WHERE LOWER(email) = LOWER($1)', [data.user.email]).catch(() => ({ rows: [] }))
+    const p = profileRes.rows[0] || {}
+
+    const userObj = {
+      ...data.user,
+      id: p.user_id || data.user.id,
+      shopName: p.shop_name || 'My Shop',
+      firstName: p.first_name || '',
+      lastName: p.last_name || '',
+      first_name: p.first_name || '',
+      last_name: p.last_name || '',
+      phone: p.phone || '',
+      gstin: p.gstin || ''
     }
 
-    res.json({ user: data.user })
+    res.json({ user: userObj })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

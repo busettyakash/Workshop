@@ -23,11 +23,11 @@ const ensureTable = async () => {
       updated_at  TIMESTAMPTZ DEFAULT NOW()
     )
   `)
-  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS user_id TEXT`).catch(() => {})
-  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS products JSONB DEFAULT '[]'::jsonb`).catch(() => {})
-  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS discount NUMERIC(5,2) DEFAULT 0`).catch(() => {})
-  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => {})
-  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS company_shop_id TEXT`).catch(() => {})
+  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS user_id TEXT`).catch(() => { })
+  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS products JSONB DEFAULT '[]'::jsonb`).catch(() => { })
+  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS discount NUMERIC(5,2) DEFAULT 0`).catch(() => { })
+  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => { })
+  await query(`ALTER TABLE deals ADD COLUMN IF NOT EXISTS company_shop_id TEXT`).catch(() => { })
   await query(`
     CREATE TABLE IF NOT EXISTS deal_logs (
       id          SERIAL PRIMARY KEY,
@@ -41,7 +41,7 @@ const ensureTable = async () => {
       created_at  TIMESTAMPTZ DEFAULT NOW()
     )
   `)
-  await query(`ALTER TABLE deal_logs ADD COLUMN IF NOT EXISTS user_id TEXT`).catch(() => {})
+  await query(`ALTER TABLE deal_logs ADD COLUMN IF NOT EXISTS user_id TEXT`).catch(() => { })
 }
 
 let ensureTablePromise
@@ -87,7 +87,7 @@ router.post('/', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW()) RETURNING *`,
       [title, value || 0, stage || 'Discovery', owner || '', close_date || null, notes || '', JSON.stringify(products || []), discount || 0, company_id ? String(company_id) : null, userId]
     )
-    
+
     const savedDeal = rows[0]
     if (savedDeal) {
       savedDeal.company_id = savedDeal.company_shop_id
@@ -105,7 +105,7 @@ router.post('/', async (req, res) => {
       const notifTitle = `New Deal Created`
       const notifBody = `Deal "${title}" has been created with stage "${stage || 'Discovery'}".`
       const notifLink = `/deals/edit/${dealId}`
-      
+
       // Notify the creator
       await query(
         `INSERT INTO notifications (user_id, title, body, type, read, link, created_at)
@@ -140,7 +140,7 @@ router.post('/', async (req, res) => {
           console.error('Failed to create chat session for deal:', chatErr.message)
         }
       }
-      
+
       // Optionally push via InsForge realtime
       try {
         await insforge.realtime.publish(`notifications:${userId}`, {
@@ -153,7 +153,7 @@ router.post('/', async (req, res) => {
             payload: { title: notifTitle, body: notifBody, link: notifLink }
           })
         }
-      } catch {}
+      } catch { }
     } catch (nErr) {
       console.error('Failed to create notification on deal creation:', nErr.message)
     }
@@ -186,7 +186,7 @@ router.get('/:id', async (req, res) => {
       `SELECT d.*, d.company_shop_id AS company_id, s.shop_name AS company_name 
        FROM deals d
        LEFT JOIN shop_profiles s ON d.company_shop_id = s.user_id::text
-       WHERE d.id = $1 AND (d.user_id = $2 OR d.company_shop_id = $2)`, 
+       WHERE d.id = $1 AND (d.user_id = $2 OR d.company_shop_id = $2)`,
       [req.params.id, userId]
     )
     if (!rows.length) {
@@ -212,7 +212,7 @@ router.put('/:id', async (req, res) => {
       [title, value, stage, owner, close_date || null, notes, status || 'active', JSON.stringify(products || []), discount || 0, company_id ? String(company_id) : null, req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Deal not found' })
-    
+
     const updatedDeal = rows[0]
     if (updatedDeal) {
       updatedDeal.company_id = updatedDeal.company_shop_id
@@ -230,7 +230,7 @@ router.put('/:id', async (req, res) => {
         const notifTitle = `Deal Stage Updated`
         const notifBody = `Deal "${title}" stage changed from "${old.stage}" to "${stage}".`
         const notifLink = `/deals/edit/${req.params.id}`
-        
+
         // Notify the creator
         await query(
           `INSERT INTO notifications (user_id, title, body, type, read, link, created_at)
@@ -246,7 +246,7 @@ router.put('/:id', async (req, res) => {
             [String(company_id), notifTitle, notifBody, `/deals/review/${req.params.id}`]
           )
         }
-        
+
         // Optionally push via InsForge realtime
         try {
           await insforge.realtime.publish(`notifications:${userId}`, {
@@ -259,7 +259,7 @@ router.put('/:id', async (req, res) => {
               payload: { title: notifTitle, body: notifBody, link: notifLink }
             })
           }
-        } catch {}
+        } catch { }
       } catch (nErr) {
         console.error('Failed to create notification on deal update:', nErr.message)
       }
@@ -285,20 +285,22 @@ router.post('/:id/approve', async (req, res) => {
       `UPDATE deals SET stage=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
       [stage, req.params.id]
     )
-    
+
     // Decrement stock for products
     let parsedProducts = []
     if (old.products) {
       if (typeof old.products === 'string') {
-        try { parsedProducts = JSON.parse(old.products) } catch {}
+        try { parsedProducts = JSON.parse(old.products) } catch { }
       } else if (Array.isArray(old.products)) {
         parsedProducts = old.products
       }
     }
 
     for (const p of parsedProducts) {
-      await query(`UPDATE products SET stock = GREATEST(stock - $1, 0) WHERE id = $2`, [p.quantity, p.id])
-      await query(`UPDATE products SET status = 'inactive' WHERE id = $1 AND stock <= 0`, [p.id])
+      await query(`UPDATE products SET stock = GREATEST(stock - $1, 0) WHER
+    E id = $2`, [p.quantity, p.id])
+      await query(`UPDATE products SET status = 'inactive' WHERE id = $1 AN
+     D stock <= 0`, [p.id])
     }
 
     // Trigger workflow
@@ -323,7 +325,7 @@ router.post('/:id/approve', async (req, res) => {
          VALUES ($1, $2, $3, 'success', false, $4, NOW())`,
         [old.user_id, 'Deal Approved', `Deal "${old.title}" was approved by the customer.`, `/deals/edit/${old.id}`]
       )
-    } catch {}
+    } catch { }
 
     res.json(rows[0])
   } catch (err) {
@@ -354,7 +356,7 @@ router.post('/:id/reject', async (req, res) => {
          VALUES ($1, $2, $3, 'error', false, $4, NOW())`,
         [old.user_id, 'Deal Rejected', `Deal "${old.title}" was rejected by the customer.`, `/deals/edit/${old.id}`]
       )
-    } catch {}
+    } catch { }
 
     res.json(rows[0])
   } catch (err) {

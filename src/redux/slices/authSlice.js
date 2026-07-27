@@ -7,8 +7,16 @@ export const loginThunk = createAsyncThunk(
   async ({ email, password }, { rejectWithValue }) => {
     try {
       const data = await authApi.login({ email, password })
+      const userObj = {
+        shopName: data.user.shopName,
+        email: data.user.email,
+        firstName: data.user.firstName || data.user.first_name || '',
+        lastName: data.user.lastName || data.user.last_name || '',
+        phone: data.user.phone || '',
+        gstin: data.user.gstin || ''
+      }
       sessionStorage.setItem('ws_token', data.token)
-      sessionStorage.setItem('ws_user', JSON.stringify({ shopName: data.user.shopName, email: data.user.email }))
+      sessionStorage.setItem('ws_user', JSON.stringify(userObj))
       sessionStorage.setItem('ws_active_workspace_id', data.user.id)
       sessionStorage.setItem('ws_active_workspace_name', data.user.shopName)
       return { ...data, successMessage: 'Welcome back! Login successful.' }
@@ -23,8 +31,16 @@ export const registerThunk = createAsyncThunk(
   async (formData, { rejectWithValue }) => {
     try {
       const data = await authApi.register(formData)
+      const userObj = {
+        shopName: data.user.shopName,
+        email: data.user.email,
+        firstName: data.user.firstName || data.user.first_name || '',
+        lastName: data.user.lastName || data.user.last_name || '',
+        phone: data.user.phone || '',
+        gstin: data.user.gstin || ''
+      }
       sessionStorage.setItem('ws_token', data.token)
-      sessionStorage.setItem('ws_user', JSON.stringify({ shopName: data.user.shopName, email: data.user.email }))
+      sessionStorage.setItem('ws_user', JSON.stringify(userObj))
 
       // If the user was previously invited to a workspace, auto-switch to that workspace
       if (data.defaultWorkspaceId) {
@@ -89,7 +105,14 @@ const authSlice = createSlice({
       })
       .addCase(loginThunk.fulfilled, (state, action) => {
         state.status = 'succeeded'
-        state.user   = { shopName: action.payload.user.shopName, email: action.payload.user.email }
+        state.user   = {
+          shopName: action.payload.user.shopName,
+          email: action.payload.user.email,
+          firstName: action.payload.user.firstName || action.payload.user.first_name || '',
+          lastName: action.payload.user.lastName || action.payload.user.last_name || '',
+          phone: action.payload.user.phone || '',
+          gstin: action.payload.user.gstin || ''
+        }
         state.token  = action.payload.token
       })
       .addCase(loginThunk.rejected, (state, action) => {
@@ -105,7 +128,14 @@ const authSlice = createSlice({
       })
       .addCase(registerThunk.fulfilled, (state, action) => {
         state.status = 'succeeded'
-        state.user   = { shopName: action.payload.user.shopName, email: action.payload.user.email }
+        state.user   = {
+          shopName: action.payload.user.shopName,
+          email: action.payload.user.email,
+          firstName: action.payload.user.firstName || action.payload.user.first_name || '',
+          lastName: action.payload.user.lastName || action.payload.user.last_name || '',
+          phone: action.payload.user.phone || '',
+          gstin: action.payload.user.gstin || ''
+        }
         state.token  = action.payload.token
       })
       .addCase(registerThunk.rejected, (state, action) => {

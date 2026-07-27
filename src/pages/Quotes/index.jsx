@@ -31,19 +31,25 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef(null)
 
+  // Filter ONLY Vendor details for the select vendor/customer dropdown
+  const vendorsOnly = people.filter(p => {
+    const persona = (p.persona || '').toLowerCase()
+    return persona === 'vendor' || !p.persona
+  })
+
   const selectedPerson = people.find(p => String(p.id) === String(value))
 
   useCloseOnOutsideClick(containerRef, setOpen)
 
-  const filtered = people.filter(p => 
-    p.name?.toLowerCase().includes(query.toLowerCase()) || 
+  const filtered = vendorsOnly.filter(p =>
+    p.name?.toLowerCase().includes(query.toLowerCase()) ||
     (p.phone && p.phone.includes(query)) ||
     (p.email && p.email.toLowerCase().includes(query.toLowerCase()))
   )
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
-      <div 
+      <div
         onClick={() => setOpen(prev => !prev)}
         style={{
           width: '100%', height: 32, padding: '0 8px', borderRadius: 5,
@@ -51,11 +57,11 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer'
         }}
       >
-        <span style={{ 
+        <span style={{
           color: selectedPerson ? '#0f172a' : '#94a3b8', fontWeight: selectedPerson ? 600 : 400,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 'calc(100% - 20px)'
         }}>
-          {selectedPerson ? `${selectedPerson.name} ${selectedPerson.phone ? `(${selectedPerson.phone})` : ''}` : 'Search customer from People...'}
+          {selectedPerson ? `${selectedPerson.name} ${selectedPerson.phone ? `(${selectedPerson.phone})` : ''}` : 'Search vendor from People...'}
         </span>
         <Search size={12} style={{ color: '#64748b', flexShrink: 0 }} />
       </div>
@@ -68,14 +74,14 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
         }}>
           <input
             type="text"
-            placeholder="Type customer name, phone or email..."
+            placeholder="Type vendor name, phone or email..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{ width: '100%', height: 30, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.78rem', marginBottom: 4, outline: 'none' }}
             autoFocus
           />
           {filtered.length === 0 ? (
-            <div style={{ padding: '8px 10px', fontSize: '0.78rem', color: '#94a3b8' }}>No customers found</div>
+            <div style={{ padding: '8px 10px', fontSize: '0.78rem', color: '#94a3b8' }}>No vendors found</div>
           ) : (
             filtered.map(p => (
               <div
@@ -114,7 +120,7 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
   useCloseOnOutsideClick(containerRef, setOpen)
 
   const filtered = products.filter(p =>
-    p.name.toLowerCase().includes(query.toLowerCase()) || 
+    p.name.toLowerCase().includes(query.toLowerCase()) ||
     (p.sku && p.sku.toLowerCase().includes(query.toLowerCase())) ||
     (p.category && p.category.toLowerCase().includes(query.toLowerCase()))
   )
@@ -123,7 +129,7 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
     <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: 240 }}>
       {selectedProd && !open ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <div 
+          <div
             onClick={() => setOpen(true)}
             style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
             title="Click to change product"
@@ -137,7 +143,7 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
           )}
         </div>
       ) : (
-        <div 
+        <div
           onClick={() => setOpen(prev => !prev)}
           style={{
             width: '100%', height: 28, padding: '0 8px', borderRadius: 5,
@@ -201,6 +207,35 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
   )
 }
 
+const calcMaxStock = (prod, itemUnit) => {
+  if (!prod || prod.stock === undefined || prod.stock === null) return null
+  const stockBags = parseFloat(prod.stock) || 0
+  const bw = parseFloat(prod.bag_weight) || 1
+  const bulkUnit = getBulkUnitDetails(prod.unit)
+  const unitStr = String(itemUnit || prod.unit || '').toLowerCase()
+
+  const isBaseUnit = bulkUnit && (
+    unitStr === bulkUnit.short?.toLowerCase() ||
+    unitStr === 'kgs' || unitStr === 'kg' || unitStr === 'ltr' || unitStr === 'mtr'
+  )
+
+  if (isBaseUnit && bw > 1) {
+    const maxBase = stockBags * bw
+    return {
+      maxStock: maxBase,
+      displayLabel: `${maxBase} ${bulkUnit.short || 'kg'} (${stockBags} ${bulkUnit.name || 'Bags'})`
+    }
+  } else {
+    const label = (bulkUnit && bw > 1)
+      ? `${bulkUnit.name || 'Bag'} (${bw}${bulkUnit.short || 'kg'})`
+      : (bulkUnit?.short || prod.unit || 'pcs')
+    return {
+      maxStock: stockBags,
+      displayLabel: `${stockBags} ${label}`
+    }
+  }
+}
+
 function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   const isEdit = Boolean(quote?.id)
   const dispatch = useAppDispatch()
@@ -220,7 +255,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     tax_amount: quote?.tax_amount || 0,
     status: quote?.status || 'Draft',
     issue_date: quote?.issue_date ? String(quote.issue_date).split('T')[0] : new Date().toISOString().split('T')[0],
-    valid_until: quote?.valid_until ? String(quote.valid_until).split('T')[0] : new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+    valid_until: quote?.valid_until ? String(quote.valid_until).split('T')[0] : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     notes: quote?.notes || 'Validity: 30 days. Payment terms: Net 15 days.'
   })
 
@@ -241,11 +276,11 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   useEffect(() => {
     api.get('/people?limit=200')
       .then(res => setPeople(res.data?.data || []))
-      .catch(() => {})
+      .catch(() => { })
 
     api.get('/products?limit=200')
       .then(res => setProducts(res.data?.data || []))
-      .catch(() => {})
+      .catch(() => { })
 
     if (!quote?.shop_name || quote.shop_name === 'Workshop Store') {
       api.get('/auth/workspaces')
@@ -256,7 +291,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             setFormData(prev => ({ ...prev, shop_name: ownWs.shopName }))
           }
         })
-        .catch(() => {})
+        .catch(() => { })
     }
   }, [])
 
@@ -313,7 +348,15 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
     setLineItems(prev => prev.map((item, i) => {
       if (i === index) {
-        const qty = parseFloat(item.quantity) || 1
+        const stockInfo = calcMaxStock(prod, unitLabel)
+        let qty = parseFloat(item.quantity) || 1
+        if (stockInfo && stockInfo.maxStock >= 0 && qty > stockInfo.maxStock) {
+          qty = stockInfo.maxStock || 1
+          dispatch(addToast({
+            message: `We have only ${stockInfo.displayLabel} available in stock for ${prod.name}.`,
+            type: 'warning'
+          }))
+        }
         const amt = qty * rawPrice
         return {
           ...item,
@@ -322,6 +365,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
           unit: unitLabel,
           bag_weight: bagWeight,
           subtext: subtext,
+          quantity: qty,
           rate: rawPrice,
           amount: amt
         }
@@ -332,6 +376,27 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
   const handleQtyChange = (index, qty) => {
     const numQty = parseFloat(qty) || 0
+    const targetItem = lineItems[index]
+    const selectedProd = products.find(p => String(p.id) === String(targetItem?.product_id))
+    const stockInfo = calcMaxStock(selectedProd, targetItem?.unit)
+
+    if (stockInfo && stockInfo.maxStock >= 0 && numQty > stockInfo.maxStock) {
+      dispatch(addToast({
+        message: `We have only ${stockInfo.displayLabel} available in stock for ${selectedProd?.name || 'this product'}.`,
+        type: 'warning'
+      }))
+
+      setLineItems(prev => prev.map((item, i) => {
+        if (i === index) {
+          const rate = parseFloat(item.rate) || 0
+          const disc = parseFloat(item.discount) || 0
+          return { ...item, quantity: stockInfo.maxStock, amount: Math.max(0, (stockInfo.maxStock * rate) - disc) }
+        }
+        return item
+      }))
+      return
+    }
+
     setLineItems(prev => prev.map((item, i) => {
       if (i === index) {
         const rate = parseFloat(item.rate) || 0
@@ -469,9 +534,9 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               <ArrowLeft size={13} /> Back to Step 2
             </button>
           )}
-          <button 
+          <button
             type="button"
-            className="attio-btn attio-btn-primary" 
+            className="attio-btn attio-btn-primary"
             onClick={onBack}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, fontSize: '0.78rem', padding: '0 12px' }}
           >
@@ -482,9 +547,9 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
       {/* Stepper Navigation Bar (Increased box sizes by 2%) */}
       <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 10 }}>
-        <div 
+        <div
           onClick={() => setStep(1)}
-          style={{ 
+          style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
           }}
@@ -497,9 +562,9 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
         <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-        <div 
+        <div
           onClick={() => setStep(2)}
-          style={{ 
+          style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
           }}
@@ -512,9 +577,9 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
         <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-        <div 
+        <div
           onClick={() => setStep(3)}
-          style={{ 
+          style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`
           }}
@@ -546,7 +611,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
             <div>
               <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
-                Search & Select Customer
+                Search & Select Vendor / Customer
               </label>
               <SearchableCustomerSelect
                 people={people}
@@ -703,9 +768,15 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                   ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
                   : (bulkUnit?.short || item.unit || 'pcs')
 
-                const subtext = item.subtext || (selectedProd && bulkUnit && bw > 1 
+                const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? parseFloat(selectedProd.stock) : null
+                const isExceeded = maxStock !== null && maxStock >= 0 && (parseFloat(item.quantity) || 0) > maxStock
+
+                const baseSubtext = item.subtext || (selectedProd && bulkUnit && bw > 1
                   ? `Bag: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
                   : '')
+
+                const stockSubtext = maxStock !== null ? `Available Stock: ${maxStock} ${unitLabel}` : ''
+                const fullSubtext = [baseSubtext, stockSubtext].filter(Boolean).join(' • ')
 
                 return (
                   <tr key={item.id || index} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -714,30 +785,33 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                         products={products}
                         value={item.product_id}
                         onSelect={(prodId) => handleProductSelect(index, prodId)}
-                        subtext={subtext}
+                        subtext={fullSubtext}
                       />
                     </td>
 
                     <td style={{ padding: '6px 8px', verticalAlign: 'middle' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) => handleQtyChange(index, e.target.value)}
-                          style={{
-                            width: 40, height: 26, padding: '0 3px', borderRadius: 4,
-                            border: '1px solid #cbd5e1', fontSize: '0.75rem', textAlign: 'center',
-                            fontWeight: 600, fontFamily: 'inherit', color: '#0f172a', background: '#fff'
-                          }}
-                        />
-                        <span style={{
-                          fontSize: '0.7rem', color: '#475467', fontWeight: 600,
-                          whiteSpace: 'nowrap', userSelect: 'none', background: '#f8fafc',
-                          padding: '2px 5px', borderRadius: 4, border: '1px solid #e2e8f0', height: 26, display: 'inline-flex', alignItems: 'center'
-                        }}>
-                          {unitLabel}
-                        </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                          <input
+                            type="number"
+                            min="1"
+                            max={maxStock !== null ? maxStock : undefined}
+                            value={item.quantity}
+                            onChange={(e) => handleQtyChange(index, e.target.value)}
+                            style={{
+                              width: 40, height: 26, padding: '0 3px', borderRadius: 4,
+                              border: `1px solid ${isExceeded ? '#dc2626' : '#cbd5e1'}`, fontSize: '0.75rem', textAlign: 'center',
+                              fontWeight: 600, fontFamily: 'inherit', color: isExceeded ? '#dc2626' : '#0f172a', background: isExceeded ? '#fef2f2' : '#fff'
+                            }}
+                          />
+                          <span style={{
+                            fontSize: '0.7rem', color: '#475467', fontWeight: 600,
+                            whiteSpace: 'nowrap', userSelect: 'none', background: '#f8fafc',
+                            padding: '2px 5px', borderRadius: 4, border: '1px solid #e2e8f0', height: 26, display: 'inline-flex', alignItems: 'center'
+                          }}>
+                            {unitLabel}
+                          </span>
+                        </div>
                       </div>
                     </td>
 
@@ -786,7 +860,27 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             <button
               type="button"
               className="attio-btn attio-btn-primary"
-              onClick={() => setStep(3)}
+              onClick={() => {
+                for (const item of lineItems) {
+                  const selectedProd = products.find(p => String(p.id) === String(item.product_id))
+                  const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? parseFloat(selectedProd.stock) : null
+                  const qty = parseFloat(item.quantity) || 0
+                  if (maxStock !== null && maxStock >= 0 && qty > maxStock) {
+                    const bulkUnit = getBulkUnitDetails(item.unit || selectedProd?.unit)
+                    const bw = parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
+                    const unitLabel = (selectedProd && bw > 1)
+                      ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
+                      : (bulkUnit?.short || item.unit || 'pcs')
+
+                    dispatch(addToast({
+                      message: `Cannot proceed: We have only ${maxStock} ${unitLabel} available in stock for ${selectedProd?.name || 'this product'}.`,
+                      type: 'error'
+                    }))
+                    return
+                  }
+                }
+                setStep(3)
+              }}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
                 padding: '8px 22px', fontSize: '0.8125rem', fontWeight: 600, borderRadius: 6, height: 36, cursor: 'pointer'
@@ -1006,7 +1100,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 export default function Quotes() {
   const dispatch = useAppDispatch()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
-  
+
   const [quotes, setQuotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -1052,7 +1146,7 @@ export default function Quotes() {
     }
   }
 
-  useEffect(() => { 
+  useEffect(() => {
     dispatch(setActiveNav('Quotes'))
     dispatch(setSidebarOpen(true))
     fetchQuotes(page)
@@ -1098,10 +1192,10 @@ export default function Quotes() {
         <main className="ws-dash-body">
           <div className="attio-products-container">
             {isFormOpen || editingQuote ? (
-              <FullPageQuoteStepper 
-                quote={editingQuote} 
-                onBack={() => { setIsFormOpen(false); setEditingQuote(null); }} 
-                onSaved={handleSaveQuote} 
+              <FullPageQuoteStepper
+                quote={editingQuote}
+                onBack={() => { setIsFormOpen(false); setEditingQuote(null); }}
+                onSaved={handleSaveQuote}
               />
             ) : (
               <>
@@ -1125,7 +1219,7 @@ export default function Quotes() {
                     </div>
 
                     {/* Filter button */}
-                    <button 
+                    <button
                       className="attio-btn"
                       onClick={() => setShowFilterBar(prev => !prev)}
                       style={{
@@ -1137,8 +1231,8 @@ export default function Quotes() {
                       <Filter size={13} /> Filter
                     </button>
 
-                    <button 
-                      className="attio-btn attio-btn-primary" 
+                    <button
+                      className="attio-btn attio-btn-primary"
                       onClick={() => setIsFormOpen(true)}
                     >
                       <Plus size={14} /> Create Quote
@@ -1165,7 +1259,7 @@ export default function Quotes() {
                     </div>
 
                     {filterStatus && (
-                      <button 
+                      <button
                         onClick={() => { setFilterStatus(''); setPage(1); }}
                         style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
                       >
@@ -1258,32 +1352,32 @@ export default function Quotes() {
                                   </span>
                                 </td>
                                 <td>
-                                  <span style={{ 
-                                    background: stBadge.bg, 
-                                    color: stBadge.text, 
-                                    border: `1px solid ${stBadge.border}`, 
-                                    padding: '3px 10px', 
-                                    borderRadius: '6px', 
-                                    fontSize: '0.75rem', 
-                                    fontWeight: 600, 
-                                    display: 'inline-block' 
+                                  <span style={{
+                                    background: stBadge.bg,
+                                    color: stBadge.text,
+                                    border: `1px solid ${stBadge.border}`,
+                                    padding: '3px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    display: 'inline-block'
                                   }}>
                                     {stBadge.label}
                                   </span>
                                 </td>
                                 <td>
                                   {isClosed ? (
-                                    <span style={{ 
-                                      background: '#fee2e2', 
-                                      color: '#dc2626', 
-                                      border: '1px solid #fecaca', 
-                                      padding: '3px 10px', 
-                                      borderRadius: '6px', 
-                                      fontSize: '0.75rem', 
-                                      fontWeight: 700, 
-                                      display: 'inline-flex', 
-                                      alignItems: 'center', 
-                                      gap: 4 
+                                    <span style={{
+                                      background: '#fee2e2',
+                                      color: '#dc2626',
+                                      border: '1px solid #fecaca',
+                                      padding: '3px 10px',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 700,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4
                                     }}>
                                       ✓ Deal Closed
                                     </span>

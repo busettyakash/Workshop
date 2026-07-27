@@ -90,11 +90,13 @@ export default function ImportStockForm() {
 
     api.get('/uoms').then(res => {
       if (Array.isArray(res.data) && res.data.length > 0) {
-        const dbOptions = res.data.map(u => ({
-          value: u.code,
-          label: `${u.name} (${u.code})`,
-          category: u.category
-        }))
+        const dbOptions = res.data
+          .filter(u => u.code !== 'g' && u.code !== 'gm' && !u.name?.toLowerCase().includes('gram'))
+          .map(u => ({
+            value: u.code,
+            label: `${u.name} (${u.code})`,
+            category: u.category
+          }))
         setUomOptions(dbOptions)
       }
     }).catch(() => { })
@@ -245,9 +247,9 @@ export default function ImportStockForm() {
               </span>
             </div>
 
-            <button 
+            <button
               type="button"
-              className="attio-btn attio-btn-primary" 
+              className="attio-btn attio-btn-primary"
               onClick={() => navigate('/import-stock')}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, fontSize: '0.78rem', padding: '0 12px' }}
             >
@@ -257,9 +259,9 @@ export default function ImportStockForm() {
 
           {/* ── Stepper Navigation Bar (Increased box sizes by 2%) ── */}
           <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto 16px', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 10 }}>
-            <div 
+            <div
               onClick={() => setStep(1)}
-              style={{ 
+              style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
                 background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
               }}
@@ -272,9 +274,9 @@ export default function ImportStockForm() {
 
             <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-            <div 
+            <div
               onClick={() => { if (validateStep1()) setStep(2) }}
-              style={{ 
+              style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
                 background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
               }}
@@ -287,9 +289,9 @@ export default function ImportStockForm() {
 
             <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-            <div 
+            <div
               onClick={() => { if (validateStep1() && validateStep2()) setStep(3) }}
-              style={{ 
+              style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
                 background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`
               }}
@@ -316,14 +318,14 @@ export default function ImportStockForm() {
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
                         Supplier / Buyer Name
                       </label>
-                      <input 
-                        name="buyer_name" 
-                        value={form.buyer_name} 
-                        onChange={handleChange} 
-                        placeholder="e.g. Lalitha Traders / John Doe" 
-                        style={inp('buyer_name')} 
-                        onFocus={() => setFocus('buyer_name')} 
-                        onBlur={() => setFocus(null)} 
+                      <input
+                        name="buyer_name"
+                        value={form.buyer_name}
+                        onChange={handleChange}
+                        placeholder="e.g. Lalitha Traders / John Doe"
+                        style={inp('buyer_name')}
+                        onFocus={() => setFocus('buyer_name')}
+                        onBlur={() => setFocus(null)}
                       />
                     </div>
 
@@ -331,14 +333,14 @@ export default function ImportStockForm() {
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
                         Phone Number
                       </label>
-                      <input 
-                        name="buyer_phone" 
-                        value={form.buyer_phone} 
-                        onChange={handleChange} 
-                        placeholder="e.g. +91 9876543210" 
-                        style={inp('buyer_phone')} 
-                        onFocus={() => setFocus('buyer_phone')} 
-                        onBlur={() => setFocus(null)} 
+                      <input
+                        name="buyer_phone"
+                        value={form.buyer_phone}
+                        onChange={handleChange}
+                        placeholder="e.g. +91 9876543210"
+                        style={inp('buyer_phone')}
+                        onFocus={() => setFocus('buyer_phone')}
+                        onBlur={() => setFocus(null)}
                       />
                       {errors.buyer_phone && <span style={S.error}>{errors.buyer_phone}</span>}
                     </div>
@@ -347,14 +349,14 @@ export default function ImportStockForm() {
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
                         City
                       </label>
-                      <input 
-                        name="buyer_city" 
-                        value={form.buyer_city} 
-                        onChange={handleChange} 
-                        placeholder="e.g. Hyderabad / Vijayawada" 
-                        style={inp('buyer_city')} 
-                        onFocus={() => setFocus('buyer_city')} 
-                        onBlur={() => setFocus(null)} 
+                      <input
+                        name="buyer_city"
+                        value={form.buyer_city}
+                        onChange={handleChange}
+                        placeholder="e.g. Hyderabad / Vijayawada"
+                        style={inp('buyer_city')}
+                        onFocus={() => setFocus('buyer_city')}
+                        onBlur={() => setFocus(null)}
                       />
                     </div>
 
@@ -362,14 +364,14 @@ export default function ImportStockForm() {
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
                         State
                       </label>
-                      <input 
-                        name="buyer_state" 
-                        value={form.buyer_state} 
-                        onChange={handleChange} 
-                        placeholder="e.g. Telangana / Andhra Pradesh" 
-                        style={inp('buyer_state')} 
-                        onFocus={() => setFocus('buyer_state')} 
-                        onBlur={() => setFocus(null)} 
+                      <input
+                        name="buyer_state"
+                        value={form.buyer_state}
+                        onChange={handleChange}
+                        placeholder="e.g. Telangana / Andhra Pradesh"
+                        style={inp('buyer_state')}
+                        onFocus={() => setFocus('buyer_state')}
+                        onBlur={() => setFocus(null)}
                       />
                     </div>
                   </div>

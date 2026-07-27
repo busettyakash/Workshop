@@ -75,10 +75,7 @@ router.get('/', async (req, res) => {
       params.push(limit + 1)
       const { rows } = await query(
         `SELECT i.*, 
-          CASE 
-            WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock)
-            ELSE i.stock
-          END AS stock,
+          COALESCE(p.stock, i.stock) AS stock,
           CASE 
             WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price)
             ELSE i.updated_price
@@ -91,7 +88,7 @@ router.get('/', async (req, res) => {
          FROM import_stock i
          LEFT JOIN LATERAL (
            SELECT stock, updated_price, updated_price_date, updated_at FROM products 
-           WHERE user_id = i.user_id AND (sku = i.sku OR name = i.name) 
+           WHERE (user_id::text = i.user_id::text OR user_id = 'default-user' OR i.user_id = 'default-user') AND (sku = i.sku OR name = i.name) 
            ORDER BY updated_at DESC, created_at DESC LIMIT 1
          ) p ON true
          ${where}
@@ -119,10 +116,7 @@ router.get('/', async (req, res) => {
     params.push(limit, offset)
     const { rows } = await query(
       `SELECT i.*, 
-        CASE 
-          WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock)
-          ELSE i.stock
-        END AS stock,
+        COALESCE(p.stock, i.stock) AS stock,
         CASE 
           WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price)
           ELSE i.updated_price
@@ -135,7 +129,7 @@ router.get('/', async (req, res) => {
        FROM import_stock i
        LEFT JOIN LATERAL (
          SELECT stock, updated_price, updated_price_date, updated_at FROM products 
-         WHERE user_id = i.user_id AND (sku = i.sku OR name = i.name) 
+         WHERE (user_id::text = i.user_id::text OR user_id = 'default-user' OR i.user_id = 'default-user') AND (sku = i.sku OR name = i.name) 
          ORDER BY updated_at DESC, created_at DESC LIMIT 1
        ) p ON true
        ${where}

@@ -11,17 +11,22 @@ export const authApi = {
 
   register: async (data) => {
     const res = await apiClient.post('/auth/register', {
-      email:        normalizeEmail(data.email),
-      password:     data.password,
-      shopName:     data.shopName || data.companyName,
-      phone:        data.phone || data.mobileNumber,
-      mobileNumber: data.phone || data.mobileNumber,
-      gstin:        data.gstin,
+      email:           normalizeEmail(data.email),
+      password:        data.password,
+      firstName:       data.firstName || data.first_name,
+      lastName:        data.lastName || data.last_name,
+      first_name:      data.firstName || data.first_name,
+      last_name:       data.lastName || data.last_name,
+      shopName:        data.shopName || data.companyName,
+      companyName:     data.shopName || data.companyName,
+      phone:           data.phone || data.mobileNumber,
+      mobileNumber:    data.phone || data.mobileNumber,
+      gstin:           data.gstin,
       workspaceHandle: data.workspaceHandle,
-      billingCountry: data.billingCountry,
-      referralSource: data.referralSource,
-      usageType:    data.usageType,
-      inviteEmail:  data.inviteEmail,
+      billingCountry:  data.billingCountry,
+      referralSource:  data.referralSource,
+      usageType:       data.usageType,
+      inviteEmail:     data.inviteEmail,
     })
     return res.data
   },

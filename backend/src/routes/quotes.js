@@ -18,9 +18,9 @@ pool.query(`
     line_total NUMERIC(10,2),
     created_at TIMESTAMP DEFAULT NOW()
   )
-`).catch(() => {})
-pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT`).catch(() => {})
-pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => {})
+`).catch(() => { })
+pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT`).catch(() => { })
+pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => { })
 
 
 const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
@@ -41,6 +41,60 @@ const triggerWorkflowForQuote = async (userId, quote, _actionName = 'Record crea
     }
   } catch (err) {
     console.error('[Quote Workflow Trigger Error]', err.message)
+  }
+}
+
+const decreaseProductStockForQuote = async (items, userId) => {
+  if (!Array.isArray(items)) return
+  for (const item of items) {
+    if (!item) continue
+    const qty = parseFloat(item.quantity || item.qty || 0)
+    const prodId = item.product_id || item.id || item.productId
+    const itemName = item.name || item.product_name || item.productName || ''
+    if (qty <= 0) continue
+
+    let prodRes = null
+    if (prodId) {
+      prodRes = await pool.query(
+        `SELECT id, name, sku, stock, bag_weight, unit FROM products 
+         WHERE (id::text = $1::text OR ($2 <> '' AND name ILIKE $2))
+           AND (user_id::text = $3::text OR user_id = 'default-user' OR $3 = 'default-user') 
+         LIMIT 1`,
+        [String(prodId), itemName.trim(), userId || 'default-user']
+      ).catch(e => { console.error('[Stock Lookup Error]', e.message); return null })
+    } else if (itemName) {
+      prodRes = await pool.query(
+        `SELECT id, name, sku, stock, bag_weight, unit FROM products 
+         WHERE name ILIKE $1 
+           AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') 
+         LIMIT 1`,
+        [itemName.trim(), userId || 'default-user']
+      ).catch(e => { console.error('[Stock Lookup Error by Name]', e.message); return null })
+    }
+
+    const prod = prodRes?.rows?.[0]
+    if (!prod) continue
+
+    const bw = parseFloat(prod.bag_weight || 1)
+    const unitStr = String(item.unit || prod.unit || '').toLowerCase()
+    const isBaseUnit = ['kgs', 'kg', 'ltr', 'mtr', 'g', 'gm'].some(u => unitStr.includes(u))
+
+    let bagsToDeduct = qty
+    if (isBaseUnit && bw > 1) {
+      bagsToDeduct = qty / bw
+    }
+
+    if (bagsToDeduct > 0) {
+      await pool.query(
+        `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE id = $2`,
+        [bagsToDeduct, prod.id]
+      ).catch(e => console.error('[Stock Decrease Error by ID]', e.message))
+
+      await pool.query(
+        `UPDATE import_stock SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') AND (name ILIKE $3 OR sku = $4)`,
+        [bagsToDeduct, userId || 'default-user', item.name || prod.name || '', item.sku || prod.sku || '']
+      ).catch(() => { })
+    }
   }
 }
 
@@ -78,7 +132,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
   }
 
   // 3. Save Email Log Record
-  await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {})
+  await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => { })
   await pool.query(
     `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, 'sent', $7, NOW(), NOW())`,
@@ -105,20 +159,20 @@ router.get('/', apiLimiter, async (req, res) => {
     const status = req.query.status || ''
 
     let countQuery = 'SELECT COUNT(*) FROM quotes WHERE user_id = $1'
-    let dataQuery  = 'SELECT * FROM quotes WHERE user_id = $1'
-    const params   = [userId]
-    let paramIdx   = 2
+    let dataQuery = 'SELECT * FROM quotes WHERE user_id = $1'
+    const params = [userId]
+    let paramIdx = 2
 
     if (search) {
       countQuery += ` AND (quote_number ILIKE $${paramIdx} OR customer_name ILIKE $${paramIdx})`
-      dataQuery  += ` AND (quote_number ILIKE $${paramIdx} OR customer_name ILIKE $${paramIdx})`
+      dataQuery += ` AND (quote_number ILIKE $${paramIdx} OR customer_name ILIKE $${paramIdx})`
       params.push(`%${search}%`)
       paramIdx++
     }
 
     if (status && status !== 'all') {
       countQuery += ` AND status ILIKE $${paramIdx}`
-      dataQuery  += ` AND status ILIKE $${paramIdx}`
+      dataQuery += ` AND status ILIKE $${paramIdx}`
       params.push(status)
       paramIdx++
     }
@@ -193,12 +247,12 @@ router.get('/respond', emailLimiter, async (req, res) => {
       await pool.query(
         "UPDATE deals SET stage = 'Closed Won', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
         [quote.customer_name || '', `%${quote.quote_number}%`, quote.user_id || 'default-user']
-      ).catch(() => {})
+      ).catch(() => { })
     } else if (action === 'Declined' || action === 'Rejected') {
       await pool.query(
         "UPDATE deals SET stage = 'Closed Lost', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
         [quote.customer_name || '', `%${quote.quote_number}%`, quote.user_id || 'default-user']
-      ).catch(() => {})
+      ).catch(() => { })
     }
 
     // Insert notification record into emails table so it immediately appears in the workspace Inbox
@@ -249,7 +303,7 @@ router.get('/respond', emailLimiter, async (req, res) => {
         if (Array.isArray(quote.line_items)) {
           items = quote.line_items
         } else if (typeof quote.line_items === 'string') {
-          try { items = JSON.parse(quote.line_items) } catch {}
+          try { items = JSON.parse(quote.line_items) } catch { }
         }
         if (!Array.isArray(items)) items = []
 
@@ -301,7 +355,7 @@ router.get('/respond', emailLimiter, async (req, res) => {
                 ).catch(() => null)
               })
               if (itemRes?.rows?.[0]) createdItems.push(itemRes.rows[0])
-            } catch (_itemErr) {}
+            } catch (_itemErr) { }
           }
         }
 
@@ -401,7 +455,7 @@ router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
     if (Array.isArray(quote.line_items)) {
       items = quote.line_items
     } else if (typeof quote.line_items === 'string') {
-      try { items = JSON.parse(quote.line_items) } catch {}
+      try { items = JSON.parse(quote.line_items) } catch { }
     }
     if (!Array.isArray(items)) items = []
 
@@ -478,7 +532,7 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
       const reqProtocol = (req.headers['x-forwarded-proto'] === 'https' || req.protocol === 'https') ? 'https' : 'http'
       backendBase = `${reqProtocol}://${safeHost}`
     }
-    const acceptUrl  = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Accepted`
+    const acceptUrl = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Accepted`
     const declineUrl = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Declined`
 
     function formatPrettyDate(d) {
@@ -499,7 +553,7 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
     if (Array.isArray(quote.line_items)) {
       rawItems = quote.line_items
     } else if (typeof quote.line_items === 'string') {
-      try { rawItems = JSON.parse(quote.line_items) } catch {}
+      try { rawItems = JSON.parse(quote.line_items) } catch { }
     }
     if (!Array.isArray(rawItems)) rawItems = []
     const catalogMap = await getProductHsnMap()
@@ -524,7 +578,7 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
     await pool.query(
       "UPDATE deals SET stage = 'Proposal/Price Quote', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
       [quote.customer_name || '', `%${quote.quote_number}%`, userId]
-    ).catch(() => {})
+    ).catch(() => { })
 
     // Save outgoing email into emails table so it appears in Sent tab
     await pool.query(
@@ -576,7 +630,7 @@ router.post('/', apiLimiter, async (req, res) => {
       if (shopRes.rows[0]?.shop_name) {
         finalShopName = shopRes.rows[0].shop_name
       } else {
-      // shop_name already defaults to 'Workshop Store' from destructuring; no reassignment needed
+        // shop_name already defaults to 'Workshop Store' from destructuring; no reassignment needed
       }
     }
 
@@ -669,12 +723,12 @@ router.put('/:id', apiLimiter, async (req, res) => {
       await pool.query(
         "UPDATE deals SET stage = 'Closed Lost', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
         [updatedQuote.customer_name || '', `%${updatedQuote.quote_number}%`, userId]
-      ).catch(() => {})
+      ).catch(() => { })
     } else if (updatedQuote.status === 'Accepted') {
       await pool.query(
         "UPDATE deals SET stage = 'Closed Won', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
         [updatedQuote.customer_name || '', `%${updatedQuote.quote_number}%`, userId]
-      ).catch(() => {})
+      ).catch(() => { })
     }
 
     // Trigger workflow automation

@@ -52,12 +52,13 @@ export default function Dashboard() {
     return 'Good evening'
   }
 
-  // ── User name from email ──
+  // ── User display name (First Name + Last Name) ──
+  const userFirstName = user?.firstName || user?.first_name || ''
+  const userLastName = user?.lastName || user?.last_name || ''
   const userEmail = user?.email || ''
-  const emailPrefix = userEmail.split('@')[0]
-  const firstName = emailPrefix
-    ? emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1)
-    : 'there'
+  const emailPrefix = userEmail ? userEmail.split('@')[0] : ''
+  const fallbackName = emailPrefix ? emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1) : 'there'
+  const userFullName = [userFirstName, userLastName].filter(Boolean).join(' ') || fallbackName
 
   // Fetch recent sessions + home data on mount
   useEffect(() => {
@@ -386,7 +387,7 @@ export default function Dashboard() {
                 
                 {/* Greeting */}
                 <h1 className="ws-home-greeting" style={{ textAlign: 'left', marginBottom: 28 }}>
-                  {getGreeting()}, {firstName}.
+                  {getGreeting()}, {userFullName}.
                 </h1>
 
                 {/* Central Recent Chat card */}

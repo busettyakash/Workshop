@@ -54,14 +54,6 @@ router.get('/', async (req, res) => {
   const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
   const { search = '', status = '', persona = '', sort = '' } = req.query
 
-  const cacheKey = `people:${userId}:${search}:${status}:${persona}:${page}:${limit}:${sort}`
-  try {
-    const cached = await redis.get(cacheKey).catch(() => null)
-    if (cached) {
-      return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
-    }
-  } catch (_e) {}
-
   const params = [userId]
   const conditions = ['user_id = $1']
   if (search) {
@@ -100,7 +92,7 @@ router.get('/', async (req, res) => {
         : null
 
       const responsePayload = { data: rows, limit, hasNextPage, nextCursor }
-      redis.set(cacheKey, JSON.stringify(responsePayload), { ex: 60 }).catch(() => {})
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
       return res.json(responsePayload)
     }
 
@@ -116,7 +108,7 @@ router.get('/', async (req, res) => {
     )
 
     const responsePayload = { data: rows, total, page, limit, totalPages }
-    redis.set(cacheKey, JSON.stringify(responsePayload), { ex: 60 }).catch(() => {})
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
     return res.json(responsePayload)
   } catch (err) {
     res.status(500).json({ error: err.message })

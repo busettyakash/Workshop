@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { Filter, ArrowUpDown, X, Loader2, Search, Eye, ArrowLeft, History, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, ShoppingCart } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getCategoryTagStyle, getPillStyle } from '../../utils/tableHelpers'
-import { getBulkUnitDetails } from '../../utils/unitHelpers'
+import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import '../Products/Products.css'
@@ -58,10 +58,32 @@ const formatIndianDateOnly = (raw) => {
   }
 }
 
-const renderPriceTrendGraph = (baseP, updatedP, rowId) => {
-  const b = parseFloat(baseP || 0)
-  const u = updatedP !== null && updatedP !== undefined && updatedP !== '' ? parseFloat(updatedP) : null
-  const diff = u !== null ? (u - b) : 0
+const getNormalizedPriceDetails = (rawPrice, bagWeight = 1, basePrice = 0) => {
+  if (rawPrice === null || rawPrice === undefined || rawPrice === '') return null
+  const p = parseFloat(rawPrice)
+  if (isNaN(p) || p <= 0) return null
+
+  const bw = parseFloat(bagWeight) || 1
+  const bP = parseFloat(basePrice) || 0
+
+  const baseUnitRate = bP > 0 ? (bP / bw) : 0
+  const looksLike100Rate = bw > 1 && p > 1000 && (baseUnitRate > 0 ? (p / bw) > baseUnitRate * 1.5 : (p / bw) > 60)
+
+  const unitRate = looksLike100Rate ? (p / 100) : (p / bw)
+  const price100 = unitRate * 100
+  const packPrice = unitRate * bw
+
+  return { unitRate, price100, packPrice, is100Rate: looksLike100Rate }
+}
+
+const renderPriceTrendGraph = (baseP, updatedP, rowId, bagWeight = 1) => {
+  const bw = parseFloat(bagWeight || 1)
+  const baseD = getNormalizedPriceDetails(baseP, bw, 0)
+  const updatedD = getNormalizedPriceDetails(updatedP, bw, baseP)
+
+  const b = baseD ? baseD.price100 : 0
+  const u = updatedD ? updatedD.price100 : null
+  const diff = (u !== null && b > 0) ? (u - b) : 0
   const pct = b > 0 && u !== null ? ((diff / b) * 100).toFixed(1) : '0.0'
   const isUp = diff > 0
   const isDrop = diff < 0
@@ -104,7 +126,7 @@ const renderPriceTrendGraph = (baseP, updatedP, rowId) => {
             gap: 3,
             whiteSpace: 'nowrap'
           }}>
-            <TrendingUp size={11} /> +₹{absDiffFormatted} ({pct}%)
+            <TrendingUp size={11} /> Price Up +₹{absDiffFormatted} ({pct}%)
           </span>
         ) : isDrop ? (
           <span style={{ 
@@ -120,7 +142,7 @@ const renderPriceTrendGraph = (baseP, updatedP, rowId) => {
             gap: 3,
             whiteSpace: 'nowrap'
           }}>
-            <TrendingDown size={11} /> -₹{absDiffFormatted} ({pct}%)
+            <TrendingDown size={11} /> Price Drop -₹{absDiffFormatted} ({pct}%)
           </span>
         ) : (
           <span style={{ 
@@ -267,7 +289,9 @@ function ProductPriceHistoryDetail({ product, onBack }) {
             <DollarSign size={16} style={{ color: '#64748b' }} />
           </div>
           <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#0f172a' }}>{formatINR(product.price)}</p>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Original master list price</span>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+            {bagWeight > 1 ? `${bagWeight} ${bulkUnit?.short || product.unit || 'kgs'} pack price` : 'Original master list price'}
+          </span>
         </div>
 
         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -279,7 +303,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
             {formatINR(product.updated_price || product.price)}
           </p>
           <span style={{ fontSize: '0.75rem', color: '#166534' }}>
-            {product.updated_price ? `Updated on ${updatedDateStr}` : 'No price revision yet'}
+            {product.updated_price ? `Updated on ${updatedDateStr}${bagWeight > 1 ? ` (${bagWeight} ${bulkUnit?.short || product.unit || 'kgs'})` : ''}` : 'No price revision yet'}
           </span>
         </div>
 
@@ -330,17 +354,25 @@ function ProductPriceHistoryDetail({ product, onBack }) {
               </thead>
               <tbody>
                 {history.map((row, idx) => {
-                  const newP = parseFloat(row.new_price || 0)
-                  let oldP = row.old_price !== null && row.old_price !== undefined ? parseFloat(row.old_price) : null
-                  if ((oldP === null || oldP === newP) && idx < history.length - 1) {
+                  const bw = parseFloat(bagWeight || 1)
+                  const uomShort = bulkUnit?.short || product.unit || 'unit'
+                  const baseP = parseFloat(product.price || 0)
+
+                  const currDetails = getNormalizedPriceDetails(row.new_price, bw, baseP)
+
+                  let oldRaw = row.old_price !== null && row.old_price !== undefined ? row.old_price : null
+                  if ((oldRaw === null || oldRaw === row.new_price) && idx < history.length - 1) {
                     const nextOldItem = history[idx + 1]
-                    if (nextOldItem && nextOldItem.new_price && parseFloat(nextOldItem.new_price) !== newP) {
-                      oldP = parseFloat(nextOldItem.new_price)
+                    if (nextOldItem && nextOldItem.new_price) {
+                      oldRaw = nextOldItem.new_price
                     }
                   }
-                  const diff = oldP !== null && oldP !== newP ? (newP - oldP) : 0
-                  const isUp = diff > 0
-                  const itemUnitPrice = bulkUnit ? (newP / bagWeight).toFixed(2) : null
+                  const prevDetails = getNormalizedPriceDetails(oldRaw, bw, baseP)
+
+                  const diff100 = (currDetails && prevDetails) ? (currDetails.price100 - prevDetails.price100) : 0
+                  const diffPack = (currDetails && prevDetails) ? (currDetails.packPrice - prevDetails.packPrice) : 0
+                  const isUp = diff100 > 0
+                  const isDrop = diff100 < 0
                   const dateStr = formatIndianDateTime(row.created_at || row.effective_date)
 
                   return (
@@ -352,40 +384,69 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                         </div>
                       </td>
                       <td>
-                        <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
-                          {formatINR(newP)}
-                        </span>
+                        {currDetails ? (
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>
+                              {formatINR(currDetails.price100)} <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>/ 100 {uomShort}</span>
+                            </span>
+                            {bw > 1 && (
+                              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                {formatINR(currDetails.packPrice)} / {bw} {uomShort} pack
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#9ca3af' }}>—</span>
+                        )}
                       </td>
                       <td>
-                        <span style={{ color: oldP !== null && oldP !== newP ? '#64748b' : '#9ca3af', fontSize: '0.85rem' }}>
-                          {oldP !== null && oldP !== newP ? formatINR(oldP) : '—'}
-                        </span>
+                        {prevDetails ? (
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 600 }}>
+                              {formatINR(prevDetails.price100)} / 100 {uomShort}
+                            </span>
+                            {bw > 1 && (
+                              <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                                {formatINR(prevDetails.packPrice)} / {bw} {uomShort}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>—</span>
+                        )}
                       </td>
                       <td>
-                        {oldP !== null && diff !== 0 ? (
-                          <span style={{ 
-                            fontSize: '0.75rem', 
-                            fontWeight: 700, 
-                            color: isUp ? '#15803d' : '#dc2626', 
-                            background: isUp ? '#dcfce7' : '#fee2e2', 
-                            border: `1px solid ${isUp ? '#bbf7d0' : '#fecaca'}`,
-                            padding: '3px 8px', 
-                            borderRadius: 6,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4
-                          }}>
-                            {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                            {isUp ? `+${formatINR(diff)}` : `-${formatINR(Math.abs(diff))}`}
-                          </span>
+                        {prevDetails && diff100 !== 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                            <span style={{ 
+                              fontSize: '0.75rem', 
+                              fontWeight: 700, 
+                              color: isUp ? '#15803d' : '#dc2626', 
+                              background: isUp ? '#dcfce7' : '#fee2e2', 
+                              border: `1px solid ${isUp ? '#bbf7d0' : '#fecaca'}`,
+                              padding: '3px 8px', 
+                              borderRadius: 6,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}>
+                              {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                              {isUp ? `Price Up +${formatINR(diff100)} / 100 ${uomShort}` : `Price Drop -${formatINR(Math.abs(diff100))} / 100 ${uomShort}`}
+                            </span>
+                            {bw > 1 && (
+                              <span style={{ fontSize: '0.7rem', color: isUp ? '#166534' : '#b91c1c', marginTop: 2, fontWeight: 500 }}>
+                                {isUp ? `+${formatINR(diffPack)} (${bw}${uomShort} pack)` : `-${formatINR(Math.abs(diffPack))} (${bw}${uomShort} pack)`}
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span style={{ color: '#9ca3af', fontSize: '0.8125rem' }}>Initial Benchmark</span>
                         )}
                       </td>
                       <td>
-                        {itemUnitPrice ? (
+                        {currDetails ? (
                           <span style={{ fontWeight: 600, color: '#2563eb', fontSize: '0.85rem' }}>
-                            {formatINR(itemUnitPrice)} / {bulkUnit.short}
+                            {formatINR(currDetails.unitRate)} / {uomShort}
                           </span>
                         ) : (
                           <span style={{ color: '#9ca3af' }}>—</span>
@@ -628,7 +689,8 @@ export default function PriceHistory() {
                                     </div>
                                     <span 
                                       style={{ 
-                                        fontWeight: 600, 
+                                        fontWeight: 535, 
+                                        fontSize: '0.89rem',
                                         color: '#2563eb',
                                         transition: 'color 0.15s ease'
                                       }}
@@ -654,32 +716,60 @@ export default function PriceHistory() {
                                   </span>
                                 </td>
                                 <td>
-                                  <span style={{ fontWeight: 500, color: '#1e293b' }}>
-                                    {formatINR(row.price)} <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{row.unit ? `/ ${row.unit}` : ''}</span>
-                                  </span>
+                                  {(() => {
+                                    const bulkUnit = getBulkUnitDetails(row.unit)
+                                    const uomShort = bulkUnit?.short || row.unit || 'kg'
+                                    const bw = parseFloat(row.bag_weight || 1)
+                                    const rawP = parseFloat(row.price || 0)
+
+                                    const price100 = (rawP > 1000 && bw > 1 && (rawP / bw) > 60) ? rawP : (bw > 0 ? (rawP / bw) * 100 : rawP)
+
+                                    return (
+                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                          {formatINR(price100)}
+                                        </span>
+                                        <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                          100 {uomShort} price
+                                        </span>
+                                      </div>
+                                    )
+                                  })()}
                                 </td>
                                 <td>
-                                  {row.updated_price ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                      <span style={{ fontWeight: 600, color: '#10b981', fontSize: '0.85rem' }}>
-                                        {formatINR(row.updated_price)}
-                                      </span>
-                                      {updatedDateFormatted && (
-                                        <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                          {updatedDateFormatted}
+                                  {(() => {
+                                    if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
+                                    const bulkUnit = getBulkUnitDetails(row.unit)
+                                    const uomShort = bulkUnit?.short || row.unit || 'kg'
+                                    const bw = parseFloat(row.bag_weight || 1)
+                                    const rawP = parseFloat(row.price || 0)
+                                    const rawUP = parseFloat(row.updated_price || 0)
+
+                                    const price100 = (rawP > 1000 && bw > 1 && (rawP / bw) > 60) ? rawP : (bw > 0 ? (rawP / bw) * 100 : rawP)
+                                    const updatedPrice100 = (rawUP > 1000 && bw > 1 && (rawUP / bw) > 60) ? rawUP : (bw > 0 ? (rawUP / bw) * 100 : rawUP)
+
+                                    const isUp = updatedPrice100 > price100
+                                    const isDrop = updatedPrice100 < price100
+                                    const textColor = isDrop ? '#dc2626' : (isUp ? '#10b981' : '#475569')
+
+                                    return (
+                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontWeight: 700, color: textColor, fontSize: '0.85rem' }}>
+                                          {formatINR(updatedPrice100)}
                                         </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span style={{ color: '#9ca3af' }}>—</span>
-                                  )}
+                                        <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                          {updatedDateFormatted} (100 {uomShort})
+                                        </span>
+                                      </div>
+                                    )
+                                  })()}
                                 </td>
                                 <td>
                                   {renderPriceTrendGraph(row.price, row.updated_price, row.id)}
                                 </td>
                                 <td>
                                   <span className={`attio-stock-badge ${getStockBadgeClass(row.stock)}`}>
-                                    {row.stock} {bulkUnit && bagWeight > 1 ? (row.stock === 1 ? 'Bag' : 'Bags') : (row.unit || 'pcs')}
+                                    {formatStockDisplay(row.stock, row.bag_weight, row.unit)}
                                   </span>
                                 </td>
                               </tr>

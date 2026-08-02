@@ -7,7 +7,7 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import { Plus, Filter, ArrowUpDown, Package, X, Edit2, Trash2, Loader2, Search, Eye } from 'lucide-react'
 import { drawBarcode } from '../../utils/barcode'
 import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
-import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
+import { getBulkUnitDetails, formatStockDisplay, calculateUnitPricing } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import './Products.css'
@@ -115,15 +115,28 @@ function PricingModal({ product, onClose }) {
   const [history, setHistory] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
 
+  const targetId = product?.product_id || product?.id
   const bulkUnit = getBulkUnitDetails(product?.unit)
   const bagWeight = parseFloat(product?.bag_weight || 1)
-  const effectivePrice = parseFloat(product?.updated_price || product?.price || 0)
-  const unitPrice = (effectivePrice / bagWeight).toFixed(2)
+  const pc = parseFloat(product?.price_covers || 0)
+  const basePriceVal = parseFloat(product?.price || 0)
+  const rawUpdatedPrice = parseFloat(product?.updated_price || 0)
+
+  // Standardize updated price to 1 Bag (bagWeight)
+  const activeBagPrice = (pc > 0 && bagWeight > 0 && rawUpdatedPrice > basePriceVal * 2)
+    ? (rawUpdatedPrice / (pc / bagWeight))
+    : (rawUpdatedPrice > 0 ? rawUpdatedPrice : basePriceVal)
+
+  const unitPrice = (bagWeight > 0 ? (activeBagPrice / bagWeight) : activeBagPrice).toFixed(2)
   const updatedDateStr = product?.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
 
   useEffect(() => {
     let isMounted = true
-    api.get(`/products/${product?.id}/price-history`)
+    if (!targetId) {
+      setLoadingHistory(false)
+      return
+    }
+    api.get(`/products/${targetId}/price-history`)
       .then(res => {
         if (isMounted) setHistory(res.data || [])
       })
@@ -155,7 +168,7 @@ function PricingModal({ product, onClose }) {
         if (isMounted) setLoadingHistory(false)
       })
     return () => { isMounted = false }
-  }, [product?.id])
+  }, [targetId])
 
   if (!product) return null
 
@@ -176,15 +189,15 @@ function PricingModal({ product, onClose }) {
           {/* Current Pricing Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price {bagWeight > 1 ? `(${bagWeight} ${bulkUnit?.short || product?.unit || 'kgs'})` : ''}</span>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-                ₹{parseFloat(product.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{basePriceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
-              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price {bagWeight > 1 ? `(${bagWeight} ${bulkUnit?.short || product?.unit || 'kgs'})` : ''}</span>
+              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
-                {product.updated_price ? `₹${parseFloat(product.updated_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `₹${parseFloat(product.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                ₹{activeBagPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -214,17 +227,21 @@ function PricingModal({ product, onClose }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
                 {history.map((item, idx) => {
-                  const newP = parseFloat(item.new_price || 0)
-                  const oldP = item.old_price !== null && item.old_price !== undefined ? parseFloat(item.old_price) : null
-                  const diff = oldP !== null ? (newP - oldP) : 0
+                  const newRaw = parseFloat(item.new_price || 0)
+                  const oldRaw = item.old_price !== null && item.old_price !== undefined ? parseFloat(item.old_price) : null
+
+                  const newBagP = (pc > 0 && bagWeight > 0 && newRaw > basePriceVal * 2) ? (newRaw / (pc / bagWeight)) : newRaw
+                  const oldBagP = (oldRaw !== null && pc > 0 && bagWeight > 0 && oldRaw > basePriceVal * 2) ? (oldRaw / (pc / bagWeight)) : oldRaw
+
+                  const diff = oldBagP !== null ? (newBagP - oldBagP) : 0
                   const isUp = diff > 0
-                  const itemUnitPrice = bulkUnit ? (newP / bagWeight).toFixed(2) : null
+                  const itemUnitPrice = bulkUnit ? (newBagP / bagWeight).toFixed(2) : null
 
                   return (
                     <div key={item.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newBagP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           {bagWeight > 1 && (
                             <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                               ({bagWeight} {bulkUnit?.short || product?.unit || 'kgs'} price)
@@ -246,9 +263,9 @@ function PricingModal({ product, onClose }) {
                             ₹{parseFloat(itemUnitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
                           </div>
                         )}
-                        {oldP !== null && (
+                        {oldBagP !== null && (
                           <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                            Prev: ₹{oldP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            Prev: ₹{oldBagP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         )}
                       </div>
@@ -536,61 +553,64 @@ export default function Products() {
                                    </span>
                                  )
                                })()}
-                             </td>
-                             <td>
-                               {(() => {
-                                 const bulkUnit = getBulkUnitDetails(row.unit)
-                                 const uomShort = bulkUnit?.short || row.unit || 'kg'
-                                 const bw = parseFloat(row.bag_weight || 1)
-                                 const rawP = parseFloat(row.price || 0)
+                              </td>
+                              <td>
+                                {(() => {
+                                  const bulkUnit = getBulkUnitDetails(row.unit)
+                                  const uomShort = bulkUnit?.short || row.unit || 'kg'
+                                  const pc = parseFloat(row.price_covers || 0)
+                                  const bw = parseFloat(row.bag_weight || 1)
+                                  const rawP = parseFloat(row.price || 0)
 
-                                 const price100 = (rawP > 1000 && bw > 1 && (rawP / bw) > 60)
-                                   ? rawP
-                                   : (bw > 0 ? (rawP / bw) * 100 : rawP)
+                                  const priceVal = (pc > 0 && bw > 0 && pc !== bw) ? (rawP / bw) * pc : rawP
+                                  const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
 
-                                 return (
-                                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                     <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                       ₹{price100.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                     </span>
-                                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                       100 {uomShort} price
-                                     </span>
-                                   </div>
-                                 )
-                               })()}
-                             </td>
-                             <td>
-                               {(() => {
-                                 if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
-                                 const bulkUnit = getBulkUnitDetails(row.unit)
-                                 const uomShort = bulkUnit?.short || row.unit || 'kg'
-                                 const bw = parseFloat(row.bag_weight || 1)
-                                 const rawP = parseFloat(row.price || 0)
-                                 const rawUP = parseFloat(row.updated_price || 0)
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                        ₹{priceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                      <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                        {subtext}
+                                      </span>
+                                    </div>
+                                  )
+                                })()}
+                              </td>
+                              <td>
+                                {(() => {
+                                  if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
+                                  const bulkUnit = getBulkUnitDetails(row.unit)
+                                  const uomShort = bulkUnit?.short || row.unit || 'kg'
+                                  const pc = parseFloat(row.price_covers || 0)
+                                  const bw = parseFloat(row.bag_weight || 1)
+                                  const rawP = parseFloat(row.price || 0)
+                                  const rawUP = parseFloat(row.updated_price || 0)
 
-                                 const price100 = (rawP > 1000 && bw > 1 && (rawP / bw) > 60) ? rawP : (bw > 0 ? (rawP / bw) * 100 : rawP)
-                                 const updatedPrice100 = (rawUP > 1000 && bw > 1 && (rawUP / bw) > 60) ? rawUP : (bw > 0 ? (rawUP / bw) * 100 : rawUP)
+                                  const basePriceVal = (pc > 0 && bw > 0 && pc !== bw) ? (rawP / bw) * pc : rawP
+                                  const updatedPriceVal = (pc > 0 && bw > 0 && rawUP < basePriceVal / 2) ? (rawUP / bw) * pc : rawUP
+                                  const dateStr = row.updated_price_date ? formatIndianDateOnly(row.updated_price_date) : ''
+                                  const subtext = dateStr ? `${dateStr} (${pc > 0 ? pc : bw} ${uomShort})` : (pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`))
 
-                                 const isUp = updatedPrice100 > price100
-                                 const isDrop = updatedPrice100 < price100
-                                 const textColor = isDrop ? '#dc2626' : (isUp ? '#10b981' : '#475569')
+                                  const isUp = updatedPriceVal > basePriceVal
+                                  const isDrop = updatedPriceVal < basePriceVal
+                                  const textColor = isDrop ? '#dc2626' : (isUp ? '#10b981' : '#475569')
 
-                                 return (
-                                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                     <span style={{ fontWeight: 700, color: textColor, fontSize: '0.85rem' }}>
-                                       ₹{updatedPrice100.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                     </span>
-                                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                       {formatIndianDateOnly(row.updated_price_date || row.updated_at)} (100 {uomShort})
-                                     </span>
-                                   </div>
-                                 )
-                               })()}
-                             </td>
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontWeight: 700, color: textColor, fontSize: '0.85rem' }}>
+                                        ₹{updatedPriceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                      <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                        {subtext}
+                                      </span>
+                                    </div>
+                                  )
+                                })()}
+                              </td>
                             <td>
                               <span className={`attio-stock-badge ${getStockBadgeClass(row.stock)}`}>
-                                {formatStockDisplay(row.stock, row.bag_weight, row.unit)}
+                                {formatStockDisplay(row.stock, row.bag_weight, row.unit, row.loose_kg)}
                               </span>
                             </td>
                             <td>

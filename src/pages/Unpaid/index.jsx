@@ -202,6 +202,7 @@ export default function UnpaidBills() {
                           />
                         </th>
                         <th>INVOICE ID</th>
+                        <th>QUOTE / ORDER #</th>
                         <th>CUSTOMER</th>
                         <th>TOTAL AMOUNT</th>
                         <th>DUE DATE</th>
@@ -214,6 +215,10 @@ export default function UnpaidBills() {
                         const name = bill.customer_name || 'General Customer'
                         const colors = getPillStyle('Pending')
                         const isRowSelected = selectedIds.includes(bill.id)
+                        const invNum = bill.bill_number || (bill.id ? `INV-${String(bill.id).padStart(5, '0')}` : '—')
+                        const orderMatch = bill.order_number || (bill.notes && (bill.notes.match(/ORD-[\w]+/i)?.[0]))
+                        const quoteMatch = bill.notes && (bill.notes.match(/QT-[\w]+/i)?.[0])
+
                         return (
                           <tr key={bill.id} style={{ background: isRowSelected ? '#f0f5ff' : undefined }}>
                             <td style={{ textAlign: 'left', paddingLeft: 4 }}>
@@ -224,7 +229,22 @@ export default function UnpaidBills() {
                                 onChange={() => handleSelectRow(bill.id)}
                               />
                             </td>
-                            <td className="ws-td-mono">INV-{String(bill.id).padStart(3, '0')}</td>
+                            <td className="ws-td-mono" style={{ fontWeight: 700, color: '#1e293b' }}>{invNum}</td>
+                            <td>
+                              {orderMatch ? (
+                                <span style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                  {orderMatch}
+                                </span>
+                              ) : quoteMatch ? (
+                                <span style={{ color: '#475569', fontWeight: 600, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                  {quoteMatch}
+                                </span>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
+                                  Direct Bill
+                                </span>
+                              )}
+                            </td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                 <div className="attio-avatar" style={{ background: getAvatarColor(name) }}>

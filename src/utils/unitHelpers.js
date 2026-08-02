@@ -7,8 +7,8 @@ export const ALL_UOM_OPTIONS = [
   { value: 'ltr', label: 'Liters (ltr)', category: 'Volume', isBulk: true },
   { value: 'doz', label: 'Dozen (doz)', category: 'Count' },
   { value: 'set', label: 'Set / Kit (set)', category: 'Count' },
-  { value: 'ml',  label: 'Milliliters (ml)', category: 'Volume' },
-  { value: 'ft',  label: 'Feet (ft)', category: 'Length' }
+  { value: 'ml', label: 'Milliliters (ml)', category: 'Volume' },
+  { value: 'ft', label: 'Feet (ft)', category: 'Length' }
 ];
 
 // Quick Container Size Options for production use cases
@@ -19,6 +19,48 @@ export const UOM_QUICK_SIZES = {
   box: [10, 25, 50, 100],
   doz: [12, 60]
 };
+
+export const getDynamicFieldLabels = (unit) => {
+  const u = String(unit || 'kgs').toLowerCase().trim()
+
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
+    return {
+      packWeightLabel: 'Package Weight (kg) *',
+      priceCoversLabel: 'Price Covers (kg)',
+      stockQtyLabel: 'Stock Quantity (Bags)',
+      short: 'kg',
+      unitName: 'Kilogram'
+    }
+  }
+
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
+    return {
+      packWeightLabel: 'Package Size (L) *',
+      priceCoversLabel: 'Price Covers (L)',
+      stockQtyLabel: 'Stock Quantity (Cans)',
+      short: 'L',
+      unitName: 'Liter'
+    }
+  }
+
+  if (['pcs', 'pc', 'pieces', 'piece', 'box', 'boxes', 'set', 'doz', 'count'].includes(u)) {
+    return {
+      packWeightLabel: 'Items Per Package *',
+      priceCoversLabel: 'Price Covers (Pieces)',
+      stockQtyLabel: 'Stock Quantity (Boxes)',
+      short: 'pcs',
+      unitName: 'Piece'
+    }
+  }
+
+  return {
+    packWeightLabel: 'Package Size *',
+    priceCoversLabel: 'Price Covers',
+    stockQtyLabel: 'Stock Quantity',
+    short: unit || 'unit',
+    unitName: unit || 'Unit'
+  }
+}
 
 export const getBulkUnitDetails = (unit) => {
   if (!unit) return null;
@@ -137,6 +179,45 @@ export const getBulkUnitDetails = (unit) => {
   return null;
 };
 
+// Calculates accurate per-kg and per-pack pricing regardless of bulk lot input size
+export const calculateUnitPricing = (price, basePrice, bagWeight = 1, unit = '') => {
+  const p = parseFloat(price || 0);
+  const bp = parseFloat(basePrice || price || 0);
+  const bw = parseFloat(bagWeight || 1);
+
+  if (p <= 0 || bw <= 0) {
+    return { perKgPrice: '0.00', perPackPrice: '0.00', packWeight: bw, totalKg: bw, packCount: 1 };
+  }
+
+  // Base rate per kg from initial base price
+  const baseRatePerKg = bp / bw;
+
+  // Find the multiplier m (1 to 25 bags) of bw that yields per-kg price closest to baseRatePerKg
+  let bestM = 1;
+  let minDiff = Math.abs((p / bw) - baseRatePerKg);
+
+  for (let m = 1; m <= 25; m++) {
+    const candidateRate = p / (m * bw);
+    const diff = Math.abs(candidateRate - baseRatePerKg);
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestM = m;
+    }
+  }
+
+  const totalKg = bestM * bw;
+  const perKgPrice = (p / totalKg).toFixed(2);
+  const perPackPrice = ((p / totalKg) * bw).toFixed(2);
+
+  return {
+    perKgPrice,
+    perPackPrice,
+    packWeight: bw,
+    totalKg,
+    packCount: bestM
+  };
+};
+
 // Formatter helper to get clear production unit text string
 export const formatProductUnitPrice = (price, unit, packCapacity = 1) => {
   const p = parseFloat(price || 0);
@@ -150,7 +231,7 @@ export const formatProductUnitPrice = (price, unit, packCapacity = 1) => {
   return details ? `₹${p.toFixed(2)} / ${details.short}` : `₹${p.toFixed(2)} / ${unit || 'pcs'}`;
 };
 
-export const formatStockDisplay = (stock, bagWeight = 1, unit = '') => {
+export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0) => {
   if (stock === undefined || stock === null) return '0';
   const numStock = parseFloat(stock);
   if (isNaN(numStock)) return '0';
@@ -160,17 +241,22 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '') => {
 
   if (bulkUnit && bw > 1) {
     const fullBags = Math.floor(numStock);
-    const looseQty = Math.round((numStock - fullBags) * bw);
+    const passedLoose = parseFloat(looseKg || 0);
+    const looseQty = passedLoose > 0 ? Math.round(passedLoose) : Math.round((numStock - fullBags) * bw);
     const containerName = bulkUnit.name || 'Bag';
     const containerPlural = bulkUnit.pluralName || `${containerName}s`;
-    const shortUnit = bulkUnit.short || 'kg';
+    const shortUnit = bulkUnit.short || unit || 'kg';
+
+    const packLabel = fullBags === 1 ? containerName : containerPlural;
+    const uLow = String(shortUnit).toLowerCase();
+    const looseUnitLabel = uLow === 'kg' ? 'kgs' : uLow === 'ltr' ? 'ltrs' : uLow === 'mtr' ? 'mtrs' : shortUnit;
 
     if (looseQty > 0 && fullBags > 0) {
-      return `${fullBags} ${fullBags === 1 ? containerName : containerPlural} ${looseQty} ${shortUnit}`;
+      return `${fullBags} ${packLabel} ${looseQty} ${looseUnitLabel}`;
     } else if (fullBags > 0) {
-      return `${fullBags} ${fullBags === 1 ? containerName : containerPlural}`;
+      return `${fullBags} ${packLabel}`;
     } else {
-      return `${looseQty} ${shortUnit}`;
+      return `${looseQty} ${looseUnitLabel}`;
     }
   }
 
@@ -191,17 +277,57 @@ export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '
     const looseQty = Math.round(total % bw);
     const containerName = bulkUnit.name || 'Bag';
     const containerPlural = bulkUnit.pluralName || `${containerName}s`;
-    const shortUnit = bulkUnit.short || 'kg';
+    const shortUnit = bulkUnit.short || unit || 'kg';
+
+    const packLabel = fullBags === 1 ? containerName : containerPlural;
+    const uLow = String(shortUnit).toLowerCase();
+    const looseUnitLabel = uLow === 'kg' ? 'kgs' : uLow === 'ltr' ? 'ltrs' : uLow === 'mtr' ? 'mtrs' : shortUnit;
 
     if (looseQty > 0 && fullBags > 0) {
-      return `${fullBags} ${fullBags === 1 ? containerName : containerPlural} ${looseQty} ${shortUnit}`;
+      return `${fullBags} ${packLabel} ${looseQty} ${looseUnitLabel}`;
     } else if (fullBags > 0) {
-      return `${fullBags} ${fullBags === 1 ? containerName : containerPlural}`;
+      return `${fullBags} ${packLabel}`;
     } else {
-      return `${looseQty} ${shortUnit}`;
+      return `${looseQty} ${looseUnitLabel}`;
     }
   }
 
   const unitLabel = unit || 'pcs';
   return `${total} ${unitLabel}`;
+};
+
+export const getPackWeightLabel = (unit) => {
+  if (!unit) return 'Package Weight (kg)';
+  const u = String(unit).toLowerCase().trim();
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
+    return 'Package Size (L)';
+  }
+  if (['pcs', 'pc', 'piece', 'pieces', 'box', 'boxes', 'pack', 'doz', 'dozen', 'set'].includes(u)) {
+    return 'Items Per Package';
+  }
+  return 'Package Weight (kg)';
+};
+
+export const getPriceCoversLabel = (unit) => {
+  if (!unit) return 'Price Covers (kg)';
+  const u = String(unit).toLowerCase().trim();
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
+    return 'Price Covers (L)';
+  }
+  if (['pcs', 'pc', 'piece', 'pieces', 'box', 'boxes', 'pack', 'doz', 'dozen', 'set'].includes(u)) {
+    return 'Price Covers (Pieces)';
+  }
+  return 'Price Covers (kg)';
+};
+
+export const getStockQuantityLabel = (unit) => {
+  if (!unit) return 'Stock Quantity (Bags)';
+  const u = String(unit).toLowerCase().trim();
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
+    return 'Stock Quantity (Cans)';
+  }
+  if (['pcs', 'pc', 'piece', 'pieces', 'box', 'boxes', 'pack', 'doz', 'dozen', 'set'].includes(u)) {
+    return 'Stock Quantity (Boxes)';
+  }
+  return 'Stock Quantity (Bags)';
 };

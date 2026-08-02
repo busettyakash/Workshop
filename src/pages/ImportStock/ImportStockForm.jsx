@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Info, Check, User, Package, DollarSign, FileText, ArrowRight } from 'lucide-react'
 import api from '../../api/client'
-import { getBulkUnitDetails, ALL_UOM_OPTIONS } from '../../utils/unitHelpers'
+import { getBulkUnitDetails, getDynamicFieldLabels, ALL_UOM_OPTIONS } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
 
 const S = {
@@ -71,6 +71,7 @@ export default function ImportStockForm() {
     sku: '',
     category: '',
     buying_price: '',
+    price_covers: '',
     price_100: '',
     price: '',
     updated_price: '',
@@ -90,13 +91,11 @@ export default function ImportStockForm() {
 
     api.get('/uoms').then(res => {
       if (Array.isArray(res.data) && res.data.length > 0) {
-        const dbOptions = res.data
-          .filter(u => u.code !== 'g' && u.code !== 'gm' && !u.name?.toLowerCase().includes('gram'))
-          .map(u => ({
-            value: u.code,
-            label: `${u.name} (${u.code})`,
-            category: u.category
-          }))
+        const dbOptions = res.data.map(u => ({
+          value: u.code,
+          label: `${u.name} (${u.code})`,
+          category: u.category
+        }))
         setUomOptions(dbOptions)
       }
     }).catch(() => { })
@@ -116,6 +115,7 @@ export default function ImportStockForm() {
           sku: item.sku || '',
           category: item.category || '',
           buying_price: item.buying_price || '',
+          price_covers: item.price_covers !== undefined && item.price_covers !== null ? item.price_covers : '',
           price: item.price || '',
           updated_price: item.updated_price || '',
           updated_price_date: item.updated_price_date ? String(item.updated_price_date).split('T')[0] : todayStr,
@@ -221,13 +221,23 @@ export default function ImportStockForm() {
   })
 
   // Unit rate and margin calculations
-  const bw = parseFloat(form.bag_weight || 100)
-  const sell100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / bw) * 100) : 0))
-  const buy100 = parseFloat(form.buying_price || 0)
-  const sellRatePerUnit = sell100 > 0 ? (sell100 / 100).toFixed(2) : '0.00'
-  const buyRatePerUnit = buy100 > 0 ? (buy100 / 100).toFixed(2) : '0.00'
-  const profitMarginPer100 = buy100 > 0 && sell100 > 0 ? (sell100 - buy100).toFixed(2) : null
-  const profitMarginPerUnit = buy100 > 0 && sell100 > 0 ? ((sell100 - buy100) / 100).toFixed(2) : null
+  const bw = parseFloat(form.bag_weight || 1)
+  const pc = parseFloat(form.price_covers) || 0
+  const rawPrice = parseFloat(form.price || 0)
+
+  // Calculate displaying Selling Price for the form input
+  const sellPriceDisplay = form.price_100 !== undefined && form.price_100 !== ''
+    ? form.price_100
+    : (rawPrice > 0 ? (pc > 0 && bw > 0 && pc !== bw ? ((rawPrice / bw) * pc).toFixed(2) : rawPrice.toFixed(2)) : '')
+
+  const sell100 = parseFloat(sellPriceDisplay) || 0
+
+  const sellRatePerUnit = sell100 > 0
+    ? (pc > 0 ? (sell100 / pc).toFixed(2) : (bw > 0 ? (sell100 / bw).toFixed(2) : '0.00'))
+    : (rawPrice > 0 ? (bw > 0 ? (rawPrice / bw).toFixed(2) : rawPrice.toFixed(2)) : '0.00')
+  const buyRatePerUnit = parseFloat(form.buying_price || 0) > 0
+    ? (pc > 0 ? (parseFloat(form.buying_price) / pc).toFixed(2) : (bw > 0 ? (parseFloat(form.buying_price) / bw).toFixed(2) : '0.00'))
+    : '0.00'
 
   return (
     <div className="ws-dash-layout">
@@ -462,7 +472,7 @@ export default function ImportStockForm() {
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Buyer Price (100 Units, ₹)</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Buyer Price (₹)</label>
                       <input
                         name="buying_price"
                         type="number"
@@ -475,21 +485,42 @@ export default function ImportStockForm() {
                         onBlur={() => setFocus(null)}
                       />
                       <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3, display: 'block' }}>
-                        {form.buying_price ? `₹${(parseFloat(form.buying_price) / 100).toFixed(2)} / ${getBulkUnitDetails(form.unit)?.short || 'unit'} cost` : 'Purchase cost paid to supplier'}
+                        {form.buying_price ? `₹${(parseFloat(form.buying_price) / parseFloat(form.price_covers || 100)).toFixed(2)} / ${getDynamicFieldLabels(form.unit).short} cost` : 'Purchase cost paid to supplier'}
                       </span>
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>My Selling Price (100 Units, ₹) *</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>{getDynamicFieldLabels(form.unit).priceCoversLabel}</label>
+                      <input
+                        name="price_covers"
+                        type="number"
+                        step="0.1"
+                        value={form.price_covers}
+                        onChange={handleChange}
+                        placeholder="e.g. 100"
+                        style={inp('price_covers')}
+                        onFocus={() => setFocus('price_covers')}
+                        onBlur={() => setFocus(null)}
+                      />
+                      <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3, display: 'block' }}>
+                        Quantity covered by the price rate
+                      </span>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>My Selling Price (₹) *</label>
                       <input
                         name="price_100"
                         type="number"
                         step="0.01"
-                        value={form.price_100 !== undefined ? form.price_100 : (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : '')}
+                        value={sellPriceDisplay}
                         onChange={(e) => {
                           const val = e.target.value
-                          const bw = parseFloat(form.bag_weight || 100)
-                          const calculatedPrice = val ? ((parseFloat(val) / 100) * bw).toFixed(2) : ''
+                          const bw = parseFloat(form.bag_weight || 1)
+                          const pc = parseFloat(form.price_covers || 0)
+                          const calculatedPrice = val
+                            ? (pc > 0 ? ((parseFloat(val) / pc) * bw).toFixed(2) : parseFloat(val).toFixed(2))
+                            : ''
                           setForm(prev => ({ ...prev, price_100: val, price: calculatedPrice }))
                           if (errors.price) setErrors(prev => ({ ...prev, price: '' }))
                         }}
@@ -500,12 +531,12 @@ export default function ImportStockForm() {
                       />
                       {errors.price && <span style={S.error}>{errors.price}</span>}
                       <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3, display: 'block' }}>
-                        {sell100 > 0 ? `₹${(sell100 / 100).toFixed(2)} / ${getBulkUnitDetails(form.unit)?.short || 'unit'} selling rate` : 'Base market price'}
+                        {sellRatePerUnit > 0 ? `₹${sellRatePerUnit} / ${getDynamicFieldLabels(form.unit).short} rate` : 'Base market price'}
                       </span>
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Pack Weight ({getBulkUnitDetails(form.unit)?.short || 'kg'}) *</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>{getDynamicFieldLabels(form.unit).packWeightLabel}</label>
                       <input
                         name="bag_weight"
                         type="number"
@@ -513,8 +544,13 @@ export default function ImportStockForm() {
                         value={form.bag_weight}
                         onChange={(e) => {
                           const bw = e.target.value
-                          const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
-                          const calculatedPrice = p100 && bw ? ((p100 / 100) * parseFloat(bw)).toFixed(2) : form.price
+                          const pc = parseFloat(form.price_covers || 0)
+                          const bwVal = parseFloat(bw || 1)
+                          let calculatedPrice = form.price
+                          if (form.price_100 && !isNaN(form.price_100)) {
+                            const p100 = parseFloat(form.price_100)
+                            calculatedPrice = pc > 0 ? ((p100 / pc) * bwVal).toFixed(2) : p100.toFixed(2)
+                          }
                           setForm(prev => ({ ...prev, bag_weight: bw, price: calculatedPrice }))
                           if (errors.bag_weight) setErrors(prev => ({ ...prev, bag_weight: '' }))
                         }}
@@ -532,8 +568,12 @@ export default function ImportStockForm() {
                                 key={size}
                                 type="button"
                                 onClick={() => {
-                                  const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
-                                  const calculatedPrice = p100 ? ((p100 / 100) * size).toFixed(2) : form.price
+                                  const pc = parseFloat(form.price_covers || 0)
+                                  let calculatedPrice = form.price
+                                  if (form.price_100 && !isNaN(form.price_100)) {
+                                    const p100 = parseFloat(form.price_100)
+                                    calculatedPrice = pc > 0 ? ((p100 / pc) * size).toFixed(2) : p100.toFixed(2)
+                                  }
                                   setForm(prev => ({ ...prev, bag_weight: size, price: calculatedPrice }))
                                 }}
                                 style={{
@@ -557,7 +597,7 @@ export default function ImportStockForm() {
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Stock Quantity ({getBulkUnitDetails(form.unit)?.pluralName || 'Units'})</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>{getDynamicFieldLabels(form.unit).stockQtyLabel}</label>
                       <input name="stock" type="number" value={form.stock} onChange={handleChange} placeholder="0" style={inp('stock')} onFocus={() => setFocus('stock')} onBlur={() => setFocus(null)} />
                     </div>
 

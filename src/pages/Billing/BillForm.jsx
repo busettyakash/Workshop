@@ -260,6 +260,7 @@ export default function BillForm() {
   const [step, setStep] = useState(1) // 1: Cart & Products, 2: Checkout Details & Summary
 
   const [form, setForm] = useState({
+    bill_number: `INV-${Math.floor(10000 + Math.random() * 90000)}`,
     customer_id: createdPersonId || '',
     status: 'unpaid',
     due_date: '',
@@ -310,9 +311,8 @@ export default function BillForm() {
       if (initialProductId && prods.length > 0) {
         const foundProd = prods.find(p => String(p.id) === String(initialProductId))
         if (foundProd) {
-          const bulkUnit = getBulkUnitDetails(foundProd.unit)
-          const effectivePrice = foundProd.updated_price ? parseFloat(foundProd.updated_price) : parseFloat(foundProd.price || 0)
-          const priceToUse = bulkUnit ? (effectivePrice / (parseFloat(foundProd.bag_weight) || 1)).toFixed(2) : effectivePrice
+          const prices = calcProductPrices(foundProd)
+          const priceToUse = prices.perKgRate > 0 ? prices.perKgRate : (foundProd.price || 0)
           setLineItems([{
             product_id: foundProd.id,
             name: foundProd.name,
@@ -345,10 +345,42 @@ export default function BillForm() {
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }))
   }
 
+  function calcProductPrices(prod) {
+    if (!prod) return { perUnitRate: 0, perKgRate: 0, perPackPrice: 0 }
+
+    const bw = parseFloat(prod?.bag_weight) || 1
+    const pc = parseFloat(prod?.price_covers) || 0
+    const rawP = parseFloat(prod?.price || 0)
+    const rawUP = parseFloat(prod?.updated_price || 0)
+
+    let perKgRate = 0
+    if (rawUP > 0) {
+      if (pc > 0 && pc !== bw && rawUP > (rawP / bw) * 1.5) {
+        perKgRate = rawUP / pc
+      } else if (bw > 0) {
+        perKgRate = rawUP / bw
+      } else {
+        perKgRate = rawUP
+      }
+    } else if (rawP > 0) {
+      perKgRate = bw > 0 ? (rawP / bw) : rawP
+    }
+
+    const perPackPrice = perKgRate * bw
+    const perUnitRate = perKgRate
+
+    return {
+      perUnitRate: parseFloat(perUnitRate.toFixed(2)),
+      perKgRate: parseFloat(perKgRate.toFixed(2)),
+      perPackPrice: parseFloat(perPackPrice.toFixed(2))
+    }
+  }
+
   const addLineItem = (prod) => {
+    const prices = calcProductPrices(prod)
+    const priceToUse = prices.perUnitRate > 0 ? prices.perUnitRate : (prod.price || 0)
     const bulkUnit = getBulkUnitDetails(prod.unit)
-    const effectivePrice = prod.updated_price ? parseFloat(prod.updated_price) : parseFloat(prod.price || 0)
-    const priceToUse = bulkUnit ? (effectivePrice / (parseFloat(prod.bag_weight) || 1)).toFixed(2) : effectivePrice
+    const baseUnitStr = bulkUnit?.short || prod.unit || 'pcs'
     setLineItems(prev => [...prev, {
       product_id: prod.id,
       name: prod.name,
@@ -359,7 +391,7 @@ export default function BillForm() {
       price: priceToUse,
       qty: 1,
       discount: 0,
-      unit: prod.unit || 'pcs'
+      unit: baseUnitStr
     }])
     if (errors.items) setErrors(prev => ({ ...prev, items: '' }))
   }
@@ -480,6 +512,7 @@ const calcMaxStock = (prod, itemUnit) => {
     setSaving(true)
     try {
       const payload = {
+        bill_number: form.bill_number ? form.bill_number.trim() : undefined,
         customer_id: form.customer_id || null,
         amount: total,
         status: form.status,
@@ -623,9 +656,12 @@ const calcMaxStock = (prod, itemUnit) => {
                           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 100px 80px 100px 32px', gap: 10, padding: '10px 0', borderBottom: '1px solid #f9fafb', alignItems: 'center' }}>
                             <div>
                               <span style={{ fontSize: '0.84rem', fontWeight: 500, color: '#111827', display: 'block' }}>{li.name}</span>
-                              {bulkUnit && productObj && productObj.bag_weight > 1 && (
+                              {bulkUnit && productObj && (
                                 <span style={{ fontSize: '0.69rem', color: '#059669', display: 'block', marginTop: 2, fontWeight: 500 }}>
-                                  {bulkUnit.name}: {INR(parseFloat(li.price || 0) * productObj.bag_weight)} ({productObj.bag_weight}{bulkUnit.short})
+                                  {productObj.bag_weight > 1
+                                    ? `${bulkUnit.name || 'Pack'}: ₹${calcProductPrices(productObj).perPackPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${productObj.bag_weight}${bulkUnit.short})`
+                                    : `${bulkUnit.name || 'Unit'}: ₹${calcProductPrices(productObj).perUnitRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${bulkUnit.short}`
+                                  }
                                 </span>
                               )}
                             </div>
@@ -922,7 +958,7 @@ const calcMaxStock = (prod, itemUnit) => {
                           unitStr === 'kgs' || unitStr === 'kg' || unitStr === 'ltr' || unitStr === 'mtr'
                         )
 
-                        const totalAvailableBase = (parseFloat(p.stock || 0)) * (bulkUnit && bw > 1 ? bw : 1)
+                        const totalAvailableBase = ((parseFloat(p.stock || 0)) * (bulkUnit && bw > 1 ? bw : 1)) + parseFloat(p.loose_kg || 0)
                         const qtyAddedBase = isBaseUnit ? qtyAdded : (qtyAdded * bw)
                         const remainingBaseQty = Math.max(0, totalAvailableBase - qtyAddedBase)
 
@@ -958,18 +994,18 @@ const calcMaxStock = (prod, itemUnit) => {
                               </div>
                               <div style={{ fontSize: '0.7rem', color: '#6b7280', display: 'flex', flexDirection: 'column', gap: 1 }}>
                                 {(() => {
-                                  const effectivePrice = p.updated_price ? parseFloat(p.updated_price) : parseFloat(p.price || 0)
+                                  const prices = calcProductPrices(p)
                                   if (bulkUnit && p.bag_weight > 1) {
                                     return (
                                       <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>
-                                        {bulkUnit.name}: {INR(effectivePrice)} ({p.bag_weight}{bulkUnit.short}) • {INR(effectivePrice / p.bag_weight)}/{bulkUnit.short}
+                                        {bulkUnit.name}: {INR(prices.perPackPrice)} ({p.bag_weight}{bulkUnit.short}) • {INR(prices.perUnitRate)}/{bulkUnit.short}
                                         {p.updated_price && <span style={{ color: '#10b981', fontWeight: 600, marginLeft: 4 }}>(Updated)</span>}
                                       </span>
                                     )
                                   }
                                   return (
                                     <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>
-                                      {INR(effectivePrice)} / {p.unit || 'pcs'}
+                                      Price: {INR(prices.perUnitRate)}/{p.unit || 'pcs'}
                                       {p.updated_price && <span style={{ color: '#10b981', fontWeight: 600, marginLeft: 4 }}>(Updated)</span>}
                                     </span>
                                   )

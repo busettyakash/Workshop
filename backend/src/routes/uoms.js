@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
   const userId = req.workspaceId
   try {
     await seedDefaultUoms(userId)
-    const { rows } = await query('SELECT * FROM uoms WHERE user_id = $1 ORDER BY id ASC', [userId])
+    const { rows } = await query("SELECT * FROM uoms WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user') ORDER BY id ASC", [userId])
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })

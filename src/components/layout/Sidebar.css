@@ -206,13 +206,20 @@
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 4px 7px;
+  padding: 5px 8px;
   border-radius: var(--radius-md);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--color-gray-800);
   font-weight: 400;
   transition: all var(--transition-base);
   text-align: left;
+  white-space: nowrap;
+}
+
+.ws-sb-nav-item span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ws-sb-nav-item:hover {

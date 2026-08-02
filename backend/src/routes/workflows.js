@@ -3,6 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import qstash from '../lib/qstash.js'
+import { getOrSetCache, invalidateCachePattern } from '../lib/redisCache.js'
 
 const router = Router()
 router.use(requireAuth)

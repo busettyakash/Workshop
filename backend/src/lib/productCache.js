@@ -19,7 +19,7 @@ export async function getProductHsnMap() {
       localCache.set('products', { data, timestamp: now })
       return data
     }
-  } catch (_e) {}
+  } catch (_e) { }
 
   // Single batch fetch from Postgres DB only if cache miss
   try {
@@ -30,9 +30,9 @@ export async function getProductHsnMap() {
       if (p.id) map[String(p.id)] = { hsn, name: p.name, unit: p.unit, bag_weight: p.bag_weight }
       if (p.name) map[p.name.toLowerCase().trim()] = { hsn, name: p.name, unit: p.unit, bag_weight: p.bag_weight }
     }
-    
+
     // Save to Redis and Local Memory
-    redis.set('catalog:products_hsn_map', JSON.stringify(map), { ex: 300 }).catch(() => {})
+    redis.set('catalog:products_hsn_map', JSON.stringify(map), { ex: 300 }).catch(() => { })
     localCache.set('products', { data: map, timestamp: now })
     return map
   } catch (err) {
@@ -43,7 +43,7 @@ export async function getProductHsnMap() {
 
 export function clearProductHsnCache() {
   localCache.delete('products')
-  redis.del('catalog:products_hsn_map').catch(() => {})
+  redis.del('catalog:products_hsn_map').catch(() => { })
 }
 
 export function enrichItemsWithCache(items, catalogMap = {}) {
@@ -86,8 +86,8 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
 
     const bagWeight = parseFloat(item.bag_weight || catProd?.bag_weight || 1)
     const rawUnit = item.unit || catProd?.unit || ''
-    const unitStr = (bagWeight > 1) 
-      ? `Bag (${bagWeight}kg)` 
+    const unitStr = (bagWeight > 1)
+      ? `Bag (${bagWeight}kg)`
       : (item.unitLabel || item.subtext || rawUnit || '')
 
     return {

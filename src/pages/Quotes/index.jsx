@@ -13,6 +13,7 @@ import '../Products/Products.css'
 import TablePagination from '../../components/ui/TablePagination'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import BillPreview from '../Billing/BillPreview'
+import QuotePreviewModal from './QuotePreviewModal'
 
 function useCloseOnOutsideClick(containerRef, setOpen) {
   useEffect(() => {
@@ -330,20 +331,54 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     }
   }
 
+  function calcProductPrices(prod) {
+    if (!prod) return { perUnitRate: 0, perKgRate: 0, perPackPrice: 0 }
+
+    const bw = parseFloat(prod?.bag_weight) || 1
+    const pc = parseFloat(prod?.price_covers) || 0
+    const rawP = parseFloat(prod?.price || 0)
+    const rawUP = parseFloat(prod?.updated_price || 0)
+
+    let perKgRate = 0
+    if (rawUP > 0) {
+      if (pc > 0 && pc !== bw && rawUP > (rawP / bw) * 1.5) {
+        perKgRate = rawUP / pc
+      } else if (bw > 0) {
+        perKgRate = rawUP / bw
+      } else {
+        perKgRate = rawUP
+      }
+    } else if (rawP > 0) {
+      perKgRate = bw > 0 ? (rawP / bw) : rawP
+    }
+
+    const perPackPrice = perKgRate * bw
+    const perUnitRate = perKgRate
+
+    return {
+      perUnitRate: parseFloat(perUnitRate.toFixed(2)),
+      perKgRate: parseFloat(perKgRate.toFixed(2)),
+      perPackPrice: parseFloat(perPackPrice.toFixed(2))
+    }
+  }
+
   const handleProductSelect = (index, productId) => {
     const prod = products.find(p => String(p.id) === String(productId))
     if (!prod) return
 
-    const rawPrice = parseFloat(prod.updated_price || prod.price || 0)
+    const prices = calcProductPrices(prod)
     const bulkUnit = getBulkUnitDetails(prod.unit)
     const bagWeight = parseFloat(prod.bag_weight || 1)
 
-    let subtext = ''
-    let unitLabel = prod.unit || 'pcs'
+    const isPack = bulkUnit && bagWeight > 1
+    const unitLabel = isPack ? (bulkUnit.name || 'Bag') : (bulkUnit?.short || prod.unit || 'pcs')
+    const itemRate = isPack ? prices.perPackPrice : (prices.perUnitRate > 0 ? prices.perUnitRate : (prod.price || 0))
 
-    if (bulkUnit && bagWeight > 1) {
-      subtext = `Bag: ₹${rawPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
-      unitLabel = `${bulkUnit.name || 'Bag'} (${bagWeight}${bulkUnit.short})`
+    let subtext = ''
+    if (bulkUnit) {
+      subtext = bagWeight > 1
+        ? `${bulkUnit.name || 'Pack'}: ₹${prices.perPackPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
+        : `${bulkUnit.name || 'Unit'}: ₹${prices.perUnitRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${bulkUnit.short}`
     }
 
     setLineItems(prev => prev.map((item, i) => {
@@ -357,7 +392,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             type: 'warning'
           }))
         }
-        const amt = qty * rawPrice
+        const amt = qty * itemRate
         return {
           ...item,
           product_id: prod.id,
@@ -366,7 +401,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
           bag_weight: bagWeight,
           subtext: subtext,
           quantity: qty,
-          rate: rawPrice,
+          rate: itemRate,
           amount: amt
         }
       }
@@ -772,7 +807,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                 const isExceeded = maxStock !== null && maxStock >= 0 && (parseFloat(item.quantity) || 0) > maxStock
 
                 const baseSubtext = item.subtext || (selectedProd && bulkUnit && bw > 1
-                  ? `Bag: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
+                  ? `${bulkUnit.name || 'Bag'}: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
                   : '')
 
                 const stockSubtext = maxStock !== null ? `Available Stock: ${maxStock} ${unitLabel}` : ''
@@ -1311,9 +1346,16 @@ export default function Quotes() {
                                   <input type="checkbox" className="attio-chk" readOnly />
                                 </td>
                                 <td>
-                                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1e293b', fontSize: '0.85rem' }}>
-                                    {row.quote_number}
-                                  </span>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1e293b', fontSize: '0.85rem' }}>
+                                      {row.quote_number}
+                                    </span>
+                                    {row.status === 'Accepted' && (
+                                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
+                                        {row.order_number || `ORD-${row.quote_number ? row.quote_number.replace(/^QT-?/i, '') : row.id}`}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1441,12 +1483,16 @@ export default function Quotes() {
         </main>
       </div>
 
-      {/* View Quote Modal — Uses exact BillPreview component */}
+      {/* View Quote Modal — Dedicated Quotation Summary */}
       {viewingQuote && (
-        <BillPreview
+        <QuotePreviewModal
           quote={viewingQuote}
-          type="quotation"
           onClose={() => setViewingQuote(null)}
+          onEdit={() => {
+            const q = viewingQuote
+            setViewingQuote(null)
+            setEditingQuote(q)
+          }}
         />
       )}
 

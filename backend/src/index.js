@@ -36,24 +36,25 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 import express from 'express'
 import cors from 'cors'
 
-import authRoutes     from './routes/auth.js'
-import productRoutes  from './routes/products.js'
-import billingRoutes  from './routes/billing.js'
+import authRoutes from './routes/auth.js'
+import productRoutes from './routes/products.js'
+import billingRoutes from './routes/billing.js'
 import customerRoutes from './routes/customers.js'
-import reportRoutes   from './routes/reports.js'
+import reportRoutes from './routes/reports.js'
 import workflowRoutes from './routes/workflows.js'
-import chatRoutes     from './routes/chat.js'
+import chatRoutes from './routes/chat.js'
 import importStockRoutes from './routes/importStock.js'
-import peopleRoutes   from './routes/people.js'
-import companiesRoutes  from './routes/companies.js'
+import peopleRoutes from './routes/people.js'
+import companiesRoutes from './routes/companies.js'
 import billTemplateRoutes from './routes/billTemplates.js'
 import recordRoutes from './routes/records.js'
-import notesRoutes  from './routes/notes.js'
+import notesRoutes from './routes/notes.js'
 import emailsRoutes from './routes/emails.js'
-import uomRoutes    from './routes/uoms.js'
+import uomRoutes from './routes/uoms.js'
 import quotesRoutes from './routes/quotes.js'
+import orderRoutes from './routes/orders.js'
 
-const app  = express()
+const app = express()
 app.disable('x-powered-by')
 const PORT = process.env.PORT || 5000
 
@@ -111,10 +112,10 @@ app.use((req, res, next) => {
 /* ── Health & Observability Metrics ── */
 app.get('/', (_req, res) => {
   res.json({
-    status:  'ok',
+    status: 'ok',
     service: 'Workshop Backend API',
     version: '1.0.0',
-    time:    new Date().toISOString(),
+    time: new Date().toISOString(),
   })
 })
 
@@ -147,22 +148,23 @@ app.get('/api/metrics', (_req, res) => {
 })
 
 /* ── Routes ── */
-app.use('/api/auth',          authRoutes)
-app.use('/api/products',      productRoutes)
-app.use('/api/billing',       billingRoutes)
-app.use('/api/customers',     customerRoutes)
-app.use('/api/reports',       reportRoutes)
-app.use('/api/workflows',     workflowRoutes)
-app.use('/api/chat',          chatRoutes)
-app.use('/api/import-stock',  importStockRoutes)
-app.use('/api/people',        peopleRoutes)
-app.use('/api/companies',     companiesRoutes)
+app.use('/api/auth', authRoutes)
+app.use('/api/products', productRoutes)
+app.use('/api/billing', billingRoutes)
+app.use('/api/customers', customerRoutes)
+app.use('/api/reports', reportRoutes)
+app.use('/api/workflows', workflowRoutes)
+app.use('/api/chat', chatRoutes)
+app.use('/api/import-stock', importStockRoutes)
+app.use('/api/people', peopleRoutes)
+app.use('/api/companies', companiesRoutes)
 app.use('/api/bill-templates', billTemplateRoutes)
-app.use('/api/records',        recordRoutes)
-app.use('/api/notes',          notesRoutes)
-app.use('/api/emails',         emailsRoutes)
-app.use('/api/uoms',           uomRoutes)
-app.use('/api/quotes',         quotesRoutes)
+app.use('/api/records', recordRoutes)
+app.use('/api/notes', notesRoutes)
+app.use('/api/emails', emailsRoutes)
+app.use('/api/uoms', uomRoutes)
+app.use('/api/quotes', quotesRoutes)
+app.use('/api/orders', orderRoutes)
 
 /* ── 404 Handler ── */
 app.use((_req, res) => {

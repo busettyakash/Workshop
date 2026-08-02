@@ -3,6 +3,8 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
+import { logStockHistory } from './products.js'
+import { getOrSetCache, invalidateCachePattern } from '../lib/redisCache.js'
 
 
 const router = Router()
@@ -19,6 +21,7 @@ async function ensureBillingSchema() {
   await query(`ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => { })
   await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50)`).catch(() => { })
   await query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => { })
+  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => { })
 }
 
 router.use(async (_req, _res, next) => {
@@ -45,9 +48,15 @@ router.get('/', async (req, res) => {
   const params = [userId]
   const conditions = ['(b.user_id::text = $1::text OR b.user_id = \'default-user\' OR $1 = \'default-user\')']
   if (status) { params.push(status); conditions.push(`b.status = $${params.length}`) }
-  if (search) {
-    params.push(`%${search}%`)
-    conditions.push(`(p.name ILIKE $${params.length} OR cust.name ILIKE $${params.length} OR CAST(b.id AS TEXT) ILIKE $${params.length})`)
+  if (search && search.trim()) {
+    params.push(`%${search.trim()}%`)
+    conditions.push(`(
+      COALESCE(p.name, '') ILIKE $${params.length} 
+      OR COALESCE(cust.name, '') ILIKE $${params.length} 
+      OR COALESCE(b.bill_number, '') ILIKE $${params.length} 
+      OR COALESCE(b.order_number, '') ILIKE $${params.length} 
+      OR CAST(b.id AS TEXT) ILIKE $${params.length}
+    )`)
   }
 
   let orderCol = 'b.created_at DESC, b.id DESC'
@@ -180,7 +189,7 @@ router.get('/:id', async (req, res) => {
 /* POST /api/billing */
 router.post('/', async (req, res) => {
   const userId = req.workspaceId
-  const { customer_id, items, amount, due_date, notes, discount, status } = req.body
+  const { customer_id, bill_number: customBillNum, items, amount, due_date, notes, discount, status } = req.body
 
   const computedAmount = (items || []).reduce((acc, item) => {
     const qty = parseFloat(item.qty || 1)
@@ -192,8 +201,8 @@ router.post('/', async (req, res) => {
 
   const parsedCustomerId = Number.isInteger(Number(customer_id)) && Number(customer_id) > 0 ? parseInt(customer_id, 10) : null
 
-  // Generate unique random 5-digit invoice number (e.g. INV-84920)
-  let billNumber = `INV-${Math.floor(10000 + Math.random() * 90000)}`
+  // Use custom invoice number if passed, else generate unique 5-digit number
+  let billNumber = (customBillNum && customBillNum.trim()) ? customBillNum.trim() : `INV-${Math.floor(10000 + Math.random() * 90000)}`
   try {
     let isUnique = false
     let attempts = 0
@@ -260,53 +269,100 @@ router.post('/', async (req, res) => {
       const qty = parseFloat(item.qty || item.quantity || 0)
       const prodId = item.product_id || item.id || item.productId
       const itemName = item.name || item.product_name || item.productName || ''
+      const itemCode = item.hsn_code || item.hsn || item.sku || ''
       if (qty <= 0) continue
 
-      let prodRes = null
-      if (prodId) {
-        prodRes = await query(
-          `SELECT id, name, sku, stock, bag_weight, unit FROM products 
-           WHERE (id::text = $1::text OR ($2 <> '' AND name ILIKE $2))
-             AND (user_id::text = $3::text OR user_id = 'default-user' OR $3 = 'default-user') 
-           LIMIT 1`,
-          [String(prodId), itemName.trim(), userId || 'default-user']
-        ).catch(e => { console.error('[Stock Lookup Error]', e.message); return null })
-      } else if (itemName) {
-        prodRes = await query(
-          `SELECT id, name, sku, stock, bag_weight, unit FROM products 
-           WHERE name ILIKE $1 
-             AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') 
-           LIMIT 1`,
-          [itemName.trim(), userId || 'default-user']
-        ).catch(e => { console.error('[Stock Lookup Error by Name]', e.message); return null })
-      }
+      let prodRes = await query(
+        `SELECT id, name, sku, hsn_code, stock, loose_kg, bag_weight, unit FROM products 
+         WHERE (
+           ( $1::text <> '' AND id::text = $1::text )
+           OR ( $2::text <> '' AND name ILIKE $2 )
+           OR ( $3::text <> '' AND (hsn_code = $3 OR sku = $3) )
+         )
+         AND (user_id::text = $4::text OR user_id = 'default-user' OR $4 = 'default-user') 
+         LIMIT 1`,
+        [prodId ? String(prodId) : '', itemName.trim(), itemCode.trim(), userId || 'default-user']
+      ).catch(e => { console.error('[Product Lookup Error]', e.message); return null })
 
       const prod = prodRes?.rows?.[0]
       if (!prod) {
-        console.warn('[Stock Deduction Warning] Product not found for stock deduction:', prodId, itemName)
+        console.warn('[Stock Decrease] Product not found in products table:', prodId, itemName, itemCode)
         continue
       }
 
       const bw = parseFloat(prod.bag_weight || 1)
-      const unitStr = String(item.unit || prod.unit || '').toLowerCase()
-      const isBaseUnit = ['kgs', 'kg', 'ltr', 'mtr', 'g', 'gm'].some(u => unitStr.includes(u))
+      const itemUnitStr = String(item.unit || item.unitLabel || '').trim().toLowerCase()
+      const prodUnitStr = String(prod.unit || 'pcs').trim().toLowerCase()
+      const containerKeywords = ['bag', 'bags', 'drum', 'drums', 'can', 'cans', 'roll', 'rolls', 'box', 'boxes', 'carton', 'cartons', 'dozen', 'doz', 'pack', 'packs', 'bundle', 'bundles']
 
-      let bagsToDeduct = qty
-      if (isBaseUnit && bw > 1) {
-        bagsToDeduct = qty / bw
+      let isBaseUnit = true
+      if (itemUnitStr) {
+        isBaseUnit = !containerKeywords.some(c => itemUnitStr.includes(c))
+      } else if (prodUnitStr) {
+        isBaseUnit = !containerKeywords.some(c => prodUnitStr.includes(c))
       }
 
-      if (bagsToDeduct > 0) {
-        await query(
-          `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE id = $2`,
-          [bagsToDeduct, prod.id]
-        ).catch(e => console.error('[Billing Products Stock Decrease Error]', e.message))
+      const rawUnit = item.unit || item.unitLabel || (isBaseUnit ? 'kgs' : prod.unit) || 'pcs'
 
-        await query(
-          `UPDATE import_stock SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') AND (name ILIKE $3 OR (sku <> '' AND sku = $4))`,
-          [bagsToDeduct, userId || 'default-user', prod.name || itemName, prod.sku || '']
-        ).catch(e => console.error('[Billing ImportStock Stock Decrease Error]', e.message))
+      const currentStock = parseFloat(prod.stock || 0)
+      const currentLoose = parseFloat(prod.loose_kg || 0)
+
+      let totalBaseBefore = (bw > 1) ? ((currentStock * bw) + currentLoose) : currentStock
+      let qtyDeductedBase = (isBaseUnit || bw <= 1) ? qty : (qty * bw)
+      let totalBaseAfter = Math.max(0, totalBaseBefore - qtyDeductedBase)
+
+      let newStock = 0
+      let newLooseKg = 0
+
+      if (bw > 1) {
+        newStock = Math.floor(totalBaseAfter / bw)
+        newLooseKg = +(totalBaseAfter % bw).toFixed(2)
+      } else {
+        newStock = totalBaseAfter
+        newLooseKg = 0
       }
+
+      // Update products table
+      await query(
+        `UPDATE products SET stock = $1, loose_kg = $2, updated_at = NOW() WHERE id = $3`,
+        [newStock, newLooseKg, prod.id]
+      ).catch(e => console.error('[Products Stock Update Error]', e.message))
+
+      let noteDetail = ''
+      if (isBaseUnit || bw <= 1) {
+        noteDetail = `Deducted ${qty} ${rawUnit} for bill creation`
+      } else {
+        const uomLower = (prod.unit || '').toLowerCase()
+        const containerLabel = uomLower.includes('liter') ? 'Drum' : uomLower.includes('meter') ? 'Roll' : uomLower.includes('box') || uomLower.includes('pc') ? 'Box' : 'Bag'
+        const baseShort = uomLower.includes('liter') ? 'ltr' : uomLower.includes('meter') ? 'mtr' : uomLower.includes('box') || uomLower.includes('pc') ? 'pc' : 'kg'
+        const totalBase = (qty * bw).toFixed(0)
+        noteDetail = `Deducted ${qty} ${containerLabel} (${bw}${baseShort}) (${totalBase} ${baseShort}) for bill creation`
+      }
+
+      // Log to Stock History with Source = 'Bill'!
+      await logStockHistory(
+        prod.id,
+        userId || 'default-user',
+        'deducted',
+        -qty,
+        currentStock,
+        newStock,
+        'Bill',
+        insertedRows[0]?.id || null,
+        noteDetail
+      ).catch(e => console.warn('[Stock History Log Error]', e.message))
+
+      // Update import_stock table
+      await query(
+        `UPDATE import_stock 
+         SET stock = $1, updated_at = NOW() 
+         WHERE (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') 
+           AND (
+             name ILIKE $3 
+             OR ($4::text <> '' AND (hsn_code = $4 OR sku = $4))
+           )`,
+        [newStock, userId || 'default-user', prod.name || itemName, prod.hsn_code || prod.sku || itemCode]
+      ).catch(e => console.error('[ImportStock Update Error]', e.message))
     }
 
     // Clear redis cache
@@ -350,17 +406,20 @@ router.delete('/:id', async (req, res) => {
   const userId = req.workspaceId
   try {
     const { rows } = await query(
-      `DELETE FROM bills WHERE id = $1 AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') RETURNING id`,
+      `DELETE FROM bills WHERE id = $1 AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') RETURNING id, bill_number`,
       [req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
 
+    const deletedBill = rows[0]
+    const invoiceNum = deletedBill.bill_number || `INV-${String(deletedBill.id).padStart(5, '0')}`
+
     try {
-      const keys = await redis.keys(`billing:${userId}:*`).catch(() => [])
+      const keys = await redis.keys(`*${userId}*`).catch(() => [])
       for (const key of keys) { await redis.del(key).catch(() => { }) }
     } catch (_err) { }
 
-    res.json({ message: 'Bill deleted successfully' })
+    res.json({ message: `Bill ${invoiceNum} deleted successfully`, bill_number: invoiceNum, id: deletedBill.id })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

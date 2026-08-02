@@ -6,7 +6,7 @@ import {
   Users, UserCheck, GitBranch, Building2,
   Search, ChevronDown, ChevronRight, LogOut, UserPlus, Zap, Menu, X,
   Briefcase, User, CheckSquare, FileText, Mail, Phone, Send, Folder, LayoutGrid, Play, Star,
-  MessageSquare, Upload, UserRound, ScrollText, DollarSign, History
+  MessageSquare, Upload, UserRound, ScrollText, DollarSign, History, ShoppingBag
 } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectActiveNav, toggleSidebar, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
@@ -36,6 +36,7 @@ const ICON_MAP = {
   Contacts:      <User size={14} />,
   Billing:       <Receipt size={14} />,
   Quotes:        <ScrollText size={14} />,
+  Orders:        <ShoppingBag size={14} />,
   Paid:          <CheckCircle size={14} />,
   Unpaid:        <XCircle size={14} />,
   Settings:      <Settings size={14} />,
@@ -54,8 +55,10 @@ const ALL_NAV_ITEMS = {
   'Companies':     { icon: 'Companies',     path: '/' },
   'People':        { icon: 'People',        path: '/people' },
   'Price History': { icon: 'PriceHistory', path: '/price-history' },
+  'Product History': { icon: 'PriceHistory', path: '/price-history' },
   'Billing':       { icon: 'Billing',       path: ROUTES.BILLING },
   'Quotes':        { icon: 'Quotes',        path: '/quotes' },
+  'Orders':        { icon: 'Orders',        path: '/orders' },
   'Paid':          { icon: 'Paid',          path: ROUTES.PAID },
   'Unpaid':        { icon: 'Unpaid',        path: ROUTES.UNPAID },
   'Import Stock':  { icon: 'ImportStock',   path: ROUTES.IMPORT_STOCK },
@@ -72,8 +75,9 @@ const MAIN_NAV = [
 const RECORDS_NAV = [
   { label: 'Products',      icon: 'Products',     path: ROUTES.PRODUCTS },
   { label: 'People',        icon: 'People',       path: '/people' },
-  { label: 'Price History', icon: 'PriceHistory', path: '/price-history' },
+  { label: 'Product History', icon: 'PriceHistory', path: '/price-history' },
   { label: 'Quotes',        icon: 'Quotes',        path: '/quotes' },
+  { label: 'Orders',        icon: 'Orders',        path: '/orders' },
   { label: 'Import Stock',  icon: 'ImportStock',  path: ROUTES.IMPORT_STOCK },
 ]
 
@@ -129,7 +133,7 @@ export default function Sidebar() {
   })
   const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [recordsOpen, setRecordsOpen] = useState(() => {
-    return ['/products', '/people', '/price-history', '/quotes', '/import-stock'].some(path => window.location.pathname.startsWith(path))
+    return ['/products', '/people', '/price-history', '/quotes', '/orders', '/import-stock'].some(path => window.location.pathname.startsWith(path))
   })
   const [billingOpen, setBillingOpen] = useState(() => {
     return ['/billing', '/paid', '/unpaid'].some(path => window.location.pathname.startsWith(path))
@@ -166,7 +170,7 @@ export default function Sidebar() {
   const location = useLocation()
 
   useEffect(() => {
-    if (['/products', '/people', '/price-history', '/quotes', '/import-stock'].some(path => location.pathname.startsWith(path))) {
+    if (['/products', '/people', '/price-history', '/quotes', '/orders', '/import-stock'].some(path => location.pathname.startsWith(path))) {
       setRecordsOpen(true)
     }
     if (['/billing', '/paid', '/unpaid'].some(path => location.pathname.startsWith(path))) {
@@ -615,47 +619,6 @@ export default function Sidebar() {
               )}
             </div>
           )}
-
-          <div className="ws-sb-section-label">Chats</div>
-          <div className="ws-sb-nav-list" style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 8px' }}>
-            {chats.length === 0 ? (
-              <div className="ws-sb-empty-note" style={{ fontSize: '0.75rem', color: '#9ca3af', padding: '6px 12px' }}>No chats yet</div>
-            ) : (
-              chats.slice(0, 8).map(c => {
-                const isActive = activeSessionId === String(c.id)
-                return (
-                  <Link 
-                    to={`/dashboard?session=${c.id}`} 
-                    key={c.id} 
-                    style={{ textDecoration: 'none', display: 'block' }}
-                    onClick={() => handleNav('Home')}
-                  >
-                    <div className={`ws-sb-subitem ${isActive ? 'active' : ''}`} style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '8px', 
-                      padding: '6px 12px', 
-                      borderRadius: '6px',
-                      fontSize: '0.85rem',
-                      color: isActive ? '#3d68f5' : '#4b5563',
-                      background: isActive ? '#eff6ff' : 'transparent',
-                      transition: 'all 0.12s'
-                    }}>
-                      <MessageSquare size={13} style={{ flexShrink: 0 }} />
-                      <span style={{ 
-                        overflow: 'hidden', 
-                        textOverflow: 'ellipsis', 
-                        whiteSpace: 'nowrap',
-                        fontWeight: isActive ? '600' : '450'
-                      }}>
-                        {c.title || 'Untitled chat'}
-                      </span>
-                    </div>
-                  </Link>
-                )
-              })
-            )}
-          </div>
         </nav>
 
         {/* Bottom */}

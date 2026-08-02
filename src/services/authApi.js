@@ -45,11 +45,6 @@ export const authApi = {
     return res.data
   },
 
-  // For LOGIN: checks if email is registered first, then sends OTP
-  sendLoginOtp: async (email) => {
-    const res = await apiClient.post('/auth/send-login-otp', { email: normalizeEmail(email) })
-    return res.data
-  },
 
   // For FORGOT PASSWORD: checks if email is registered first, then sends OTP
   sendResetOtp: async (email) => {

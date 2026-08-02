@@ -181,11 +181,11 @@ table.bill-items-table td, table.goods-table td {
   vertical-align: middle !important;
 }
 
-.totals-summary-grid { display: grid; grid-template-columns: repeat(8, 1fr); border: 1px solid #cbd5e1; background: #f8fafc; margin-bottom: 20px; text-align: center; }
-.summary-cell { padding: 8px 6px; border-right: 1px solid #cbd5e1; }
+.totals-summary-grid { display: flex; width: 100%; border: 1px solid #cbd5e1; background: #f8fafc; margin-bottom: 20px; text-align: center; }
+.summary-cell { flex: 1; min-width: 0; padding: 8px 4px; border-right: 1px solid #cbd5e1; }
 .summary-cell:last-child { border-right: none; }
-.summary-cell label { font-size: 9.5px; font-weight: 800; color: #64748b; display: block; margin-bottom: 4px; text-transform: uppercase; }
-.summary-cell span  { font-size: 12px; font-weight: 800; color: #0f172a; }
+.summary-cell label { font-size: 9.5px; font-weight: 800; color: #64748b; display: block; margin-bottom: 4px; text-transform: uppercase; white-space: nowrap; }
+.summary-cell span  { font-size: 12px; font-weight: 800; color: #0f172a; white-space: nowrap; }
 
 .barcode-wrapper { text-align: center; margin: 20px 0 10px; }
 

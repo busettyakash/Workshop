@@ -22,6 +22,7 @@ import People   from './pages/People/index'
 import PersonForm from './pages/People/PersonForm'
 import PriceHistory from './pages/PriceHistory/index'
 import Quotes from './pages/Quotes/index'
+import Orders from './pages/Orders/index'
 import Notes  from './pages/Notes/index'
 import Emails from './pages/Emails/index'
 import Settings from './pages/Settings/index'
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/billing/add"  element={<PrivateRoute><BillForm /></PrivateRoute>} />
         <Route path="/billing/edit/:id" element={<PrivateRoute><BillForm /></PrivateRoute>} />
         <Route path="/quotes"      element={<PrivateRoute><Quotes /></PrivateRoute>} />
+        <Route path="/orders"      element={<PrivateRoute><Orders /></PrivateRoute>} />
         <Route path="/workflows"   element={<PrivateRoute><Workflows /></PrivateRoute>} />
         <Route path="/reports"     element={<PrivateRoute><ReportsPage /></PrivateRoute>} />
         <Route path="/notes"       element={<PrivateRoute><Notes /></PrivateRoute>} />

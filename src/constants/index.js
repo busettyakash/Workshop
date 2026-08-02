@@ -30,6 +30,7 @@ export const ROUTES = {
   IMPORT_STOCK: '/import-stock',
   IMPORT_STOCK_ADD: '/import-stock/add',
   IMPORT_STOCK_EDIT: '/import-stock/edit/:id',
+  ORDERS: '/orders',
 }
 
 // Navigation items for sidebar

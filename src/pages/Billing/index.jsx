@@ -295,11 +295,12 @@ export default function Billing() {
   }
 
   const handleConfirmDelete = async () => {
-    const { id } = confirmDelete
+    const { id, displayId } = confirmDelete
     setConfirmDelete({ isOpen: false, id: null, displayId: '' })
     try {
-      await api.delete(`/billing/${id}`)
-      dispatch(addToast({ message: 'Bill deleted', type: 'success' }))
+      const res = await api.delete(`/billing/${id}`)
+      const deletedNum = res.data?.bill_number || displayId || `INV-${String(id).padStart(5, '0')}`
+      dispatch(addToast({ message: `Invoice ${deletedNum} deleted successfully`, type: 'success' }))
       fetchData()
     } catch {
       dispatch(addToast({ message: 'Failed to delete bill', type: 'error' }))
@@ -456,6 +457,7 @@ export default function Billing() {
                           />
                         </th>
                         <th>INVOICE ID</th>
+                        <th>QUOTE / ORDER #</th>
                         <th>CUSTOMER</th>
                         <th>TOTAL</th>
                         <th>DUE DATE</th>
@@ -468,6 +470,11 @@ export default function Billing() {
                         const name = bill.customer_name || 'General Customer'
                         const colors = getPillStyle(bill.status === 'paid' ? 'Paid' : 'Pending')
                         const isRowSelected = selectedIds.includes(bill.id)
+                        const invNum = bill.bill_number || (bill.id ? `INV-${String(bill.id).padStart(5, '0')}` : '—')
+
+                        const orderMatch = bill.order_number || (bill.notes && (bill.notes.match(/ORD-[\w]+/i)?.[0]))
+                        const quoteMatch = bill.notes && (bill.notes.match(/QT-[\w]+/i)?.[0])
+
                         return (
                           <tr key={bill.id} style={{ background: isRowSelected ? '#f0f5ff' : undefined }}>
                             <td style={{ textAlign: 'left', paddingLeft: 4 }}>
@@ -478,7 +485,22 @@ export default function Billing() {
                                 onChange={() => handleSelectRow(bill.id)}
                               />
                             </td>
-                            <td className="ws-td-mono">{bill.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill.id || 1) * 899999))}`}</td>
+                            <td className="ws-td-mono" style={{ fontWeight: 700, color: '#1e293b' }}>{invNum}</td>
+                            <td>
+                              {orderMatch ? (
+                                <span style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                  {orderMatch}
+                                </span>
+                              ) : quoteMatch ? (
+                                <span style={{ color: '#475569', fontWeight: 600, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                  {quoteMatch}
+                                </span>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
+                                  Direct Bill
+                                </span>
+                              )}
+                            </td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                 <div className="attio-avatar" style={{ background: getAvatarColor(name) }}>
@@ -520,7 +542,7 @@ export default function Billing() {
                                 <button
                                   className="ws-chat-history-delete-btn"
                                   style={{ padding: 6 }}
-                                  onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: 'INV-' + String(bill.id).padStart(3, '0') })}
+                                  onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: bill.bill_number || `INV-${String(bill.id).padStart(5, '0')}` })}
                                   title="Delete Bill"
                                 >
                                   <Trash2 size={13} />

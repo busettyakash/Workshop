@@ -63,6 +63,20 @@ async function createTables() {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS product_stock_history (
+        id SERIAL PRIMARY KEY,
+        product_id INT NOT NULL,
+        user_id TEXT NOT NULL,
+        change_type TEXT NOT NULL,
+        qty_change NUMERIC(10, 2) NOT NULL,
+        stock_before NUMERIC(10, 2),
+        stock_after NUMERIC(10, 2),
+        source TEXT,
+        source_ref TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS import_stock (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -83,6 +97,8 @@ async function createTables() {
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS bag_weight NUMERIC DEFAULT 1;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2);
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2);
 
       CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
@@ -128,6 +144,8 @@ async function createTables() {
 
       ALTER TABLE bills ADD COLUMN IF NOT EXISTS discount DECIMAL(10, 2) DEFAULT 0;
       ALTER TABLE bills ADD COLUMN IF NOT EXISTS user_id TEXT;
+      ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50);
+      ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50);
 
       CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
@@ -213,7 +231,7 @@ async function createTables() {
     // ── Enforce RLS on all tables with user isolation ──
     const allTables = [
       'bill_items', 'companies', 'deals', 'shop_profiles', 'bill_templates', 'deal_logs', 'workspace_members',
-      'products', 'product_price_history', 'import_stock', 'customers', 'people', 'bills', 'notifications',
+      'products', 'product_price_history', 'product_stock_history', 'import_stock', 'customers', 'people', 'bills', 'notifications',
       'workflows', 'workflow_runs', 'chat_sessions', 'notes', 'emails', 'uoms', 'quotes'
     ];
 

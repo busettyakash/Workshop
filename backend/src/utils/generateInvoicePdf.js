@@ -507,39 +507,105 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
 </html>`
 }
 
+import fs from 'fs'
+
+function getSystemBrowserPath() {
+  const possiblePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    process.env.CHROME_BIN,
+    process.env.PUPPETEER_EXECUTABLE_PATH
+  ].filter(Boolean)
+
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
 // ─────────────────────────────────────────────
 function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {} }) {
   return new Promise((resolve, reject) => {
     try {
-      const pdf = new PDFDocument({ margin: 30, size: 'A4' })
+      const pdf = new PDFDocument({ margin: 36, size: 'A4' })
       const chunks = []
       pdf.on('data', c => chunks.push(c))
       pdf.on('end', () => resolve(Buffer.concat(chunks)))
 
       const d = { ...quote, ...bill }
+      const isQuote = Boolean(quote?.quote_number) || String(d.notes || '').toLowerCase().includes('qt')
+      const docTitle = isQuote ? 'COMMERCIAL QUOTATION' : 'TAX INVOICE'
       const docId = d.bill_number || d.quote_number || `INV-${d.id || '1001'}`
       const shopName = shop.shop_name || d.shop_name || 'Workshop'
       const custName = d.customer_name || 'Customer'
+      const custPhone = d.customer_phone || d.phone || ''
 
-      pdf.fontSize(16).fillColor('#1e3a8a').text('TAX INVOICE', { align: 'center' })
+      pdf.fontSize(18).fillColor('#1e3a8a').text(docTitle, { align: 'center' })
       pdf.fontSize(9).fillColor('#64748b').text(docId, { align: 'center' })
-      pdf.moveDown(1)
+      pdf.moveDown(1.2)
 
-      pdf.fontSize(10).fillColor('#0f172a').text(`From: ${shopName}`)
-      pdf.fontSize(10).fillColor('#0f172a').text(`To: ${custName}`)
-      pdf.moveDown(1)
+      pdf.fontSize(10).fillColor('#0f172a').text(`From (Supplier): ${shopName}`)
+      if (shop.phone) pdf.fontSize(9).fillColor('#475569').text(`Phone: ${shop.phone}`)
+      pdf.moveDown(0.5)
+
+      pdf.fontSize(10).fillColor('#0f172a').text(`To (Buyer): ${custName}`)
+      if (custPhone) pdf.fontSize(9).fillColor('#475569').text(`Phone: ${custPhone}`)
+      pdf.moveDown(1.2)
+
+      pdf.fontSize(11).fillColor('#1e293b').text('GOODS DETAILS', { underline: true })
+      pdf.moveDown(0.6)
+
+      const startX = 36
+      let currentY = pdf.y
+
+      pdf.rect(startX, currentY, 523, 20).fill('#f8fafc').stroke('#cbd5e1')
+      pdf.fillColor('#334155').fontSize(8)
+      pdf.text('HSN', startX + 5, currentY + 5, { width: 60 })
+      pdf.text('PRODUCT NAME & DESC', startX + 70, currentY + 5, { width: 180 })
+      pdf.text('QTY', startX + 255, currentY + 5, { width: 40, align: 'center' })
+      pdf.text('TAXABLE AMT', startX + 300, currentY + 5, { width: 75, align: 'right' })
+      pdf.text('DISCOUNT', startX + 380, currentY + 5, { width: 60, align: 'right' })
+      pdf.text('TAX RATE', startX + 445, currentY + 5, { width: 70, align: 'center' })
+
+      currentY += 20
 
       const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
-      items.forEach((it, i) => {
+      let grossSubtotal = 0
+      let totalDiscount = 0
+
+      items.forEach((it) => {
         const q = parseFloat(it.qty || it.quantity || 1)
         const r = parseFloat(it.price || it.rate || 0)
-        const amt = Math.max(0, (q * r) - parseFloat(it.discount || 0))
-        pdf.fontSize(9).fillColor('#334155').text(`${i + 1}. ${it.name || it.product_name || 'Item'} — Qty: ${q} — Rate: ₹${r.toFixed(2)} — Amt: ₹${amt.toFixed(2)}`)
+        const disc = parseFloat(it.discount || 0)
+        const gross = q * r
+        const taxable = Math.max(0, gross - disc)
+
+        grossSubtotal += gross
+        totalDiscount += disc
+
+        const name = it.name || it.product_name || 'Item'
+        const hsn = it.hsn_code || it.hsnCode || '—'
+
+        pdf.rect(startX, currentY, 523, 22).stroke('#e2e8f0')
+        pdf.fillColor('#0f172a').fontSize(8)
+        pdf.text(hsn, startX + 5, currentY + 6, { width: 60 })
+        pdf.text(name, startX + 70, currentY + 6, { width: 180 })
+        pdf.text(`${q}`, startX + 255, currentY + 6, { width: 40, align: 'center' })
+        pdf.text(`Rs. ${taxable.toFixed(2)}`, startX + 300, currentY + 6, { width: 75, align: 'right' })
+        pdf.text(disc > 0 ? `- Rs. ${disc.toFixed(2)}` : '-', startX + 380, currentY + 6, { width: 60, align: 'right' })
+        pdf.text('18%', startX + 445, currentY + 6, { width: 70, align: 'center' })
+
+        currentY += 22
       })
 
-      const tot = parseFloat(d.amount || d.total_amount || 0)
-      pdf.moveDown(1)
-      pdf.fontSize(11).fillColor('#15803d').text(`Total Amount: ₹${tot.toFixed(2)}`, { align: 'right' })
+      currentY += 15
+      const totAmt = parseFloat(d.amount || d.total_amount || 0)
+
+      pdf.rect(startX, currentY, 523, 30).fill('#0f172a')
+      pdf.fillColor('#ffffff').fontSize(10).text(`TOTAL AMOUNT:  Rs. ${totAmt.toFixed(2)}`, startX + 15, currentY + 9, { align: 'right', width: 493 })
+
       pdf.end()
     } catch (e) {
       reject(e)
@@ -555,10 +621,16 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
   const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap })
 
   try {
-    const browser = await puppeteer.launch({
+    const launchOptions = {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
-    })
+    }
+    const exePath = getSystemBrowserPath()
+    if (exePath) {
+      launchOptions.executablePath = exePath
+    }
+
+    const browser = await puppeteer.launch(launchOptions)
     try {
       const page = await browser.newPage()
       await page.setContent(html, { waitUntil: 'networkidle0' })

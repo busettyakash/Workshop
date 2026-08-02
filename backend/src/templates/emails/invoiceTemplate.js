@@ -7,7 +7,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;')
 }
 
-export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {} }) => {
+export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}, catalogMap = {} }) => {
   const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || 'Shree Mahalakshmi Traders'
   const sellerPhone = shop.phone || bill?.shop_phone || ''
   const sellerGstin = shop.gstin || bill?.shop_gstin || ''
@@ -120,20 +120,21 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     const disc = parseFloat(item.discount || 0)
     lineDiscountsSum += disc
     const lineTotalGross = rate * qty
-    const itemDisc = disc > 0
-      ? disc
-      : (totalDiscountVal > 0
-        ? (itemsList.length === 1
-          ? totalDiscountVal
-          : Math.round(((lineTotalGross / (grossTotal || 1)) * totalDiscountVal) * 100) / 100
-        )
-        : 0)
-
-    // FIX: check several likely field-name variants for bag/pack weight so a
-    // schema naming mismatch (bag_weight vs bagWeight vs pack_weight) doesn't
-    // silently fall back to 1 and lose the "50kg Bag" / "100ltr Drum" subtext.
-    const bw = parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? 1)
     const prodName = item.product_name || item.name || item.productName || 'Product Item'
+    let itemDisc = 0
+    if (disc > 0) {
+      itemDisc = disc
+    } else if (totalDiscountVal > 0) {
+      itemDisc = itemsList.length === 1
+        ? totalDiscountVal
+        : Math.round(((lineTotalGross / (grossTotal || 1)) * totalDiscountVal) * 100) / 100
+    }
+
+    const catMap = catalogMap || {}
+    const catProd = (item.product_id && catMap[String(item.product_id)])
+      || (item.id && catMap[String(item.id)])
+      || (prodName && catMap[prodName.toLowerCase().trim()])
+    const bw = parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? catProd?.bag_weight ?? 1)
 
     // FIX: hsnCode was referenced but never defined anywhere — pull it from the item.
     const hsnCode = item.hsn_code || item.hsnCode || item.hsn || ''
@@ -254,7 +255,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
             </td>
             <td width="${orderNum ? '25%' : '34%'}" style="border-right:none;">
               <div class="lbl">${isQuoteFlow ? 'VALID UNTIL' : 'COMPANY GSTIN'}</div>
-              <div class="val">${isQuoteFlow ? escapeHtml(dueDateStr) : (sellerGstin ? escapeHtml(sellerGstin).toUpperCase() : '—')}</div>
+              <div class="val">${isQuoteFlow ? escapeHtml(dueDateStr) : escapeHtml(sellerGstin || '—').toUpperCase()}</div>
             </td>
           </tr>
         </table>

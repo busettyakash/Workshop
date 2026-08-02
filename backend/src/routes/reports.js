@@ -1,12 +1,9 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
-import { getOrSetCache, invalidateCachePattern } from '../lib/redisCache.js'
 
 const router = Router()
 router.use(requireAuth)
-
-/* GET /api/reports/sales — daily sales summary */
 router.get('/sales', async (req, res) => {
   const userId = req.workspaceId
   const { from, to } = req.query

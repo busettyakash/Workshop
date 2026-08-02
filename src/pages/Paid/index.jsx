@@ -206,8 +206,8 @@ export default function PaidBills() {
                       const colors = getPillStyle('Paid')
                       const isRowSelected = selectedIds.includes(bill.id)
                       const invNum = bill.bill_number || (bill.id ? `INV-${String(bill.id).padStart(5, '0')}` : '—')
-                      const orderMatch = bill.order_number || (bill.notes && (bill.notes.match(/ORD-[\w]+/i)?.[0]))
-                      const quoteMatch = bill.notes && (bill.notes.match(/QT-[\w]+/i)?.[0])
+                      const orderMatch = bill.order_number || (bill.notes && (bill.notes.match(/ORD-\w+/i)?.[0]))
+                      const quoteMatch = bill.notes && (bill.notes.match(/QT-\w+/i)?.[0])
 
                       return (
                         <tr key={bill.id} style={{ background: isRowSelected ? '#f0f5ff' : undefined }}>

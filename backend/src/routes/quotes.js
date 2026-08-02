@@ -4,7 +4,6 @@ import { sendEmail } from '../lib/smtp.js'
 import { apiLimiter, emailLimiter } from '../middleware/rateLimit.js'
 import { getInvoiceEmailTemplate, getQuoteEmailTemplate, getOrderConfirmationTemplate } from '../utils/emailTemplates.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
-import { getOrSetCache, invalidateCachePattern } from '../lib/redisCache.js'
 import { logStockHistory } from './products.js'
 
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
@@ -102,8 +101,16 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
       noteDetail = `Deducted ${qty} ${rawUnit} for quote acceptance`
     } else {
       const uomLower = (prod.unit || '').toLowerCase()
-      const containerLabel = uomLower.includes('liter') ? 'Drum' : uomLower.includes('meter') ? 'Roll' : uomLower.includes('box') || uomLower.includes('pc') ? 'Box' : 'Bag'
-      const baseShort = uomLower.includes('liter') ? 'ltr' : uomLower.includes('meter') ? 'mtr' : uomLower.includes('box') || uomLower.includes('pc') ? 'pc' : 'kg'
+      let containerLabel = 'Bag'
+      if (uomLower.includes('liter')) containerLabel = 'Drum'
+      else if (uomLower.includes('meter')) containerLabel = 'Roll'
+      else if (uomLower.includes('box') || uomLower.includes('pc')) containerLabel = 'Box'
+
+      let baseShort = 'kg'
+      if (uomLower.includes('liter')) baseShort = 'ltr'
+      else if (uomLower.includes('meter')) baseShort = 'mtr'
+      else if (uomLower.includes('box') || uomLower.includes('pc')) baseShort = 'pc'
+
       const totalBase = (qty * bw).toFixed(0)
       noteDetail = `Deducted ${qty} ${containerLabel} (${bw}${baseShort}) (${totalBase} ${baseShort}) for quote acceptance`
     }

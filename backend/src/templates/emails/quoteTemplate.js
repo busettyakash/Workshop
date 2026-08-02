@@ -7,7 +7,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;')
 }
 
-export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt }) => {
+export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt, catalogMap = {} }) => {
   let items = []
   if (Array.isArray(quote.line_items)) {
     items = quote.line_items
@@ -90,17 +90,22 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     const rate = parseFloat(li.rate || li.price || 0)
     const disc = parseFloat(li.discount || 0)
     const lineTotalGross = rate * qty
-    const itemDisc = disc > 0
-      ? disc
-      : (totalDiscount > 0
-          ? (items.length === 1 
-              ? totalDiscount 
-              : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
-            )
-          : 0)
+    let itemDisc = 0
+    if (disc > 0) {
+      itemDisc = disc
+    } else if (totalDiscount > 0) {
+      itemDisc = items.length === 1
+        ? totalDiscount
+        : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
+    }
 
     const lineTotal = Math.max(0, lineTotalGross - disc)
-    const bw = parseFloat(li.bag_weight || 1)
+    const prodName = li.name || li.product_name || li.productName || 'Product Item'
+    const catMap = catalogMap || {}
+    const catProd = (li.product_id && catMap[String(li.product_id)])
+      || (li.id && catMap[String(li.id)])
+      || (prodName && catMap[prodName.toLowerCase().trim()])
+    const bw = parseFloat(li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? catProd?.bag_weight ?? 1)
     const rawUnit = li.unit || li.unitLabel || ''
     const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw)
 
@@ -108,7 +113,6 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-') 
       ? `1006${String(li.product_id || li.id || 1001).padStart(4, '0')}`
       : rawHsn
-    const prodName = li.name || li.product_name || li.productName || 'Product Item'
 
     return `
       <tr>

@@ -153,9 +153,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   }
 
   let effectiveTaxRate = 0
-  if (explicitTaxRate === 0) {
-    effectiveTaxRate = 0
-  } else if (taxAmt > 0 && baseForTax > 0) {
+  if (taxAmt > 0 && baseForTax > 0) {
     effectiveTaxRate = Math.round((taxAmt / baseForTax) * 100)
   } else if (explicitTaxRate > 0) {
     effectiveTaxRate = explicitTaxRate
@@ -367,15 +365,12 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                       ? li
                       : (li.name || li.product_name || li.productName || li.product || li.item_name || li.title || li.description || '')
 
-                    const dbProd = pId
-                      ? productsMap[String(pId)]
-                      : Object.values(productsMap).find(p => p.name && prodNameRaw && p.name.toLowerCase().trim() === prodNameRaw.toLowerCase().trim())
+                    const dbProd = (pId && productsMap[String(pId)])
+                      || (prodNameRaw && productsMap[prodNameRaw.toLowerCase().trim()])
+                      || Object.values(productsMap).find(p => p.name && prodNameRaw && p.name.toLowerCase().trim() === prodNameRaw.toLowerCase().trim())
 
                     const prodName = prodNameRaw || dbProd?.name || 'Product Item'
                     const unitRaw = li.unit || li.unitLabel || (dbProd?.unit || '')
-                    // FIX: widened field-name fallbacks so a schema mismatch (bagWeight vs
-                    // pack_weight etc.) on the line item or fetched product doesn't silently
-                    // default to 1 and drop the "50kg Bag" / "100ltr Drum" subtext.
                     const bagWeight = parseFloat(
                       li.bag_weight ?? li.bagWeight ?? dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? 1
                     )

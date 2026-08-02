@@ -95,9 +95,16 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   // quote object/quote_number should mark this as a quotation.
   const isQuote = Boolean(!bill.id || quote.id || quote.quote_number)
 
-  const docId = isQuote
-    ? (quote.quote_number || `QT-${quote.id || '649067'}`)
-    : (bill.bill_number || (bill.id ? `INV-${String(bill.id).padStart(5, '0')}` : 'INV-10001'))
+  let docId = ''
+  if (isQuote) {
+    docId = quote.quote_number || `QT-${quote.id || '649067'}`
+  } else if (bill.bill_number) {
+    docId = bill.bill_number
+  } else if (bill.id) {
+    docId = `INV-${String(bill.id).padStart(5, '0')}`
+  } else {
+    docId = 'INV-10001'
+  }
 
   const orderId = bill.order_number || quote.order_number || ''
   const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
@@ -115,8 +122,9 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   const customerGstin = quote.customer_gstin || bill.customer_gstin || ''
   const customerPhone = quote.customer_phone || bill.customer_phone || ''
   const customerCompany = quote.customer_company || bill.customer_company || ''
+  const custStateStr = quote.customer_state ? `, ${quote.customer_state}` : ''
   const customerAddress = quote.customer_address || bill.customer_address ||
-    (quote.customer_city ? `${quote.customer_city}${quote.customer_state ? `, ${quote.customer_state}` : ''}` : '')
+    (quote.customer_city ? (quote.customer_city + custStateStr) : '')
 
   const doc = { ...quote, ...bill }
   const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
@@ -149,9 +157,7 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   }
 
   let effectiveTaxRate = 0
-  if (explicitTaxRate === 0) {
-    effectiveTaxRate = 0
-  } else if (taxAmt > 0 && baseForTax > 0) {
+  if (taxAmt > 0 && baseForTax > 0) {
     effectiveTaxRate = Math.round((taxAmt / baseForTax) * 100)
   } else if (explicitTaxRate > 0) {
     effectiveTaxRate = explicitTaxRate
@@ -178,14 +184,14 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     const price = parseFloat(li.price || li.rate || 0)
     const disc = parseFloat(li.discount || 0)
     const lineTotalGross = price * qty
-    const itemDisc = disc > 0
-      ? disc
-      : (totalDiscount > 0
-        ? (items.length === 1
-          ? totalDiscount
-          : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
-        )
-        : 0)
+    let itemDisc = 0
+    if (disc > 0) {
+      itemDisc = disc
+    } else if (totalDiscount > 0) {
+      itemDisc = items.length === 1
+        ? totalDiscount
+        : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
+    }
 
     const lineTotal = Math.max(0, lineTotalGross - disc)
     const pId = li.product_id || li.productId || li.id
@@ -261,6 +267,26 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     </div>
   `
 
+  let gstinPart = ''
+  if (companyGstin) {
+    const dotStr = companyPhone ? '· ' : ''
+    gstinPart = `${dotStr}GSTIN: ${companyGstin.toUpperCase()}`
+  }
+
+  let validUntilHtml = ''
+  if (isQuote) {
+    validUntilHtml = `Valid Until: <strong>${dueDate}</strong><br/>`
+  } else if (doc.due_date) {
+    validUntilHtml = `Due: <strong>${fmtDate(doc.due_date)}</strong><br/>`
+  }
+
+  let validOrGstinBox = ''
+  if (isQuote) {
+    validOrGstinBox = `<div><span class="meta-lbl">Valid Until</span><span class="meta-val">${dueDate}</span></div>`
+  } else if (companyGstin) {
+    validOrGstinBox = `<div><span class="meta-lbl">Company GSTIN</span><span class="meta-val">${companyGstin.toUpperCase()}</span></div>`
+  }
+
   const barcodePart = String(docId).replace(/\D/g, '') || '112157195020'
 
   return `<!DOCTYPE html>
@@ -276,16 +302,19 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     .banner { background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 60%,#3d68f5 100%); padding:36px 44px 32px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; color:#fff; }
     .banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; background:rgba(255,255,255,0.12); border-radius:50%; }
     .banner::after  { content:''; position:absolute; bottom:-60px; right:60px; width:130px; height:130px; background:rgba(255,255,255,0.08); border-radius:50%; }
-    .bl { position:relative; z-index:1; }
-    .br { text-align:right; position:relative; z-index:1; }
-    .co-name { font-size:24px; font-weight:800; color:#fff; margin-bottom:6px; letter-spacing:-0.03em; }
-    .co-meta  { font-size:12.5px; color:rgba(255,255,255,0.85); line-height:1.6; }
-    .inv-lbl  { font-size:11px; font-weight:800; color:rgba(255,255,255,0.75); letter-spacing:0.18em; text-transform:uppercase; margin-bottom:6px; }
-    .inv-num  { font-size:30px; font-weight:900; color:#fff; line-height:1.1; margin-bottom:8px; }
-    .inv-meta { font-size:12px; color:rgba(255,255,255,0.9); line-height:1.7; }
-    .body { padding:28px 40px; }
-    .sec { font-size:12px; font-weight:800; color:#334155; text-transform:uppercase; letter-spacing:0.05em; margin:20px 0 10px; border-bottom:1px solid #e2e8f0; padding-bottom:4px; }
-    .meta-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:12px 16px; font-size:12px; margin-bottom:16px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff; color: #1e293b; font-size: 12px; line-height: 1.4; }
+    .page { padding: 32px; max-width: 800px; margin: 0 auto; }
+    .banner { background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: #fff; padding: 24px 28px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: flex-start; }
+    .co-name { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; }
+    .co-meta { font-size: 11px; opacity: 0.9; line-height: 1.5; }
+    .br { text-align: right; }
+    .inv-lbl { font-size: 12px; font-weight: 800; letter-spacing: 0.1em; opacity: 0.8; margin-bottom: 2px; }
+    .inv-num { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+    .inv-meta { font-size: 11px; opacity: 0.85; margin-top: 6px; }
+    .body { border: 1px solid #cbd5e1; border-top: none; border-radius: 0 0 8px 8px; padding: 24px 28px; }
+    .sec { font-size: 11px; font-weight: 800; color: #475569; letter-spacing: 0.05em; margin-bottom: 12px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; }
     .meta-lbl { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; display:block; margin-bottom:2px; }
     .meta-val { font-weight:700; color:#0f172a; }
     .addr-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
@@ -309,7 +338,7 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
       <div class="co-meta">
         ${companyAddress ? companyAddress + '<br/>' : ''}
         ${companyPhone ? 'Phone: ' + companyPhone + ' ' : ''}
-        ${companyGstin ? (companyPhone ? '· ' : '') + 'GSTIN: ' + companyGstin.toUpperCase() : ''}
+        ${gstinPart}
         ${!companyGstin ? 'Official Supplier &amp; Goods Provider' : ''}
       </div>
     </div>
@@ -318,10 +347,7 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
       <div class="inv-num">${docId}</div>
       <div class="inv-meta">
         Date: <strong>${issueDate}</strong><br/>
-        ${isQuote
-      ? `Valid Until: <strong>${dueDate}</strong><br/>`
-      : (doc.due_date ? `Due: <strong>${fmtDate(doc.due_date)}</strong><br/>` : '')
-    }
+        ${validUntilHtml}
       </div>
     </div>
   </div>
@@ -334,10 +360,7 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
       <div><span class="meta-lbl">${isQuote ? 'Quotation No' : 'Invoice No'}</span><span class="meta-val">${docId}</span></div>
       ${orderId ? `<div><span class="meta-lbl">Order No</span><span class="meta-val" style="color:#2563eb;font-weight:800">${orderId}</span></div>` : ''}
       <div><span class="meta-lbl">Generated Date</span><span class="meta-val">${issueDate}</span></div>
-      ${isQuote
-      ? `<div><span class="meta-lbl">Valid Until</span><span class="meta-val">${dueDate}</span></div>`
-      : (companyGstin ? `<div><span class="meta-lbl">Company GSTIN</span><span class="meta-val">${companyGstin.toUpperCase()}</span></div>` : '')
-    }
+      ${validOrGstinBox}
       <div><span class="meta-lbl">Document Type</span><span class="meta-val">${docTypeTitle}</span></div>
     </div>
 

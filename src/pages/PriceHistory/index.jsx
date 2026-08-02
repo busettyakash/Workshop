@@ -621,7 +621,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                               let unitLabel = ''
 
                               if (notes) {
-                                const matchUnit = notes.match(/(?:Deducted|Added|Adjusted|Imported)\s+[\d\.]+\s+([A-Za-z]+)/i)
+                                const matchUnit = notes.match(/(?:Deducted|Added|Adjusted|Imported)\s+\d+(?:\.\d+)?\s+([a-z]+)/i)
                                 if (matchUnit && matchUnit[1]) {
                                   const u = matchUnit[1].trim()
                                   if (['bag', 'bags', 'kg', 'kgs', 'ltr', 'ltrs', 'box', 'boxes', 'pc', 'pcs', 'roll', 'rolls', 'drum', 'drums'].includes(u.toLowerCase())) {

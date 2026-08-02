@@ -4,7 +4,6 @@ import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
-import { getOrSetCache, invalidateCachePattern } from '../lib/redisCache.js'
 
 
 const router = Router()
@@ -319,7 +318,6 @@ router.post('/', async (req, res) => {
         newLooseKg = +(totalBaseAfter % bw).toFixed(2)
       } else {
         newStock = totalBaseAfter
-        newLooseKg = 0
       }
 
       // Update products table
@@ -333,8 +331,16 @@ router.post('/', async (req, res) => {
         noteDetail = `Deducted ${qty} ${rawUnit} for bill creation`
       } else {
         const uomLower = (prod.unit || '').toLowerCase()
-        const containerLabel = uomLower.includes('liter') ? 'Drum' : uomLower.includes('meter') ? 'Roll' : uomLower.includes('box') || uomLower.includes('pc') ? 'Box' : 'Bag'
-        const baseShort = uomLower.includes('liter') ? 'ltr' : uomLower.includes('meter') ? 'mtr' : uomLower.includes('box') || uomLower.includes('pc') ? 'pc' : 'kg'
+        let containerLabel = 'Bag'
+        if (uomLower.includes('liter')) containerLabel = 'Drum'
+        else if (uomLower.includes('meter')) containerLabel = 'Roll'
+        else if (uomLower.includes('box') || uomLower.includes('pc')) containerLabel = 'Box'
+
+        let baseShort = 'kg'
+        if (uomLower.includes('liter')) baseShort = 'ltr'
+        else if (uomLower.includes('meter')) baseShort = 'mtr'
+        else if (uomLower.includes('box') || uomLower.includes('pc')) baseShort = 'pc'
+
         const totalBase = (qty * bw).toFixed(0)
         noteDetail = `Deducted ${qty} ${containerLabel} (${bw}${baseShort}) (${totalBase} ${baseShort}) for bill creation`
       }

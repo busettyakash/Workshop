@@ -2,7 +2,6 @@ import { Router } from 'express'
 import { query } from '../lib/db.js'
 import insforge from '../lib/insforge.js'
 import { requireAuth } from '../middleware/auth.js'
-import { getOrSetCache, invalidateCachePattern } from '../lib/redisCache.js'
 
 const router = Router()
 router.use(requireAuth)

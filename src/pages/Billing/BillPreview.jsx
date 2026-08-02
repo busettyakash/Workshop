@@ -22,39 +22,41 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuoteFl
   }
 
   const u = (uRaw || String(dbUnit || '')).toLowerCase().trim()
-
-  // Liquids (ltrs, ltr, litres, ml) ALWAYS show ltrs/ml (NEVER Drums!)
-  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'ltrs' }
-  }
-  if (['ml', 'milliliter', 'milliliters'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'ml' }
-  }
-
-  // Meters / Feet
-  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'mtrs' }
-  }
-
   let baseUnitLabel = uRaw || u || 'pcs'
   if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
+  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
+  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
 
   if (!isQuoteFlow) {
-    // Direct Bill Flow: Always show kgs, pcs!
-    return { displayQty: qty, displayUnit: baseUnitLabel }
+    // Direct Bill Flow: Always show kgs, pcs, no pack weight!
+    return { displayQty: qty, displayUnit: baseUnitLabel, subtext: baseUnitLabel }
   }
 
-  // Quote / Order Flow: Show Bags, Boxes, Rolls!
-  const PACK_NAMES = ['bag', 'bags', 'box', 'boxes', 'pack', 'packs', 'bundle', 'bundles', 'roll', 'rolls', 'dozen']
-  const dbU = String(dbUnit || '').trim()
-
-  if (u && PACK_NAMES.includes(u)) {
-    const baseName = u.replace(/s$/, '')
-    const capitalName = baseName.charAt(0).toUpperCase() + baseName.slice(1)
-    return { displayQty: qty, displayUnit: capitalName + (qty !== 1 ? 's' : '') }
+  // Quote Flow: Show pack weight in subtext!
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+    return {
+      displayQty: qty,
+      displayUnit: 'ltrs',
+      subtext: bw > 1 ? `${bw}ltr Drum` : 'ltrs'
+    }
   }
 
-  return { displayQty: qty, displayUnit: 'Bags' }
+  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+    return {
+      displayQty: qty,
+      displayUnit: 'mtrs',
+      subtext: bw > 1 ? `${bw}m Roll` : 'mtrs'
+    }
+  }
+
+  const packName = bw > 1 ? 'Bag' : 'Pack'
+  const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
+
+  return {
+    displayQty: qty,
+    displayUnit: 'Bags',
+    subtext: packSubtext
+  }
 }
 
 export default function BillPreview({ bill, quote, type, shopName, shopGstin, shopPhone, shopAddress, onClose }) {
@@ -371,9 +373,17 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
 
                     const prodName = prodNameRaw || dbProd?.name || 'Product Item'
                     const unitRaw = li.unit || li.unitLabel || (dbProd?.unit || '')
-                    const bagWeight = parseFloat(li.bag_weight || dbProd?.bag_weight || 1)
-                    const isQuoteFlow = (type === 'quote' || Boolean(quote))
-                    const { displayQty, displayUnit } = resolvePackDisplay(unitRaw, qty, bagWeight, dbProd?.unit, prodName, isQuoteFlow)
+                    // FIX: widened field-name fallbacks so a schema mismatch (bagWeight vs
+                    // pack_weight etc.) on the line item or fetched product doesn't silently
+                    // default to 1 and drop the "50kg Bag" / "100ltr Drum" subtext.
+                    const bagWeight = parseFloat(
+                      li.bag_weight ?? li.bagWeight ?? dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? 1
+                    )
+                    // FIX: this used to recompute its own isQuoteFlow with a different
+                    // string check (type === 'quote' vs the top-level type === 'quotation'),
+                    // so it could disagree with `isQuote` and silently drop the pack-weight
+                    // subtext. Reuse the single source of truth computed above instead.
+                    const { displayQty, displayUnit, subtext } = resolvePackDisplay(unitRaw, qty, bagWeight, dbProd?.unit, prodName, isQuote)
                     const rawHsn = li.hsn_code || li.hsn || li.sku || dbProd?.hsn_code || dbProd?.sku || ''
                     const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
                       ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
@@ -395,7 +405,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                         <td style={{ fontWeight: 600, color: '#475569', fontSize: 10, fontFamily: 'monospace' }}>{hsnCode}</td>
                         <td>
                           <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 11 }}>{prodName}</div>
-                          {displayUnit && <div style={{ fontSize: 10, color: '#64748b' }}>{displayUnit}</div>}
+                          {subtext && <div style={{ fontSize: 10, color: '#64748b' }}>{subtext}</div>}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11 }}>{displayQty} {displayUnit}</td>
                         <td className="text-right" style={{ fontWeight: 700, fontSize: 11 }}>{INR(lineTotal)}</td>

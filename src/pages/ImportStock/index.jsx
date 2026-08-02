@@ -513,12 +513,22 @@ export default function ImportStock() {
                           <td className="ws-td-price">
                             {(() => {
                               const bulkUnit = getBulkUnitDetails(row.unit)
-                              const uomShort = bulkUnit?.short || row.unit || 'kg'
+                              const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
                               const pc = parseFloat(row.price_covers || 0)
                               const bw = parseFloat(row.bag_weight || 1)
                               const rawP = parseFloat(row.price || 0)
-                              
-                              const priceVal = (pc > 0 && bw > 0 && pc !== bw) ? (rawP / bw) * pc : rawP
+
+                              let priceVal = rawP
+                              if (pc > 0 && pc !== bw) {
+                                if (bw > 1 && rawP < 2500) {
+                                  priceVal = (rawP / bw) * pc
+                                } else if (rawP > 500) {
+                                  priceVal = rawP
+                                } else if (bw > 0) {
+                                  priceVal = (rawP / bw) * pc
+                                }
+                              }
+
                               const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
 
                               return (
@@ -537,16 +547,35 @@ export default function ImportStock() {
                             {(() => {
                               if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
                               const bulkUnit = getBulkUnitDetails(row.unit)
-                              const uomShort = bulkUnit?.short || row.unit || 'kg'
+                              const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
                               const pc = parseFloat(row.price_covers || 0)
                               const bw = parseFloat(row.bag_weight || 1)
                               const rawP = parseFloat(row.price || 0)
                               const rawUP = parseFloat(row.updated_price || 0)
 
-                              const basePriceVal = (pc > 0 && bw > 0 && pc !== bw) ? (rawP / bw) * pc : rawP
-                              const updatedPriceVal = (pc > 0 && bw > 0 && rawUP < basePriceVal / 2) ? (rawUP / bw) * pc : rawUP
+                              let basePriceVal = rawP
+                              if (pc > 0 && pc !== bw) {
+                                if (bw > 1 && rawP < 2500) {
+                                  basePriceVal = (rawP / bw) * pc
+                                } else if (rawP > 500) {
+                                  basePriceVal = rawP
+                                } else if (bw > 0) {
+                                  basePriceVal = (rawP / bw) * pc
+                                }
+                              }
+
+                              let updatedPriceVal = rawUP
+                              if (pc > 0 && pc !== bw) {
+                                if (bw > 1 && rawUP < basePriceVal * 0.45) {
+                                  updatedPriceVal = (rawUP / bw) * pc
+                                } else {
+                                  updatedPriceVal = rawUP
+                                }
+                              }
+
                               const dateStr = row.updated_price_date ? formatIndianDateOnly(row.updated_price_date) : ''
-                              const subtext = dateStr ? `${dateStr} (${pc > 0 ? pc : bw} ${uomShort})` : (pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`))
+                              const effCover = pc > 0 ? pc : (bw > 1 ? bw : 1)
+                              const subtext = dateStr ? `${dateStr} (${effCover} ${uomShort})` : (pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`))
 
                               const isUp = updatedPriceVal > basePriceVal
                               const isDrop = updatedPriceVal < basePriceVal

@@ -19,20 +19,23 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const customerPhone = quote?.customer_phone || bill?.customer_phone || ''
   const customerCompany = quote?.customer_company || bill?.customer_company || ''
 
-  const invNum = bill?.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill?.id || 1) * 899999))}`
+  const invNum = bill?.bill_number || quote?.quote_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill?.id || 1) * 899999))}`
   const orderNum = bill?.order_number || quote?.order_number || ''
   const totalAmount = parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
   const taxAmt = parseFloat(quote?.tax_amount || 0)
+
+  // FIX: isQuoteFlow was reading an undefined `data` variable, which threw a
+  // ReferenceError every time this ran. It should be based on the `quote` param.
+  const isQuoteFlow = Boolean(quote && (quote.quote_number || quote.id || !bill))
 
   const items = (billItems && billItems.length > 0) ? billItems : (quote?.line_items || [])
   let itemsList = []
   if (Array.isArray(items)) {
     itemsList = items
   } else if (typeof items === 'string') {
-    try { itemsList = JSON.parse(items) } catch {}
+    try { itemsList = JSON.parse(items) } catch { }
   }
 
-  let lineDiscountsSum = 0
   const totalDiscountVal = parseFloat(bill?.discount || bill?.discount_amount || quote?.discount || 0)
   const grossSubtotalVal = itemsList.reduce((s, it) => s + (parseFloat(it.price || it.rate || 0) * parseFloat(it.quantity || it.qty || 1)), 0)
   const netTaxableVal = Math.max(1, grossSubtotalVal - totalDiscountVal)
@@ -45,6 +48,15 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     effectiveRate = Math.round((realTaxAmt / netTaxableVal) * 100)
   }
   const halfRate = effectiveRate > 0 ? (effectiveRate / 2).toFixed(2).replace(/\.00$/, '') : '9'
+
+  // FIX: moved these totals ABOVE rowsHtml. Previously `subtotal` was declared
+  // with `const` further down in the file but referenced inside the rowsHtml
+  // map callback above it — a temporal-dead-zone ReferenceError, since the
+  // map callback runs immediately when `.map()` is called.
+  const billDisc = !isNaN(parseFloat(bill?.discount)) ? parseFloat(bill.discount) : 0
+  const quoteDisc = !isNaN(parseFloat(quote?.discount)) ? parseFloat(quote.discount) : 0
+  const grossTotal = grossSubtotalVal
+  const diffDisc = grossTotal > totalAmount ? (grossTotal - totalAmount) : 0
 
   function resolvePackDisplay(rawUnit, qty, bagWeight, prodName, isQuoteFlow = false) {
     const bw = parseFloat(bagWeight || 1)
@@ -63,41 +75,44 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     }
 
     const u = uRaw.toLowerCase().trim()
-
-    // Liquids (ltrs, ltr, litres, ml) ALWAYS show ltrs/ml (NEVER Drums!)
-    if (['litres','litre','ltr','ltrs','liter','liters','l'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'ltrs' }
-    }
-    if (['ml','milliliter','milliliters'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'ml' }
-    }
-
-    // Meters / Feet
-    if (['meters','meter','mtr','mtrs','m'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'mtrs' }
-    }
-
     let baseUnitLabel = uRaw || u || 'pcs'
-    if (['kgs','kg','kilogram','kilograms'].includes(u)) baseUnitLabel = 'kgs'
+    if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
+    else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
+    else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
 
     if (!isQuoteFlow) {
-      // Direct Bill Flow: Always show kgs, pcs!
-      return { displayQty: qty, displayUnit: baseUnitLabel }
+      // Direct Bill Flow: Always show kgs, pcs, no pack weight!
+      return { displayQty: qty, displayUnit: baseUnitLabel, subtext: baseUnitLabel }
     }
 
-    // Quote / Order Flow: Show Bags, Boxes, Rolls!
-    const PACK_NAMES = ['bag','bags','box','boxes','pack','packs','bundle','bundles','roll','rolls','dozen']
-
-    if (u && PACK_NAMES.includes(u)) {
-      const baseName = u.replace(/s$/, '')
-      const capitalName = baseName.charAt(0).toUpperCase() + baseName.slice(1)
-      return { displayQty: qty, displayUnit: capitalName + (qty !== 1 ? 's' : '') }
+    // Quote Flow: Show pack weight in subtext!
+    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+      return {
+        displayQty: qty,
+        displayUnit: 'ltrs',
+        subtext: bw > 1 ? `${bw}ltr Drum` : 'ltrs'
+      }
     }
 
-    return { displayQty: qty, displayUnit: 'Bags' }
+    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+      return {
+        displayQty: qty,
+        displayUnit: 'mtrs',
+        subtext: bw > 1 ? `${bw}m Roll` : 'mtrs'
+      }
+    }
+
+    const packName = bw > 1 ? 'Bag' : 'Pack'
+    const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
+
+    return {
+      displayQty: qty,
+      displayUnit: 'Bags',
+      subtext: packSubtext
+    }
   }
 
-  const isQuoteFlow = Boolean(data.isQuote || data.quote_number || data.quote_id)
+  let lineDiscountsSum = 0
 
   const rowsHtml = itemsList.length > 0 ? itemsList.map(item => {
     const qty = parseFloat(item.quantity || item.qty || 1)
@@ -108,16 +123,22 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     const itemDisc = disc > 0
       ? disc
       : (totalDiscountVal > 0
-          ? (itemsList.length === 1 
-              ? totalDiscountVal 
-              : Math.round(((lineTotalGross / (subtotal || 1)) * totalDiscountVal) * 100) / 100
-            )
-          : 0)
+        ? (itemsList.length === 1
+          ? totalDiscountVal
+          : Math.round(((lineTotalGross / (grossTotal || 1)) * totalDiscountVal) * 100) / 100
+        )
+        : 0)
 
-    const bw = parseFloat(item.bag_weight || 1)
+    // FIX: check several likely field-name variants for bag/pack weight so a
+    // schema naming mismatch (bag_weight vs bagWeight vs pack_weight) doesn't
+    // silently fall back to 1 and lose the "50kg Bag" / "100ltr Drum" subtext.
+    const bw = parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? 1)
     const prodName = item.product_name || item.name || item.productName || 'Product Item'
 
-    const { displayQty, displayUnit } = resolvePackDisplay(item.unit || item.unitLabel, qty, bw, prodName, isQuoteFlow)
+    // FIX: hsnCode was referenced but never defined anywhere — pull it from the item.
+    const hsnCode = item.hsn_code || item.hsnCode || item.hsn || ''
+
+    const { displayQty, displayUnit, subtext } = resolvePackDisplay(item.unit || item.unitLabel, qty, bw, prodName, isQuoteFlow)
     const qtyMain = `${displayQty} ${displayUnit}`.trim()
     const qtySub = (bw > 1 && !displayUnit.toLowerCase().includes('kg')) ? `(${bw}kg)` : ''
 
@@ -126,7 +147,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
         <td style="padding:10px 12px; font-size:12px; font-weight:600; color:#475569; border:1px solid #cbd5e1; font-family:monospace;">${escapeHtml(hsnCode)}</td>
         <td style="padding:10px 12px; font-size:12.5px; border:1px solid #cbd5e1;">
           <div style="font-weight:700; color:#0f172a;">${escapeHtml(prodName)}</div>
-          ${unitStr ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(unitStr)}</div>` : ''}
+          ${subtext ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
         </td>
         <td align="center" style="padding:10px 12px; font-size:12px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center;">
           <div>${escapeHtml(qtyMain)}</div>
@@ -145,16 +166,6 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     </tr>
   `
 
-  const billDisc = !isNaN(parseFloat(bill?.discount)) ? parseFloat(bill.discount) : 0
-  const quoteDisc = !isNaN(parseFloat(quote?.discount)) ? parseFloat(quote.discount) : 0
-
-  const grossTotal = itemsList.reduce((acc, item) => {
-    const q = parseFloat(item.quantity || item.qty || 1)
-    const p = parseFloat(item.price || item.rate || 0)
-    return acc + (q * p)
-  }, 0)
-
-  const diffDisc = grossTotal > totalAmount ? (grossTotal - totalAmount) : 0
   const discountAmt = Math.max(lineDiscountsSum, billDisc, quoteDisc, diffDisc)
   const subtotal = grossTotal > 0 ? grossTotal : (totalAmount + discountAmt - taxAmt)
 
@@ -164,16 +175,19 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const dateStr = bill?.created_at
     ? new Date(bill.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
     : new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-  
+
   const dueDateObj = bill?.due_date ? new Date(bill.due_date) : new Date(Date.now() + 15 * 86400000)
   const dueDateStr = dueDateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  const docLabel = isQuoteFlow ? 'QUOTATION' : 'TAX INVOICE'
+  const docNoLabel = isQuoteFlow ? 'QUOTATION NO' : 'INVOICE NO'
 
   return `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tax Invoice #${escapeHtml(invNum)}</title>
+    <title>${escapeHtml(docLabel)} #${escapeHtml(invNum)}</title>
     <style>
       body { margin: 0; padding: 20px 10px; background: #f1f5f9; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; text-align: left; }
       .invoice-card { max-width: 760px; margin: 0 auto; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; text-align: left; }
@@ -206,11 +220,11 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
               </div>
             </td>
             <td align="right" valign="top" style="text-align:right;">
-              <div style="font-size:11px; font-weight:800; color:rgba(255,255,255,0.7); letter-spacing:0.18em; text-transform:uppercase; margin-bottom:2px;">TAX INVOICE</div>
+              <div style="font-size:11px; font-weight:800; color:rgba(255,255,255,0.7); letter-spacing:0.18em; text-transform:uppercase; margin-bottom:2px;">${escapeHtml(docLabel)}</div>
               <div style="font-size:28px; font-weight:900; color:#ffffff; line-height:1.1; margin-bottom:6px;">${escapeHtml(invNum)}</div>
               <div style="font-size:12px; color:rgba(255,255,255,0.85); line-height:1.6;">
                 Date: <strong>${escapeHtml(dateStr)}</strong><br />
-                Due: <strong>${escapeHtml(dueDateStr)}</strong>
+                ${isQuoteFlow ? 'Valid Until' : 'Due'}: <strong>${escapeHtml(dueDateStr)}</strong>
               </div>
             </td>
           </tr>
@@ -220,12 +234,12 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
       <!-- ── DOCUMENT BODY ── -->
       <div style="padding:28px 32px;">
 
-        <!-- 1. INVOICE DETAILS (MATCHING IMAGE 1 EXACTLY) -->
-        <div class="sec-title">1. INVOICE DETAILS</div>
+        <!-- 1. DETAILS -->
+        <div class="sec-title">1. ${escapeHtml(docLabel)} DETAILS</div>
         <table class="details-grid">
           <tr>
             <td width="${orderNum ? '25%' : '33%'}">
-              <div class="lbl">INVOICE NO</div>
+              <div class="lbl">${escapeHtml(docNoLabel)}</div>
               <div class="val">${escapeHtml(invNum)}</div>
             </td>
             ${orderNum ? `
@@ -239,8 +253,8 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
               <div class="val">${escapeHtml(dateStr)}</div>
             </td>
             <td width="${orderNum ? '25%' : '34%'}" style="border-right:none;">
-              <div class="lbl">COMPANY GSTIN</div>
-              <div class="val">${sellerGstin ? escapeHtml(sellerGstin).toUpperCase() : '—'}</div>
+              <div class="lbl">${isQuoteFlow ? 'VALID UNTIL' : 'COMPANY GSTIN'}</div>
+              <div class="val">${isQuoteFlow ? escapeHtml(dueDateStr) : (sellerGstin ? escapeHtml(sellerGstin).toUpperCase() : '—')}</div>
             </td>
           </tr>
         </table>
@@ -286,15 +300,15 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
           </tbody>
         </table>
 
-        <!-- ── TOTALS SUMMARY ROW GRID (MATCHING IMAGE 1 EXACTLY) ── -->
+        <!-- ── TOTALS SUMMARY ROW GRID ── -->
         ${(() => {
-          const hasTax = taxAmt > 0
-          const hasDisc = discountAmt > 0
-          let w = '50%'
-          if (hasTax && hasDisc) w = '20%'
-          else if (hasTax || hasDisc) w = '33.33%'
+      const hasTax = taxAmt > 0
+      const hasDisc = discountAmt > 0
+      let w = '50%'
+      if (hasTax && hasDisc) w = '20%'
+      else if (hasTax || hasDisc) w = '33.33%'
 
-          return `
+      return `
           <table class="summary-table" style="table-layout:fixed;">
             <tr>
               <td width="${w}" style="padding:10px 8px;">
@@ -318,13 +332,13 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
               </td>
               ` : ''}
               <td width="${w}" style="padding:10px 8px; background:#0f172a; color:#ffffff; border-right:none;">
-                <div style="font-size:9.5px; font-weight:800; color:#94a3b8; text-transform:uppercase;">TOTAL INV.AMT</div>
+                <div style="font-size:9.5px; font-weight:800; color:#94a3b8; text-transform:uppercase;">TOTAL ${isQuoteFlow ? 'QUOTE' : 'INV'}.AMT</div>
                 <div style="font-size:13px; font-weight:900; color:#ffffff; margin-top:2px;">₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
               </td>
             </tr>
           </table>
           `
-        })()}
+    })()}
 
         <!-- BARCODE -->
         <div style="text-align:center; margin:20px 0 10px;">
@@ -373,7 +387,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
         </div>
 
         <div style="border-top:1px solid #e2e8f0; padding-top:14px; margin-top:14px; text-align:center; font-size:11px; color:#94a3b8; font-weight:600;">
-          Official GST Tax Invoice generated by <strong style="color:#64748b;">Workshop</strong> · ${escapeHtml(dateStr)}
+          Official GST ${isQuoteFlow ? 'Commercial Quotation' : 'Tax Invoice'} generated by <strong style="color:#64748b;">Workshop</strong> · ${escapeHtml(dateStr)}
         </div>
       </div>
     </div>

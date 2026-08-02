@@ -26,7 +26,6 @@ function fmtDate(d) {
   } catch { return String(d) }
 }
 
-// Maps base UOM strings to their pack/container name for display
 function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote = false) {
   const bw = parseFloat(bagWeight || 1)
   let uRaw = String(rawUnit || '').trim()
@@ -45,51 +44,56 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote =
 
   const u = (uRaw || String(dbUnit || '')).toLowerCase().trim()
 
-  // Liquids (ltrs, ltr, litres, ml) ALWAYS show ltrs/ml (NEVER Drums!)
-  if (['litres','litre','ltr','ltrs','liter','liters','l'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'ltrs' }
-  }
-  if (['ml','milliliter','milliliters'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'ml' }
-  }
-
-  // Meters / Feet
-  if (['meters','meter','mtr','mtrs','m'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'mtrs' }
-  }
-
   let baseUnitLabel = uRaw || u || 'pcs'
-  if (['kgs','kg','kilogram','kilograms'].includes(u)) baseUnitLabel = 'kgs'
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
+  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
+  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
 
   if (!isQuote) {
-    // Direct Bill Flow: Always show kgs, pcs!
-    return { displayQty: qty, displayUnit: baseUnitLabel }
+    // Normal Bill Flow: No pack weight subtext!
+    return { displayQty: qty, displayUnit: baseUnitLabel, subtext: baseUnitLabel }
   }
 
-  // Quote / Order Flow: Show Bags, Boxes, Rolls!
-  const PACK_NAMES = ['bag','bags','box','boxes','pack','packs','bundle','bundles','roll','rolls','dozen']
-  const dbU = String(dbUnit || '').trim()
-
-  if (u && PACK_NAMES.includes(u)) {
-    const baseName = u.replace(/s$/, '')
-    const capitalName = baseName.charAt(0).toUpperCase() + baseName.slice(1)
-    return { displayQty: qty, displayUnit: capitalName + (qty !== 1 ? 's' : '') }
+  // Quote Flow: Show pack weight in subtext!
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+    return {
+      displayQty: qty,
+      displayUnit: 'ltrs',
+      subtext: bw > 1 ? `${bw}ltr Drum` : 'ltrs'
+    }
   }
 
-  if (dbU && PACK_NAMES.includes(dbU.toLowerCase())) {
-    const baseName = dbU.toLowerCase().replace(/s$/, '')
-    const capitalName = baseName.charAt(0).toUpperCase() + baseName.slice(1)
-    return { displayQty: qty, displayUnit: capitalName + (qty !== 1 ? 's' : '') }
+  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+    return {
+      displayQty: qty,
+      displayUnit: 'mtrs',
+      subtext: bw > 1 ? `${bw}m Roll` : 'mtrs'
+    }
   }
 
-  return { displayQty: qty, displayUnit: 'Bags' }
+  const packName = bw > 1 ? 'Bag' : 'Pack'
+  const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
+
+  return {
+    displayQty: qty,
+    displayUnit: 'Bags',
+    subtext: packSubtext
+  }
 }
 
 // ─────────────────────────────────────────────
 // HTML Builder  (mirrors BillPreview.jsx exactly)
 // ─────────────────────────────────────────────
 function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {} } = {}) {
-  const isQuote = Boolean(!bill.id || quote.id || quote.quote_number || bill.quote_id || bill.order_number || bill.order_id)
+  // FIX: this previously also flagged isQuote=true whenever bill.quote_id,
+  // bill.order_number, or bill.order_id were set. But real tax invoices almost
+  // always have an order number attached (they came from a customer order) —
+  // that alone doesn't make them a quotation. That mismatch is why real
+  // invoices linked to an order were showing quote-style pack-weight subtext
+  // in the PDF while the on-screen BillPreview (which never checked
+  // bill.order_number) correctly rendered them as plain bills. Only an actual
+  // quote object/quote_number should mark this as a quotation.
+  const isQuote = Boolean(!bill.id || quote.id || quote.quote_number)
 
   const docId = isQuote
     ? (quote.quote_number || `QT-${quote.id || '649067'}`)
@@ -177,11 +181,11 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     const itemDisc = disc > 0
       ? disc
       : (totalDiscount > 0
-          ? (items.length === 1 
-              ? totalDiscount 
-              : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
-            )
-          : 0)
+        ? (items.length === 1
+          ? totalDiscount
+          : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
+        )
+        : 0)
 
     const lineTotal = Math.max(0, lineTotalGross - disc)
     const pId = li.product_id || li.productId || li.id
@@ -193,8 +197,18 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     const prodName = prodNameRaw || dbProd?.name || 'Product Item'
     const rawUnit = li.unit || li.unitLabel || dbProd?.unit || ''
     const dbUnit = dbProd?.unit || ''
-    const bagWeight = parseFloat(li.bag_weight || dbProd?.bag_weight || 1)
-    const { displayQty, displayUnit } = resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote)
+    // FIX: widened field-name fallbacks (was only checking `bag_weight`), so a
+    // naming mismatch on the line item or catalog product doesn't silently
+    // default to 1 and drop the "50kg Bag" / "100ltr Drum" subtext.
+    const bagWeight = parseFloat(
+      li.bag_weight ?? li.bagWeight ?? dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? 1
+    )
+    // FIX: `subtext` was being computed by resolvePackDisplay but never
+    // destructured or rendered — the row below was showing `displayUnit`
+    // ("Bags" / "ltrs") in the subtitle line instead of the pack-weight
+    // subtext ("50kg Bag" / "100ltr Drum"). That's why the PDF always showed
+    // generic units with no weight, regardless of quote/bill mode.
+    const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote)
     const rawHsn = li.hsn_code || li.hsn || li.sku || dbProd?.hsn_code || dbProd?.sku || ''
     const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
       ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
@@ -204,7 +218,7 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
       <td style="font-weight:600;color:#475569;font-size:10px;font-family:monospace;padding:7px 10px;border:1px solid #cbd5e1">${hsnCode}</td>
       <td style="padding:7px 10px;border:1px solid #cbd5e1">
         <div style="font-weight:700;color:#0f172a;font-size:11px">${prodName}</div>
-        ${displayUnit ? `<div style="font-size:10px;color:#64748b">${displayUnit}</div>` : ''}
+        ${subtext ? `<div style="font-size:10px;color:#64748b">${subtext}</div>` : ''}
       </td>
       <td style="text-align:center;font-weight:600;padding:7px 10px;border:1px solid #cbd5e1;font-size:11px">${displayQty} ${displayUnit}</td>
       <td style="text-align:right;font-weight:700;padding:7px 10px;border:1px solid #cbd5e1;font-size:11px">${INR(lineTotal)}</td>
@@ -305,9 +319,9 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
       <div class="inv-meta">
         Date: <strong>${issueDate}</strong><br/>
         ${isQuote
-          ? `Valid Until: <strong>${dueDate}</strong><br/>`
-          : (doc.due_date ? `Due: <strong>${fmtDate(doc.due_date)}</strong><br/>` : '')
-        }
+      ? `Valid Until: <strong>${dueDate}</strong><br/>`
+      : (doc.due_date ? `Due: <strong>${fmtDate(doc.due_date)}</strong><br/>` : '')
+    }
       </div>
     </div>
   </div>
@@ -321,9 +335,9 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
       ${orderId ? `<div><span class="meta-lbl">Order No</span><span class="meta-val" style="color:#2563eb;font-weight:800">${orderId}</span></div>` : ''}
       <div><span class="meta-lbl">Generated Date</span><span class="meta-val">${issueDate}</span></div>
       ${isQuote
-        ? `<div><span class="meta-lbl">Valid Until</span><span class="meta-val">${dueDate}</span></div>`
-        : (companyGstin ? `<div><span class="meta-lbl">Company GSTIN</span><span class="meta-val">${companyGstin.toUpperCase()}</span></div>` : '')
-      }
+      ? `<div><span class="meta-lbl">Valid Until</span><span class="meta-val">${dueDate}</span></div>`
+      : (companyGstin ? `<div><span class="meta-lbl">Company GSTIN</span><span class="meta-val">${companyGstin.toUpperCase()}</span></div>` : '')
+    }
       <div><span class="meta-lbl">Document Type</span><span class="meta-val">${docTypeTitle}</span></div>
     </div>
 

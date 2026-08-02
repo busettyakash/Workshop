@@ -63,9 +63,21 @@ const getDisplayPrice = (rawP, bw, pc) => {
   const p = parseFloat(rawP)
   if (!rawP || isNaN(p) || p <= 0) return 0
   const bagW = parseFloat(bw) || 1
-  const priceC = parseFloat(pc) || 100
-  if (p > 1000 && bagW > 1 && (p / bagW) > 60) return p
-  return bagW > 0 ? (p / bagW) * priceC : p
+  const priceC = parseFloat(pc) || 0
+
+  if (priceC > 0 && priceC !== bagW && bagW > 0) {
+    // 1-bag prices (e.g. 1500 for 26kg bag, 1650 for 50kg bag) are < 3000
+    if (bagW > 1 && p < 3000) {
+      return (p / bagW) * priceC
+    }
+    // Coverage prices (e.g. 3300/3400 for 100kg, 6000/6150 for 104kg, 18500 for 100ltr)
+    if (p >= 3000) {
+      return p
+    }
+    return (p / bagW) * priceC
+  }
+
+  return p
 }
 
 const getItemPriceDetails = (rawP, bw, pc) => {
@@ -73,10 +85,16 @@ const getItemPriceDetails = (rawP, bw, pc) => {
   const p = parseFloat(rawP)
   if (isNaN(p) || p <= 0) return null
   const bagW = parseFloat(bw) || 1
-  const priceC = parseFloat(pc) || 100
+  const priceC = parseFloat(pc) || 0
+
   const price100 = getDisplayPrice(p, bagW, priceC)
-  const unitRate = bagW > 0 ? (price100 / priceC) : p
-  const packPrice = (p > 1000 && bagW > 1 && (p / bagW) > 60) ? (p / priceC) * bagW : p
+  const unitRate = (priceC > 0 && priceC !== bagW)
+    ? (price100 / priceC)
+    : (bagW > 0 ? (p / bagW) : p)
+  const packPrice = (priceC > 0 && priceC !== bagW && bagW > 0)
+    ? (price100 / priceC) * bagW
+    : p
+
   return { price100, unitRate, packPrice }
 }
 
@@ -195,9 +213,10 @@ function ProductPriceHistoryDetail({ product, onBack }) {
   const basePriceVal = (pc > 0 && bagWeight > 0 && pc !== bagWeight) ? (rawP / bagWeight) * pc : rawP
   const updatedPriceVal = rawUP > 0 ? ((pc > 0 && bagWeight > 0 && rawUP < basePriceVal / 2) ? (rawUP / bagWeight) * pc : rawUP) : basePriceVal
 
-  const perUnitRate = (pc > 0 && bagWeight > 0 && pc !== bagWeight)
-    ? (basePriceVal / pc)
-    : (bagWeight > 0 ? (rawP / bagWeight) : rawP)
+  const activeCoveragePrice = (product.updated_price && updatedPriceVal > 0) ? updatedPriceVal : basePriceVal
+  const perUnitRate = (pc > 0)
+    ? (activeCoveragePrice / pc)
+    : (bagWeight > 0 ? (activeCoveragePrice / bagWeight) : activeCoveragePrice)
 
   const unitPrice = perUnitRate.toFixed(2)
   const latestLog = history.find(h => h.notes !== 'Initial Base Price') || history[0]
@@ -426,10 +445,10 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                   <tbody>
                     {history.map((row, idx) => {
                       const bw = parseFloat(bagWeight || 1)
-                      const pc = parseFloat(product.price_covers || 100)
+                      const pc = parseFloat(product.price_covers || 0)
                       const uomShort = bulkUnit?.short || product.unit || 'unit'
 
-                      const currDetails = getItemPriceDetails(row.new_price, bw, pc)
+                      const currDetails = getItemPriceDetails(row.new_price, bw, pc, basePriceVal)
 
                       let oldRaw = row.old_price !== null && row.old_price !== undefined ? row.old_price : null
                       if ((oldRaw === null || oldRaw === row.new_price) && idx < history.length - 1) {
@@ -438,7 +457,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                           oldRaw = nextOldItem.new_price
                         }
                       }
-                      const prevDetails = getItemPriceDetails(oldRaw, bw, pc)
+                      const prevDetails = getItemPriceDetails(oldRaw, bw, pc, basePriceVal)
 
                       const diff100 = (currDetails && prevDetails) ? (currDetails.price100 - prevDetails.price100) : 0
                       const diffPack = (currDetails && prevDetails) ? (currDetails.packPrice - prevDetails.packPrice) : 0
@@ -909,10 +928,23 @@ export default function PriceHistory() {
                                 <td>
                                   {(() => {
                                     const bulkUnit = getBulkUnitDetails(row.unit)
-                                    const uomShort = bulkUnit?.short || row.unit || 'kg'
-                                    const pc = parseFloat(row.price_covers || 100)
+                                    const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
+                                    const pc = parseFloat(row.price_covers || 0)
                                     const bw = parseFloat(row.bag_weight || 1)
-                                    const priceVal = getDisplayPrice(row.price, bw, pc)
+                                    const rawP = parseFloat(row.price || 0)
+
+                                    let priceVal = rawP
+                                    if (pc > 0 && pc !== bw) {
+                                      if (bw > 1 && rawP < 2500) {
+                                        priceVal = (rawP / bw) * pc
+                                      } else if (rawP > 500) {
+                                        priceVal = rawP
+                                      } else if (bw > 0) {
+                                        priceVal = (rawP / bw) * pc
+                                      }
+                                    }
+
+                                    const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
 
                                     return (
                                       <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -920,7 +952,7 @@ export default function PriceHistory() {
                                           {formatINR(priceVal)}
                                         </span>
                                         <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                          {pc} {uomShort} price
+                                          {subtext}
                                         </span>
                                       </div>
                                     )
@@ -930,13 +962,37 @@ export default function PriceHistory() {
                                   {(() => {
                                     if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
                                     const bulkUnit = getBulkUnitDetails(row.unit)
-                                    const uomShort = bulkUnit?.short || row.unit || 'kg'
-                                    const pc = parseFloat(row.price_covers || 100)
+                                    const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
+                                    const pc = parseFloat(row.price_covers || 0)
                                     const bw = parseFloat(row.bag_weight || 1)
-                                    const updatedPriceVal = getDisplayPrice(row.updated_price, bw, pc)
+                                    const rawP = parseFloat(row.price || 0)
+                                    const rawUP = parseFloat(row.updated_price || 0)
 
-                                    const isUp = updatedPriceVal > getDisplayPrice(row.price, bw, pc)
-                                    const isDrop = updatedPriceVal < getDisplayPrice(row.price, bw, pc)
+                                    let basePriceVal = rawP
+                                    if (pc > 0 && pc !== bw) {
+                                      if (bw > 1 && rawP < 2500) {
+                                        basePriceVal = (rawP / bw) * pc
+                                      } else if (rawP > 500) {
+                                        basePriceVal = rawP
+                                      } else if (bw > 0) {
+                                        basePriceVal = (rawP / bw) * pc
+                                      }
+                                    }
+
+                                    let updatedPriceVal = rawUP
+                                    if (pc > 0 && pc !== bw) {
+                                      if (bw > 1 && rawUP < basePriceVal * 0.45) {
+                                        updatedPriceVal = (rawUP / bw) * pc
+                                      } else {
+                                        updatedPriceVal = rawUP
+                                      }
+                                    }
+
+                                    const effCover = pc > 0 ? pc : (bw > 1 ? bw : 1)
+                                    const subtext = updatedDateFormatted ? `${updatedDateFormatted} (${effCover} ${uomShort})` : (pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`))
+
+                                    const isUp = updatedPriceVal > basePriceVal
+                                    const isDrop = updatedPriceVal < basePriceVal
                                     const textColor = isDrop ? '#dc2626' : (isUp ? '#10b981' : '#475569')
 
                                     return (
@@ -945,7 +1001,7 @@ export default function PriceHistory() {
                                           {formatINR(updatedPriceVal)}
                                         </span>
                                         <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                          {updatedDateFormatted} ({pc} {uomShort})
+                                          {subtext}
                                         </span>
                                       </div>
                                     )

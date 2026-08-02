@@ -57,27 +57,31 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     const u = uRaw.toLowerCase().trim()
 
     // Liquids (ltrs, ltr, litres, ml) ALWAYS show ltrs/ml (NEVER Drums!)
-    if (['litres','litre','ltr','ltrs','liter','liters','l'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'ltrs' }
-    }
-    if (['ml','milliliter','milliliters'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'ml' }
+    if (['litres','litre','ltr','ltrs','liter','liters','l','ml'].includes(u)) {
+      return { 
+        displayQty: qty, 
+        displayUnit: 'ltrs',
+        subtext: bw > 1 ? `${bw}ltr Drum` : 'ltrs'
+      }
     }
 
     // Meters / Feet
     if (['meters','meter','mtr','mtrs','m'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'mtrs' }
+      return { 
+        displayQty: qty, 
+        displayUnit: 'mtrs',
+        subtext: bw > 1 ? `${bw}m Roll` : 'mtrs'
+      }
     }
 
-    const PACK_NAMES = ['bag','bags','box','boxes','pack','packs','bundle','bundles','roll','rolls','dozen']
+    const packName = bw > 1 ? 'Bag' : 'Pack'
+    const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
 
-    if (u && PACK_NAMES.includes(u)) {
-      const baseName = u.replace(/s$/, '')
-      const capitalName = baseName.charAt(0).toUpperCase() + baseName.slice(1)
-      return { displayQty: qty, displayUnit: capitalName + (qty !== 1 ? 's' : '') }
+    return { 
+      displayQty: qty, 
+      displayUnit: 'Bags',
+      subtext: packSubtext
     }
-
-    return { displayQty: qty, displayUnit: 'Bags' }
   }
 
   // Generate table rows matching PDF layout
@@ -98,7 +102,7 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     const lineTotal = Math.max(0, lineTotalGross - disc)
     const bw = parseFloat(li.bag_weight || 1)
     const rawUnit = li.unit || li.unitLabel || ''
-    const { displayQty, displayUnit } = resolvePackDisplay(rawUnit, qty, bw)
+    const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw)
 
     const rawHsn = li.hsn_code || li.hsn || li.sku || ''
     const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-') 
@@ -111,7 +115,7 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
         <td style="padding:10px 12px; font-size:12px; font-weight:600; color:#475569; border:1px solid #cbd5e1; font-family:monospace;">${escapeHtml(hsnCode)}</td>
         <td style="padding:10px 12px; font-size:12.5px; border:1px solid #cbd5e1;">
           <div style="font-weight:700; color:#0f172a;">${escapeHtml(prodName)}</div>
-          ${displayUnit ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(displayUnit)}</div>` : ''}
+          ${subtext ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
         </td>
         <td align="center" style="padding:10px 12px; font-size:12px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center;">
           ${displayQty ? `${displayQty} ${displayUnit}` : displayUnit}

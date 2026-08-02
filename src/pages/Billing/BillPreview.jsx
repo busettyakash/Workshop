@@ -182,11 +182,11 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   const baseForTax = Math.max(0, subtotal - explicitDiscount)
 
   let taxAmt = 0
-  if (hasExplicitTaxAmt) {
+  if (explicitTaxAmt > 0) {
     taxAmt = explicitTaxAmt
   } else if (explicitTaxRate !== null && explicitTaxRate > 0) {
     taxAmt = baseForTax * (explicitTaxRate / 100)
-  } else if (totalAmount > baseForTax + 0.5 && explicitDiscount === 0 && lineDiscounts === 0) {
+  } else if (totalAmount > baseForTax + 0.01) {
     taxAmt = totalAmount - baseForTax
   }
 
@@ -473,6 +473,18 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
 
               {/* Totals Summary Row Box */}
               <div className="totals-summary-grid">
+                {totalDiscount > 0 && (
+                  <>
+                    <div className="summary-cell">
+                      <label>Gross Subtotal</label>
+                      <span>{INR(grossSubtotal)}</span>
+                    </div>
+                    <div className="summary-cell" style={{ background: '#fef2f2', borderColor: '#fecaca' }}>
+                      <label style={{ color: '#991b1b' }}>Total Discount</label>
+                      <span style={{ color: '#dc2626', fontWeight: 800 }}>- {INR(totalDiscount)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="summary-cell">
                   <label>Tot. Tax'ble Amt</label>
                   <span>{INR(subtotal)}</span>
@@ -488,12 +500,6 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                       <span>{INR(sgst)}</span>
                     </div>
                   </>
-                )}
-                {totalDiscount > 0 && (
-                  <div className="summary-cell" style={{ background: '#fef2f2', borderColor: '#fecaca' }}>
-                    <label style={{ color: '#991b1b' }}>Total Discount</label>
-                    <span style={{ color: '#dc2626', fontWeight: 800 }}>- {INR(totalDiscount)}</span>
-                  </div>
                 )}
                 <div className="summary-cell" style={{ background: '#0f172a', color: '#fff' }}>
                   <label style={{ color: '#94a3b8' }}>{isQuote ? 'Total Quote.Amt' : 'Total Inv.Amt'}</label>

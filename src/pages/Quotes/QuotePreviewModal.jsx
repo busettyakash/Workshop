@@ -80,18 +80,28 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
                   const lineAmtTotal = items.reduce((s, it) => s + parseFloat(it.amount || it.line_total || 0), 0)
                   const diffDiscount = (grossTotal > 0 && lineAmtTotal > 0 && grossTotal > lineAmtTotal + 0.01) ? (grossTotal - lineAmtTotal) : 0
                   const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
+                  const taxableTotal = Math.max(0, grossTotal - totalDiscount)
+                  const taxAmt = parseFloat(quote?.tax_amount || 0)
 
-                  return totalDiscount > 0 ? (
+                  return (
                     <>
-                      <span style={{ color: '#64748b' }}>Discount</span>
-                      <strong style={{ textAlign: 'right', color: '#dc2626' }}>- {money(totalDiscount)}</strong>
+                      {totalDiscount > 0 && (
+                        <>
+                          <span style={{ color: '#64748b' }}>Subtotal</span>
+                          <strong style={{ textAlign: 'right' }}>{money(grossTotal)}</strong>
+                          <span style={{ color: '#64748b' }}>Discount</span>
+                          <strong style={{ textAlign: 'right', color: '#dc2626' }}>- {money(totalDiscount)}</strong>
+                        </>
+                      )}
+                      <span style={{ color: '#64748b' }}>Taxable Amt</span>
+                      <strong style={{ textAlign: 'right' }}>{money(taxableTotal)}</strong>
+                      <span style={{ color: '#64748b' }}>Tax</span>
+                      <strong style={{ textAlign: 'right' }}>{taxAmt > 0 ? money(taxAmt) : '₹0.00'}</strong>
+                      <span style={{ color: '#64748b' }}>Total</span>
+                      <strong style={{ textAlign: 'right', color: '#15803d' }}>{money(quote?.total_amount || (taxableTotal + taxAmt))}</strong>
                     </>
-                  ) : null
+                  )
                 })()}
-                <span style={{ color: '#64748b' }}>Tax</span>
-                <strong style={{ textAlign: 'right' }}>{money(quote?.tax_amount)}</strong>
-                <span style={{ color: '#64748b' }}>Total</span>
-                <strong style={{ textAlign: 'right', color: '#15803d' }}>{money(quote?.total_amount)}</strong>
               </div>
             </div>
           </div>
@@ -100,26 +110,62 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.79rem' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', color: '#475569', textAlign: 'left' }}>
-                  <th style={{ padding: '8px 12px' }}>Item</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'right' }}>Qty</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'right' }}>Rate</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'right' }}>Amount</th>
+                  <th style={{ padding: '8px 10px' }}>Item</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Qty</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Rate</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Gross Amt</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Discount</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Taxable Amt</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Tax</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Total</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan="4" style={{ padding: 18, textAlign: 'center', color: '#94a3b8' }}>No line items</td>
+                    <td colSpan="8" style={{ padding: 18, textAlign: 'center', color: '#94a3b8' }}>No line items</td>
                   </tr>
                 ) : (
-                  items.map((item, index) => (
-                    <tr key={item.id || index} style={{ borderTop: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '7px 12px', fontWeight: 700, color: '#0f172a' }}>{item.name || item.product_name || 'Item'}</td>
-                      <td style={{ padding: '7px 12px', textAlign: 'right' }}>{item.quantity || item.qty || 0}</td>
-                      <td style={{ padding: '7px 12px', textAlign: 'right' }}>{money(item.rate || item.price)}</td>
-                      <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 700 }}>{money(item.amount || item.line_total)}</td>
-                    </tr>
-                  ))
+                  items.map((item, index) => {
+                    const q = parseFloat(item.quantity || item.qty || 1)
+                    const r = parseFloat(item.rate || item.price || 0)
+                    const gross = q * r
+                    const disc = parseFloat(item.discount || 0)
+                    const taxable = parseFloat(item.amount || item.line_total || (gross - disc))
+
+                    const explicitTaxAmt = parseFloat(quote?.tax_amount || 0)
+                    const totalAmt = parseFloat(quote?.total_amount || 0)
+                    const totalTaxable = items.reduce((s, it) => s + (parseFloat(it.amount || it.line_total || 0)), 0)
+
+                    let itemTax = 0
+                    if (explicitTaxAmt > 0) {
+                      itemTax = items.length === 1 ? explicitTaxAmt : (taxable / (totalTaxable || 1)) * explicitTaxAmt
+                    } else if (totalAmt > totalTaxable + 0.01) {
+                      const taxDiff = totalAmt - totalTaxable
+                      itemTax = items.length === 1 ? taxDiff : (taxable / (totalTaxable || 1)) * taxDiff
+                    }
+
+                    const itemFinal = taxable + itemTax
+
+                    return (
+                      <tr key={item.id || index} style={{ borderTop: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '7px 10px', fontWeight: 700, color: '#0f172a' }}>{item.name || item.product_name || 'Item'}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{q}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{money(r)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{money(gross)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', color: disc > 0 ? '#dc2626' : '#64748b' }}>
+                          {disc > 0 ? `- ${money(disc)}` : '-'}
+                        </td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{money(taxable)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', color: itemTax > 0 ? '#2563eb' : '#64748b' }}>
+                          {itemTax > 0 ? `+ ${money(itemTax)}` : '-'}
+                        </td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#15803d' }}>
+                          {money(itemFinal)}
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
@@ -134,11 +180,6 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
 
         <div className="ws-modal-footer">
           <button className="attio-btn attio-btn-secondary" type="button" onClick={onClose}>Close</button>
-          {onEdit && (
-            <button className="attio-btn attio-btn-primary" type="button" onClick={onEdit}>
-              <Edit2 size={14} /> Edit
-            </button>
-          )}
         </div>
       </div>
     </div>

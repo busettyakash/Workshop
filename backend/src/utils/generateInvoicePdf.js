@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer'
+import PDFDocument from 'pdfkit'
 import { getProductHsnMap } from '../lib/productCache.js'
 
 // ─────────────────────────────────────────────
@@ -174,11 +175,11 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   const baseForTax = Math.max(0, taxableSubtotal - explicitDiscount)
 
   let taxAmt = 0
-  if (hasExplicitTaxAmt) {
+  if (explicitTaxAmt > 0) {
     taxAmt = explicitTaxAmt
   } else if (explicitTaxRate !== null && explicitTaxRate > 0) {
     taxAmt = baseForTax * (explicitTaxRate / 100)
-  } else if (totalAmount > baseForTax + 0.5 && explicitDiscount === 0 && lineDiscounts === 0) {
+  } else if (totalAmount > baseForTax + 0.01) {
     taxAmt = totalAmount - baseForTax
   }
 
@@ -282,6 +283,16 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   // Totals summary
   const totalsHtml = `
     <div style="display:flex;border:1px solid #cbd5e1;background:#f8fafc;margin-bottom:20px;text-align:center">
+      ${totalDiscount > 0 ? `
+      <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1">
+        <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase">Gross Subtotal</div>
+        <div style="font-size:11.5px;font-weight:800;color:#0f172a;margin-top:2px">${INR(grossSubtotal)}</div>
+      </div>
+      <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1;background:#fef2f2">
+        <div style="font-size:9px;font-weight:800;color:#991b1b;text-transform:uppercase">Total Discount</div>
+        <div style="font-size:11.5px;font-weight:800;color:#dc2626;margin-top:2px">- ${INR(totalDiscount)}</div>
+      </div>
+      ` : ''}
       <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1">
         <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase">Tot. Tax'ble Amt</div>
         <div style="font-size:11.5px;font-weight:800;color:#0f172a;margin-top:2px">${INR(taxableSubtotal)}</div>
@@ -294,12 +305,6 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
       <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1">
         <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase">SGST Amt</div>
         <div style="font-size:11.5px;font-weight:800;color:#0f172a;margin-top:2px">${INR(sgst)}</div>
-      </div>
-      ` : ''}
-      ${totalDiscount > 0 ? `
-      <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1;background:#fef2f2">
-        <div style="font-size:9px;font-weight:800;color:#991b1b;text-transform:uppercase">Total Discount</div>
-        <div style="font-size:11.5px;font-weight:800;color:#dc2626;margin-top:2px">- ${INR(totalDiscount)}</div>
       </div>
       ` : ''}
       <div style="flex:1;padding:8px 4px;background:#0f172a">
@@ -503,28 +508,72 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
 }
 
 // ─────────────────────────────────────────────
+function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {} }) {
+  return new Promise((resolve, reject) => {
+    try {
+      const pdf = new PDFDocument({ margin: 30, size: 'A4' })
+      const chunks = []
+      pdf.on('data', c => chunks.push(c))
+      pdf.on('end', () => resolve(Buffer.concat(chunks)))
+
+      const d = { ...quote, ...bill }
+      const docId = d.bill_number || d.quote_number || `INV-${d.id || '1001'}`
+      const shopName = shop.shop_name || d.shop_name || 'Workshop'
+      const custName = d.customer_name || 'Customer'
+
+      pdf.fontSize(16).fillColor('#1e3a8a').text('TAX INVOICE', { align: 'center' })
+      pdf.fontSize(9).fillColor('#64748b').text(docId, { align: 'center' })
+      pdf.moveDown(1)
+
+      pdf.fontSize(10).fillColor('#0f172a').text(`From: ${shopName}`)
+      pdf.fontSize(10).fillColor('#0f172a').text(`To: ${custName}`)
+      pdf.moveDown(1)
+
+      const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
+      items.forEach((it, i) => {
+        const q = parseFloat(it.qty || it.quantity || 1)
+        const r = parseFloat(it.price || it.rate || 0)
+        const amt = Math.max(0, (q * r) - parseFloat(it.discount || 0))
+        pdf.fontSize(9).fillColor('#334155').text(`${i + 1}. ${it.name || it.product_name || 'Item'} — Qty: ${q} — Rate: ₹${r.toFixed(2)} — Amt: ₹${amt.toFixed(2)}`)
+      })
+
+      const tot = parseFloat(d.amount || d.total_amount || 0)
+      pdf.moveDown(1)
+      pdf.fontSize(11).fillColor('#15803d').text(`Total Amount: ₹${tot.toFixed(2)}`, { align: 'right' })
+      pdf.end()
+    } catch (e) {
+      reject(e)
+    }
+  })
+}
+
+// ─────────────────────────────────────────────
 // Main Export: puppeteer HTML → PDF Buffer
 // ─────────────────────────────────────────────
 export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {} } = {}) {
   const catalogMap = await getProductHsnMap().catch(() => ({}))
   const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap })
 
-  let browser
   try {
-    browser = await puppeteer.launch({
+    const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
     })
-    const page = await browser.newPage()
-    await page.setContent(html, { waitUntil: 'networkidle0' })
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '0', right: '0', bottom: '0', left: '0' }
-    })
-    return pdfBuffer
-  } finally {
-    if (browser) await browser.close()
+    try {
+      const page = await browser.newPage()
+      await page.setContent(html, { waitUntil: 'networkidle0' })
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '0', right: '0', bottom: '0', left: '0' }
+      })
+      return pdfBuffer
+    } finally {
+      await browser.close()
+    }
+  } catch (puppeteerErr) {
+    console.warn('[PDF Generation] Puppeteer failed, using PDFKit fallback:', puppeteerErr.message)
+    return generatePdfKitFallback({ quote, bill, billItems, shop })
   }
 }
 

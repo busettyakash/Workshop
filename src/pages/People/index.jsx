@@ -207,10 +207,7 @@ export default function People() {
               ) : people.length === 0 ? (
                 <div style={{ padding: '48px 20px', textAlign: 'center' }}>
                   <p style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-gray-700)', marginBottom: 4 }}>No people yet</p>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--color-gray-400)', marginBottom: 16 }}>Add your first person to get started</p>
-                  <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/people/add')}>
-                    <Plus size={13} /> New Person
-                  </button>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--color-gray-400)', marginBottom: 0 }}>Add your first person to get started</p>
                 </div>
               ) : (
                 <table className="attio-table">

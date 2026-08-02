@@ -90,7 +90,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
       return {
         displayQty: qty,
         displayUnit: 'ltrs',
-        subtext: bw > 1 ? `${bw}ltr Drum` : 'ltrs'
+        subtext: 'ltrs'
       }
     }
 

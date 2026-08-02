@@ -61,7 +61,7 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
       return { 
         displayQty: qty, 
         displayUnit: 'ltrs',
-        subtext: bw > 1 ? `${bw}ltr Drum` : 'ltrs'
+        subtext: 'ltrs'
       }
     }
 

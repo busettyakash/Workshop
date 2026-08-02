@@ -26,8 +26,29 @@ function fmtDate(d) {
   } catch { return String(d) }
 }
 
-function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote = false) {
-  const bw = parseFloat(bagWeight || 1)
+function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQuote = false) {
+  let bw = parseFloat(bagWeight || 1)
+  let pName
+  if (typeof prodName === 'string' && prodName.trim()) {
+    pName = prodName
+  } else if (typeof dbUnit === 'string' && !['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) {
+    pName = dbUnit
+  } else {
+    pName = ''
+  }
+  const pNameLower = pName.toLowerCase()
+
+  if (bw <= 1 && pNameLower) {
+    const nameWeightMatch = pNameLower.match(/(\d+)\s*(kg|ltr|l|m|mtr)/i)
+    if (nameWeightMatch && nameWeightMatch[1]) {
+      bw = parseFloat(nameWeightMatch[1])
+    } else if (pNameLower.includes('soddalu')) {
+      bw = 50
+    } else if (pNameLower.includes('kurnool') || pNameLower.includes('rice')) {
+      bw = 26
+    }
+  }
+
   let uRaw = String(rawUnit || '').trim()
 
   if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
@@ -42,43 +63,38 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote =
     }
   }
 
-  const u = (uRaw || String(dbUnit || '')).toLowerCase().trim()
+  const dbUnitStr = (typeof dbUnit === 'string' && ['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) ? dbUnit : ''
+  const u = (uRaw || dbUnitStr).toLowerCase().trim()
 
   let baseUnitLabel = uRaw || u || 'pcs'
   if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
   else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
   else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
+  else if (['bag', 'bags'].includes(u)) baseUnitLabel = 'Bag'
 
-  if (!isQuote) {
-    // Normal Bill Flow: No pack weight subtext!
-    return { displayQty: qty, displayUnit: baseUnitLabel, subtext: baseUnitLabel }
+  let subtext = baseUnitLabel
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+    subtext = 'ltrs'
+  } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+    subtext = bw > 1 ? `${bw}m Roll` : 'mtrs'
+  } else {
+    const packName = bw > 1 ? 'Bag' : 'Pack'
+    subtext = bw > 1 ? `${bw}kg ${packName}` : baseUnitLabel
   }
 
-  // Quote Flow: Show pack weight in subtext!
   if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-    return {
-      displayQty: qty,
-      displayUnit: 'ltrs',
-      subtext: bw > 1 ? `${bw}ltr Drum` : 'ltrs'
-    }
+    return { displayQty: qty, displayUnit: 'ltrs', subtext }
   }
 
   if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-    return {
-      displayQty: qty,
-      displayUnit: 'mtrs',
-      subtext: bw > 1 ? `${bw}m Roll` : 'mtrs'
-    }
+    return { displayQty: qty, displayUnit: 'mtrs', subtext }
   }
 
-  const packName = bw > 1 ? 'Bag' : 'Pack'
-  const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
-
-  return {
-    displayQty: qty,
-    displayUnit: 'Bags',
-    subtext: packSubtext
+  if (isQuote || ['bag', 'bags'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'Bag', subtext }
   }
+
+  return { displayQty: qty, displayUnit: baseUnitLabel, subtext }
 }
 
 // ─────────────────────────────────────────────
@@ -198,17 +214,35 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     const prodNameRaw = (typeof li === 'string' && li.trim())
       ? li
       : (li.name || li.product_name || li.productName || li.product || li.item_name || li.title || li.description || '')
-    const dbProd = (pId && catalogMap[String(pId)]) || catalogMap[prodNameRaw.toLowerCase().trim()]
+
+    const normSearch = prodNameRaw ? prodNameRaw.toLowerCase().replace(/[-_]/g, ' ').trim() : ''
+
+    const dbProd = (pId && catalogMap[String(pId)])
+      || (prodNameRaw && catalogMap[prodNameRaw.toLowerCase().trim()])
+      || (normSearch && catalogMap[normSearch])
+      || Object.values(catalogMap).find(p => {
+           if (!p.name) return false
+           const pNorm = p.name.toLowerCase().replace(/[-_]/g, ' ').trim()
+           return pNorm === normSearch || pNorm.includes(normSearch) || normSearch.includes(pNorm)
+         })
 
     const prodName = prodNameRaw || dbProd?.name || 'Product Item'
     const rawUnit = li.unit || li.unitLabel || dbProd?.unit || ''
     const dbUnit = dbProd?.unit || ''
-    // FIX: widened field-name fallbacks (was only checking `bag_weight`), so a
-    // naming mismatch on the line item or catalog product doesn't silently
-    // default to 1 and drop the "50kg Bag" / "100ltr Drum" subtext.
-    const bagWeight = parseFloat(
-      li.bag_weight ?? li.bagWeight ?? dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? 1
+
+    let bagWeight = parseFloat(
+      li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? li.packWeight ??
+      dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? dbProd?.packWeight ?? 0
     )
+
+    if (isNaN(bagWeight) || bagWeight <= 0) {
+      const nameMatch = prodName.match(/(\d+)\s*(kg|ltr|l|m|mtr)/i)
+      if (nameMatch && nameMatch[1]) {
+        bagWeight = parseFloat(nameMatch[1])
+      } else {
+        bagWeight = 1
+      }
+    }
     // FIX: `subtext` was being computed by resolvePackDisplay but never
     // destructured or rendered — the row below was showing `displayUnit`
     // ("Bags" / "ltrs") in the subtitle line instead of the pack-weight

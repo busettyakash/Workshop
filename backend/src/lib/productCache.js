@@ -27,8 +27,15 @@ export async function getProductHsnMap() {
     const map = {}
     for (const p of rows) {
       const hsn = p.hsn_code || p.sku || `1006${String(p.id || 1000).padStart(4, '0')}`
-      if (p.id) map[String(p.id)] = { hsn, name: p.name, unit: p.unit, bag_weight: p.bag_weight }
-      if (p.name) map[p.name.toLowerCase().trim()] = { hsn, name: p.name, unit: p.unit, bag_weight: p.bag_weight }
+      const bw = parseFloat(p.bag_weight || 1)
+      const pData = { hsn, name: p.name, unit: p.unit, bag_weight: bw }
+      if (p.id) map[String(p.id)] = pData
+      if (p.name) {
+        const clean = p.name.toLowerCase().trim()
+        const norm = clean.replace(/[-_]/g, ' ')
+        map[clean] = pData
+        map[norm] = pData
+      }
     }
 
     // Save to Redis and Local Memory
@@ -54,11 +61,22 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
     if (hsnCode === '—' || hsnCode === '-') hsnCode = ''
 
     const pId = item.product_id || item.productId || item.id
+    const cleanName = name ? name.toLowerCase().trim() : ''
+    const normName = cleanName.replace(/[-_]/g, ' ')
+
     let catProd = null
     if (pId && catalogMap[String(pId)]) {
       catProd = catalogMap[String(pId)]
-    } else if (name && catalogMap[name.toLowerCase().trim()]) {
-      catProd = catalogMap[name.toLowerCase().trim()]
+    } else if (cleanName && catalogMap[cleanName]) {
+      catProd = catalogMap[cleanName]
+    } else if (normName && catalogMap[normName]) {
+      catProd = catalogMap[normName]
+    } else if (cleanName) {
+      const foundKey = Object.keys(catalogMap).find(k => {
+        const kNorm = k.replace(/[-_]/g, ' ')
+        return kNorm === normName || kNorm.includes(normName) || normName.includes(kNorm)
+      })
+      if (foundKey) catProd = catalogMap[foundKey]
     }
 
     if (catProd) {
@@ -67,7 +85,6 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
     }
 
     if (!hsnCode && name) {
-      const cleanName = name.toLowerCase().trim()
       if (catalogMap[cleanName] && catalogMap[cleanName].hsn) {
         hsnCode = catalogMap[cleanName].hsn
         if (!name) name = catalogMap[cleanName].name
@@ -84,7 +101,19 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
       hsnCode = `1006${String(numericId).padStart(4, '0')}`
     }
 
-    const bagWeight = parseFloat(item.bag_weight || catProd?.bag_weight || 1)
+    let bagWeight = parseFloat(
+      item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? catProd?.bag_weight ?? 0
+    )
+
+    if (isNaN(bagWeight) || bagWeight <= 0) {
+      const weightMatch = name.match(/(\d+)\s*(kg|ltr|l|m|mtr)/i)
+      if (weightMatch && weightMatch[1]) {
+        bagWeight = parseFloat(weightMatch[1])
+      } else {
+        bagWeight = 1
+      }
+    }
+
     const rawUnit = item.unit || catProd?.unit || ''
     const unitStr = (bagWeight > 1)
       ? `Bag (${bagWeight}kg)`
@@ -99,6 +128,8 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
       hsn: hsnCode,
       unit: rawUnit,
       bag_weight: bagWeight,
+      bagWeight: bagWeight,
+      pack_weight: bagWeight,
       unitLabel: unitStr,
       subtext: unitStr
     }

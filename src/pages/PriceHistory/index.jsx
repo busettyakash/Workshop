@@ -66,15 +66,10 @@ const getDisplayPrice = (rawP, bw, pc) => {
   const priceC = parseFloat(pc) || 0
 
   if (priceC > 0 && priceC !== bagW && bagW > 0) {
-    // 1-bag prices (e.g. 1500 for 26kg bag, 1650 for 50kg bag) are < 3000
-    if (bagW > 1 && p < 3000) {
+    if (p < 4000) {
       return (p / bagW) * priceC
     }
-    // Coverage prices (e.g. 3300/3400 for 100kg, 6000/6150 for 104kg, 18500 for 100ltr)
-    if (p >= 3000) {
-      return p
-    }
-    return (p / bagW) * priceC
+    return p
   }
 
   return p
@@ -934,13 +929,11 @@ export default function PriceHistory() {
                                     const rawP = parseFloat(row.price || 0)
 
                                     let priceVal = rawP
-                                    if (pc > 0 && pc !== bw) {
-                                      if (bw > 1 && rawP < 2500) {
+                                    if (pc > 0 && bw > 0 && pc !== bw) {
+                                      if (rawP < 4000) {
                                         priceVal = (rawP / bw) * pc
-                                      } else if (rawP > 500) {
+                                      } else {
                                         priceVal = rawP
-                                      } else if (bw > 0) {
-                                        priceVal = (rawP / bw) * pc
                                       }
                                     }
 
@@ -965,39 +958,22 @@ export default function PriceHistory() {
                                     const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
                                     const pc = parseFloat(row.price_covers || 0)
                                     const bw = parseFloat(row.bag_weight || 1)
-                                    const rawP = parseFloat(row.price || 0)
                                     const rawUP = parseFloat(row.updated_price || 0)
 
-                                    let basePriceVal = rawP
-                                    if (pc > 0 && pc !== bw) {
-                                      if (bw > 1 && rawP < 2500) {
-                                        basePriceVal = (rawP / bw) * pc
-                                      } else if (rawP > 500) {
-                                        basePriceVal = rawP
-                                      } else if (bw > 0) {
-                                        basePriceVal = (rawP / bw) * pc
-                                      }
-                                    }
-
                                     let updatedPriceVal = rawUP
-                                    if (pc > 0 && pc !== bw) {
-                                      if (bw > 1 && rawUP < basePriceVal * 0.45) {
+                                    if (pc > 0 && bw > 0 && pc !== bw) {
+                                      if (rawUP < 4000) {
                                         updatedPriceVal = (rawUP / bw) * pc
                                       } else {
                                         updatedPriceVal = rawUP
                                       }
                                     }
 
-                                    const effCover = pc > 0 ? pc : (bw > 1 ? bw : 1)
-                                    const subtext = updatedDateFormatted ? `${updatedDateFormatted} (${effCover} ${uomShort})` : (pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`))
-
-                                    const isUp = updatedPriceVal > basePriceVal
-                                    const isDrop = updatedPriceVal < basePriceVal
-                                    const textColor = isDrop ? '#dc2626' : (isUp ? '#10b981' : '#475569')
+                                    const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
 
                                     return (
                                       <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span style={{ fontWeight: 700, color: textColor, fontSize: '0.85rem' }}>
+                                        <span style={{ fontWeight: 600, color: '#2563eb' }}>
                                           {formatINR(updatedPriceVal)}
                                         </span>
                                         <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>

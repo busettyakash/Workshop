@@ -44,43 +44,56 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 
   const dbUnitStr = (typeof dbUnit === 'string' && ['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) ? dbUnit : ''
   const u = (uRaw || dbUnitStr).toLowerCase().trim()
+  const isBagUnit = ['bag', 'bags'].includes(u)
 
   let baseUnitLabel = uRaw || u || 'pcs'
   if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
   else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
   else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
-  else if (['bag', 'bags'].includes(u)) baseUnitLabel = 'Bag'
+  else if (isBagUnit) baseUnitLabel = 'Bag'
 
-  let subtext = baseUnitLabel
-  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-    subtext = 'ltrs'
-  } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-    subtext = bw > 1 ? `${bw}m Roll` : 'mtrs'
-  } else {
-    const packName = bw > 1 ? 'Bag' : 'Pack'
-    subtext = bw > 1 ? `${bw}kg ${packName}` : baseUnitLabel
-  }
+  // If item is in Bags or isQuoteFlow is true -> QUOTE FLOW DISPLAY (Show 50kg Bag, 26kg Bag)!
+  if (isQuoteFlow || isBagUnit) {
+    let subtext = baseUnitLabel
+    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+      subtext = 'ltrs'
+    } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+      subtext = bw > 1 ? `${bw}m Roll` : 'mtrs'
+    } else {
+      const packName = bw > 1 ? 'Bag' : 'Pack'
+      subtext = bw > 1 ? `${bw}kg ${packName}` : 'Bag'
+    }
 
-  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'ltrs', subtext }
-  }
+    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+      return { displayQty: qty, displayUnit: 'ltrs', subtext }
+    }
 
-  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'mtrs', subtext }
-  }
+    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+      return { displayQty: qty, displayUnit: 'mtrs', subtext }
+    }
 
-  if (isQuoteFlow || ['bag', 'bags'].includes(u)) {
     return { displayQty: qty, displayUnit: 'Bag', subtext }
   }
 
-  return { displayQty: qty, displayUnit: baseUnitLabel, subtext }
+  // Direct Normal Bill Flow (base UOM without bags):
+  return {
+    displayQty: qty,
+    displayUnit: baseUnitLabel,
+    subtext: baseUnitLabel
+  }
 }
 
 export default function BillPreview({ bill, quote, type, shopName, shopGstin, shopPhone, shopAddress, onClose }) {
   const printRef = useRef(null)
 
   const doc = quote || bill || {}
-  const isQuote = type === 'quotation' || Boolean(doc.quote_number) || Boolean(quote)
+  const isQuote = type === 'quotation'
+    || Boolean(doc.quote_number)
+    || Boolean(doc.quote_id)
+    || Boolean(doc.order_number)
+    || Boolean(quote)
+    || (doc.notes && String(doc.notes).toLowerCase().includes('qt-'))
+    || (doc.notes && String(doc.notes).toLowerCase().includes('quote'))
 
   const [profile, setProfile] = useState({
     shopName: shopName || doc.shop_name || '',
@@ -157,21 +170,24 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
   const totalAmount = parseFloat(doc.amount || doc.total_amount || (subtotal > 0 ? subtotal : grossSubtotal))
 
+  const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
+  const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
+  const explicitTaxAmt = hasExplicitTaxAmt ? parseFloat(rawTaxAmt) : 0
+
   const rawTaxRate = doc.tax_rate ?? doc.taxRate ?? quote?.tax_rate ?? bill?.tax_rate
-  const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && !isNaN(parseFloat(rawTaxRate)))
+  const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !isNaN(parseFloat(rawTaxRate)))
     ? parseFloat(rawTaxRate)
     : null
+
   const baseForTax = Math.max(0, subtotal - explicitDiscount)
-  const explicitTaxAmt = parseFloat(doc.tax_amount || doc.taxAmount || quote?.tax_amount || bill?.tax_amount || 0)
-  const inferredTax = (totalAmount > baseForTax + 0.01) ? (totalAmount - baseForTax) : 0
 
   let taxAmt = 0
-  if (explicitTaxAmt > 0) {
+  if (hasExplicitTaxAmt) {
     taxAmt = explicitTaxAmt
-  } else if (inferredTax > 0) {
-    taxAmt = inferredTax
-  } else if (explicitTaxRate > 0) {
+  } else if (explicitTaxRate !== null && explicitTaxRate > 0) {
     taxAmt = baseForTax * (explicitTaxRate / 100)
+  } else if (totalAmount > baseForTax + 0.5 && explicitDiscount === 0 && lineDiscounts === 0) {
+    taxAmt = totalAmount - baseForTax
   }
 
   let effectiveTaxRate = 0
@@ -179,11 +195,9 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
     effectiveTaxRate = Math.round((taxAmt / baseForTax) * 100)
   } else if (explicitTaxRate > 0) {
     effectiveTaxRate = explicitTaxRate
-  } else if (taxAmt > 0) {
-    effectiveTaxRate = 18
   }
 
-  const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '9'
+  const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2
 
@@ -445,7 +459,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                           {itemDisc > 0.01 ? `-${INR(itemDisc)}` : '-'}
                         </td>
                         <td className="text-right" style={{ fontSize: 10, color: '#475569' }}>
-                          {taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : `0.00% + 0.00%`}
+                          {taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : `-`}
                         </td>
                       </tr>
                     )

@@ -106,7 +106,7 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
     )
 
     if (isNaN(bagWeight) || bagWeight <= 0) {
-      const weightMatch = name.match(/(\d+)\s*(kg|ltr|l|m|mtr)/i)
+      const weightMatch = name.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
       if (weightMatch && weightMatch[1]) {
         bagWeight = parseFloat(weightMatch[1])
       } else {

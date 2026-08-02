@@ -18,7 +18,7 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   const pNameLower = pName.toLowerCase()
 
   if (bw <= 1 && pNameLower) {
-    const nameWeightMatch = pNameLower.match(/(\d+)\s*(kg|ltr|l|m|mtr)/i)
+    const nameWeightMatch = pNameLower.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
     if (nameWeightMatch && nameWeightMatch[1]) {
       bw = parseFloat(nameWeightMatch[1])
     } else if (pNameLower.includes('soddalu')) {
@@ -421,7 +421,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                     )
 
                     if (isNaN(bagWeight) || bagWeight <= 0) {
-                      const nameMatch = prodName.match(/(\d+)\s*(kg|ltr|l|m|mtr)/i)
+                      const nameMatch = prodName.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
                       if (nameMatch && nameMatch[1]) {
                         bagWeight = parseFloat(nameMatch[1])
                       } else {

@@ -39,13 +39,15 @@ function PricingModal({ product, onClose }) {
   const bulkUnit = getBulkUnitDetails(product?.unit)
   const bagWeight = parseFloat(product?.bag_weight || 1)
   const pc = parseFloat(product?.price_covers || 0)
-  const basePriceVal = parseFloat(product?.price || 0)
-  const rawUpdatedPrice = parseFloat(product?.updated_price || 0)
 
-  // Standardize updated price to 1 Bag (bagWeight)
-  const activeBagPrice = (pc > 0 && bagWeight > 0 && rawUpdatedPrice > basePriceVal * 2)
-    ? (rawUpdatedPrice / (pc / bagWeight))
-    : (rawUpdatedPrice > 0 ? rawUpdatedPrice : basePriceVal)
+  const calcBagPrice = (rawVal) => {
+    const p = parseFloat(rawVal || 0)
+    if (p <= 0) return 0
+    return p
+  }
+
+  const basePriceVal = calcBagPrice(product?.price)
+  const activeBagPrice = product?.updated_price ? calcBagPrice(product.updated_price) : basePriceVal
 
   const unitPrice = (bagWeight > 0 ? (activeBagPrice / bagWeight) : activeBagPrice).toFixed(2)
   const updatedDateStr = product?.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
@@ -150,8 +152,8 @@ function PricingModal({ product, onClose }) {
                   const newRaw = parseFloat(item.new_price || 0)
                   const oldRaw = item.old_price !== null && item.old_price !== undefined ? parseFloat(item.old_price) : null
 
-                  const newBagP = (pc > 0 && bagWeight > 0 && newRaw > basePriceVal * 2) ? (newRaw / (pc / bagWeight)) : newRaw
-                  const oldBagP = (oldRaw !== null && pc > 0 && bagWeight > 0 && oldRaw > basePriceVal * 2) ? (oldRaw / (pc / bagWeight)) : oldRaw
+                  const newBagP = calcBagPrice(newRaw)
+                  const oldBagP = oldRaw !== null ? calcBagPrice(oldRaw) : null
 
                   const diff = oldBagP !== null ? (newBagP - oldBagP) : 0
                   const isUp = diff > 0
@@ -520,7 +522,7 @@ export default function ImportStock() {
 
                               let priceVal = rawP
                               if (pc > 0 && bw > 0 && pc !== bw) {
-                                if (rawP < 4000) {
+                                if (rawP < 2000) {
                                   priceVal = (rawP / bw) * pc
                                 } else {
                                   priceVal = rawP
@@ -552,7 +554,7 @@ export default function ImportStock() {
 
                               let updatedPriceVal = rawUP
                               if (pc > 0 && bw > 0 && pc !== bw) {
-                                if (rawUP < 4000) {
+                                if (rawUP < 2000) {
                                   updatedPriceVal = (rawUP / bw) * pc
                                 } else {
                                   updatedPriceVal = rawUP

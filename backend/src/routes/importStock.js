@@ -22,6 +22,7 @@ async function ensureImportStockSchema() {
   await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_state TEXT`).catch(() => {})
   await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buying_price DECIMAL(10, 2)`).catch(() => {})
   await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2)`).catch(() => {})
+  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => {})
   await query(`UPDATE import_stock SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
   await query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
   await query(`
@@ -86,7 +87,7 @@ router.get('/', async (req, res) => {
       const { rows } = await query(
         `SELECT i.*, p.id AS product_id,
           CASE WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock) ELSE i.stock END AS stock,
-          CASE WHEN i.status = 'added' THEN COALESCE(p.loose_kg, 0) ELSE 0 END AS loose_kg,
+          COALESCE(p.loose_kg, 0) AS loose_kg,
           CASE WHEN i.status = 'added' THEN COALESCE(p.price_covers, i.price_covers) ELSE i.price_covers END AS price_covers,
           CASE 
             WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price)
@@ -129,7 +130,7 @@ router.get('/', async (req, res) => {
     const { rows } = await query(
       `SELECT i.*, p.id AS product_id,
         CASE WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock) ELSE i.stock END AS stock,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.loose_kg, 0) ELSE 0 END AS loose_kg,
+        COALESCE(p.loose_kg, 0) AS loose_kg,
         CASE WHEN i.status = 'added' THEN COALESCE(p.price_covers, i.price_covers) ELSE i.price_covers END AS price_covers,
         CASE 
           WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price)
@@ -268,6 +269,17 @@ router.put('/:id', async (req, res) => {
       ? todayStr
       : (updated_price_date || oldRec?.updated_price_date || todayStr)
 
+    let finalUpdatedPrice = oldRec?.updated_price
+    if (updated_price !== undefined && updated_price !== null && updated_price !== '') {
+      let upVal = parseFloat(updated_price)
+      const bw = parseFloat(bag_weight) || 1
+      const pc = parseFloat(price_covers) || 0
+      if (pc > 0 && bw > 0 && pc !== bw && upVal >= 2000) {
+        upVal = (upVal / pc) * bw
+      }
+      finalUpdatedPrice = upVal
+    }
+
     const { rows } = await query(
       `UPDATE import_stock SET name=$1, sku=$2, category=$3, price=$4, buying_price=$5, price_covers=$6, updated_price=$7, updated_price_date=$8, stock=$9, status=$10, unit=$11, description=$12, bag_weight=$13, buyer_name=$14, buyer_phone=$15, buyer_city=$16, buyer_state=$17, updated_at=NOW()
        WHERE id=$18 AND user_id = $19 RETURNING *`,
@@ -275,7 +287,7 @@ router.put('/:id', async (req, res) => {
         name, sku, category, price,
         buying_price ? parseFloat(buying_price) : null,
         price_covers ? parseFloat(price_covers) : null,
-        updated_price ? parseFloat(updated_price) : null,
+        finalUpdatedPrice,
         finalPriceDate,
         stock, status || 'pending', unit || 'pcs', description, parseFloat(bag_weight) || 1,
         buyer_name || null, buyer_phone || null, buyer_city || null, buyer_state || null,
@@ -289,7 +301,7 @@ router.put('/:id', async (req, res) => {
 
     if (oldRec) {
       const existingProduct = await query(
-        `SELECT id, price, updated_price FROM products WHERE user_id=$1 AND (sku=$2 OR name=$3) LIMIT 1`,
+        `SELECT id, stock, price, updated_price FROM products WHERE user_id=$1 AND (sku=$2 OR name=$3) LIMIT 1`,
         [userId, oldRec.sku || 'N/A', oldRec.name]
       );
 
@@ -299,19 +311,38 @@ router.put('/:id', async (req, res) => {
           ? parseFloat(prod.updated_price)
           : parseFloat(prod.price || 0)
 
+        const oldStockVal = prod.stock !== undefined && prod.stock !== null ? parseFloat(prod.stock) : 0
+        const newStockVal = stock !== undefined && stock !== null ? parseFloat(stock) : oldStockVal
+        const stockDiff = newStockVal - oldStockVal
+
         await query(
           `UPDATE products SET name=$1, sku=$2, category=$3, price=$4, price_covers=$5, updated_price=$6, updated_price_date=$7, stock=$8, unit=$9, description=$10, bag_weight=$11, updated_at=NOW()
            WHERE id=$12`,
           [
             name, sku, category, price, price_covers ? parseFloat(price_covers) : null,
-            updated_price ? parseFloat(updated_price) : null,
+            finalUpdatedPrice,
             finalPriceDate,
             stock !== undefined && stock !== null ? parseFloat(stock) : 0,
             unit || 'pcs', description, parseFloat(bag_weight) || 1, prod.id
           ]
         );
 
-        const newEffective = updated_price ? parseFloat(updated_price) : parseFloat(price)
+        if (stockDiff !== 0) {
+          const changeType = stockDiff > 0 ? 'added' : 'deducted'
+          const changeNotes = stockDiff > 0
+            ? `Stock updated via Import Stock edit (+${stockDiff} ${unit || 'bags'})`
+            : `Stock updated via Import Stock edit (${stockDiff} ${unit || 'bags'})`
+
+          await query(
+            `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+            [prod.id, userId, changeType, stockDiff, oldStockVal, newStockVal, 'Import Stock Update', changeNotes]
+          ).catch(() => {})
+        }
+
+        const newEffective = finalUpdatedPrice !== null && finalUpdatedPrice !== undefined
+          ? finalUpdatedPrice
+          : parseFloat(price)
 
         if (newEffective !== oldEffective) {
           await query(

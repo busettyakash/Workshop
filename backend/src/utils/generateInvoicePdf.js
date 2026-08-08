@@ -75,38 +75,33 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   const u = (uClean || dbUnitStr).toLowerCase().trim()
   const isBagUnit = ['bag', 'bags'].includes(u)
 
-  // If bagWeight > 1 OR isBagUnit OR isQuote -> ALWAYS DISPLAY AS BAGS (e.g. "10 Bag", subtext "50kg Bag")!
-  if (bw > 1 || isBagUnit || isQuote) {
+  // In Quotation flow (isQuote === true) OR explicitly specified Bag unit:
+  // Quantity = 10 means 10 Bags (e.g. 10 Bag, subtext "50kg Bag")
+  if (isQuote || isBagUnit) {
     let subtext
     if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
       subtext = 'ltrs'
+      return { displayQty: qty, displayUnit: 'ltrs', subtext }
     } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
       subtext = bw > 1 ? `${bw}m Roll` : 'mtrs'
+      return { displayQty: qty, displayUnit: 'mtrs', subtext }
     } else {
       subtext = bw > 1 ? `${bw}kg Bag` : 'Bag'
+      return { displayQty: qty, displayUnit: 'Bag', subtext }
     }
-
-    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'ltrs', subtext }
-    }
-
-    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'mtrs', subtext }
-    }
-
-    return { displayQty: qty, displayUnit: 'Bag', subtext }
   }
 
-  let baseUnitLabel = uClean || u || 'pcs'
+  // Direct Invoice Flow (isQuote === false):
+  // Quantity = 10 means 10 kgs (loose kgs, no bag subtext)
+  let baseUnitLabel = uClean || u || 'kgs'
   if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
   else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
   else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
 
-  // Direct Normal Bill Flow (base UOM without bags):
   return {
     displayQty: qty,
     displayUnit: baseUnitLabel,
-    subtext: baseUnitLabel
+    subtext: ''
   }
 }
 
@@ -114,7 +109,7 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 // HTML Builder  (mirrors BillPreview.jsx exactly)
 // ─────────────────────────────────────────────
 function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {}, type = '' } = {}) {
-  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number))
+  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number)) || Boolean(quote.quote_number || bill.quote_number || quote.quote_id || bill.quote_id)
 
   let quoteNumFound = quote.quote_number || bill.quote_number || ''
   if (!quoteNumFound && (quote.quote_id || bill.quote_id)) {

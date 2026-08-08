@@ -46,38 +46,33 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   const u = (uRaw || dbUnitStr).toLowerCase().trim()
   const isBagUnit = ['bag', 'bags'].includes(u)
 
-  // If bagWeight > 1 OR isBagUnit OR isQuoteFlow -> ALWAYS DISPLAY AS BAGS (e.g. "10 Bag", subtext "50kg Bag")!
-  if (bw > 1 || isBagUnit || isQuoteFlow) {
+  // In Quotation flow (isQuoteFlow === true) OR explicitly specified Bag unit:
+  // Quantity = 10 means 10 Bags (e.g. 10 Bag, subtext "50kg Bag")
+  if (isQuoteFlow || isBagUnit) {
     let subtext
     if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
       subtext = 'ltrs'
+      return { displayQty: qty, displayUnit: 'ltrs', subtext }
     } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
       subtext = bw > 1 ? `${bw}m Roll` : 'mtrs'
+      return { displayQty: qty, displayUnit: 'mtrs', subtext }
     } else {
       subtext = bw > 1 ? `${bw}kg Bag` : 'Bag'
+      return { displayQty: qty, displayUnit: 'Bag', subtext }
     }
-
-    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'ltrs', subtext }
-    }
-
-    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'mtrs', subtext }
-    }
-
-    return { displayQty: qty, displayUnit: 'Bag', subtext }
   }
 
-  let baseUnitLabel = uRaw || u || 'pcs'
+  // Direct Invoice Flow (isQuoteFlow === false):
+  // Quantity = 10 means 10 kgs (loose kgs, no bag subtext)
+  let baseUnitLabel = uRaw || u || 'kgs'
   if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
   else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
   else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
 
-  // Direct Normal Bill Flow (base UOM without bags):
   return {
     displayQty: qty,
     displayUnit: baseUnitLabel,
-    subtext: baseUnitLabel
+    subtext: ''
   }
 }
 
@@ -85,7 +80,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   const printRef = useRef(null)
 
   const doc = bill || quote || {}
-  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill && Boolean(quote || doc.quote_number))
+  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill && Boolean(quote || doc.quote_number)) || Boolean(doc.quote_number || doc.quote_id)
 
   const [profile, setProfile] = useState({
     shopName: shopName || doc.shop_name || '',

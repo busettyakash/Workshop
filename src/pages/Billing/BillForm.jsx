@@ -349,21 +349,16 @@ export default function BillForm() {
     if (!prod) return { perUnitRate: 0, perKgRate: 0, perPackPrice: 0 }
 
     const bw = parseFloat(prod?.bag_weight) || 1
-    const pc = parseFloat(prod?.price_covers) || 0
     const rawP = parseFloat(prod?.price || 0)
     const rawUP = parseFloat(prod?.updated_price || 0)
 
+    // updated_price and price are both stored as 1-bag price (per bag_weight kg)
+    // So to get per-kg rate: divide by bag_weight
     let perKgRate = 0
     if (rawUP > 0) {
-      if (pc > 0 && pc !== bw && rawUP > (rawP / bw) * 1.5) {
-        perKgRate = rawUP / pc
-      } else if (bw > 0) {
-        perKgRate = rawUP / bw
-      } else {
-        perKgRate = rawUP
-      }
+      perKgRate = rawUP / bw
     } else if (rawP > 0) {
-      perKgRate = bw > 0 ? (rawP / bw) : rawP
+      perKgRate = rawP / bw
     }
 
     const perPackPrice = perKgRate * bw

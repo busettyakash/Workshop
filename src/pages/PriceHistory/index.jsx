@@ -64,14 +64,16 @@ const getDisplayPrice = (rawP, bw, pc) => {
   if (!rawP || isNaN(p) || p <= 0) return 0
   const bagW = parseFloat(bw) || 1
   const priceC = parseFloat(pc) || 0
-
-  if (priceC > 0 && priceC !== bagW && bagW > 0) {
-    if (p < 4000) {
-      return (p / bagW) * priceC
-    }
-    return p
+  if (priceC > 0 && bagW > 0 && priceC !== bagW) {
+    if (p >= 2000) return p
+    return (p / bagW) * priceC
   }
+  return p
+}
 
+const getBagPrice = (rawP) => {
+  const p = parseFloat(rawP)
+  if (!rawP || isNaN(p) || p <= 0) return 0
   return p
 }
 
@@ -82,13 +84,9 @@ const getItemPriceDetails = (rawP, bw, pc) => {
   const bagW = parseFloat(bw) || 1
   const priceC = parseFloat(pc) || 0
 
-  const price100 = getDisplayPrice(p, bagW, priceC)
-  const unitRate = (priceC > 0 && priceC !== bagW)
-    ? (price100 / priceC)
-    : (bagW > 0 ? (p / bagW) : p)
-  const packPrice = (priceC > 0 && priceC !== bagW && bagW > 0)
-    ? (price100 / priceC) * bagW
-    : p
+  const packPrice = p
+  const price100 = (priceC > 0 && bagW > 0 && priceC !== bagW) ? (p / bagW) * priceC : p
+  const unitRate = bagW > 0 ? (packPrice / bagW) : packPrice
 
   return { price100, unitRate, packPrice }
 }
@@ -205,8 +203,8 @@ function ProductPriceHistoryDetail({ product, onBack }) {
   const rawP = parseFloat(product.price || 0)
   const rawUP = parseFloat(product.updated_price || 0)
 
-  const basePriceVal = (pc > 0 && bagWeight > 0 && pc !== bagWeight) ? (rawP / bagWeight) * pc : rawP
-  const updatedPriceVal = rawUP > 0 ? ((pc > 0 && bagWeight > 0 && rawUP < basePriceVal / 2) ? (rawUP / bagWeight) * pc : rawUP) : basePriceVal
+  const basePriceVal = getDisplayPrice(rawP, bagWeight, pc)
+  const updatedPriceVal = rawUP > 0 ? getDisplayPrice(rawUP, bagWeight, pc) : basePriceVal
 
   const activeCoveragePrice = (product.updated_price && updatedPriceVal > 0) ? updatedPriceVal : basePriceVal
   const perUnitRate = (pc > 0)
@@ -926,16 +924,7 @@ export default function PriceHistory() {
                                     const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
                                     const pc = parseFloat(row.price_covers || 0)
                                     const bw = parseFloat(row.bag_weight || 1)
-                                    const rawP = parseFloat(row.price || 0)
-
-                                    let priceVal = rawP
-                                    if (pc > 0 && bw > 0 && pc !== bw) {
-                                      if (rawP < 4000) {
-                                        priceVal = (rawP / bw) * pc
-                                      } else {
-                                        priceVal = rawP
-                                      }
-                                    }
+                                    const priceVal = getDisplayPrice(row.price, bw, pc)
 
                                     const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
 
@@ -958,16 +947,7 @@ export default function PriceHistory() {
                                     const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
                                     const pc = parseFloat(row.price_covers || 0)
                                     const bw = parseFloat(row.bag_weight || 1)
-                                    const rawUP = parseFloat(row.updated_price || 0)
-
-                                    let updatedPriceVal = rawUP
-                                    if (pc > 0 && bw > 0 && pc !== bw) {
-                                      if (rawUP < 4000) {
-                                        updatedPriceVal = (rawUP / bw) * pc
-                                      } else {
-                                        updatedPriceVal = rawUP
-                                      }
-                                    }
+                                    const updatedPriceVal = getDisplayPrice(row.updated_price, bw, pc)
 
                                     const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
 

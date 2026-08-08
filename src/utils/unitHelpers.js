@@ -242,14 +242,19 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0)
   if (bulkUnit && bw > 1) {
     const fullBags = Math.floor(numStock);
     const passedLoose = parseFloat(looseKg || 0);
-    const looseQty = passedLoose > 0 ? Math.round(passedLoose) : Math.round((numStock - fullBags) * bw);
+
+    let looseQty = passedLoose > 0 ? passedLoose : (numStock - fullBags) * bw;
+    looseQty = Math.round(looseQty * 100) / 100;
+
     const containerName = bulkUnit.name || 'Bag';
     const containerPlural = bulkUnit.pluralName || `${containerName}s`;
     const shortUnit = bulkUnit.short || unit || 'kg';
 
     const packLabel = fullBags === 1 ? containerName : containerPlural;
     const uLow = String(shortUnit).toLowerCase();
-    const looseUnitLabel = uLow === 'kg' ? 'kgs' : uLow === 'ltr' ? 'ltrs' : uLow === 'mtr' ? 'mtrs' : shortUnit;
+    const looseUnitLabel = looseQty === 1
+      ? (uLow === 'kg' ? 'kg' : uLow === 'ltr' ? 'ltr' : uLow === 'mtr' ? 'mtr' : shortUnit)
+      : (uLow === 'kg' ? 'kgs' : uLow === 'ltr' ? 'ltrs' : uLow === 'mtr' ? 'mtrs' : shortUnit);
 
     if (looseQty > 0 && fullBags > 0) {
       return `${fullBags} ${packLabel} ${looseQty} ${looseUnitLabel}`;
@@ -274,14 +279,16 @@ export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '
 
   if (bulkUnit && bw > 1) {
     const fullBags = Math.floor(total / bw);
-    const looseQty = Math.round(total % bw);
+    let looseQty = Math.round((total % bw) * 100) / 100;
     const containerName = bulkUnit.name || 'Bag';
     const containerPlural = bulkUnit.pluralName || `${containerName}s`;
     const shortUnit = bulkUnit.short || unit || 'kg';
 
     const packLabel = fullBags === 1 ? containerName : containerPlural;
     const uLow = String(shortUnit).toLowerCase();
-    const looseUnitLabel = uLow === 'kg' ? 'kgs' : uLow === 'ltr' ? 'ltrs' : uLow === 'mtr' ? 'mtrs' : shortUnit;
+    const looseUnitLabel = looseQty === 1
+      ? (uLow === 'kg' ? 'kg' : uLow === 'ltr' ? 'ltr' : uLow === 'mtr' ? 'mtr' : shortUnit)
+      : (uLow === 'kg' ? 'kgs' : uLow === 'ltr' ? 'ltrs' : uLow === 'mtr' ? 'mtrs' : shortUnit);
 
     if (looseQty > 0 && fullBags > 0) {
       return `${fullBags} ${packLabel} ${looseQty} ${looseUnitLabel}`;

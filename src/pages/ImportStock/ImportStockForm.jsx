@@ -118,8 +118,18 @@ export default function ImportStockForm() {
           price_covers: item.price_covers !== undefined && item.price_covers !== null ? item.price_covers : '',
           price: item.price || '',
           updated_price: item.updated_price || '',
+          updated_price_100: (() => {
+            const up = parseFloat(item.updated_price || 0)
+            const bw = parseFloat(item.bag_weight || 1)
+            const pc = parseFloat(item.price_covers || 0)
+            if (up > 0 && pc > 0 && bw > 0 && pc !== bw) {
+              return ((up / bw) * pc).toFixed(2)
+            }
+            return up > 0 ? up.toFixed(2) : ''
+          })(),
           updated_price_date: item.updated_price_date ? String(item.updated_price_date).split('T')[0] : todayStr,
           stock: item.stock || 0,
+          initial_stock: item.stock || 0,
           status: item.status || 'pending',
           unit: item.unit || 'kgs',
           description: item.description || '',
@@ -604,36 +614,70 @@ export default function ImportStockForm() {
                     <div>
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Updated Price (₹)</label>
                       <input
-                        name="updated_price"
+                        name="updated_price_100"
                         type="number"
                         step="0.01"
-                        value={form.updated_price}
+                        value={form.updated_price_100 ?? ''}
                         onChange={(e) => {
                           const val = e.target.value
+                          const p100val = parseFloat(val || 0)
+                          const bwVal = parseFloat(form.bag_weight || 1)
+                          const pcVal = parseFloat(form.price_covers || 0)
+                          // Convert price_covers rate → bag price for storage
+                          const bagPrice = (p100val > 0 && pcVal > 0 && bwVal > 0 && pcVal !== bwVal)
+                            ? ((p100val / pcVal) * bwVal).toFixed(2)
+                            : val
                           setForm(prev => ({
                             ...prev,
-                            updated_price: val,
-                            updated_price_date: val ? todayStr : prev.updated_price_date
+                            updated_price_100: val,
+                            updated_price: bagPrice,
+                            updated_price_date: todayStr
                           }))
                         }}
-                        placeholder="e.g. 6000"
-                        style={inp('updated_price')}
-                        onFocus={() => setFocus('updated_price')}
+                        placeholder={pc > 0 ? `e.g. price for ${pc}kg` : 'e.g. 3300'}
+                        style={inp('updated_price_100')}
+                        onFocus={() => setFocus('updated_price_100')}
                         onBlur={() => setFocus(null)}
                       />
+                      {form.updated_price_100 && parseFloat(form.updated_price_100) > 0 && pc > 0 && (
+                        <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, display: 'block' }}>
+                          ₹{(parseFloat(form.updated_price_100) / pc).toFixed(2)} / kg rate
+                        </span>
+                      )}
+                      <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 1, display: 'block' }}>
+                        Auto-applies today's date ({todayStr})
+                      </span>
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Updated Date</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                        Stock Quantity Update ({getBulkUnitDetails(form.unit)?.pluralName || 'Bags'})
+                      </label>
                       <input
-                        name="updated_price_date"
-                        type="date"
-                        value={form.updated_price_date}
-                        onChange={handleChange}
-                        style={inp('updated_price_date')}
-                        onFocus={() => setFocus('updated_price_date')}
+                        name="add_stock_qty"
+                        type="number"
+                        step="0.01"
+                        value={form.add_stock_qty || ''}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setForm(prev => {
+                            const addedVal = parseFloat(val || 0)
+                            const baseStock = parseFloat(prev.initial_stock ?? prev.stock ?? 0)
+                            return {
+                              ...prev,
+                              add_stock_qty: val,
+                              stock: val !== '' ? (baseStock + addedVal) : baseStock
+                            }
+                          })
+                        }}
+                        placeholder="e.g. +50 to update stock"
+                        style={inp('add_stock_qty')}
+                        onFocus={() => setFocus('add_stock_qty')}
                         onBlur={() => setFocus(null)}
                       />
+                      <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, display: 'block' }}>
+                        Auto-applies today's date ({todayStr})
+                      </span>
                     </div>
                   </div>
 

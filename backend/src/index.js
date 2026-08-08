@@ -177,6 +177,21 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || 'Internal server error' })
 })
 
+import { query } from './lib/db.js'
+query(`
+  UPDATE products SET updated_price = (updated_price / 100) * bag_weight
+  WHERE price_covers = 100 AND bag_weight = 50 AND updated_price >= 2000;
+
+  UPDATE import_stock SET updated_price = (updated_price / 100) * bag_weight
+  WHERE price_covers = 100 AND bag_weight = 50 AND updated_price >= 2000;
+
+  UPDATE product_price_history SET new_price = (new_price / 100) * 50
+  WHERE new_price >= 2000 AND product_id IN (SELECT id FROM products WHERE price_covers = 100 AND bag_weight = 50);
+
+  UPDATE product_price_history SET old_price = (old_price / 100) * 50
+  WHERE old_price >= 2000 AND product_id IN (SELECT id FROM products WHERE price_covers = 100 AND bag_weight = 50);
+`).catch(err => console.warn('[DB Cleanup] Error auto-cleaning historical price data:', err.message))
+
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)

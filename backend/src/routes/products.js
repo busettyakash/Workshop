@@ -365,8 +365,14 @@ router.put('/:id', async (req, res) => {
       : (updated_price_date || oldProduct?.updated_price_date || todayStr)
 
     let finalUpdatedPrice = oldProduct?.updated_price
-    if (updated_price !== undefined) {
-      finalUpdatedPrice = updated_price ? parseFloat(updated_price) : null
+    if (updated_price !== undefined && updated_price !== null && updated_price !== '') {
+      let upVal = parseFloat(updated_price)
+      const bw = bag_weight ? parseFloat(bag_weight) : parseFloat(oldProduct?.bag_weight || 1)
+      const pc = price_covers !== undefined && price_covers !== null && price_covers !== '' ? parseFloat(price_covers) : parseFloat(oldProduct?.price_covers || 0)
+      if (pc > 0 && bw > 0 && pc !== bw && upVal >= 2000) {
+        upVal = (upVal / pc) * bw
+      }
+      finalUpdatedPrice = upVal
     }
 
     const { rows } = await query(
@@ -399,6 +405,23 @@ router.put('/:id', async (req, res) => {
     const updatedProd = rows[0]
     clearProductHsnCache()
 
+    const oldStockVal = oldProduct?.stock !== undefined && oldProduct?.stock !== null ? parseFloat(oldProduct.stock) : 0
+    const newStockVal = updatedProd?.stock !== undefined && updatedProd?.stock !== null ? parseFloat(updatedProd.stock) : oldStockVal
+    const stockDiff = newStockVal - oldStockVal
+
+    if (stockDiff !== 0) {
+      const changeType = stockDiff > 0 ? 'added' : 'deducted'
+      const changeNotes = stockDiff > 0
+        ? `Stock quantity updated (+${stockDiff} ${updatedProd.unit || 'bags'})`
+        : `Stock quantity updated (${stockDiff} ${updatedProd.unit || 'bags'})`
+
+      await query(
+        `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        [updatedProd.id, userId, changeType, stockDiff, oldStockVal, newStockVal, 'Stock Update', changeNotes]
+      ).catch(() => {})
+    }
+
     if (isUpdatedPriceChanged && updatedProd.updated_price) {
       await logPriceHistory(updatedProd.id, userId, oldProduct?.updated_price || oldProduct?.price, updatedProd.updated_price, finalUpdatedPriceDate, 'Updated Price Changed')
     } else if (isPriceChanged && updatedProd.price) {
@@ -419,6 +442,55 @@ router.delete('/:id', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Product not found' })
     clearProductHsnCache()
     res.json({ message: 'Product deleted successfully' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* PATCH /api/products/:id/stock */
+router.patch('/:id/stock', async (req, res) => {
+  const userId = req.workspaceId
+  const { stock, add_stock } = req.body
+  try {
+    const { rows: existingRows } = await query('SELECT * FROM products WHERE id = $1 AND user_id = $2', [req.params.id, userId])
+    if (!existingRows.length) return res.status(404).json({ error: 'Product not found' })
+    const oldProduct = existingRows[0]
+    const oldStock = parseFloat(oldProduct.stock || 0)
+
+    let newStock = oldStock
+    if (add_stock !== undefined && !isNaN(parseFloat(add_stock))) {
+      newStock = oldStock + parseFloat(add_stock)
+    } else if (stock !== undefined && !isNaN(parseFloat(stock))) {
+      newStock = parseFloat(stock)
+    }
+
+    const qtyDiff = newStock - oldStock
+
+    const { rows } = await query(
+      'UPDATE products SET stock = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 RETURNING *',
+      [newStock, req.params.id, userId]
+    )
+
+    if (qtyDiff !== 0) {
+      const changeType = qtyDiff > 0 ? 'added' : 'deducted'
+      const changeNotes = qtyDiff > 0
+        ? `Stock quantity updated (+${qtyDiff} ${oldProduct.unit || 'bags'})`
+        : `Stock quantity updated (${qtyDiff} ${oldProduct.unit || 'bags'})`
+
+      await query(
+        `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        [oldProduct.id, userId, changeType, qtyDiff, oldStock, newStock, 'Stock Update', changeNotes]
+      ).catch(() => {})
+    }
+
+    // Sync back to import_stock if matching record exists
+    await query(
+      'UPDATE import_stock SET stock = $1, updated_at = NOW() WHERE user_id = $2 AND (sku = $3 OR name = $4)',
+      [newStock, userId, oldProduct.sku || 'N/A', oldProduct.name]
+    ).catch(() => {})
+
+    res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

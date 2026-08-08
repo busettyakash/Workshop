@@ -6,7 +6,7 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import {
   Plus, Receipt, TrendingUp, Clock, CheckCircle,
   Trash2, Loader2, Check, Eye, Download, Upload,
-  FileText, Star, X, ChevronDown, Search, Filter, ArrowUpDown
+  FileText, Star, X, ChevronDown, ChevronLeft, ChevronRight, Calendar, Search, Filter, ArrowUpDown
 } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
 import api from '../../api/client'
@@ -204,8 +204,69 @@ export default function Billing() {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState('') // '' (default), 'id_asc', 'id_desc', 'amount_asc', 'amount_desc'
   const [filterStatus, setFilterStatus] = useState('all') // default all
+  const [filterMonth, setFilterMonth] = useState('')
+  const [filterYear, setFilterYear] = useState('')
+  const [filterDate, setFilterDate] = useState('')
   const [showFilterBar, setShowFilterBar] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
+
+  const getTodayStr = () => {
+    const d = new Date()
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const todayStr = getTodayStr()
+
+  const handlePrevDay = () => {
+    const baseDateStr = filterDate || todayStr
+    const [y, m, d] = baseDateStr.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    dt.setDate(dt.getDate() - 1)
+    const ny = dt.getFullYear()
+    const nm = String(dt.getMonth() + 1).padStart(2, '0')
+    const nd = String(dt.getDate()).padStart(2, '0')
+    setFilterDate(`${ny}-${nm}-${nd}`)
+    setPage(1)
+  }
+
+  const handleNextDay = () => {
+    const baseDateStr = filterDate || todayStr
+    const [y, m, d] = baseDateStr.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    dt.setDate(dt.getDate() + 1)
+    const ny = dt.getFullYear()
+    const nm = String(dt.getMonth() + 1).padStart(2, '0')
+    const nd = String(dt.getDate()).padStart(2, '0')
+    setFilterDate(`${ny}-${nm}-${nd}`)
+    setPage(1)
+  }
+
+  const handleSelectToday = () => {
+    setFilterDate(todayStr)
+    setPage(1)
+  }
+
+  const handleClearFilters = () => {
+    setFilterStatus('all')
+    setFilterMonth('')
+    setFilterYear('')
+    setFilterDate('')
+    setPage(1)
+  }
+
+  const getDateNavLabel = () => {
+    if (!filterDate || filterDate === todayStr) return 'Today'
+    try {
+      const [y, m, d] = filterDate.split('-').map(Number)
+      const dt = new Date(y, m - 1, d)
+      return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    } catch {
+      return filterDate
+    }
+  }
 
   const isAllSelected = bills.length > 0 && selectedIds.length === bills.length
   const handleSelectAll = (e) => {
@@ -247,15 +308,31 @@ export default function Billing() {
       const u = JSON.parse(sessionStorage.getItem('ws_user') || '{}')
       setShopInfo({ shopName: u.shopName || '', gstin: u.gstin || '', phone: u.phone || '', address: u.address || '' })
     } catch { }
-  }, [dispatch, page, search, sort, filterStatus])
+  }, [dispatch, page, search, sort, filterStatus, filterMonth, filterYear, filterDate])
 
   const fetchData = async (currentPage = page) => {
     setLoading(true)
     try {
       const statusParam = filterStatus === 'all' ? '' : filterStatus
+      const queryParams = new URLSearchParams()
+      queryParams.set('page', currentPage)
+      queryParams.set('limit', limit)
+      if (statusParam) queryParams.set('status', statusParam)
+      if (search.trim()) queryParams.set('search', search.trim())
+      if (sort) queryParams.set('sort', sort)
+      if (filterDate) queryParams.set('date', filterDate)
+      if (filterMonth) queryParams.set('month', filterMonth)
+      if (filterYear) queryParams.set('year', filterYear)
+
+      const summaryParams = new URLSearchParams()
+      if (filterDate) summaryParams.set('date', filterDate)
+      if (filterMonth) summaryParams.set('month', filterMonth)
+      if (filterYear) summaryParams.set('year', filterYear)
+      if (search.trim()) summaryParams.set('search', search.trim())
+
       const [billsRes, summaryRes] = await Promise.all([
-        api.get(`/billing?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}&status=${statusParam}`),
-        api.get('/billing/summary')
+        api.get(`/billing?${queryParams.toString()}`),
+        api.get(`/billing/summary?${summaryParams.toString()}`)
       ])
       setBills(billsRes.data?.data || [])
       setTotal(billsRes.data?.total || 0)
@@ -315,6 +392,8 @@ export default function Billing() {
     return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
+  const hasActiveFilters = filterStatus !== 'all' || filterMonth !== '' || filterYear !== '' || filterDate !== ''
+
   return (
     <div className="ws-dash-layout">
       <Sidebar />
@@ -324,9 +403,14 @@ export default function Billing() {
           <div className="attio-products-container">
             {/* Top Toolbar */}
             <div className="ws-unified-page-header">
-              <div className="ws-unified-header-left">
+              <div className="ws-unified-header-left" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="ws-unified-header-title">Billing</span>
                 <span className="ws-unified-header-badge">{total} invoices</span>
+                {filterDate && (
+                  <span className="attio-badge attio-badge-blue" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                    {filterDate === todayStr ? 'Today' : formatDate(filterDate)}
+                  </span>
+                )}
               </div>
               <div className="ws-unified-header-actions">
                 {/* Search box */}
@@ -339,6 +423,68 @@ export default function Billing() {
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                   />
+                </div>
+
+                {/* < Today / Date > Date Navigator */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '2px', gap: 2 }}>
+                  <button
+                    type="button"
+                    className="attio-btn"
+                    onClick={handlePrevDay}
+                    title="Previous Day"
+                    style={{ height: 26, width: 26, padding: 0, border: 'none', background: 'transparent', justifyContent: 'center', cursor: 'pointer' }}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="attio-btn"
+                    onClick={handleSelectToday}
+                    title="Click to reset to Today"
+                    style={{
+                      height: 26,
+                      padding: '0 10px',
+                      border: 'none',
+                      background: (filterDate === todayStr || !filterDate) ? '#eff6ff' : '#f8fafc',
+                      color: (filterDate === todayStr || !filterDate) ? '#2563eb' : '#0f172a',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {getDateNavLabel()}
+                  </button>
+                  <button
+                    type="button"
+                    className="attio-btn"
+                    onClick={handleNextDay}
+                    title="Next Day"
+                    style={{ height: 26, width: 26, padding: 0, border: 'none', background: 'transparent', justifyContent: 'center', cursor: 'pointer' }}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                  {filterDate && filterDate !== todayStr && (
+                    <button
+                      type="button"
+                      onClick={handleSelectToday}
+                      title="Reset to Today"
+                      style={{
+                        height: 22,
+                        padding: '0 6px',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: 4,
+                        background: '#eff6ff',
+                        color: '#2563eb',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        marginLeft: 2
+                      }}
+                    >
+                      Today
+                    </button>
+                  )}
                 </div>
 
                 {/* Sort button */}
@@ -363,9 +509,9 @@ export default function Billing() {
                   className="attio-btn"
                   onClick={() => setShowFilterBar(prev => !prev)}
                   style={{
-                    background: showFilterBar || filterStatus !== 'all' ? '#f1f5f9' : '#ffffff',
-                    borderColor: showFilterBar || filterStatus !== 'all' ? '#0f172a' : '#cbd5e1',
-                    fontWeight: showFilterBar || filterStatus !== 'all' ? 600 : 500
+                    background: showFilterBar || hasActiveFilters ? '#f1f5f9' : '#ffffff',
+                    borderColor: showFilterBar || hasActiveFilters ? '#0f172a' : '#cbd5e1',
+                    fontWeight: showFilterBar || hasActiveFilters ? 600 : 500
                   }}
                 >
                   <Filter size={13} /> Filter
@@ -406,8 +552,9 @@ export default function Billing() {
 
             {/* Expandable Filter Box */}
             {showFilterBar && (
-              <div className="attio-filter-box">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: '#475467' }}>
+              <div className="attio-filter-box" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                {/* Status Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#475467' }}>
                   <span>Status:</span>
                   <select
                     className="attio-select"
@@ -421,10 +568,75 @@ export default function Billing() {
                   </select>
                 </div>
 
-                {filterStatus !== 'all' && (
+                {/* Month Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Month:</span>
+                  <select
+                    className="attio-select"
+                    value={filterMonth}
+                    onChange={(e) => { setFilterMonth(e.target.value); setPage(1); }}
+                  >
+                    <option value="">All Months</option>
+                    <option value="1">January</option>
+                    <option value="2">February</option>
+                    <option value="3">March</option>
+                    <option value="4">April</option>
+                    <option value="5">May</option>
+                    <option value="6">June</option>
+                    <option value="7">July</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">October</option>
+                    <option value="11">November</option>
+                    <option value="12">December</option>
+                  </select>
+                </div>
+
+                {/* Year Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Year:</span>
+                  <select
+                    className="attio-select"
+                    value={filterYear}
+                    onChange={(e) => { setFilterYear(e.target.value); setPage(1); }}
+                  >
+                    <option value="">All Years</option>
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                    <option value="2023">2023</option>
+                    <option value="2022">2022</option>
+                  </select>
+                </div>
+
+                {/* Specific Date Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Date:</span>
+                  <input
+                    type="date"
+                    className="attio-select"
+                    style={{
+                      height: 32,
+                      padding: '4px 10px',
+                      fontSize: '0.8125rem',
+                      borderRadius: 6,
+                      border: '1px solid #d1d5db',
+                      background: '#ffffff',
+                      color: '#111827',
+                      fontFamily: 'inherit',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                    value={filterDate}
+                    onChange={(e) => { setFilterDate(e.target.value); setPage(1); }}
+                  />
+                </div>
+
+                {/* Reset Filters */}
+                {hasActiveFilters && (
                   <button
-                    onClick={() => { setFilterStatus('all'); setPage(1); }}
-                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
+                    onClick={handleClearFilters}
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 600 }}
                   >
                     Reset Filters
                   </button>

@@ -38,15 +38,16 @@ router.use(async (_req, _res, next) => {
 
 import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
 
-/* GET /api/billing?status=paid|unpaid */
-router.get('/', async (req, res) => {
-  const userId = req.workspaceId
-  const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
-  const { status, search, sort } = req.query
-
+function buildBillingWhere(queryObj, userId, includeStatus = true) {
+  const { status, search, date, month, year, startDate, endDate } = queryObj
   const params = [userId]
-  const conditions = ['(b.user_id::text = $1::text OR b.user_id = \'default-user\' OR $1 = \'default-user\')']
-  if (status) { params.push(status); conditions.push(`b.status = $${params.length}`) }
+  const conditions = ["(b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')"]
+
+  if (includeStatus && status && status !== 'all') {
+    params.push(status)
+    conditions.push(`b.status = $${params.length}`)
+  }
+
   if (search && search.trim()) {
     params.push(`%${search.trim()}%`)
     conditions.push(`(
@@ -58,6 +59,39 @@ router.get('/', async (req, res) => {
     )`)
   }
 
+  if (date) {
+    params.push(date)
+    conditions.push(`b.created_at::date = $${params.length}::date`)
+  } else {
+    if (year) {
+      params.push(parseInt(year, 10))
+      conditions.push(`EXTRACT(YEAR FROM b.created_at) = $${params.length}`)
+    }
+    if (month) {
+      params.push(parseInt(month, 10))
+      conditions.push(`EXTRACT(MONTH FROM b.created_at) = $${params.length}`)
+    }
+    if (startDate) {
+      params.push(startDate)
+      conditions.push(`b.created_at >= $${params.length}::timestamp`)
+    }
+    if (endDate) {
+      params.push(endDate)
+      conditions.push(`b.created_at <= $${params.length}::timestamp`)
+    }
+  }
+
+  return { where: `WHERE ${conditions.join(' AND ')}`, params }
+}
+
+/* GET /api/billing?status=paid|unpaid&date=YYYY-MM-DD&month=1-12&year=2026 */
+router.get('/', async (req, res) => {
+  const userId = req.workspaceId
+  const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
+  const { sort } = req.query
+
+  const { where, params } = buildBillingWhere(req.query, userId, true)
+
   let orderCol = 'b.created_at DESC, b.id DESC'
   if (sort === 'id_asc') orderCol = 'b.id ASC'
   else if (sort === 'id_desc') orderCol = 'b.id DESC'
@@ -66,12 +100,14 @@ router.get('/', async (req, res) => {
 
   try {
     if (cursor) {
+      const cursorParams = [...params]
+      const cursorConditions = [where ? where.replace(/^WHERE /, '') : '']
       if (cursor.created_at && cursor.id) {
-        params.push(cursor.created_at, cursor.id)
-        conditions.push(`(b.created_at, b.id) < ($${params.length - 1}, $${params.length})`)
+        cursorParams.push(cursor.created_at, cursor.id)
+        cursorConditions.push(`(b.created_at, b.id) < ($${cursorParams.length - 1}, $${cursorParams.length})`)
       }
-      const where = `WHERE ${conditions.join(' AND ')}`
-      params.push(limit + 1)
+      const cursorWhere = `WHERE ${cursorConditions.filter(Boolean).join(' AND ')}`
+      cursorParams.push(limit + 1)
       const { rows } = await query(
         `SELECT b.*,
            COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
@@ -83,9 +119,9 @@ router.get('/', async (req, res) => {
          LEFT JOIN people p ON b.customer_id = p.id
          LEFT JOIN customers cust ON b.customer_id = cust.id
          LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
-         ${where} ORDER BY ${orderCol}
-         LIMIT $${params.length}`,
-        params
+         ${cursorWhere} ORDER BY ${orderCol}
+         LIMIT $${cursorParams.length}`,
+        cursorParams
       )
       const hasNextPage = rows.length > limit
       if (hasNextPage) rows.pop()
@@ -96,7 +132,6 @@ router.get('/', async (req, res) => {
       return res.json({ data: rows, limit, hasNextPage, nextCursor })
     }
 
-    const where = `WHERE ${conditions.join(' AND ')}`
     const count = await query(
       `SELECT COUNT(*) FROM bills b 
        LEFT JOIN people p ON b.customer_id = p.id
@@ -107,7 +142,7 @@ router.get('/', async (req, res) => {
     const total = parseInt(count.rows[0].count, 10) || 0
     const totalPages = Math.ceil(total / limit) || 1
 
-    params.push(limit, offset)
+    const listParams = [...params, limit, offset]
     const { rows } = await query(
       `SELECT b.*,
          COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
@@ -120,8 +155,8 @@ router.get('/', async (req, res) => {
        LEFT JOIN customers cust ON b.customer_id = cust.id
        LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
        ${where} ORDER BY ${orderCol}
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+      listParams
     )
 
     const hasNextPage = page < totalPages
@@ -145,14 +180,15 @@ router.get('/', async (req, res) => {
   }
 })
 
-/* GET /api/billing/summary — paid/unpaid totals */
+/* GET /api/billing/summary — paid/unpaid totals with optional date/month/year filters */
 router.get('/summary', async (req, res) => {
   const userId = req.workspaceId
   try {
+    const { where, params } = buildBillingWhere(req.query, userId, false)
     const { rows } = await query(
-      `SELECT status, COUNT(*) AS count, COALESCE(SUM(amount),0) AS total
-       FROM bills WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user') GROUP BY status`,
-      [userId]
+      `SELECT b.status, COUNT(*) AS count, COALESCE(SUM(b.amount),0) AS total
+       FROM bills b ${where} GROUP BY b.status`,
+      params
     )
     res.json(rows)
   } catch (err) {

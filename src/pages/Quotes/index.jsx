@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast, setSidebarOpen } from '../../redux/slices/uiSlice'
 import { Plus, Filter, ArrowUpDown, X, Trash2, Loader2, Search, Eye, FileText, Calendar, Edit2, ArrowLeft, User, Package, Calculator, CheckCircle2, Send, Receipt, ArrowRight, ChevronDown } from 'lucide-react'
 import { getAvatarColor, getSingleLetter } from '../../utils/tableHelpers'
-import { getBulkUnitDetails } from '../../utils/unitHelpers'
+import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import '../Products/Products.css'
@@ -335,21 +335,16 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     if (!prod) return { perUnitRate: 0, perKgRate: 0, perPackPrice: 0 }
 
     const bw = parseFloat(prod?.bag_weight) || 1
-    const pc = parseFloat(prod?.price_covers) || 0
     const rawP = parseFloat(prod?.price || 0)
     const rawUP = parseFloat(prod?.updated_price || 0)
 
+    // updated_price and price are both stored as 1-bag price (per bag_weight kg)
+    // So to get per-kg rate: divide by bag_weight
     let perKgRate = 0
     if (rawUP > 0) {
-      if (pc > 0 && pc !== bw && rawUP > (rawP / bw) * 1.5) {
-        perKgRate = rawUP / pc
-      } else if (bw > 0) {
-        perKgRate = rawUP / bw
-      } else {
-        perKgRate = rawUP
-      }
+      perKgRate = rawUP / bw
     } else if (rawP > 0) {
-      perKgRate = bw > 0 ? (rawP / bw) : rawP
+      perKgRate = rawP / bw
     }
 
     const perPackPrice = perKgRate * bw
@@ -810,7 +805,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                   ? `${bulkUnit.name || 'Bag'}: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
                   : '')
 
-                const stockSubtext = maxStock !== null ? `Available Stock: ${maxStock} ${unitLabel}` : ''
+                const stockSubtext = selectedProd ? `Available Stock: ${formatStockDisplay(selectedProd.stock, selectedProd.bag_weight, selectedProd.unit, selectedProd.loose_kg)}` : ''
                 const fullSubtext = [baseSubtext, stockSubtext].filter(Boolean).join(' • ')
 
                 return (

@@ -57,40 +57,33 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
     }
   }
 
-  let uRaw = String(rawUnit || '').trim()
+  let uClean = String(rawUnit || '').trim()
 
-  if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
-    if (uRaw.toLowerCase().includes('/ltr') || uRaw.toLowerCase().includes('ltr')) {
-      uRaw = 'ltrs'
-    } else if (uRaw.toLowerCase().includes('/kg') || uRaw.toLowerCase().includes('kg')) {
-      uRaw = 'kgs'
-    } else if (uRaw.toLowerCase().includes('/mtr') || uRaw.toLowerCase().includes('mtr')) {
-      uRaw = 'mtrs'
+  if (uClean.includes(':') || uClean.includes('₹') || uClean.includes('/')) {
+    if (uClean.toLowerCase().includes('/ltr') || uClean.toLowerCase().includes('ltr')) {
+      uClean = 'ltrs'
+    } else if (uClean.toLowerCase().includes('/kg') || uClean.toLowerCase().includes('kg')) {
+      uClean = 'kgs'
+    } else if (uClean.toLowerCase().includes('/mtr') || uClean.toLowerCase().includes('mtr')) {
+      uClean = 'mtrs'
     } else {
-      uRaw = uRaw.split(':')[0].trim()
+      uClean = uClean.split(':')[0].trim()
     }
   }
 
   const dbUnitStr = (typeof dbUnit === 'string' && ['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) ? dbUnit : ''
-  const u = (uRaw || dbUnitStr).toLowerCase().trim()
+  const u = (uClean || dbUnitStr).toLowerCase().trim()
   const isBagUnit = ['bag', 'bags'].includes(u)
 
-  let baseUnitLabel = uRaw || u || 'pcs'
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
-  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
-  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
-  else if (isBagUnit) baseUnitLabel = 'Bag'
-
-  // If item is in Bags or isQuote is true -> QUOTE FLOW DISPLAY (Show 50kg Bag, 26kg Bag)!
-  if (isQuote || isBagUnit) {
+  // If bagWeight > 1 OR isBagUnit OR isQuote -> ALWAYS DISPLAY AS BAGS (e.g. "10 Bag", subtext "50kg Bag")!
+  if (bw > 1 || isBagUnit || isQuote) {
     let subtext
     if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
       subtext = 'ltrs'
     } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
       subtext = bw > 1 ? `${bw}m Roll` : 'mtrs'
     } else {
-      const packName = bw > 1 ? 'Bag' : 'Pack'
-      subtext = bw > 1 ? `${bw}kg ${packName}` : 'Bag'
+      subtext = bw > 1 ? `${bw}kg Bag` : 'Bag'
     }
 
     if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
@@ -103,6 +96,11 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 
     return { displayQty: qty, displayUnit: 'Bag', subtext }
   }
+
+  let baseUnitLabel = uClean || u || 'pcs'
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
+  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
+  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
 
   // Direct Normal Bill Flow (base UOM without bags):
   return {
@@ -355,10 +353,13 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
 <head>
   <meta charset="UTF-8"/>
   <title>${docId}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     @page { margin: 0; size: A4; }
-    * { margin:0; padding:0; box-sizing:border-box; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background:#fff; color:#0f172a; padding:20px; }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#fff; color:#0f172a; padding:20px; }
     .page { max-width:800px; margin:0 auto; border:1px solid #cbd5e1; border-radius:12px; overflow:hidden; }
     .banner { background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 60%,#3d68f5 100%); padding:36px 44px 32px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; color:#fff; }
     .banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; background:rgba(255,255,255,0.12); border-radius:50%; }

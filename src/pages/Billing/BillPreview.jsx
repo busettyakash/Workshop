@@ -46,22 +46,15 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   const u = (uRaw || dbUnitStr).toLowerCase().trim()
   const isBagUnit = ['bag', 'bags'].includes(u)
 
-  let baseUnitLabel = uRaw || u || 'pcs'
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
-  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
-  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
-  else if (isBagUnit) baseUnitLabel = 'Bag'
-
-  // If item is in Bags or isQuoteFlow is true -> QUOTE FLOW DISPLAY (Show 50kg Bag, 26kg Bag)!
-  if (isQuoteFlow || isBagUnit) {
-    let subtext = baseUnitLabel
+  // If bagWeight > 1 OR isBagUnit OR isQuoteFlow -> ALWAYS DISPLAY AS BAGS (e.g. "10 Bag", subtext "50kg Bag")!
+  if (bw > 1 || isBagUnit || isQuoteFlow) {
+    let subtext
     if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
       subtext = 'ltrs'
     } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
       subtext = bw > 1 ? `${bw}m Roll` : 'mtrs'
     } else {
-      const packName = bw > 1 ? 'Bag' : 'Pack'
-      subtext = bw > 1 ? `${bw}kg ${packName}` : 'Bag'
+      subtext = bw > 1 ? `${bw}kg Bag` : 'Bag'
     }
 
     if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
@@ -74,6 +67,11 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 
     return { displayQty: qty, displayUnit: 'Bag', subtext }
   }
+
+  let baseUnitLabel = uRaw || u || 'pcs'
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
+  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
+  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
 
   // Direct Normal Bill Flow (base UOM without bags):
   return {

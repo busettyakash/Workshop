@@ -1,6 +1,13 @@
 import puppeteer from 'puppeteer'
-import PDFDocument from 'pdfkit'
 import { getProductHsnMap } from '../lib/productCache.js'
+
+let chromiumModule = null
+let puppeteerCoreModule = null
+
+try {
+  chromiumModule = await import('@sparticuz/chromium').then(m => m.default || m).catch(() => null)
+  puppeteerCoreModule = await import('puppeteer-core').then(m => m.default || m).catch(() => null)
+} catch { }
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -537,367 +544,31 @@ function getSystemBrowserPath() {
 }
 
 // ─────────────────────────────────────────────
-// PDFKit Fallback (Rich Layout Matching Image 1 Design)
-// ─────────────────────────────────────────────
-function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' }) {
-  return new Promise((resolve, reject) => {
-    try {
-      const pdf = new PDFDocument({ margin: 36, size: 'A4' })
-      const chunks = []
-      pdf.on('data', c => chunks.push(c))
-      pdf.on('end', () => resolve(Buffer.concat(chunks)))
-
-      const doc = { ...quote, ...bill }
-      const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number))
-
-      let quoteNumFound = quote.quote_number || bill.quote_number || ''
-      if (!quoteNumFound && (quote.quote_id || bill.quote_id)) {
-        const qid = quote.quote_id || bill.quote_id
-        quoteNumFound = String(qid).startsWith('QT-') ? String(qid) : `QT-${qid}`
-      }
-      if (!quoteNumFound && (quote.notes || bill.notes)) {
-        const notesStr = String(quote.notes || bill.notes || '')
-        const match = notesStr.match(/QT-[A-Z0-9]+/i)
-        if (match) quoteNumFound = match[0].toUpperCase()
-      }
-      if (!quoteNumFound && (quote.id || !bill.id)) {
-        if (quote.id) {
-          const qStr = String(quote.id)
-          quoteNumFound = qStr.startsWith('QT-') ? qStr : `QT-${qStr}`
-        } else {
-          quoteNumFound = 'QT-820332'
-        }
-      }
-
-      let docId = ''
-      if (isQuote) {
-        docId = quoteNumFound || `QT-${quote.id || '820332'}`
-      } else if (bill.bill_number) {
-        docId = bill.bill_number
-      } else if (bill.id) {
-        docId = `INV-${String(bill.id).padStart(5, '0')}`
-      } else {
-        docId = 'INV-10001'
-      }
-
-      const orderId = bill.order_number || quote.order_number || ''
-      const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
-      const sectionTitle1 = isQuote ? '1. QUOTATION DETAILS' : '1. INVOICE DETAILS'
-      const docTypeTitle = isQuote ? 'Commercial Quotation' : 'Tax Invoice'
-
-      // Supplier
-      const companyName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
-      const companyGstin = shop.gstin || quote.shop_gstin || bill.shop_gstin || ''
-      const companyPhone = shop.phone || quote.shop_phone || bill.shop_phone || ''
-      const companyAddress = shop.address || quote.shop_address || bill.shop_address || ''
-
-      // Customer
-      const customerName = quote.customer_name || bill.customer_name || ''
-      const customerGstin = quote.customer_gstin || bill.customer_gstin || ''
-      const customerPhone = quote.customer_phone || bill.customer_phone || ''
-      const customerCompany = quote.customer_company || bill.customer_company || ''
-      const custStateStr = quote.customer_state ? `, ${quote.customer_state}` : ''
-      const customerAddress = quote.customer_address || bill.customer_address ||
-        (quote.customer_city ? (quote.customer_city + custStateStr) : '')
-
-      const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
-
-      const grossSubtotal = items.reduce((s, li) => {
-        const q = parseFloat(li.qty || li.quantity || 1)
-        const p = parseFloat(li.price || li.rate || 0)
-        return s + (p * q)
-      }, 0)
-      const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
-      const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
-      const explicitTotalAmount = parseFloat(doc.amount || doc.total_amount || 0)
-
-      const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
-      const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
-      const explicitTaxAmt = hasExplicitTaxAmt ? parseFloat(rawTaxAmt) : 0
-
-      const rawTaxRate = doc.tax_rate ?? doc.taxRate ?? quote?.tax_rate ?? bill?.tax_rate
-      const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !isNaN(parseFloat(rawTaxRate)))
-        ? parseFloat(rawTaxRate)
-        : null
-
-      const tempDiscount = Math.max(explicitDiscount, lineDiscounts)
-      const tempTaxable = Math.max(0, grossSubtotal - tempDiscount)
-
-      let taxAmt = 0
-      if (explicitTaxAmt > 0) {
-        taxAmt = explicitTaxAmt
-      } else if (explicitTaxRate !== null && explicitTaxRate > 0) {
-        taxAmt = tempTaxable * (explicitTaxRate / 100)
-      } else if (explicitTotalAmount > 0 && explicitTotalAmount > tempTaxable) {
-        taxAmt = explicitTotalAmount - tempTaxable
-      }
-
-      const grossTotalWithTax = grossSubtotal + taxAmt
-      const diffDiscount = (grossTotalWithTax > 0 && explicitTotalAmount > 0 && grossTotalWithTax > explicitTotalAmount + 0.01)
-        ? (grossTotalWithTax - explicitTotalAmount)
-        : 0
-      const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
-      const taxableSubtotal = Math.max(0, grossSubtotal - totalDiscount)
-      const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (taxableSubtotal + taxAmt)
-
-      let effectiveTaxRate = 0
-      if (taxAmt > 0 && taxableSubtotal > 0) {
-        effectiveTaxRate = Math.round((taxAmt / taxableSubtotal) * 100)
-      } else if (explicitTaxRate > 0) {
-        effectiveTaxRate = explicitTaxRate
-      }
-
-      const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
-      const cgst = taxAmt / 2
-      const sgst = taxAmt / 2
-
-      const issueDate = fmtDate(doc.issue_date || doc.created_at)
-      const dueDate = fmtDate(doc.valid_until || doc.due_date)
-
-      const startX = 36
-      const contentWidth = 523
-      let currentY = 36
-
-      // ── 1. Header Banner (Blue Box) ──
-      const bannerHeight = 70
-      pdf.rect(startX, currentY, contentWidth, bannerHeight).fill('#1e3a8a')
-
-      // Left Banner Info
-      pdf.fillColor('#ffffff').fontSize(16).font('Helvetica-Bold').text(companyName, startX + 16, currentY + 12, { width: 300 })
-      let subStr = companyAddress ? `${companyAddress}\n` : ''
-      subStr += companyPhone ? `Phone: ${companyPhone} ` : ''
-      if (companyGstin) subStr += `· GSTIN: ${companyGstin.toUpperCase()}`
-      else if (isQuote) subStr += `Official Supplier & Goods Provider`
-
-      pdf.fillColor('#cbd5e1').fontSize(8.5).font('Helvetica').text(subStr, startX + 16, currentY + 34, { width: 320, lineGap: 2 })
-
-      // Right Banner Info
-      pdf.fillColor('#93c5fd').fontSize(8.5).font('Helvetica-Bold').text(bannerLabel, startX + 300, currentY + 12, { width: 207, align: 'right' })
-      pdf.fillColor('#ffffff').fontSize(18).font('Helvetica-Bold').text(docId, startX + 300, currentY + 24, { width: 207, align: 'right' })
-      let dateMeta = `Date: ${issueDate}`
-      if (isQuote) dateMeta += `  |  Valid Until: ${dueDate}`
-      else if (doc.due_date) dateMeta += `  |  Due: ${fmtDate(doc.due_date)}`
-      pdf.fillColor('#e2e8f0').fontSize(8).font('Helvetica').text(dateMeta, startX + 300, currentY + 48, { width: 207, align: 'right' })
-
-      currentY += bannerHeight + 16
-
-      // ── 2. Section 1: Details Grid ──
-      pdf.fillColor('#475569').fontSize(9).font('Helvetica-Bold').text(sectionTitle1, startX, currentY)
-      currentY += 12
-
-      const gridHeight = 34
-      pdf.rect(startX, currentY, contentWidth, gridHeight).fillAndStroke('#f8fafc', '#cbd5e1')
-
-      let validOrGstinVal = '—'
-      if (isQuote) {
-        validOrGstinVal = dueDate
-      } else if (companyGstin) {
-        validOrGstinVal = companyGstin.toUpperCase()
-      }
-
-      const detailsArr = [
-        { lbl: isQuote ? 'QUOTATION NO' : 'INVOICE NO', val: docId },
-        ...(orderId ? [{ lbl: 'ORDER NO', val: orderId, color: '#2563eb' }] : []),
-        { lbl: 'GENERATED DATE', val: issueDate },
-        { lbl: isQuote ? 'VALID UNTIL' : 'COMPANY GSTIN', val: validOrGstinVal },
-        { lbl: 'DOCUMENT TYPE', val: docTypeTitle }
-      ]
-
-      const numCols = detailsArr.length
-      const colW = contentWidth / numCols
-
-      detailsArr.forEach((item, idx) => {
-        const cX = startX + (idx * colW)
-        if (idx > 0) {
-          pdf.moveTo(cX, currentY).lineTo(cX, currentY + gridHeight).stroke('#e2e8f0')
-        }
-        pdf.fillColor('#64748b').fontSize(7.5).font('Helvetica-Bold').text(item.lbl, cX + 6, currentY + 6, { width: colW - 12 })
-        pdf.fillColor(item.color || '#0f172a').fontSize(8.5).font('Helvetica-Bold').text(item.val, cX + 6, currentY + 18, { width: colW - 12 })
-      })
-
-      currentY += gridHeight + 16
-
-      // ── 3. Section 2: Address Details ──
-      pdf.fillColor('#475569').fontSize(9).font('Helvetica-Bold').text('2. ADDRESS DETAILS', startX, currentY)
-      currentY += 12
-
-      const cardW = (contentWidth - 14) / 2
-      const cardH = 75
-
-      // Supplier Card (From)
-      pdf.rect(startX, currentY, cardW, cardH).fillAndStroke('#ffffff', '#cbd5e1')
-      pdf.fillColor('#475569').fontSize(8).font('Helvetica-Bold').text('FROM (SUPPLIER)', startX + 10, currentY + 8)
-      pdf.moveTo(startX + 10, currentY + 20).lineTo(startX + cardW - 10, currentY + 20).stroke('#f1f5f9')
-      pdf.fillColor('#0f172a').fontSize(10).font('Helvetica-Bold').text(companyName, startX + 10, currentY + 24, { width: cardW - 20 })
-      let fromDetails = ''
-      if (companyGstin) fromDetails += `GSTIN: ${companyGstin.toUpperCase()}\n`
-      if (companyAddress) fromDetails += `Dispatch From: ${companyAddress}\n`
-      if (companyPhone) fromDetails += `Phone: ${companyPhone}`
-      pdf.fillColor('#475569').fontSize(8).font('Helvetica').text(fromDetails, startX + 10, currentY + 38, { width: cardW - 20, lineGap: 1 })
-
-      // Buyer Card (To)
-      const buyerX = startX + cardW + 14
-      pdf.rect(buyerX, currentY, cardW, cardH).fillAndStroke('#ffffff', '#cbd5e1')
-      pdf.fillColor('#475569').fontSize(8).font('Helvetica-Bold').text('TO (BUYER)', buyerX + 10, currentY + 8)
-      pdf.moveTo(buyerX + 10, currentY + 20).lineTo(buyerX + cardW - 10, currentY + 20).stroke('#f1f5f9')
-      pdf.fillColor('#0f172a').fontSize(10).font('Helvetica-Bold').text(customerName || '—', buyerX + 10, currentY + 24, { width: cardW - 20 })
-      let toDetails = ''
-      if (customerGstin) toDetails += `GSTIN: ${customerGstin.toUpperCase()}\n`
-      if (customerCompany) toDetails += `${customerCompany}\n`
-      if (customerAddress) toDetails += `Ship To: ${customerAddress}\n`
-      if (customerPhone) toDetails += `Phone: ${customerPhone}`
-      pdf.fillColor('#475569').fontSize(8).font('Helvetica').text(toDetails, buyerX + 10, currentY + 38, { width: cardW - 20, lineGap: 1 })
-
-      currentY += cardH + 16
-
-      // ── 4. Section 3: Goods Details Table ──
-      pdf.fillColor('#475569').fontSize(9).font('Helvetica-Bold').text('3. GOODS DETAILS', startX, currentY)
-      currentY += 12
-
-      // Header Row
-      const tableHdrH = 22
-      pdf.rect(startX, currentY, contentWidth, tableHdrH).fillAndStroke('#f8fafc', '#cbd5e1')
-      pdf.fillColor('#475569').fontSize(7.5).font('Helvetica-Bold')
-
-      // Balanced Column widths: HSN(58), Prod(156), Qty(60), GrossSubtotal(82), Disc(62), TaxRate(80)
-      pdf.text('HSN CODE', startX + 6, currentY + 7, { width: 56 })
-      pdf.text('PRODUCT NAME & DESC.', startX + 66, currentY + 7, { width: 154 })
-      pdf.text('QUANTITY', startX + 224, currentY + 7, { width: 58, align: 'center' })
-      pdf.text('GROSS SUBTOTAL', startX + 286, currentY + 7, { width: 80, align: 'right' })
-      pdf.text('DISCOUNT', startX + 370, currentY + 7, { width: 58, align: 'right' })
-      pdf.text('TAX RATE (C+S+I)', startX + 432, currentY + 7, { width: 85, align: 'right' })
-
-      currentY += tableHdrH
-
-      // Table Item Rows
-      items.forEach((li, i) => {
-        const qty = parseFloat(li.qty || li.quantity || 1)
-        const price = parseFloat(li.price || li.rate || 0)
-        const disc = parseFloat(li.discount || 0)
-        const lineTotalGross = price * qty
-
-        let itemDisc = 0
-        if (disc > 0) {
-          itemDisc = disc
-        } else if (totalDiscount > 0) {
-          itemDisc = items.length === 1
-            ? totalDiscount
-            : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
-        }
-
-        const pId = li.product_id || li.productId || li.id
-        const prodNameRaw = (typeof li === 'string' && li.trim())
-          ? li
-          : (li.name || li.product_name || li.productName || li.product || li.item_name || li.title || li.description || '')
-
-        const prodName = prodNameRaw || 'Product Item'
-        const rawUnit = li.unit || li.unitLabel || ''
-        const dbUnit = ''
-
-        let bagWeight = parseFloat(li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? li.packWeight ?? 0)
-        if (isNaN(bagWeight) || bagWeight <= 0) {
-          const nameMatch = prodName.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
-          if (nameMatch && nameMatch[1]) bagWeight = parseFloat(nameMatch[1])
-          else bagWeight = 1
-        }
-
-        const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote)
-        const rawHsn = li.hsn_code || li.hsn || li.sku || ''
-        const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
-          ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
-          : rawHsn
-
-        const rowH = subtext ? 26 : 22
-        pdf.rect(startX, currentY, contentWidth, rowH).fillAndStroke('#ffffff', '#cbd5e1')
-
-        pdf.fillColor('#475569').fontSize(7.5).font('Courier').text(hsnCode, startX + 6, currentY + 6, { width: 56 })
-        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(prodName, startX + 66, currentY + 4, { width: 154 })
-        if (subtext) {
-          pdf.fillColor('#64748b').fontSize(7.5).font('Helvetica').text(subtext, startX + 66, currentY + 14, { width: 154 })
-        }
-
-        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(`${displayQty} ${displayUnit}`, startX + 224, currentY + 6, { width: 58, align: 'center' })
-        
-        // GROSS SUBTOTAL Cell (price * qty)
-        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(`Rs. ${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, startX + 286, currentY + 6, { width: 80, align: 'right' })
-
-        // DISCOUNT Cell
-        pdf.fillColor(itemDisc > 0.01 ? '#dc2626' : '#64748b').fontSize(8.5).font('Helvetica-Bold')
-           .text(itemDisc > 0.01 ? `-Rs. ${itemDisc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-', startX + 370, currentY + 6, { width: 58, align: 'right' })
-
-        // TAX RATE Cell
-        const taxLabel = taxAmt > 0 ? `CGST(${halfTaxRate}%)+SGST(${halfTaxRate}%)` : '-'
-        pdf.fillColor('#475569').fontSize(7.5).font('Helvetica').text(taxLabel, startX + 432, currentY + 6, { width: 85, align: 'right' })
-
-        currentY += rowH
-      })
-
-      currentY += 12
-
-      // ── 5. Section 4: Totals Summary Row ──
-      const fmtINR = (val) => `Rs. ${(parseFloat(val || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
-      const summaryH = 34
-      const summaryCols = []
-      if (totalDiscount > 0) {
-        summaryCols.push({ lbl: 'GROSS SUBTOTAL', val: fmtINR(grossSubtotal), bg: '#f8fafc', textColor: '#0f172a' })
-        summaryCols.push({ lbl: 'TOTAL DISCOUNT', val: `- ${fmtINR(totalDiscount)}`, bg: '#fef2f2', textColor: '#dc2626' })
-      }
-      summaryCols.push({ lbl: "TOT. TAX'BLE AMT", val: fmtINR(taxableSubtotal), bg: '#f8fafc', textColor: '#0f172a' })
-      if (taxAmt > 0) {
-        summaryCols.push({ lbl: 'CGST AMT', val: fmtINR(cgst), bg: '#f8fafc', textColor: '#0f172a' })
-        summaryCols.push({ lbl: 'SGST AMT', val: fmtINR(sgst), bg: '#f8fafc', textColor: '#0f172a' })
-      }
-      summaryCols.push({ lbl: isQuote ? 'TOTAL QUOTE.AMT' : 'TOTAL INV.AMT', val: fmtINR(totalAmount), bg: '#0f172a', textColor: '#ffffff' })
-
-      const sColW = contentWidth / summaryCols.length
-
-      summaryCols.forEach((col, idx) => {
-        const sX = startX + (idx * sColW)
-        pdf.rect(sX, currentY, sColW, summaryH).fillAndStroke(col.bg, '#cbd5e1')
-        let labelColor = '#64748b'
-        if (col.bg === '#0f172a') {
-          labelColor = '#94a3b8'
-        } else if (col.bg === '#fef2f2') {
-          labelColor = '#991b1b'
-        }
-        pdf.fillColor(labelColor)
-           .fontSize(7).font('Helvetica-Bold').text(col.lbl, sX + 4, currentY + 6, { width: sColW - 8, align: 'center' })
-        pdf.fillColor(col.textColor).fontSize(9).font('Helvetica-Bold')
-           .text(col.val, sX + 4, currentY + 18, { width: sColW - 8, align: 'center' })
-      })
-
-      currentY += summaryH + 20
-
-      // ── 6. Barcode Drawing ──
-      const barcodeCenterX = startX + (contentWidth / 2)
-      const barcodeX = barcodeCenterX - 90
-      pdf.rect(barcodeX, currentY, 180, 24).fill('#000000')
-      pdf.fillColor('#ffffff').fontSize(7).font('Courier').text(docId, barcodeX, currentY + 8, { width: 180, align: 'center' })
-
-      currentY += 32
-
-      // ── 7. Footer ──
-      pdf.moveTo(startX, currentY).lineTo(startX + contentWidth, currentY).stroke('#e2e8f0')
-      currentY += 8
-      pdf.fillColor('#94a3b8').fontSize(8).font('Helvetica')
-         .text(`Official ${docTypeTitle} generated by Workshop · ${fmtDate(new Date())}`, startX, currentY, { width: contentWidth, align: 'center' })
-
-      pdf.end()
-    } catch (e) {
-      reject(e)
-    }
-  })
-}
-
-// ─────────────────────────────────────────────
-// Main Export: puppeteer HTML → PDF Buffer
+// Main Export: HTML → PDF Buffer
 // ─────────────────────────────────────────────
 export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   const catalogMap = await getProductHsnMap().catch(() => ({}))
   const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap, type })
 
-  try {
+  let browser = null
+
+  if (chromiumModule && puppeteerCoreModule) {
+    try {
+      const executablePath = await chromiumModule.executablePath()
+      if (executablePath) {
+        browser = await puppeteerCoreModule.launch({
+          args: chromiumModule.args,
+          defaultViewport: chromiumModule.defaultViewport,
+          executablePath,
+          headless: chromiumModule.headless
+        })
+      }
+    } catch (sparticuzErr) {
+      console.warn('[PDF Generation] Sparticuz chromium launch failed:', sparticuzErr.message)
+    }
+  }
+
+  if (!browser) {
     const launchOptions = {
       headless: true,
       args: [
@@ -913,23 +584,20 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
     if (exePath) {
       launchOptions.executablePath = exePath
     }
+    browser = await puppeteer.launch(launchOptions)
+  }
 
-    const browser = await puppeteer.launch(launchOptions)
-    try {
-      const page = await browser.newPage()
-      await page.setContent(html, { waitUntil: 'networkidle0' })
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '0', right: '0', bottom: '0', left: '0' }
-      })
-      return pdfBuffer
-    } finally {
-      await browser.close()
-    }
-  } catch (puppeteerErr) {
-    console.warn('[PDF Generation] Puppeteer failed, using PDFKit fallback:', puppeteerErr.message)
-    return generatePdfKitFallback({ quote, bill, billItems, shop, type })
+  try {
+    const page = await browser.newPage()
+    await page.setContent(html, { waitUntil: 'networkidle0' })
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '0', right: '0', bottom: '0', left: '0' }
+    })
+    return pdfBuffer
+  } finally {
+    if (browser) await browser.close()
   }
 }
 

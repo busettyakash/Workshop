@@ -553,7 +553,9 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
 
   let browser = null
 
-  if (chromiumModule && puppeteerCoreModule) {
+  const isLinux = process.platform === 'linux'
+
+  if (isLinux && chromiumModule && puppeteerCoreModule) {
     try {
       const executablePath = await chromiumModule.executablePath()
       if (executablePath) {

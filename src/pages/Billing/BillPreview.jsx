@@ -166,9 +166,8 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   }, 0)
 
   const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
-  const subtotal = Math.max(0, grossSubtotal - lineDiscounts)
   const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
-  const totalAmount = parseFloat(doc.amount || doc.total_amount || (subtotal > 0 ? subtotal : grossSubtotal))
+  const explicitTotalAmount = parseFloat(doc.amount || doc.total_amount || 0)
 
   const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
   const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
@@ -179,20 +178,29 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
     ? parseFloat(rawTaxRate)
     : null
 
-  const baseForTax = Math.max(0, subtotal - explicitDiscount)
+  const tempDiscount = Math.max(explicitDiscount, lineDiscounts)
+  const tempTaxable = Math.max(0, grossSubtotal - tempDiscount)
 
   let taxAmt = 0
   if (explicitTaxAmt > 0) {
     taxAmt = explicitTaxAmt
   } else if (explicitTaxRate !== null && explicitTaxRate > 0) {
-    taxAmt = baseForTax * (explicitTaxRate / 100)
-  } else if (totalAmount > baseForTax + 0.01) {
-    taxAmt = totalAmount - baseForTax
+    taxAmt = tempTaxable * (explicitTaxRate / 100)
+  } else if (explicitTotalAmount > 0 && explicitTotalAmount > tempTaxable) {
+    taxAmt = explicitTotalAmount - tempTaxable
   }
 
+  const grossTotalWithTax = grossSubtotal + taxAmt
+  const diffDiscount = (grossTotalWithTax > 0 && explicitTotalAmount > 0 && grossTotalWithTax > explicitTotalAmount + 0.01)
+    ? (grossTotalWithTax - explicitTotalAmount)
+    : 0
+  const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
+  const subtotal = Math.max(0, grossSubtotal - totalDiscount)
+  const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (subtotal + taxAmt)
+
   let effectiveTaxRate = 0
-  if (taxAmt > 0 && baseForTax > 0) {
-    effectiveTaxRate = Math.round((taxAmt / baseForTax) * 100)
+  if (taxAmt > 0 && subtotal > 0) {
+    effectiveTaxRate = Math.round((taxAmt / subtotal) * 100)
   } else if (explicitTaxRate > 0) {
     effectiveTaxRate = explicitTaxRate
   }
@@ -201,14 +209,27 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2
 
-  const grossTotalWithTax = subtotal + taxAmt
-  const diffDiscount = (grossTotalWithTax > 0 && totalAmount > 0 && grossTotalWithTax > totalAmount + 0.01)
-    ? (grossTotalWithTax - totalAmount)
-    : 0
-  const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
+  let quoteNumFound = quote?.quote_number || bill?.quote_number || doc.quote_number || ''
+  if (!quoteNumFound && (doc.quote_id || quote?.quote_id || bill?.quote_id)) {
+    const qid = doc.quote_id || quote?.quote_id || bill?.quote_id
+    quoteNumFound = String(qid).startsWith('QT-') ? String(qid) : `QT-${qid}`
+  }
+  if (!quoteNumFound && (doc.notes || quote?.notes || bill?.notes)) {
+    const notesStr = String(doc.notes || quote?.notes || bill?.notes || '')
+    const match = notesStr.match(/QT-[A-Z0-9]+/i)
+    if (match) quoteNumFound = match[0].toUpperCase()
+  }
+  if (!quoteNumFound && isQuote) {
+    if (doc.id) {
+      const dStr = String(doc.id)
+      quoteNumFound = dStr.startsWith('QT-') ? dStr : `QT-${dStr}`
+    } else {
+      quoteNumFound = 'QT-820332'
+    }
+  }
 
   const docId = isQuote
-    ? (doc.quote_number || `QT-${doc.id || '649067'}`)
+    ? (quoteNumFound || `QT-${doc.id || '820332'}`)
     : (doc.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(doc.id || 1) * 899999))}`)
   const orderId = doc.order_number || quote?.order_number || bill?.order_number || ''
 

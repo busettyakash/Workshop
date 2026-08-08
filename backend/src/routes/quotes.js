@@ -158,11 +158,25 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
   // Generate Email HTML using external template file (invoiceTemplate.js)
   const invoiceHtml = getInvoiceEmailTemplate({ quote, bill, billItems: enrichedBillItems, shop })
 
+  const pdfBuffer = await generateInvoicePdfBuffer({ quote, bill, billItems: enrichedBillItems, shop, type: 'invoice' }).catch(e => {
+    console.error('[Invoice PDF Generation Error]', e.message)
+    return null
+  })
+
+  const attachments = pdfBuffer ? [
+    {
+      filename: `Tax_Invoice_${invNum}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf'
+    }
+  ] : []
+
   // 1. Send invoice email to Customer
   await sendEmail({
     to: quote.customer_email,
     subject: `TAX INVOICE ${invNum} from ${sellerName}`,
-    html: invoiceHtml
+    html: invoiceHtml,
+    attachments
   }).catch(e => console.error('[Invoice Email Send Error Customer]', e.message))
 
   // 2. Send invoice email copy to Sender (Shop / Workspace)
@@ -171,7 +185,8 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
     await sendEmail({
       to: senderEmail,
       subject: `[Sender Copy] TAX INVOICE ${invNum} issued to ${quote.customer_name}`,
-      html: invoiceHtml
+      html: invoiceHtml,
+      attachments
     }).catch(e => console.error('[Invoice Email Send Error Sender]', e.message))
   }
 
@@ -228,7 +243,7 @@ const sendOrderConfirmationEmailToCustomer = async (quote, bill, billItems, orde
   const subject = `Order Confirmation - ${orderNum}`
 
   const invNum = bill?.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill?.id || 1) * 899999))}`
-  const pdfBuffer = await generateInvoicePdfBuffer({ quote, bill, billItems: enrichedBillItems, shop }).catch(e => {
+  const pdfBuffer = await generateInvoicePdfBuffer({ quote, bill, billItems: enrichedBillItems, shop, type: 'invoice' }).catch(e => {
     console.error('[Invoice PDF Generation Error]', e.message)
     return null
   })

@@ -108,20 +108,31 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 // ─────────────────────────────────────────────
 // HTML Builder  (mirrors BillPreview.jsx exactly)
 // ─────────────────────────────────────────────
-function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {} } = {}) {
-  // FIX: this previously also flagged isQuote=true whenever bill.quote_id,
-  // bill.order_number, or bill.order_id were set. But real tax invoices almost
-  // always have an order number attached (they came from a customer order) —
-  // that alone doesn't make them a quotation. That mismatch is why real
-  // invoices linked to an order were showing quote-style pack-weight subtext
-  // in the PDF while the on-screen BillPreview (which never checked
-  // bill.order_number) correctly rendered them as plain bills. Only an actual
-  // quote object/quote_number should mark this as a quotation.
-  const isQuote = Boolean(!bill.id || quote.id || quote.quote_number)
+function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {}, type = '' } = {}) {
+  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number))
+
+  let quoteNumFound = quote.quote_number || bill.quote_number || ''
+  if (!quoteNumFound && (quote.quote_id || bill.quote_id)) {
+    const qid = quote.quote_id || bill.quote_id
+    quoteNumFound = String(qid).startsWith('QT-') ? String(qid) : `QT-${qid}`
+  }
+  if (!quoteNumFound && (quote.notes || bill.notes)) {
+    const notesStr = String(quote.notes || bill.notes || '')
+    const match = notesStr.match(/QT-[A-Z0-9]+/i)
+    if (match) quoteNumFound = match[0].toUpperCase()
+  }
+  if (!quoteNumFound && (quote.id || !bill.id)) {
+    if (quote.id) {
+      const qStr = String(quote.id)
+      quoteNumFound = qStr.startsWith('QT-') ? qStr : `QT-${qStr}`
+    } else {
+      quoteNumFound = 'QT-820332'
+    }
+  }
 
   let docId = ''
   if (isQuote) {
-    docId = quote.quote_number || `QT-${quote.id || '649067'}`
+    docId = quoteNumFound || `QT-${quote.id || '820332'}`
   } else if (bill.bill_number) {
     docId = bill.bill_number
   } else if (bill.id) {
@@ -159,9 +170,8 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     return s + (p * q)
   }, 0)
   const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
-  const taxableSubtotal = Math.max(0, grossSubtotal - lineDiscounts)
   const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
-  const totalAmount = parseFloat(doc.amount || doc.total_amount || (taxableSubtotal > 0 ? taxableSubtotal : grossSubtotal))
+  const explicitTotalAmount = parseFloat(doc.amount || doc.total_amount || 0)
 
   const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
   const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
@@ -172,20 +182,29 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     ? parseFloat(rawTaxRate)
     : null
 
-  const baseForTax = Math.max(0, taxableSubtotal - explicitDiscount)
+  const tempDiscount = Math.max(explicitDiscount, lineDiscounts)
+  const tempTaxable = Math.max(0, grossSubtotal - tempDiscount)
 
   let taxAmt = 0
   if (explicitTaxAmt > 0) {
     taxAmt = explicitTaxAmt
   } else if (explicitTaxRate !== null && explicitTaxRate > 0) {
-    taxAmt = baseForTax * (explicitTaxRate / 100)
-  } else if (totalAmount > baseForTax + 0.01) {
-    taxAmt = totalAmount - baseForTax
+    taxAmt = tempTaxable * (explicitTaxRate / 100)
+  } else if (explicitTotalAmount > 0 && explicitTotalAmount > tempTaxable) {
+    taxAmt = explicitTotalAmount - tempTaxable
   }
 
+  const grossTotalWithTax = grossSubtotal + taxAmt
+  const diffDiscount = (grossTotalWithTax > 0 && explicitTotalAmount > 0 && grossTotalWithTax > explicitTotalAmount + 0.01)
+    ? (grossTotalWithTax - explicitTotalAmount)
+    : 0
+  const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
+  const taxableSubtotal = Math.max(0, grossSubtotal - totalDiscount)
+  const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (taxableSubtotal + taxAmt)
+
   let effectiveTaxRate = 0
-  if (taxAmt > 0 && baseForTax > 0) {
-    effectiveTaxRate = Math.round((taxAmt / baseForTax) * 100)
+  if (taxAmt > 0 && taxableSubtotal > 0) {
+    effectiveTaxRate = Math.round((taxAmt / taxableSubtotal) * 100)
   } else if (explicitTaxRate > 0) {
     effectiveTaxRate = explicitTaxRate
   }
@@ -193,12 +212,6 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2
-
-  const grossTotalWithTax = taxableSubtotal + taxAmt
-  const diffDiscount = (grossTotalWithTax > 0 && totalAmount > 0 && grossTotalWithTax > totalAmount + 0.01)
-    ? (grossTotalWithTax - totalAmount)
-    : 0
-  const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
 
   const issueDate = fmtDate(doc.issue_date || doc.created_at)
   const dueDate = fmtDate(doc.valid_until || doc.due_date)
@@ -526,7 +539,7 @@ function getSystemBrowserPath() {
 // ─────────────────────────────────────────────
 // PDFKit Fallback (Rich Layout Matching Image 1 Design)
 // ─────────────────────────────────────────────
-function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {} }) {
+function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' }) {
   return new Promise((resolve, reject) => {
     try {
       const pdf = new PDFDocument({ margin: 36, size: 'A4' })
@@ -535,11 +548,30 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
       pdf.on('end', () => resolve(Buffer.concat(chunks)))
 
       const doc = { ...quote, ...bill }
-      const isQuote = Boolean(!bill.id || quote.id || quote.quote_number)
+      const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number))
+
+      let quoteNumFound = quote.quote_number || bill.quote_number || ''
+      if (!quoteNumFound && (quote.quote_id || bill.quote_id)) {
+        const qid = quote.quote_id || bill.quote_id
+        quoteNumFound = String(qid).startsWith('QT-') ? String(qid) : `QT-${qid}`
+      }
+      if (!quoteNumFound && (quote.notes || bill.notes)) {
+        const notesStr = String(quote.notes || bill.notes || '')
+        const match = notesStr.match(/QT-[A-Z0-9]+/i)
+        if (match) quoteNumFound = match[0].toUpperCase()
+      }
+      if (!quoteNumFound && (quote.id || !bill.id)) {
+        if (quote.id) {
+          const qStr = String(quote.id)
+          quoteNumFound = qStr.startsWith('QT-') ? qStr : `QT-${qStr}`
+        } else {
+          quoteNumFound = 'QT-820332'
+        }
+      }
 
       let docId = ''
       if (isQuote) {
-        docId = quote.quote_number || `QT-${quote.id || '649067'}`
+        docId = quoteNumFound || `QT-${quote.id || '820332'}`
       } else if (bill.bill_number) {
         docId = bill.bill_number
       } else if (bill.id) {
@@ -576,9 +608,8 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
         return s + (p * q)
       }, 0)
       const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
-      const taxableSubtotal = Math.max(0, grossSubtotal - lineDiscounts)
       const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
-      const totalAmount = parseFloat(doc.amount || doc.total_amount || (taxableSubtotal > 0 ? taxableSubtotal : grossSubtotal))
+      const explicitTotalAmount = parseFloat(doc.amount || doc.total_amount || 0)
 
       const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
       const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
@@ -589,20 +620,29 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
         ? parseFloat(rawTaxRate)
         : null
 
-      const baseForTax = Math.max(0, taxableSubtotal - explicitDiscount)
+      const tempDiscount = Math.max(explicitDiscount, lineDiscounts)
+      const tempTaxable = Math.max(0, grossSubtotal - tempDiscount)
 
       let taxAmt = 0
       if (explicitTaxAmt > 0) {
         taxAmt = explicitTaxAmt
       } else if (explicitTaxRate !== null && explicitTaxRate > 0) {
-        taxAmt = baseForTax * (explicitTaxRate / 100)
-      } else if (totalAmount > baseForTax + 0.01) {
-        taxAmt = totalAmount - baseForTax
+        taxAmt = tempTaxable * (explicitTaxRate / 100)
+      } else if (explicitTotalAmount > 0 && explicitTotalAmount > tempTaxable) {
+        taxAmt = explicitTotalAmount - tempTaxable
       }
 
+      const grossTotalWithTax = grossSubtotal + taxAmt
+      const diffDiscount = (grossTotalWithTax > 0 && explicitTotalAmount > 0 && grossTotalWithTax > explicitTotalAmount + 0.01)
+        ? (grossTotalWithTax - explicitTotalAmount)
+        : 0
+      const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
+      const taxableSubtotal = Math.max(0, grossSubtotal - totalDiscount)
+      const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (taxableSubtotal + taxAmt)
+
       let effectiveTaxRate = 0
-      if (taxAmt > 0 && baseForTax > 0) {
-        effectiveTaxRate = Math.round((taxAmt / baseForTax) * 100)
+      if (taxAmt > 0 && taxableSubtotal > 0) {
+        effectiveTaxRate = Math.round((taxAmt / taxableSubtotal) * 100)
       } else if (explicitTaxRate > 0) {
         effectiveTaxRate = explicitTaxRate
       }
@@ -610,12 +650,6 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
       const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
       const cgst = taxAmt / 2
       const sgst = taxAmt / 2
-
-      const grossTotalWithTax = taxableSubtotal + taxAmt
-      const diffDiscount = (grossTotalWithTax > 0 && totalAmount > 0 && grossTotalWithTax > totalAmount + 0.01)
-        ? (grossTotalWithTax - totalAmount)
-        : 0
-      const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
 
       const issueDate = fmtDate(doc.issue_date || doc.created_at)
       const dueDate = fmtDate(doc.valid_until || doc.due_date)
@@ -723,15 +757,15 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
       // Header Row
       const tableHdrH = 22
       pdf.rect(startX, currentY, contentWidth, tableHdrH).fillAndStroke('#f8fafc', '#cbd5e1')
-      pdf.fillColor('#475569').fontSize(8).font('Helvetica-Bold')
+      pdf.fillColor('#475569').fontSize(7.5).font('Helvetica-Bold')
 
-      // Column widths: HSN(70), Prod(170), Qty(75), Taxable(75), Disc(60), TaxRate(73)
-      pdf.text('HSN CODE', startX + 6, currentY + 7, { width: 64 })
-      pdf.text('PRODUCT NAME & DESC.', startX + 76, currentY + 7, { width: 164 })
-      pdf.text('QUANTITY', startX + 246, currentY + 7, { width: 69, align: 'center' })
-      pdf.text('GROSS SUBTOTAL', startX + 321, currentY + 7, { width: 70, align: 'right' })
-      pdf.text('DISCOUNT', startX + 396, currentY + 7, { width: 55, align: 'right' })
-      pdf.text('TAX RATE (C+S+I)', startX + 456, currentY + 7, { width: 61, align: 'right' })
+      // Balanced Column widths: HSN(58), Prod(156), Qty(60), GrossSubtotal(82), Disc(62), TaxRate(80)
+      pdf.text('HSN CODE', startX + 6, currentY + 7, { width: 56 })
+      pdf.text('PRODUCT NAME & DESC.', startX + 66, currentY + 7, { width: 154 })
+      pdf.text('QUANTITY', startX + 224, currentY + 7, { width: 58, align: 'center' })
+      pdf.text('GROSS SUBTOTAL', startX + 286, currentY + 7, { width: 80, align: 'right' })
+      pdf.text('DISCOUNT', startX + 370, currentY + 7, { width: 58, align: 'right' })
+      pdf.text('TAX RATE (C+S+I)', startX + 432, currentY + 7, { width: 85, align: 'right' })
 
       currentY += tableHdrH
 
@@ -776,24 +810,24 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
         const rowH = subtext ? 26 : 22
         pdf.rect(startX, currentY, contentWidth, rowH).fillAndStroke('#ffffff', '#cbd5e1')
 
-        pdf.fillColor('#475569').fontSize(7.5).font('Courier').text(hsnCode, startX + 6, currentY + 6, { width: 64 })
-        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(prodName, startX + 76, currentY + 4, { width: 164 })
+        pdf.fillColor('#475569').fontSize(7.5).font('Courier').text(hsnCode, startX + 6, currentY + 6, { width: 56 })
+        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(prodName, startX + 66, currentY + 4, { width: 154 })
         if (subtext) {
-          pdf.fillColor('#64748b').fontSize(7.5).font('Helvetica').text(subtext, startX + 76, currentY + 14, { width: 164 })
+          pdf.fillColor('#64748b').fontSize(7.5).font('Helvetica').text(subtext, startX + 66, currentY + 14, { width: 154 })
         }
 
-        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(`${displayQty} ${displayUnit}`, startX + 246, currentY + 6, { width: 69, align: 'center' })
+        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(`${displayQty} ${displayUnit}`, startX + 224, currentY + 6, { width: 58, align: 'center' })
         
-        // TAXABLE AMOUNT Cell: MUST SHOW GROSS SUBTOTAL (price * qty)!
-        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(`Rs. ${lineTotalGross.toFixed(2)}`, startX + 321, currentY + 6, { width: 70, align: 'right' })
+        // GROSS SUBTOTAL Cell (price * qty)
+        pdf.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold').text(`Rs. ${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, startX + 286, currentY + 6, { width: 80, align: 'right' })
 
         // DISCOUNT Cell
         pdf.fillColor(itemDisc > 0.01 ? '#dc2626' : '#64748b').fontSize(8.5).font('Helvetica-Bold')
-           .text(itemDisc > 0.01 ? `-Rs. ${itemDisc.toFixed(2)}` : '-', startX + 396, currentY + 6, { width: 55, align: 'right' })
+           .text(itemDisc > 0.01 ? `-Rs. ${itemDisc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-', startX + 370, currentY + 6, { width: 58, align: 'right' })
 
         // TAX RATE Cell
         const taxLabel = taxAmt > 0 ? `CGST(${halfTaxRate}%)+SGST(${halfTaxRate}%)` : '-'
-        pdf.fillColor('#475569').fontSize(7.5).font('Helvetica').text(taxLabel, startX + 456, currentY + 6, { width: 61, align: 'right' })
+        pdf.fillColor('#475569').fontSize(7.5).font('Helvetica').text(taxLabel, startX + 432, currentY + 6, { width: 85, align: 'right' })
 
         currentY += rowH
       })
@@ -857,9 +891,9 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
 // ─────────────────────────────────────────────
 // Main Export: puppeteer HTML → PDF Buffer
 // ─────────────────────────────────────────────
-export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {} } = {}) {
+export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   const catalogMap = await getProductHsnMap().catch(() => ({}))
-  const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap })
+  const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap, type })
 
   try {
     const launchOptions = {
@@ -886,7 +920,7 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
     }
   } catch (puppeteerErr) {
     console.warn('[PDF Generation] Puppeteer failed, using PDFKit fallback:', puppeteerErr.message)
-    return generatePdfKitFallback({ quote, bill, billItems, shop })
+    return generatePdfKitFallback({ quote, bill, billItems, shop, type })
   }
 }
 

@@ -386,7 +386,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                     <th style={{ width: 90 }}>HSN CODE</th>
                     <th>PRODUCT NAME & DESC.</th>
                     <th style={{ width: 100, textAlign: 'center' }}>QUANTITY</th>
-                    <th style={{ width: 120, textAlign: 'center' }}>TAXABLE AMOUNT</th>
+                    <th style={{ width: 120, textAlign: 'center' }}>GROSS SUBTOTAL</th>
                     <th style={{ width: 100, textAlign: 'center' }}>DISCOUNT</th>
                     <th style={{ width: 140, textAlign: 'center' }}>TAX RATE (C+S+I)</th>
                   </tr>
@@ -454,7 +454,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                           {subtext && <div style={{ fontSize: 10, color: '#64748b' }}>{subtext}</div>}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11 }}>{displayQty} {displayUnit}</td>
-                        <td className="text-right" style={{ fontWeight: 700, fontSize: 11 }}>{INR(lineTotal)}</td>
+                        <td className="text-right" style={{ fontWeight: 700, fontSize: 11 }}>{INR(lineTotalGross)}</td>
                         <td className="text-right" style={{ fontSize: 11, fontWeight: 700, color: itemDisc > 0.01 ? '#dc2626' : '#64748b' }}>
                           {itemDisc > 0.01 ? `-${INR(itemDisc)}` : '-'}
                         </td>

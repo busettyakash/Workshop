@@ -291,7 +291,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
               <th style="text-align:left; width:90px;">HSN CODE</th>
               <th style="text-align:left;">PRODUCT NAME & DESC.</th>
               <th style="text-align:center; width:100px;">QUANTITY</th>
-              <th style="text-align:right; width:120px;">TAXABLE AMOUNT</th>
+              <th style="text-align:right; width:120px;">GROSS SUBTOTAL</th>
               <th style="text-align:right; width:100px;">DISCOUNT</th>
               <th style="text-align:right; width:140px;">TAX RATE (C+S+I)</th>
             </tr>

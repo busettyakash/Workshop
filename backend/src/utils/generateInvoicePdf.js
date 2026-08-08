@@ -76,7 +76,7 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 
   // If item is in Bags or isQuote is true -> QUOTE FLOW DISPLAY (Show 50kg Bag, 26kg Bag)!
   if (isQuote || isBagUnit) {
-    let subtext = baseUnitLabel
+    let subtext
     if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
       subtext = 'ltrs'
     } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
@@ -217,8 +217,6 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
         ? totalDiscount
         : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
     }
-
-    const lineTotal = Math.max(0, lineTotalGross - disc)
     const pId = li.product_id || li.productId || li.id
     const prodNameRaw = (typeof li === 'string' && li.trim())
       ? li
@@ -656,11 +654,18 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
       const gridHeight = 34
       pdf.rect(startX, currentY, contentWidth, gridHeight).fillAndStroke('#f8fafc', '#cbd5e1')
 
+      let validOrGstinVal = '—'
+      if (isQuote) {
+        validOrGstinVal = dueDate
+      } else if (companyGstin) {
+        validOrGstinVal = companyGstin.toUpperCase()
+      }
+
       const detailsArr = [
         { lbl: isQuote ? 'QUOTATION NO' : 'INVOICE NO', val: docId },
         ...(orderId ? [{ lbl: 'ORDER NO', val: orderId, color: '#2563eb' }] : []),
         { lbl: 'GENERATED DATE', val: issueDate },
-        { lbl: isQuote ? 'VALID UNTIL' : 'COMPANY GSTIN', val: isQuote ? dueDate : (companyGstin ? companyGstin.toUpperCase() : '—') },
+        { lbl: isQuote ? 'VALID UNTIL' : 'COMPANY GSTIN', val: validOrGstinVal },
         { lbl: 'DOCUMENT TYPE', val: docTypeTitle }
       ]
 
@@ -814,7 +819,13 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
       summaryCols.forEach((col, idx) => {
         const sX = startX + (idx * sColW)
         pdf.rect(sX, currentY, sColW, summaryH).fillAndStroke(col.bg, '#cbd5e1')
-        pdf.fillColor(col.bg === '#0f172a' ? '#94a3b8' : (col.bg === '#fef2f2' ? '#991b1b' : '#64748b'))
+        let labelColor = '#64748b'
+        if (col.bg === '#0f172a') {
+          labelColor = '#94a3b8'
+        } else if (col.bg === '#fef2f2') {
+          labelColor = '#991b1b'
+        }
+        pdf.fillColor(labelColor)
            .fontSize(7).font('Helvetica-Bold').text(col.lbl, sX + 4, currentY + 6, { width: sColW - 8, align: 'center' })
         pdf.fillColor(col.textColor).fontSize(9).font('Helvetica-Bold')
            .text(col.val, sX + 4, currentY + 18, { width: sColW - 8, align: 'center' })

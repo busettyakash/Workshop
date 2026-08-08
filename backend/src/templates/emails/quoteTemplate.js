@@ -98,8 +98,6 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
         ? totalDiscount
         : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
     }
-
-    const lineTotal = Math.max(0, lineTotalGross - disc)
     const prodName = li.name || li.product_name || li.productName || 'Product Item'
     const catMap = catalogMap || {}
     const catProd = (li.product_id && catMap[String(li.product_id)])

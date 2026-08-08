@@ -289,34 +289,34 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
 
   // Totals summary
   const totalsHtml = `
-    <div style="display:flex;border:1px solid #cbd5e1;background:#f8fafc;margin-bottom:20px;text-align:center">
+    <div style="display:flex;border:1px solid #cbd5e1;background:#f8fafc;margin-bottom:20px;text-align:center;width:100%">
       ${totalDiscount > 0 ? `
-      <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1">
-        <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase">Gross Subtotal</div>
-        <div style="font-size:11.5px;font-weight:800;color:#0f172a;margin-top:2px">${INR(grossSubtotal)}</div>
+      <div style="flex:1;padding:8px 3px;border-right:1px solid #cbd5e1;min-width:0">
+        <div style="font-size:8.5px;font-weight:800;color:#64748b;text-transform:uppercase;white-space:nowrap;overflow:hidden">Gross Subtotal</div>
+        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-top:2px;white-space:nowrap;overflow:hidden">${INR(grossSubtotal)}</div>
       </div>
-      <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1;background:#fef2f2">
-        <div style="font-size:9px;font-weight:800;color:#991b1b;text-transform:uppercase">Total Discount</div>
-        <div style="font-size:11.5px;font-weight:800;color:#dc2626;margin-top:2px">- ${INR(totalDiscount)}</div>
+      <div style="flex:1;padding:8px 3px;border-right:1px solid #cbd5e1;background:#fef2f2;min-width:0">
+        <div style="font-size:8.5px;font-weight:800;color:#991b1b;text-transform:uppercase;white-space:nowrap;overflow:hidden">Total Discount</div>
+        <div style="font-size:11px;font-weight:800;color:#dc2626;margin-top:2px;white-space:nowrap;overflow:hidden">- ${INR(totalDiscount)}</div>
       </div>
       ` : ''}
-      <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1">
-        <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase">Tot. Tax'ble Amt</div>
-        <div style="font-size:11.5px;font-weight:800;color:#0f172a;margin-top:2px">${INR(taxableSubtotal)}</div>
+      <div style="flex:1;padding:8px 3px;border-right:1px solid #cbd5e1;min-width:0">
+        <div style="font-size:8.5px;font-weight:800;color:#64748b;text-transform:uppercase;white-space:nowrap;overflow:hidden">Tot. Tax'ble Amt</div>
+        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-top:2px;white-space:nowrap;overflow:hidden">${INR(taxableSubtotal)}</div>
       </div>
       ${taxAmt > 0 ? `
-      <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1">
-        <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase">CGST Amt</div>
-        <div style="font-size:11.5px;font-weight:800;color:#0f172a;margin-top:2px">${INR(cgst)}</div>
+      <div style="flex:1;padding:8px 3px;border-right:1px solid #cbd5e1;min-width:0">
+        <div style="font-size:8.5px;font-weight:800;color:#64748b;text-transform:uppercase;white-space:nowrap;overflow:hidden">CGST Amt</div>
+        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-top:2px;white-space:nowrap;overflow:hidden">${INR(cgst)}</div>
       </div>
-      <div style="flex:1;padding:8px 4px;border-right:1px solid #cbd5e1">
-        <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase">SGST Amt</div>
-        <div style="font-size:11.5px;font-weight:800;color:#0f172a;margin-top:2px">${INR(sgst)}</div>
+      <div style="flex:1;padding:8px 3px;border-right:1px solid #cbd5e1;min-width:0">
+        <div style="font-size:8.5px;font-weight:800;color:#64748b;text-transform:uppercase;white-space:nowrap;overflow:hidden">SGST Amt</div>
+        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-top:2px;white-space:nowrap;overflow:hidden">${INR(sgst)}</div>
       </div>
       ` : ''}
-      <div style="flex:1;padding:8px 4px;background:#0f172a">
-        <div style="font-size:9px;font-weight:800;color:#94a3b8;text-transform:uppercase">${isQuote ? 'Total Quote.Amt' : 'Total Inv.Amt'}</div>
-        <div style="font-size:13px;font-weight:800;color:#ffffff;margin-top:2px">${INR(totalAmount)}</div>
+      <div style="flex:1;padding:8px 3px;background:#0f172a;min-width:0">
+        <div style="font-size:8.5px;font-weight:800;color:#94a3b8;text-transform:uppercase;white-space:nowrap;overflow:hidden">${isQuote ? 'Total Quote.Amt' : 'Total Inv.Amt'}</div>
+        <div style="font-size:12px;font-weight:800;color:#ffffff;margin-top:2px;white-space:nowrap;overflow:hidden">${INR(totalAmount)}</div>
       </div>
     </div>
   `
@@ -835,18 +835,20 @@ function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = 
       currentY += 12
 
       // ── 5. Section 4: Totals Summary Row ──
+      const fmtINR = (val) => `Rs. ${(parseFloat(val || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
       const summaryH = 34
       const summaryCols = []
       if (totalDiscount > 0) {
-        summaryCols.push({ lbl: 'GROSS SUBTOTAL', val: `Rs. ${grossSubtotal.toFixed(2)}`, bg: '#f8fafc', textColor: '#0f172a' })
-        summaryCols.push({ lbl: 'TOTAL DISCOUNT', val: `- Rs. ${totalDiscount.toFixed(2)}`, bg: '#fef2f2', textColor: '#dc2626' })
+        summaryCols.push({ lbl: 'GROSS SUBTOTAL', val: fmtINR(grossSubtotal), bg: '#f8fafc', textColor: '#0f172a' })
+        summaryCols.push({ lbl: 'TOTAL DISCOUNT', val: `- ${fmtINR(totalDiscount)}`, bg: '#fef2f2', textColor: '#dc2626' })
       }
-      summaryCols.push({ lbl: "TOT. TAX'BLE AMT", val: `Rs. ${taxableSubtotal.toFixed(2)}`, bg: '#f8fafc', textColor: '#0f172a' })
+      summaryCols.push({ lbl: "TOT. TAX'BLE AMT", val: fmtINR(taxableSubtotal), bg: '#f8fafc', textColor: '#0f172a' })
       if (taxAmt > 0) {
-        summaryCols.push({ lbl: 'CGST AMT', val: `Rs. ${cgst.toFixed(2)}`, bg: '#f8fafc', textColor: '#0f172a' })
-        summaryCols.push({ lbl: 'SGST AMT', val: `Rs. ${sgst.toFixed(2)}`, bg: '#f8fafc', textColor: '#0f172a' })
+        summaryCols.push({ lbl: 'CGST AMT', val: fmtINR(cgst), bg: '#f8fafc', textColor: '#0f172a' })
+        summaryCols.push({ lbl: 'SGST AMT', val: fmtINR(sgst), bg: '#f8fafc', textColor: '#0f172a' })
       }
-      summaryCols.push({ lbl: isQuote ? 'TOTAL QUOTE.AMT' : 'TOTAL INV.AMT', val: `Rs. ${totalAmount.toFixed(2)}`, bg: '#0f172a', textColor: '#ffffff' })
+      summaryCols.push({ lbl: isQuote ? 'TOTAL QUOTE.AMT' : 'TOTAL INV.AMT', val: fmtINR(totalAmount), bg: '#0f172a', textColor: '#ffffff' })
 
       const sColW = contentWidth / summaryCols.length
 
@@ -898,7 +900,14 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
   try {
     const launchOptions = {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--single-process',
+        '--no-zygote'
+      ]
     }
     const exePath = getSystemBrowserPath()
     if (exePath) {

@@ -86,14 +86,8 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 export default function BillPreview({ bill, quote, type, shopName, shopGstin, shopPhone, shopAddress, onClose }) {
   const printRef = useRef(null)
 
-  const doc = quote || bill || {}
-  const isQuote = type === 'quotation'
-    || Boolean(doc.quote_number)
-    || Boolean(doc.quote_id)
-    || Boolean(doc.order_number)
-    || Boolean(quote)
-    || (doc.notes && String(doc.notes).toLowerCase().includes('qt-'))
-    || (doc.notes && String(doc.notes).toLowerCase().includes('quote'))
+  const doc = bill || quote || {}
+  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill && Boolean(quote || doc.quote_number))
 
   const [profile, setProfile] = useState({
     shopName: shopName || doc.shop_name || '',
@@ -228,9 +222,15 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
     }
   }
 
+  let invNumFound = bill?.bill_number || doc.bill_number || ''
+  if (!invNumFound && (bill?.id || doc.id) && !isQuote) {
+    const bId = bill?.id || doc.id
+    invNumFound = `INV-${String(bId).padStart(5, '0')}`
+  }
+
   const docId = isQuote
     ? (quoteNumFound || `QT-${doc.id || '820332'}`)
-    : (doc.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(doc.id || 1) * 899999))}`)
+    : (invNumFound || `INV-${Math.floor(100000 + Math.abs(Math.sin(doc.id || 1) * 899999))}`)
   const orderId = doc.order_number || quote?.order_number || bill?.order_number || ''
 
   const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'

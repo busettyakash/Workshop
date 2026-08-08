@@ -574,6 +574,7 @@ export default function Billing() {
       {previewBill && (
         <BillPreview
           bill={previewBill}
+          type="invoice"
           shopName={shopInfo.shopName}
           shopGstin={shopInfo.gstin}
           shopPhone={shopInfo.phone}

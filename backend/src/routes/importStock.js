@@ -139,7 +139,11 @@ router.get('/', async (req, res) => {
          FROM import_stock i
          LEFT JOIN LATERAL (
            SELECT id, stock, loose_kg, price_covers, updated_price, updated_price_date, updated_at FROM products 
-           WHERE (user_id::text = i.user_id::text OR user_id = 'default-user' OR i.user_id = 'default-user') AND (sku = i.sku OR name = i.name OR hsn_code = i.sku) 
+           WHERE (user_id::text = i.user_id::text OR user_id = 'default-user' OR i.user_id = 'default-user') 
+             AND (
+               (i.sku IS NOT NULL AND i.sku <> '' AND i.sku <> 'N/A' AND (sku = i.sku OR hsn_code = i.sku))
+               OR (LOWER(TRIM(name)) = LOWER(TRIM(i.name)))
+             ) 
            ORDER BY updated_at DESC, created_at DESC LIMIT 1
          ) p ON true
          ${where}
@@ -178,7 +182,11 @@ router.get('/', async (req, res) => {
        FROM import_stock i
        LEFT JOIN LATERAL (
          SELECT id, stock, loose_kg, price_covers, updated_price, updated_price_date, updated_at FROM products 
-         WHERE (user_id::text = i.user_id::text OR user_id = 'default-user' OR i.user_id = 'default-user') AND (sku = i.sku OR name = i.name OR hsn_code = i.sku) 
+         WHERE (user_id::text = i.user_id::text OR user_id = 'default-user' OR i.user_id = 'default-user') 
+           AND (
+             (i.sku IS NOT NULL AND i.sku <> '' AND i.sku <> 'N/A' AND (sku = i.sku OR hsn_code = i.sku))
+             OR (LOWER(TRIM(name)) = LOWER(TRIM(i.name)))
+           ) 
          ORDER BY updated_at DESC, created_at DESC LIMIT 1
        ) p ON true
        ${where}
@@ -245,7 +253,11 @@ router.get('/:id', async (req, res) => {
        LEFT JOIN LATERAL (
          SELECT name, sku, category, price, price_covers, updated_price, updated_price_date, stock, unit, description, bag_weight, loose_kg, updated_at
          FROM products 
-         WHERE user_id = i.user_id AND (sku = i.sku OR name = i.name) 
+         WHERE (user_id::text = i.user_id::text OR user_id = 'default-user')
+           AND (
+             (i.sku IS NOT NULL AND i.sku <> '' AND i.sku <> 'N/A' AND (sku = i.sku OR hsn_code = i.sku))
+             OR (LOWER(TRIM(name)) = LOWER(TRIM(i.name)))
+           ) 
          ORDER BY updated_at DESC, created_at DESC LIMIT 1
        ) p ON true
        WHERE i.id = $1 AND i.user_id = $2`, 

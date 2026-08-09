@@ -211,6 +211,7 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
 const calcMaxStock = (prod, itemUnit) => {
   if (!prod || prod.stock === undefined || prod.stock === null) return null
   const stockBags = parseFloat(prod.stock) || 0
+  const looseKg = parseFloat(prod.loose_kg) || 0
   const bw = parseFloat(prod.bag_weight) || 1
   const bulkUnit = getBulkUnitDetails(prod.unit)
   const unitStr = String(itemUnit || prod.unit || '').toLowerCase()
@@ -221,7 +222,7 @@ const calcMaxStock = (prod, itemUnit) => {
   )
 
   if (isBaseUnit && bw > 1) {
-    const maxBase = stockBags * bw
+    const maxBase = (stockBags * bw) + looseKg
     return {
       maxStock: maxBase,
       displayLabel: `${maxBase} ${bulkUnit.short || 'kg'} (${stockBags} ${bulkUnit.name || 'Bags'})`
@@ -232,7 +233,7 @@ const calcMaxStock = (prod, itemUnit) => {
       : (bulkUnit?.short || prod.unit || 'pcs')
     return {
       maxStock: stockBags,
-      displayLabel: `${stockBags} ${label}`
+      displayLabel: looseKg > 0 ? `${stockBags} ${bulkUnit?.name || 'Bags'} ${looseKg} ${bulkUnit?.short || 'kgs'}` : `${stockBags} ${label}`
     }
   }
 }

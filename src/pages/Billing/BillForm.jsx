@@ -408,17 +408,18 @@ const calcMaxStock = (prod, itemUnit) => {
   )
 
   if (isBaseUnit && bw > 1) {
-    const maxBase = stockBags * bw
+    const maxBase = (stockBags * bw) + parseFloat(prod.loose_kg || 0)
     return {
       maxStock: maxBase,
       displayLabel: `${maxBase} ${bulkUnit.short || 'kg'} (${stockBags} ${bulkUnit.name || 'Bags'})`
     }
   } else {
+    const maxBags = stockBags + (bw > 1 ? (parseFloat(prod.loose_kg || 0) / bw) : 0)
     const label = (bulkUnit && bw > 1)
       ? `${bulkUnit.name || 'Bag'} (${bw}${bulkUnit.short || 'kg'})`
       : (bulkUnit?.short || prod.unit || 'pcs')
     return {
-      maxStock: stockBags,
+      maxStock: maxBags,
       displayLabel: `${stockBags} ${label}`
     }
   }
@@ -957,7 +958,7 @@ const calcMaxStock = (prod, itemUnit) => {
                         const qtyAddedBase = isBaseUnit ? qtyAdded : (qtyAdded * bw)
                         const remainingBaseQty = Math.max(0, totalAvailableBase - qtyAddedBase)
 
-                        const hasNoStock = p.stock <= 0
+                        const hasNoStock = totalAvailableBase <= 0
                         const isStockDepleted = remainingBaseQty <= 0
 
                         return (

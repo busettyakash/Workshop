@@ -67,7 +67,7 @@ export const getBulkUnitDetails = (unit) => {
   const u = String(unit).toLowerCase().trim();
 
   // Weight-based (Kg / Bag / Ton)
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].some(k => u.includes(k))) {
     return {
       isBulk: true,
       category: 'weight',
@@ -94,7 +94,7 @@ export const getBulkUnitDetails = (unit) => {
   }
 
   // Volume-based (Liter / Can / Drum / Bottle)
-  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].some(k => u.includes(k))) {
     return {
       isBulk: true,
       category: 'volume',
@@ -121,7 +121,7 @@ export const getBulkUnitDetails = (unit) => {
   }
 
   // Length-based (Meter / Roll / Pipe / Coil)
-  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].some(k => u.includes(k))) {
     return {
       isBulk: true,
       category: 'length',
@@ -234,16 +234,17 @@ export const formatProductUnitPrice = (price, unit, packCapacity = 1) => {
 export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0) => {
   if (stock === undefined || stock === null) return '0';
   const numStock = parseFloat(stock);
-  if (isNaN(numStock)) return '0';
-
   const bw = parseFloat(bagWeight) || 1;
-  const bulkUnit = getBulkUnitDetails(unit);
+  const passedLoose = parseFloat(looseKg || 0);
+
+  if (isNaN(numStock) && isNaN(passedLoose)) return '0';
+
+  const validStock = isNaN(numStock) ? 0 : numStock;
+  const bulkUnit = getBulkUnitDetails(unit) || (bw > 1 ? { isBulk: true, name: 'Bag', pluralName: 'Bags', short: 'kg' } : null);
 
   if (bulkUnit && bw > 1) {
-    const fullBags = Math.floor(numStock);
-    const passedLoose = parseFloat(looseKg || 0);
-
-    let looseQty = passedLoose > 0 ? passedLoose : (numStock - fullBags) * bw;
+    const fullBags = Math.floor(validStock);
+    let looseQty = passedLoose > 0 ? passedLoose : (validStock - fullBags) * bw;
     looseQty = Math.round(looseQty * 100) / 100;
 
     const containerName = bulkUnit.name || 'Bag';
@@ -260,13 +261,20 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0)
       return `${fullBags} ${packLabel} ${looseQty} ${looseUnitLabel}`;
     } else if (fullBags > 0) {
       return `${fullBags} ${packLabel}`;
-    } else {
+    } else if (looseQty > 0) {
       return `${looseQty} ${looseUnitLabel}`;
+    } else {
+      return `0 ${packLabel}`;
     }
   }
 
+  if (passedLoose > 0) {
+    const total = validStock + passedLoose;
+    return `${total} ${unit || 'pcs'}`;
+  }
+
   const unitLabel = unit || 'pcs';
-  return `${numStock} ${unitLabel}`;
+  return `${validStock} ${unitLabel}`;
 };
 
 export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '') => {
@@ -275,7 +283,7 @@ export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '
   if (isNaN(total)) return '0';
 
   const bw = parseFloat(bagWeight) || 1;
-  const bulkUnit = getBulkUnitDetails(unit);
+  const bulkUnit = getBulkUnitDetails(unit) || (bw > 1 ? { isBulk: true, name: 'Bag', pluralName: 'Bags', short: 'kg' } : null);
 
   if (bulkUnit && bw > 1) {
     const fullBags = Math.floor(total / bw);
@@ -294,8 +302,10 @@ export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '
       return `${fullBags} ${packLabel} ${looseQty} ${looseUnitLabel}`;
     } else if (fullBags > 0) {
       return `${fullBags} ${packLabel}`;
-    } else {
+    } else if (looseQty > 0) {
       return `${looseQty} ${looseUnitLabel}`;
+    } else {
+      return `0 ${packLabel}`;
     }
   }
 

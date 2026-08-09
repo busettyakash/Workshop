@@ -138,10 +138,10 @@ router.get('/', async (req, res) => {
     const total = parseInt(count.rows[0].count, 10) || 0
     const totalPages = Math.ceil(total / limit) || 1
 
-    params.push(limit, offset)
+    const queryParams = [...params, limit, offset]
     const { rows } = await query(
-      `SELECT * FROM products ${where} ORDER BY ${orderCol} LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params
+      `SELECT * FROM products ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
+      queryParams
     )
 
     const hasNextPage = page < totalPages

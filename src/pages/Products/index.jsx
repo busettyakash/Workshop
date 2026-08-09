@@ -378,9 +378,13 @@ export default function Products() {
     return 'attio-tag-default'
   }
 
-  const getStockBadgeClass = (stock) => {
-    if (stock > 10) return 'attio-stock-high'
-    if (stock > 0) return 'attio-stock-low'
+  const getStockBadgeClass = (stock, looseKg = 0, bagWeight = 1) => {
+    const s = parseFloat(stock || 0)
+    const l = parseFloat(looseKg || 0)
+    const bw = parseFloat(bagWeight || 1)
+    const totalBase = (bw > 1 ? s * bw : s) + l
+    if (totalBase > 10) return 'attio-stock-high'
+    if (totalBase > 0) return 'attio-stock-low'
     return 'attio-stock-out'
   }
 
@@ -620,7 +624,7 @@ export default function Products() {
                                 })()}
                               </td>
                             <td>
-                              <span className={`attio-stock-badge ${getStockBadgeClass(row.stock)}`}>
+                              <span className={`attio-stock-badge ${getStockBadgeClass(row.stock, row.loose_kg, row.bag_weight)}`}>
                                 {formatStockDisplay(row.stock, row.bag_weight, row.unit, row.loose_kg)}
                               </span>
                             </td>
@@ -630,7 +634,7 @@ export default function Products() {
                               </span>
                             </td>
                             <td>
-                              {row.stock <= 0 ? (
+                              {((parseFloat(row.stock || 0) * (parseFloat(row.bag_weight || 1) > 1 ? parseFloat(row.bag_weight || 1) : 1)) + parseFloat(row.loose_kg || 0)) <= 0 ? (
                                 <select 
                                   value={restock}
                                   onChange={(e) => handleUpdateRestock(row, e.target.value)}

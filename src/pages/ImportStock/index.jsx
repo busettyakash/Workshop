@@ -577,13 +577,24 @@ export default function ImportStock() {
                           </td>
                           <td>
                             {(() => {
+                              const s = parseFloat(row.stock || 0)
+                              const l = parseFloat(row.loose_kg || 0)
+                              const bw = parseFloat(row.bag_weight || 1)
+                              const totalBase = (bw > 1 ? s * bw : s) + l
                               const labelText = formatStockDisplay(row.stock, row.bag_weight, row.unit, row.loose_kg)
+
+                              const isOut = totalBase <= 0
+                              const isLow = totalBase > 0 && totalBase <= 10
+                              const bg = isOut ? '#fee2e2' : isLow ? '#fef3c7' : '#dcfce7'
+                              const textCol = isOut ? '#dc2626' : isLow ? '#d97706' : '#15803d'
+                              const borderCol = isOut ? '#fecaca' : isLow ? '#fde68a' : '#bbf7d0'
+
                               return (
                                 <span 
                                   style={{ 
-                                    background: '#dcfce7', 
-                                    color: '#15803d', 
-                                    border: '1px solid #bbf7d0', 
+                                    background: bg, 
+                                    color: textCol, 
+                                    border: `1px solid ${borderCol}`, 
                                     borderRadius: 6, 
                                     padding: '2px 10px', 
                                     height: 22,

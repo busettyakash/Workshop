@@ -714,7 +714,8 @@ export default function PriceHistory() {
       setProducts(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
-      dispatch(addToast({ message: 'Failed to load product history', type: 'error' }))
+      const errMsg = err.response?.data?.error || err.message || 'Unknown error'
+      dispatch(addToast({ message: `Failed to load product history: ${errMsg}`, type: 'error' }))
     } finally {
       setLoading(false)
     }
@@ -725,9 +726,13 @@ export default function PriceHistory() {
     fetchProducts(page)
   }, [dispatch, page, search, sort, filterCategory, filterStatus])
 
-  const getStockBadgeClass = (stock) => {
-    if (stock > 10) return 'attio-stock-high'
-    if (stock > 0) return 'attio-stock-low'
+  const getStockBadgeClass = (stock, looseKg = 0, bagWeight = 1) => {
+    const s = parseFloat(stock || 0)
+    const l = parseFloat(looseKg || 0)
+    const bw = parseFloat(bagWeight || 1)
+    const totalBase = (bw > 1 ? s * bw : s) + l
+    if (totalBase > 10) return 'attio-stock-high'
+    if (totalBase > 0) return 'attio-stock-low'
     return 'attio-stock-out'
   }
 
@@ -974,7 +979,7 @@ export default function PriceHistory() {
                                   })()}
                                 </td>
                                 <td>
-                                  <span className={`attio-stock-badge ${getStockBadgeClass(row.stock)}`}>
+                                  <span className={`attio-stock-badge ${getStockBadgeClass(row.stock, row.loose_kg, row.bag_weight)}`}>
                                     {formatStockDisplay(row.stock, row.bag_weight, row.unit, row.loose_kg)}
                                   </span>
                                 </td>

@@ -5,6 +5,7 @@ import { apiLimiter, emailLimiter } from '../middleware/rateLimit.js'
 import { getInvoiceEmailTemplate, getQuoteEmailTemplate, getOrderConfirmationTemplate } from '../utils/emailTemplates.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
+import redis from '../lib/redis.js'
 
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 
@@ -73,12 +74,18 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
     if (!prod) continue
 
     const bw = parseFloat(prod.bag_weight || 1)
-    const rawUnit = String(item.unit || item.unitLabel || prod.unit || 'pcs').trim()
-    const unitLower = rawUnit.toLowerCase()
-
+    const itemUnitStr = String(item.unit || item.unitLabel || '').trim().toLowerCase()
+    const prodUnitStr = String(prod.unit || 'pcs').trim().toLowerCase()
     const containerKeywords = ['bag', 'bags', 'drum', 'drums', 'can', 'cans', 'roll', 'rolls', 'box', 'boxes', 'carton', 'cartons', 'dozen', 'doz', 'pack', 'packs', 'bundle', 'bundles']
-    const hasContainerName = containerKeywords.some(c => unitLower.includes(c))
-    const isBaseUnit = !hasContainerName && ['kgs', 'kg', 'ltr', 'ltrs', 'liter', 'liters', 'mtr', 'mtrs', 'meter', 'meters', 'm', 'g', 'gm', 'ml', 'pcs', 'pc', 'ft', 'doz', 'set'].some(u => unitLower.includes(u))
+
+    let isBaseUnit = true
+    if (itemUnitStr) {
+      isBaseUnit = !containerKeywords.some(c => itemUnitStr.includes(c))
+    } else if (prodUnitStr) {
+      isBaseUnit = !containerKeywords.some(c => prodUnitStr.includes(c))
+    }
+
+    const rawUnit = item.unit || item.unitLabel || (isBaseUnit ? 'kgs' : prod.unit) || 'pcs'
 
     const currentStock = parseFloat(prod.stock || 0)
     const currentLoose = parseFloat(prod.loose_kg || 0)
@@ -87,14 +94,39 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
     let qtyDeductedBase = (isBaseUnit || bw <= 1) ? qty : (qty * bw)
     let totalBaseAfter = Math.max(0, totalBaseBefore - qtyDeductedBase)
 
-    let newStock = (bw > 1) ? Math.floor(totalBaseAfter / bw) : totalBaseAfter
-    let newLooseKg = (bw > 1) ? +(totalBaseAfter % bw).toFixed(2) : 0
+    let newStock = 0
+    let newLooseKg = 0
+
+    if (bw > 1) {
+      newStock = Math.floor(totalBaseAfter / bw)
+      newLooseKg = +(totalBaseAfter % bw).toFixed(2)
+    } else {
+      newStock = totalBaseAfter
+    }
 
     // Update products table
     await pool.query(
       `UPDATE products SET stock = $1, loose_kg = $2, updated_at = NOW() WHERE id = $3`,
       [newStock, newLooseKg, prod.id]
     ).catch(e => console.error('[Quote Products Stock Decrease Error]', e.message))
+
+    // Update import_stock table with loose_kg
+    await pool.query(
+      `UPDATE import_stock 
+       SET stock = $1, loose_kg = $2, updated_at = NOW() 
+       WHERE (user_id::text = $3::text OR user_id = 'default-user' OR $3 = 'default-user') 
+         AND (
+           name ILIKE $4 
+           OR ($5::text <> '' AND (hsn_code = $5 OR sku = $5))
+         )`,
+      [newStock, newLooseKg, userId || 'default-user', prod.name || itemName, prod.hsn_code || prod.sku || itemCode]
+    ).catch(e => console.error('[Quote ImportStock Decrease Error]', e.message))
+
+    if (userId) {
+      const keys1 = await redis.keys(`*${userId}*`).catch(() => [])
+      const keys2 = await redis.keys(`*default-user*`).catch(() => [])
+      for (const k of [...keys1, ...keys2]) { await redis.del(k).catch(() => {}) }
+    }
 
     let noteDetail = ''
     if (isBaseUnit || bw <= 1) {
@@ -127,18 +159,6 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
       quoteRef ? String(quoteRef) : null,
       noteDetail
     ).catch(e => console.error('[Quote Stock History Log Error]', e.message))
-
-    // Update import_stock table
-    await pool.query(
-      `UPDATE import_stock 
-       SET stock = $1, updated_at = NOW() 
-       WHERE (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') 
-         AND (
-           name ILIKE $3 
-           OR ($4::text <> '' AND (hsn_code = $4 OR sku = $4))
-         )`,
-      [newStock, userId || 'default-user', prod.name || itemName, prod.hsn_code || prod.sku || itemCode]
-    ).catch(e => console.error('[Quote ImportStock Decrease Error]', e.message))
   }
 }
 

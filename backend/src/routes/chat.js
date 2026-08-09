@@ -196,14 +196,23 @@ You have access to tools to:
 5. Create new contacts/people (create_person)
 
 Database tables available for SELECT queries:
-- products: id, name, sku, category, price, stock, status, description, user_id, created_at, updated_at
-- import_stock: id, name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at
+- products: id, name, sku, hsn_code, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, bag_weight, unit, status, description, user_id, created_at, updated_at
+- import_stock: id, name, sku, category, price, stock, loose_kg, bag_weight, unit, status, description, buying_price, price_covers, user_id, created_at, updated_at
 - people: id, name, email, phone, persona, status, notes, user_id, created_at, updated_at (stores customers, leads, partners)
-- bills: id, customer_id, items (JSON array of billing items), amount, discount, status (paid/unpaid), due_date, notes, paid_at, user_id, created_at
+- bills: id, bill_number, customer_id, amount, discount, tax_rate, status (paid/unpaid/cancelled), due_date, notes, order_number, paid_at, user_id, created_at, updated_at
+- bill_items: id, bill_id, product_id, name, qty, price, discount, unit, hsn_code, user_id, created_at (each row is one line item in a bill)
 - deals: id, title, value, stage, owner, close_date, notes, status, user_id, created_at, updated_at
 - deal_logs: id, deal_id, deal_title, event, from_value, to_value, done_by, user_id, created_at
 - notes: id, title, body, user_id, created_at, updated_at
 - emails: id, from_name, from_email, subject, body, preview, is_read, starred, direction, user_id, created_at, updated_at
+- product_stock_history: id, product_id, user_id, change_type, qty_change, stock_before, stock_after, source, source_ref, notes, created_at
+- product_price_history: id, product_id, user_id, old_price, new_price, effective_date, notes, created_at
+
+Useful billing analytics queries:
+- Bills per day: SELECT created_at::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = '...' GROUP BY day ORDER BY day DESC
+- Today's bills: SELECT * FROM bills WHERE user_id = '...' AND created_at::date = CURRENT_DATE
+- Top products sold: SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = '...' GROUP BY bi.name ORDER BY total_qty DESC LIMIT 10
+- Revenue by customer: SELECT COALESCE(p.name, 'General Customer') AS customer, SUM(b.amount) AS total FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = '...' GROUP BY customer ORDER BY total DESC
 
 CRITICAL SECURITY RULE: You MUST always filter every table in your query by \`user_id = '${userId}'\`. 
 For example: \`SELECT * FROM products WHERE user_id = '${userId}'\`. 

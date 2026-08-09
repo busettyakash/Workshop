@@ -6,7 +6,7 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import {
   Plus, Receipt, TrendingUp, Clock, CheckCircle,
   Trash2, Loader2, Check, Eye, Download, Upload,
-  FileText, Star, X, ChevronDown, ChevronLeft, ChevronRight, Calendar, Search, Filter, ArrowUpDown
+  FileText, Star, X, ChevronDown, ChevronLeft, ChevronRight, Calendar, Search, Filter, ArrowUpDown, BarChart2
 } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
 import api from '../../api/client'
@@ -201,15 +201,6 @@ export default function Billing() {
   const [limit] = useState(20) // fixed limit to remove dropdown
   const [total, setTotal] = useState(0)
 
-  const [search, setSearch] = useState('')
-  const [sort, setSort] = useState('') // '' (default), 'id_asc', 'id_desc', 'amount_asc', 'amount_desc'
-  const [filterStatus, setFilterStatus] = useState('all') // default all
-  const [filterMonth, setFilterMonth] = useState('')
-  const [filterYear, setFilterYear] = useState('')
-  const [filterDate, setFilterDate] = useState('')
-  const [showFilterBar, setShowFilterBar] = useState(false)
-  const [selectedIds, setSelectedIds] = useState([])
-
   const getTodayStr = () => {
     const d = new Date()
     const year = d.getFullYear()
@@ -219,6 +210,20 @@ export default function Billing() {
   }
 
   const todayStr = getTodayStr()
+
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('') // '' (default), 'id_asc', 'id_desc', 'amount_asc', 'amount_desc'
+  const [filterStatus, setFilterStatus] = useState('all') // default all
+  const [filterMonth, setFilterMonth] = useState('')
+  const [filterYear, setFilterYear] = useState('')
+  const [filterDate, setFilterDate] = useState(todayStr) // default to today
+  const [showFilterBar, setShowFilterBar] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [showDailyBreakdown, setShowDailyBreakdown] = useState(false)
+  const [dailyStats, setDailyStats] = useState([])
+  const [dailyLoading, setDailyLoading] = useState(false)
+  const [dailyRangeMonth, setDailyRangeMonth] = useState('')
+  const [dailyRangeYear, setDailyRangeYear] = useState('')
 
   const handlePrevDay = () => {
     const baseDateStr = filterDate || todayStr
@@ -253,7 +258,7 @@ export default function Billing() {
     setFilterStatus('all')
     setFilterMonth('')
     setFilterYear('')
-    setFilterDate('')
+    setFilterDate(todayStr) // reset to today, not all bills
     setPage(1)
   }
 
@@ -262,7 +267,8 @@ export default function Billing() {
     try {
       const [y, m, d] = filterDate.split('-').map(Number)
       const dt = new Date(y, m - 1, d)
-      return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      const isToday = filterDate === todayStr
+      return isToday ? 'Today' : dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     } catch {
       return filterDate
     }
@@ -309,6 +315,25 @@ export default function Billing() {
       setShopInfo({ shopName: u.shopName || '', gstin: u.gstin || '', phone: u.phone || '', address: u.address || '' })
     } catch { }
   }, [dispatch, page, search, sort, filterStatus, filterMonth, filterYear, filterDate])
+
+  useEffect(() => {
+    if (showDailyBreakdown) fetchDailyStats()
+  }, [showDailyBreakdown, dailyRangeMonth, dailyRangeYear])
+
+  const fetchDailyStats = async () => {
+    setDailyLoading(true)
+    try {
+      const p = new URLSearchParams()
+      if (dailyRangeMonth) p.set('month', dailyRangeMonth)
+      if (dailyRangeYear) p.set('year', dailyRangeYear)
+      const res = await api.get(`/billing/daily-stats?${p.toString()}`)
+      setDailyStats(res.data || [])
+    } catch {
+      dispatch(addToast({ message: 'Failed to load daily billing stats', type: 'error' }))
+    } finally {
+      setDailyLoading(false)
+    }
+  }
 
   const fetchData = async (currentPage = page) => {
     setLoading(true)
@@ -392,7 +417,7 @@ export default function Billing() {
     return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
-  const hasActiveFilters = filterStatus !== 'all' || filterMonth !== '' || filterYear !== '' || filterDate !== ''
+  const hasActiveFilters = filterStatus !== 'all' || filterMonth !== '' || filterYear !== '' || (filterDate !== '' && filterDate !== todayStr)
 
   return (
     <div className="ws-dash-layout">
@@ -525,6 +550,19 @@ export default function Billing() {
                   <FileText size={13} /> Templates
                 </button>
 
+                <button
+                  className="attio-btn"
+                  onClick={() => setShowDailyBreakdown(prev => !prev)}
+                  title="View bills per day breakdown"
+                  style={{
+                    background: showDailyBreakdown ? '#f1f5f9' : '#ffffff',
+                    borderColor: showDailyBreakdown ? '#0f172a' : '#cbd5e1',
+                    fontWeight: showDailyBreakdown ? 600 : 500
+                  }}
+                >
+                  <BarChart2 size={13} /> Daily
+                </button>
+
                 <button className="attio-btn attio-btn-primary" onClick={() => navigate('/billing/new')}>
                   <Plus size={13} style={{ marginRight: '4px' }} /> New Bill
                 </button>
@@ -549,6 +587,119 @@ export default function Billing() {
                 </div>
               ))}
             </div>
+
+            {/* Daily Breakdown Panel */}
+            {showDailyBreakdown && (
+              <div style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: 10,
+                padding: '16px 20px',
+                marginBottom: 16
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <BarChart2 size={15} color="#3d68f5" />
+                    <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#0f172a' }}>Bills Per Day</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: 12 }}>
+                      {dailyStats.length} days
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <select
+                      className="attio-select"
+                      value={dailyRangeMonth}
+                      onChange={e => setDailyRangeMonth(e.target.value)}
+                      style={{ fontSize: '0.78rem', padding: '3px 8px' }}
+                    >
+                      <option value="">All Months</option>
+                      {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m,i) => (
+                        <option key={i+1} value={i+1}>{m}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="attio-select"
+                      value={dailyRangeYear}
+                      onChange={e => setDailyRangeYear(e.target.value)}
+                      style={{ fontSize: '0.78rem', padding: '3px 8px' }}
+                    >
+                      <option value="">Last 30 Days</option>
+                      {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <button
+                      className="attio-btn"
+                      onClick={fetchDailyStats}
+                      style={{ fontSize: '0.78rem', padding: '3px 10px' }}
+                      disabled={dailyLoading}
+                    >
+                      {dailyLoading ? 'Loading…' : 'Refresh'}
+                    </button>
+                  </div>
+                </div>
+                {dailyLoading ? (
+                  <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', fontSize: '0.82rem' }}>Loading…</div>
+                ) : dailyStats.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', fontSize: '0.82rem' }}>No billing data found for selected period.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ textAlign: 'left', padding: '7px 12px', color: '#64748b', fontWeight: 600 }}>Date</th>
+                          <th style={{ textAlign: 'center', padding: '7px 12px', color: '#64748b', fontWeight: 600 }}>Bills</th>
+                          <th style={{ textAlign: 'right', padding: '7px 12px', color: '#64748b', fontWeight: 600 }}>Total Revenue</th>
+                          <th style={{ textAlign: 'center', padding: '7px 12px', color: '#059669', fontWeight: 600 }}>Paid</th>
+                          <th style={{ textAlign: 'right', padding: '7px 12px', color: '#059669', fontWeight: 600 }}>Paid Revenue</th>
+                          <th style={{ textAlign: 'center', padding: '7px 12px', color: '#d97706', fontWeight: 600 }}>Pending</th>
+                          <th style={{ textAlign: 'right', padding: '7px 12px', color: '#d97706', fontWeight: 600 }}>Pending Revenue</th>
+                          <th style={{ textAlign: 'center', padding: '7px 12px', color: '#64748b', fontWeight: 600 }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dailyStats.map((row, i) => {
+                          const isToday = row.day === todayStr
+                          return (
+                            <tr
+                              key={row.day}
+                              style={{
+                                borderBottom: '1px solid #f1f5f9',
+                                background: isToday ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#fafafa',
+                                transition: 'background 0.15s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                              onMouseLeave={e => e.currentTarget.style.background = isToday ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#fafafa'}
+                            >
+                              <td style={{ padding: '8px 12px', fontWeight: isToday ? 700 : 500, color: isToday ? '#2563eb' : '#0f172a' }}>
+                                {isToday ? '📅 Today' : new Date(row.day + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', weekday: 'short' })}
+                              </td>
+                              <td style={{ textAlign: 'center', padding: '8px 12px' }}>
+                                <span style={{ background: '#e0e7ff', color: '#3730a3', borderRadius: 12, padding: '2px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
+                                  {row.total_bills}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600, color: '#0f172a' }}>{formatCurrency(parseFloat(row.total_revenue))}</td>
+                              <td style={{ textAlign: 'center', padding: '8px 12px', color: '#059669', fontWeight: 600 }}>{row.paid_count}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', color: '#059669' }}>{formatCurrency(parseFloat(row.paid_revenue))}</td>
+                              <td style={{ textAlign: 'center', padding: '8px 12px', color: '#d97706', fontWeight: 600 }}>{row.pending_count}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', color: '#d97706' }}>{formatCurrency(parseFloat(row.pending_revenue))}</td>
+                              <td style={{ textAlign: 'center', padding: '8px 12px' }}>
+                                <button
+                                  className="attio-btn"
+                                  style={{ fontSize: '0.72rem', padding: '2px 10px' }}
+                                  onClick={() => { setFilterDate(row.day); setFilterMonth(''); setFilterYear(''); setPage(1); setShowDailyBreakdown(false); }}
+                                >
+                                  View Bills
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Expandable Filter Box */}
             {showFilterBar && (

@@ -196,6 +196,60 @@ router.get('/summary', async (req, res) => {
   }
 })
 
+/* GET /api/billing/daily-stats — bills grouped by day: count, revenue, paid count, pending count */
+router.get('/daily-stats', async (req, res) => {
+  const userId = req.workspaceId
+  const { month, year, startDate, endDate } = req.query
+
+  const params = [userId]
+  const conditions = ["(b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')"]
+
+  if (startDate) {
+    params.push(startDate)
+    conditions.push(`b.created_at::date >= $${params.length}::date`)
+  }
+  if (endDate) {
+    params.push(endDate)
+    conditions.push(`b.created_at::date <= $${params.length}::date`)
+  }
+  if (!startDate && year) {
+    params.push(parseInt(year, 10))
+    conditions.push(`EXTRACT(YEAR FROM b.created_at) = $${params.length}`)
+  }
+  if (!startDate && month) {
+    params.push(parseInt(month, 10))
+    conditions.push(`EXTRACT(MONTH FROM b.created_at) = $${params.length}`)
+  }
+
+  // Default: last 30 days if no date range given
+  if (!startDate && !endDate && !month && !year) {
+    conditions.push(`b.created_at::date >= (CURRENT_DATE - INTERVAL '29 days')`)
+  }
+
+  const where = `WHERE ${conditions.join(' AND ')}`
+
+  try {
+    const { rows } = await query(
+      `SELECT
+         b.created_at::date AS day,
+         COUNT(*) AS total_bills,
+         COALESCE(SUM(b.amount), 0) AS total_revenue,
+         COUNT(*) FILTER (WHERE b.status = 'paid') AS paid_count,
+         COALESCE(SUM(b.amount) FILTER (WHERE b.status = 'paid'), 0) AS paid_revenue,
+         COUNT(*) FILTER (WHERE b.status = 'unpaid') AS pending_count,
+         COALESCE(SUM(b.amount) FILTER (WHERE b.status = 'unpaid'), 0) AS pending_revenue
+       FROM bills b
+       ${where}
+       GROUP BY b.created_at::date
+       ORDER BY b.created_at::date DESC`,
+      params
+    )
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 /* GET /api/billing/:id */
 router.get('/:id', async (req, res) => {
   const userId = req.workspaceId
@@ -362,6 +416,12 @@ router.post('/', async (req, res) => {
         [newStock, newLooseKg, prod.id]
       ).catch(e => console.error('[Products Stock Update Error]', e.message))
 
+      if (userId) {
+        const keys1 = await redis.keys(`import_stock:${userId}*`).catch(() => [])
+        const keys2 = await redis.keys(`import_stock_note:${userId}*`).catch(() => [])
+        for (const k of [...keys1, ...keys2]) { await redis.del(k).catch(() => {}) }
+      }
+
       let noteDetail = ''
       if (isBaseUnit || bw <= 1) {
         noteDetail = `Deducted ${qty} ${rawUnit} for bill creation`
@@ -397,13 +457,13 @@ router.post('/', async (req, res) => {
       // Update import_stock table
       await query(
         `UPDATE import_stock 
-         SET stock = $1, updated_at = NOW() 
-         WHERE (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user') 
+         SET stock = $1, loose_kg = $2, updated_at = NOW() 
+         WHERE (user_id::text = $3::text OR user_id = 'default-user' OR $3 = 'default-user') 
            AND (
-             name ILIKE $3 
-             OR ($4::text <> '' AND (hsn_code = $4 OR sku = $4))
+             name ILIKE $4 
+             OR ($5::text <> '' AND (hsn_code = $5 OR sku = $5))
            )`,
-        [newStock, userId || 'default-user', prod.name || itemName, prod.hsn_code || prod.sku || itemCode]
+        [newStock, newLooseKg, userId || 'default-user', prod.name || itemName, prod.hsn_code || prod.sku || itemCode]
       ).catch(e => console.error('[ImportStock Update Error]', e.message))
     }
 

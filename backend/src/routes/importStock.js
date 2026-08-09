@@ -21,7 +21,7 @@ async function clearImportStockCache(userId) {
       await redis.del(key).catch(() => {})
     }
   } catch (err) {
-    console.warn(`${LOG_PREFIX} Failed to clear cache for user ${userId}:`, err.message)
+    console.warn('%s Failed to clear cache for user %s: %s', LOG_PREFIX, userId, err.message)
   }
 }
 

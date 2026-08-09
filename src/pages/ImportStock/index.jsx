@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown, Eye } from 'lucide-react'
+import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown, Eye, FileText } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getPillStyle, getCategoryTagStyle } from '../../utils/tableHelpers'
 import { getBulkUnitDetails, formatStockDisplay, calculateUnitPricing } from '../../utils/unitHelpers'
 import api from '../../api/client'
@@ -640,6 +640,26 @@ export default function ImportStock() {
                                 title="View pricing details"
                               >
                                 <Eye size={12} /> View
+                              </button>
+                              <button
+                                onClick={() => navigate(`/import-stock/${row.id}/note`)}
+                                style={{
+                                  background: '#f0fdf4',
+                                  border: '1px solid #bbf7d0',
+                                  color: '#166534',
+                                  cursor: 'pointer',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  fontSize: '0.72rem',
+                                  fontWeight: 500,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  transition: 'all 0.15s'
+                                }}
+                                title="View generated note"
+                              >
+                                <FileText size={12} /> Note
                               </button>
                               {row.status === 'added' ? (
                                 <button

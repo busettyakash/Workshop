@@ -192,6 +192,21 @@ query(`
   WHERE old_price >= 2000 AND product_id IN (SELECT id FROM products WHERE price_covers = 100 AND bag_weight = 50);
 `).catch(err => console.warn('[DB Cleanup] Error auto-cleaning historical price data:', err.message))
 
+query(`
+  CREATE TABLE IF NOT EXISTS import_stock_payments (
+    id SERIAL PRIMARY KEY,
+    import_stock_id INT NOT NULL,
+    user_id TEXT NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
+    payment_mode VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+`).then(() => {
+  console.log('[DB Init] import_stock_payments table verified/created successfully!');
+}).catch(err => {
+  console.error('[DB Init] Error creating import_stock_payments table:', err.message);
+})
+
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)

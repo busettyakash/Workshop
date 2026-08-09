@@ -209,15 +209,45 @@ export default function ImportStockForm() {
 
     setSaving(true)
     try {
+      const bulkUnit = getBulkUnitDetails(form.unit)
+      const unitShort = bulkUnit?.short || 'unit'
+      const unitPlural = bulkUnit?.pluralName || 'Bags / Units'
+
+      const noteBody = `=== REVIEW IMPORT STOCK SUMMARY ===
+
+SUPPLIER / BUYER DETAILS:
+Name: ${form.buyer_name || 'Not provided'}
+Phone: ${form.buyer_phone || 'Not provided'}
+Location: ${[form.buyer_city, form.buyer_state].filter(Boolean).join(', ') || 'Not provided'}
+
+PRODUCT SPECIFICATIONS:
+Product Name: ${form.name}
+SKU / Barcode: ${form.sku || 'N/A'}
+Category: ${form.category || 'General'}
+Pack Weight: ${form.bag_weight} ${unitShort} per pack
+
+PRICING & UNIT RATE ANALYSIS:
+Buyer Price (Supplier): ₹${form.buying_price ? parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'} (₹${buyRatePerUnit} / ${unitShort} cost)
+Updated Market Price: ${form.updated_price ? `₹${parseFloat(form.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+
+TOTAL INVENTORY STOCK:
+Amount of Bags: ${form.stock} ${unitPlural}
+Pack Size: ${form.bag_weight} ${unitShort} / pack
+Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${unitShort}`
+
+      const payload = { ...form, note: noteBody }
+      let res
       if (id) {
-        await api.put(`/import-stock/${id}`, form)
+        res = await api.put(`/import-stock/${id}`, payload)
         dispatch(addToast({ message: 'Stock product updated successfully!', type: 'success' }))
       } else {
-        await api.post('/import-stock', form)
+        res = await api.post('/import-stock', payload)
         dispatch(addToast({ message: 'Stock product added successfully!', type: 'success' }))
       }
+
       navigate('/import-stock')
-    } catch {
+    } catch (err) {
+      console.error('Failed to save import stock product:', err)
       dispatch(addToast({ message: 'Failed to save product', type: 'error' }))
     } finally {
       setSaving(false)

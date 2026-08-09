@@ -12,6 +12,19 @@ import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
 
 let ensureImportStockSchemaPromise
 
+async function clearImportStockCache(userId) {
+  try {
+    const keys1 = await redis.keys(`import_stock:${userId}*`).catch(() => [])
+    const keys2 = await redis.keys(`import_stock_note:${userId}*`).catch(() => [])
+    const allKeys = [...keys1, ...keys2]
+    for (const key of allKeys) {
+      await redis.del(key).catch(() => {})
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Failed to clear cache for user ${userId}:`, err.message)
+  }
+}
+
 async function ensureImportStockSchema() {
   await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50)`).catch(() => {})
   await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2)`).catch(() => {})
@@ -23,6 +36,23 @@ async function ensureImportStockSchema() {
   await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buying_price DECIMAL(10, 2)`).catch(() => {})
   await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2)`).catch(() => {})
   await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => {})
+  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS note TEXT`).catch(() => {})
+  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS add_stock_qty NUMERIC`).catch(() => {})
+  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS supplier_total_cost DECIMAL(10, 2)`).catch(() => {})
+  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(10, 2) DEFAULT 0`).catch(() => {})
+  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50)`).catch(() => {})
+  await query(`
+    CREATE TABLE IF NOT EXISTS import_stock_payments (
+      id SERIAL PRIMARY KEY,
+      import_stock_id INT NOT NULL,
+      user_id TEXT NOT NULL,
+      amount DECIMAL(10, 2) NOT NULL,
+      payment_mode VARCHAR(50) NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `).catch((err) => {
+    console.error('[ImportStock] Failed to create import_stock_payments table:', err.message)
+  })
   await query(`UPDATE import_stock SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
   await query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
   await query(`
@@ -76,7 +106,15 @@ router.get('/', async (req, res) => {
   if (sort === 'name_asc') orderCol = 'i.name ASC, i.id DESC'
   else if (sort === 'name_desc') orderCol = 'i.name DESC, i.id DESC'
 
+  const cacheKey = `import_stock:${userId}:${JSON.stringify({ search, status, sort, page, limit, cursor })}`
+
   try {
+    const cached = await redis.get(cacheKey).catch(() => null)
+    if (cached) {
+      console.log(`${LOG_PREFIX} GET / — CACHE HIT`)
+      return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
+    }
+
     if (cursor) {
       if (cursor.created_at && cursor.id) {
         params.push(cursor.created_at, cursor.id)
@@ -87,7 +125,7 @@ router.get('/', async (req, res) => {
       const { rows } = await query(
         `SELECT i.*, p.id AS product_id,
           CASE WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock) ELSE i.stock END AS stock,
-          COALESCE(p.loose_kg, 0) AS loose_kg,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.loose_kg, i.loose_kg) ELSE i.loose_kg END AS loose_kg,
           CASE WHEN i.status = 'added' THEN COALESCE(p.price_covers, i.price_covers) ELSE i.price_covers END AS price_covers,
           CASE 
             WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price)
@@ -109,13 +147,9 @@ router.get('/', async (req, res) => {
          LIMIT $${params.length}`,
         params
       )
-      const hasNextPage = rows.length > limit
-      if (hasNextPage) rows.pop()
-      const nextCursor = (hasNextPage && rows.length > 0)
-        ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
-        : null
-
-      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+      const responsePayload = { data: rows, limit, hasNextPage, nextCursor }
+      await redis.set(cacheKey, JSON.stringify(responsePayload), { ex: 300 }).catch(() => {})
+      return res.json(responsePayload)
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`
@@ -130,7 +164,7 @@ router.get('/', async (req, res) => {
     const { rows } = await query(
       `SELECT i.*, p.id AS product_id,
         CASE WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock) ELSE i.stock END AS stock,
-        COALESCE(p.loose_kg, 0) AS loose_kg,
+        CASE WHEN i.status = 'added' THEN COALESCE(p.loose_kg, i.loose_kg) ELSE i.loose_kg END AS loose_kg,
         CASE WHEN i.status = 'added' THEN COALESCE(p.price_covers, i.price_covers) ELSE i.price_covers END AS price_covers,
         CASE 
           WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price)
@@ -160,7 +194,7 @@ router.get('/', async (req, res) => {
       : null
 
     console.log(`${LOG_PREFIX} GET / — returned ${rows.length} rows of ${total}`)
-    res.json({
+    const responsePayload = {
       data: rows,
       total,
       page,
@@ -168,7 +202,9 @@ router.get('/', async (req, res) => {
       totalPages,
       hasNextPage,
       nextCursor
-    })
+    }
+    await redis.set(cacheKey, JSON.stringify(responsePayload), { ex: 300 }).catch(() => {})
+    res.json(responsePayload)
   } catch (err) {
     console.error(`${LOG_PREFIX} GET / — ERROR:`, err.message)
     res.status(500).json({ error: err.message })
@@ -179,9 +215,16 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const userId = req.workspaceId
   console.log(`${LOG_PREFIX} GET /${req.params.id} — userId: ${userId}`)
+  const cacheKey = `import_stock_note:${userId}:${req.params.id}`
   try {
+    const cached = await redis.get(cacheKey).catch(() => null)
+    if (cached) {
+      console.log(`${LOG_PREFIX} GET /${req.params.id} — CACHE HIT`)
+      return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
+    }
+
     const { rows } = await query(
-      `SELECT i.id, i.status, i.created_at, i.updated_at, i.user_id, i.buying_price, i.buyer_name, i.buyer_phone, i.buyer_city, i.buyer_state,
+      `SELECT i.id, i.status, i.created_at, i.updated_at, i.user_id, i.buying_price, i.buyer_name, i.buyer_phone, i.buyer_city, i.buyer_state, i.add_stock_qty, i.supplier_total_cost, i.paid_amount, i.payment_mode,
         CASE WHEN i.status = 'added' THEN COALESCE(p.name, i.name) ELSE i.name END AS name,
         CASE WHEN i.status = 'added' THEN COALESCE(p.sku, i.sku) ELSE i.sku END AS sku,
         CASE WHEN i.status = 'added' THEN COALESCE(p.category, i.category) ELSE i.category END AS category,
@@ -196,10 +239,11 @@ router.get('/:id', async (req, res) => {
         CASE WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock) ELSE i.stock END AS stock,
         CASE WHEN i.status = 'added' THEN COALESCE(p.unit, i.unit) ELSE i.unit END AS unit,
         CASE WHEN i.status = 'added' THEN COALESCE(p.description, i.description) ELSE i.description END AS description,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.bag_weight, i.bag_weight) ELSE i.bag_weight END AS bag_weight
+        CASE WHEN i.status = 'added' THEN COALESCE(p.bag_weight, i.bag_weight) ELSE i.bag_weight END AS bag_weight,
+        CASE WHEN i.status = 'added' THEN COALESCE(p.loose_kg, i.loose_kg) ELSE i.loose_kg END AS loose_kg
        FROM import_stock i
        LEFT JOIN LATERAL (
-         SELECT name, sku, category, price, price_covers, updated_price, updated_price_date, stock, unit, description, bag_weight, updated_at
+         SELECT name, sku, category, price, price_covers, updated_price, updated_price_date, stock, unit, description, bag_weight, loose_kg, updated_at
          FROM products 
          WHERE user_id = i.user_id AND (sku = i.sku OR name = i.name) 
          ORDER BY updated_at DESC, created_at DESC LIMIT 1
@@ -212,7 +256,23 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Import stock not found' })
     }
     console.log(`${LOG_PREFIX} GET /${req.params.id} — found`)
-    res.json({ data: rows[0] })
+    
+    const payments = await query(
+      `SELECT id, amount, payment_mode, created_at 
+       FROM import_stock_payments 
+       WHERE import_stock_id = $1 AND user_id = $2 
+       ORDER BY created_at DESC`, 
+      [req.params.id, userId]
+    )
+    
+    const responsePayload = {
+      data: {
+        ...rows[0],
+        payments: payments.rows
+      }
+    }
+    await redis.set(cacheKey, JSON.stringify(responsePayload), { ex: 300 }).catch(() => {})
+    res.json(responsePayload)
   } catch (err) {
     console.error('%s GET /%s — ERROR: %s', LOG_PREFIX, req.params.id, err.message)
     res.status(500).json({ error: err.message })
@@ -222,7 +282,7 @@ router.get('/:id', async (req, res) => {
 /* POST /api/import-stock */
 router.post('/', async (req, res) => {
   const userId = req.workspaceId
-  const { name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state } = req.body
+  const { name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state, note, add_stock_qty, supplier_total_cost } = req.body
   console.log(`${LOG_PREFIX} POST / — userId: ${userId}, name: ${name}, price: ${price}`)
   if (!name || !price) {
     console.warn(`${LOG_PREFIX} POST / — VALIDATION FAILED: name=${name}, price=${price}`)
@@ -230,8 +290,8 @@ router.post('/', async (req, res) => {
   }
   try {
     const { rows } = await query(
-      `INSERT INTO import_stock (name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, user_id, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW()) RETURNING *`,
+      `INSERT INTO import_stock (name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, user_id, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state, note, add_stock_qty, supplier_total_cost, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW(), NOW()) RETURNING *`,
       [
         name, sku, category, price,
         buying_price ? parseFloat(buying_price) : null,
@@ -239,13 +299,14 @@ router.post('/', async (req, res) => {
         updated_price ? parseFloat(updated_price) : null,
         updated_price_date || getIndianDateStr(),
         stock || 0, status || 'pending', unit || 'pcs', description, userId, parseFloat(bag_weight) || 1,
-        buyer_name || null, buyer_phone || null, buyer_city || null, buyer_state || null
+        buyer_name || null, buyer_phone || null, buyer_city || null, buyer_state || null,
+        note || null,
+        add_stock_qty ? parseFloat(add_stock_qty) : null,
+        supplier_total_cost ? parseFloat(supplier_total_cost) : null
       ]
     )
     console.log(`${LOG_PREFIX} POST / — SUCCESS, id: ${rows[0]?.id}`)
-    await redis.del(`import_stock:${userId}`).catch((e) => {
-      console.warn(`${LOG_PREFIX} POST / — Redis cache clear failed:`, e.message)
-    })
+    await clearImportStockCache(userId)
     res.status(201).json(rows[0])
   } catch (err) {
     console.error(`${LOG_PREFIX} POST / — ERROR:`, err.message)
@@ -256,7 +317,7 @@ router.post('/', async (req, res) => {
 /* PUT /api/import-stock/:id */
 router.put('/:id', async (req, res) => {
   const userId = req.workspaceId
-  const { name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state } = req.body
+  const { name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state, note, add_stock_qty, supplier_total_cost } = req.body
   console.log(`${LOG_PREFIX} PUT /${req.params.id} — userId: ${userId}, name: ${name}`)
   try {
     const oldImport = await query('SELECT sku, name, updated_price, updated_price_date FROM import_stock WHERE id = $1 AND user_id = $2', [req.params.id, userId]);
@@ -281,8 +342,8 @@ router.put('/:id', async (req, res) => {
     }
 
     const { rows } = await query(
-      `UPDATE import_stock SET name=$1, sku=$2, category=$3, price=$4, buying_price=$5, price_covers=$6, updated_price=$7, updated_price_date=$8, stock=$9, status=$10, unit=$11, description=$12, bag_weight=$13, buyer_name=$14, buyer_phone=$15, buyer_city=$16, buyer_state=$17, updated_at=NOW()
-       WHERE id=$18 AND user_id = $19 RETURNING *`,
+      `UPDATE import_stock SET name=$1, sku=$2, category=$3, price=$4, buying_price=$5, price_covers=$6, updated_price=$7, updated_price_date=$8, stock=$9, status=$10, unit=$11, description=$12, bag_weight=$13, buyer_name=$14, buyer_phone=$15, buyer_city=$16, buyer_state=$17, note=$18, add_stock_qty=$19, supplier_total_cost=$20, updated_at=NOW()
+       WHERE id=$21 AND user_id = $22 RETURNING *`,
       [
         name, sku, category, price,
         buying_price ? parseFloat(buying_price) : null,
@@ -291,6 +352,9 @@ router.put('/:id', async (req, res) => {
         finalPriceDate,
         stock, status || 'pending', unit || 'pcs', description, parseFloat(bag_weight) || 1,
         buyer_name || null, buyer_phone || null, buyer_city || null, buyer_state || null,
+        note || null,
+        add_stock_qty ? parseFloat(add_stock_qty) : null,
+        supplier_total_cost ? parseFloat(supplier_total_cost) : null,
         req.params.id, userId
       ]
     )
@@ -362,12 +426,90 @@ router.put('/:id', async (req, res) => {
     }
 
     console.log(`${LOG_PREFIX} PUT /${req.params.id} — SUCCESS`)
-    await redis.del(`import_stock:${userId}`).catch((e) => {
-      console.warn(`${LOG_PREFIX} PUT / — Redis cache clear failed:`, e.message)
-    })
+    await clearImportStockCache(userId)
     res.json(rows[0])
   } catch (err) {
     console.error('%s PUT /%s — ERROR: %s', LOG_PREFIX, req.params.id, err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* PATCH /api/import-stock/:id/supplier-cost */
+router.patch('/:id/supplier-cost', async (req, res) => {
+  const userId = req.workspaceId
+  const { supplier_total_cost } = req.body
+  try {
+    const { rows } = await query(
+      `UPDATE import_stock SET supplier_total_cost = $1, updated_at = NOW()
+       WHERE id = $2 AND user_id = $3
+       RETURNING *`,
+      [supplier_total_cost !== undefined && supplier_total_cost !== '' ? parseFloat(supplier_total_cost) : null, req.params.id, userId]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Import stock not found' })
+    await clearImportStockCache(userId)
+    res.json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* PATCH /api/import-stock/:id/payment */
+router.patch('/:id/payment', async (req, res) => {
+  const userId = req.workspaceId
+  const { paid_amount, payment_mode } = req.body
+  try {
+    const { rows } = await query(
+      `UPDATE import_stock 
+       SET paid_amount = $1, payment_mode = $2, updated_at = NOW()
+       WHERE id = $3 AND user_id = $4
+       RETURNING *`,
+      [
+        paid_amount !== undefined && paid_amount !== '' ? parseFloat(paid_amount) : 0,
+        payment_mode || null,
+        req.params.id,
+        userId
+      ]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Import stock not found' })
+    await clearImportStockCache(userId)
+    res.json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* POST /api/import-stock/:id/payments */
+router.post('/:id/payments', async (req, res) => {
+  const userId = req.workspaceId
+  const { amount, payment_mode } = req.body
+  if (amount === undefined || !payment_mode) {
+    return res.status(400).json({ error: 'amount and payment_mode are required' })
+  }
+  try {
+    const { rows } = await query(
+      `INSERT INTO import_stock_payments (import_stock_id, user_id, amount, payment_mode, created_at)
+       VALUES ($1, $2, $3, $4, NOW()) RETURNING *`,
+      [req.params.id, userId, parseFloat(amount), payment_mode]
+    )
+    await clearImportStockCache(userId)
+    res.status(201).json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* DELETE /api/import-stock/:id/payments/:paymentId */
+router.delete('/:id/payments/:paymentId', async (req, res) => {
+  const userId = req.workspaceId
+  try {
+    await query(
+      `DELETE FROM import_stock_payments 
+       WHERE id = $1 AND import_stock_id = $2 AND user_id = $3`,
+      [req.params.paymentId, req.params.id, userId]
+    )
+    await clearImportStockCache(userId)
+    res.json({ success: true })
+  } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
@@ -443,10 +585,7 @@ router.post('/bulk-add-to-products', async (req, res) => {
       [ids, userId]
     )
 
-    await redis.del(`import_stock:${userId}`).catch((e) => {
-      console.warn(`${LOG_PREFIX} POST /bulk-add-to-products — Redis cache clear failed:`, e.message)
-    })
-
+    await clearImportStockCache(userId)
     console.log(`${LOG_PREFIX} POST /bulk-add-to-products — SUCCESS, ${importRows.length} products added`)
     res.json({ message: `${importRows.length} products added successfully`, data: rows })
   } catch (err) {
@@ -529,10 +668,7 @@ router.post('/:id/add-to-products', async (req, res) => {
       [req.params.id, userId]
     )
 
-    await redis.del(`import_stock:${userId}`).catch((e) => {
-      console.warn('%s POST /%s/add-to-products — Redis cache clear failed: %s', LOG_PREFIX, req.params.id, e.message)
-    })
-
+    await clearImportStockCache(userId)
     console.log(`${LOG_PREFIX} POST /${req.params.id}/add-to-products — SUCCESS`)
     res.json(rows[0])
   } catch (err) {
@@ -547,9 +683,8 @@ router.delete('/:id', async (req, res) => {
   console.log(`${LOG_PREFIX} DELETE /${req.params.id} — userId: ${userId}`)
   try {
     await query('DELETE FROM import_stock WHERE id = $1 AND user_id = $2', [req.params.id, userId])
-    await redis.del(`import_stock:${userId}`).catch((e) => {
-      console.warn('%s DELETE /%s — Redis cache clear failed: %s', LOG_PREFIX, req.params.id, e.message)
-    })
+    await query('DELETE FROM import_stock_payments WHERE import_stock_id = $1 AND user_id = $2', [req.params.id, userId]).catch(() => {})
+    await clearImportStockCache(userId)
     console.log(`${LOG_PREFIX} DELETE /${req.params.id} — SUCCESS`)
     res.json({ message: 'Import stock deleted' })
   } catch (err) {

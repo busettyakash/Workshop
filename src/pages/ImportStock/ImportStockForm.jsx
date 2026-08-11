@@ -637,8 +637,13 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>{getDynamicFieldLabels(form.unit).stockQtyLabel}</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                        Initial Purchased Quantity ({getBulkUnitDetails(form.unit)?.pluralName || 'Bags'})
+                      </label>
                       <input name="stock" type="number" value={form.stock} onChange={handleChange} placeholder="0" style={inp('stock')} onFocus={() => setFocus('stock')} onBlur={() => setFocus(null)} />
+                      <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, display: 'block' }}>
+                        Total batch quantity imported from supplier
+                      </span>
                     </div>
 
                     <div>
@@ -681,7 +686,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
-                        Stock Quantity Update ({getBulkUnitDetails(form.unit)?.pluralName || 'Bags'})
+                        Add New Stock to Inventory ({getBulkUnitDetails(form.unit)?.pluralName || 'Bags'})
                       </label>
                       <input
                         name="add_stock_qty"
@@ -690,23 +695,18 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         value={form.add_stock_qty || ''}
                         onChange={(e) => {
                           const val = e.target.value
-                          setForm(prev => {
-                            const addedVal = parseFloat(val || 0)
-                            const baseStock = parseFloat(prev.initial_stock ?? prev.stock ?? 0)
-                            return {
-                              ...prev,
-                              add_stock_qty: val,
-                              stock: val !== '' ? (baseStock + addedVal) : baseStock
-                            }
-                          })
+                          setForm(prev => ({
+                            ...prev,
+                            add_stock_qty: val
+                          }))
                         }}
-                        placeholder="e.g. +50 to update stock"
+                        placeholder="e.g. +10 to add to current stock"
                         style={inp('add_stock_qty')}
                         onFocus={() => setFocus('add_stock_qty')}
                         onBlur={() => setFocus(null)}
                       />
                       <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, display: 'block' }}>
-                        Auto-applies today's date ({todayStr})
+                        Adds directly to total stock
                       </span>
                     </div>
                   </div>
@@ -812,14 +812,25 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
 
                   <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Total Inventory Stock</div>
+                      <div style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>
+                        Total Inventory Stock
+                      </div>
                       <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1e3a8a', marginTop: 2 }}>
-                        {form.stock} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags / Units'}
+                        {form.add_stock_qty && parseFloat(form.add_stock_qty) > 0 ? (
+                          <span>
+                            Total After Addition: <strong style={{ color: '#15803d' }}>{(parseFloat(form.initial_stock ?? form.stock ?? 0) + parseFloat(form.add_stock_qty || 0))} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags'}</strong>
+                          </span>
+                        ) : (
+                          <span>{form.stock} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags / Units'}</span>
+                        )}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', fontSize: '0.75rem', color: '#2563eb' }}>
+                      <div>Initial Batch Qty: <strong>{form.initial_stock ?? form.stock} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags'}</strong></div>
+                      {form.add_stock_qty && parseFloat(form.add_stock_qty) > 0 && (
+                        <div style={{ color: '#15803d', fontWeight: 600 }}>Adding to Stock: <strong>+{form.add_stock_qty} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags'}</strong></div>
+                      )}
                       <div>Pack Size: <strong>{form.bag_weight} {getBulkUnitDetails(form.unit)?.short || 'kg'}</strong> / pack</div>
-                      <div>Total Weight: <strong>{(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} {getBulkUnitDetails(form.unit)?.short || 'kg'}</strong></div>
                     </div>
                   </div>
 

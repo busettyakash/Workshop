@@ -178,19 +178,6 @@ app.use((err, _req, res, _next) => {
 })
 
 import { query } from './lib/db.js'
-query(`
-  UPDATE products SET updated_price = (updated_price / 100) * bag_weight
-  WHERE price_covers = 100 AND bag_weight = 50 AND updated_price >= 2000;
-
-  UPDATE import_stock SET updated_price = (updated_price / 100) * bag_weight
-  WHERE price_covers = 100 AND bag_weight = 50 AND updated_price >= 2000;
-
-  UPDATE product_price_history SET new_price = (new_price / 100) * 50
-  WHERE new_price >= 2000 AND product_id IN (SELECT id FROM products WHERE price_covers = 100 AND bag_weight = 50);
-
-  UPDATE product_price_history SET old_price = (old_price / 100) * 50
-  WHERE old_price >= 2000 AND product_id IN (SELECT id FROM products WHERE price_covers = 100 AND bag_weight = 50);
-`).catch(err => console.warn('[DB Cleanup] Error auto-cleaning historical price data:', err.message))
 
 query(`
   CREATE TABLE IF NOT EXISTS import_stock_payments (
@@ -201,11 +188,11 @@ query(`
     payment_mode VARCHAR(50) NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
   );
-`).then(() => {
-  console.log('[DB Init] import_stock_payments table verified/created successfully!');
-}).catch(err => {
-  console.error('[DB Init] Error creating import_stock_payments table:', err.message);
-})
+  ALTER TABLE import_stock_payments ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE import_stock_payments FORCE ROW LEVEL SECURITY;
+  DROP POLICY IF EXISTS import_stock_payments_user_policy ON public.import_stock_payments;
+  CREATE POLICY import_stock_payments_user_policy ON public.import_stock_payments FOR ALL TO public USING ((select auth.uid()::text) = user_id OR user_id = 'default-user');
+`).catch(() => {})
 
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {

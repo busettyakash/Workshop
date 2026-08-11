@@ -112,49 +112,53 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     }
   }
 
-  let lineDiscountsSum = 0
+  function getExplicitLineDiscount(it) {
+    const explicit = parseFloat(it.discount ?? it.discount_amount ?? it.discountAmount ?? it.disc ?? NaN)
+    if (!isNaN(explicit) && explicit >= 0) return explicit
+    const qty = parseFloat(it.quantity || it.qty || 1)
+    const rate = parseFloat(it.price || it.rate || 0)
+    const lineGross = qty * rate
+    const lineAmt = parseFloat(it.amount ?? it.line_total ?? NaN)
+    if (!isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
+      return Math.round((lineGross - lineAmt) * 100) / 100
+    }
+    return 0
+  }
+
+  const lineDiscountsVal = itemsList.reduce((s, it) => s + getExplicitLineDiscount(it), 0)
 
   const rowsHtml = itemsList.length > 0 ? itemsList.map(item => {
     const qty = parseFloat(item.quantity || item.qty || 1)
     const rate = parseFloat(item.price || item.rate || 0)
-    const disc = parseFloat(item.discount || 0)
-    lineDiscountsSum += disc
+    const itemDisc = getExplicitLineDiscount(item)
     const lineTotalGross = rate * qty
     const prodName = item.product_name || item.name || item.productName || 'Product Item'
-    let itemDisc = 0
-    if (disc > 0) {
-      itemDisc = disc
-    } else if (totalDiscountVal > 0) {
-      itemDisc = itemsList.length === 1
-        ? totalDiscountVal
-        : Math.round(((lineTotalGross / (grossTotal || 1)) * totalDiscountVal) * 100) / 100
-    }
-
+    
     const catMap = catalogMap || {}
     const catProd = (item.product_id && catMap[String(item.product_id)])
       || (item.id && catMap[String(item.id)])
       || (prodName && catMap[prodName.toLowerCase().trim()])
     const bw = parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? catProd?.bag_weight ?? 1)
 
-    // FIX: hsnCode was referenced but never defined anywhere — pull it from the item.
-    const hsnCode = item.hsn_code || item.hsnCode || item.hsn || ''
+    const rawUnit = item.unit || item.unitLabel || ''
+    const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw, prodName, isQuoteFlow)
 
-    const { displayQty, displayUnit, subtext } = resolvePackDisplay(item.unit || item.unitLabel, qty, bw, prodName, isQuoteFlow)
-    const qtyMain = `${displayQty} ${displayUnit}`.trim()
-    const qtySub = (bw > 1 && !displayUnit.toLowerCase().includes('kg')) ? `(${bw}kg)` : ''
+    const rawHsn = item.hsn_code || item.hsn || item.sku || ''
+    const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
+      ? `1006${String(item.product_id || item.id || 1001).padStart(4, '0')}`
+      : rawHsn
 
     return `
       <tr>
-        <td style="padding:10px 12px; font-size:12px; font-weight:600; color:#475569; border:1px solid #cbd5e1; font-family:monospace;">${escapeHtml(hsnCode)}</td>
+        <td style="padding:10px 12px; font-size:11px; font-family:monospace; color:#475569; border:1px solid #cbd5e1;">${escapeHtml(hsnCode)}</td>
         <td style="padding:10px 12px; font-size:12.5px; border:1px solid #cbd5e1;">
           <div style="font-weight:700; color:#0f172a;">${escapeHtml(prodName)}</div>
           ${subtext ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
         </td>
         <td align="center" style="padding:10px 12px; font-size:12px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center;">
-          <div>${escapeHtml(qtyMain)}</div>
-          ${qtySub ? `<div style="font-size:11px; color:#475569; font-weight:600; margin-top:1px;">${escapeHtml(qtySub)}</div>` : ''}
+          <div>${escapeHtml(displayQty ? `${displayQty} ${displayUnit}` : displayUnit)}</div>
         </td>
-        <td align="right" style="padding:10px 12px; font-size:12.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right;">₹${(qty * rate).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td align="right" style="padding:10px 12px; font-size:12.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right;">₹${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td align="right" style="padding:10px 12px; font-size:12px; font-weight:700; color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}; border:1px solid #cbd5e1; text-align:right;">
           ${itemDisc > 0.01 ? `-₹${itemDisc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
         </td>
@@ -167,8 +171,8 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     </tr>
   `
 
-  const discountAmt = Math.max(lineDiscountsSum, billDisc, quoteDisc, diffDisc)
-  const subtotal = grossTotal > 0 ? grossTotal : (totalAmount + discountAmt - taxAmt)
+  const discountAmt = Math.max(lineDiscountsVal, billDisc, quoteDisc, diffDisc)
+  const subtotal = grossTotal > 0 ? grossTotal : (totalAmount + discountAmt - realTaxAmt)
 
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2

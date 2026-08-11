@@ -7,12 +7,25 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;')
 }
 
+function getExplicitLineDiscount(li) {
+  const explicit = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
+  if (!isNaN(explicit) && explicit >= 0) return explicit
+  const qty = parseFloat(li.quantity || li.qty || 1)
+  const rate = parseFloat(li.rate || li.price || 0)
+  const lineGross = qty * rate
+  const lineAmt = parseFloat(li.amount ?? li.line_total ?? NaN)
+  if (!isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
+    return Math.round((lineGross - lineAmt) * 100) / 100
+  }
+  return 0
+}
+
 export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt, catalogMap = {} }) => {
   let items = []
   if (Array.isArray(quote.line_items)) {
     items = quote.line_items
   } else if (typeof quote.line_items === 'string') {
-    try { items = JSON.parse(quote.line_items) } catch {}
+    try { items = JSON.parse(quote.line_items) } catch { }
   }
 
   const grossSubtotal = items.reduce((s, li) => {
@@ -21,7 +34,7 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     return s + (p * q)
   }, 0)
 
-  const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
+  const lineDiscounts = items.reduce((s, li) => s + getExplicitLineDiscount(li), 0)
   const subtotal = Math.max(0, grossSubtotal - lineDiscounts)
   const totalAmount = parseFloat(quote.total_amount || grossSubtotal || 0)
   const taxAmt = parseFloat(quote.tax_amount || 0)
@@ -57,18 +70,18 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     const u = uRaw.toLowerCase().trim()
 
     // Liquids (ltrs, ltr, litres, ml) ALWAYS show ltrs/ml (NEVER Drums!)
-    if (['litres','litre','ltr','ltrs','liter','liters','l','ml'].includes(u)) {
-      return { 
-        displayQty: qty, 
+    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+      return {
+        displayQty: qty,
         displayUnit: 'ltrs',
         subtext: 'ltrs'
       }
     }
 
     // Meters / Feet
-    if (['meters','meter','mtr','mtrs','m'].includes(u)) {
-      return { 
-        displayQty: qty, 
+    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+      return {
+        displayQty: qty,
         displayUnit: 'mtrs',
         subtext: bw > 1 ? `${bw}m Roll` : 'mtrs'
       }
@@ -77,23 +90,34 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     const packName = bw > 1 ? 'Bag' : 'Pack'
     const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
 
-    return { 
-      displayQty: qty, 
+    return {
+      displayQty: qty,
       displayUnit: 'Bags',
       subtext: packSubtext
     }
   }
 
+  const explicitTaxRate = (quote?.tax_rate !== undefined && quote?.tax_rate !== null && quote?.tax_rate !== '')
+    ? parseFloat(quote.tax_rate)
+    : null
+
+  let effectiveTaxRate = 0
+  if (explicitTaxRate !== null && !isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
+    effectiveTaxRate = explicitTaxRate
+  } else if (taxAmt > 0 && subtotal > 0) {
+    effectiveTaxRate = Math.round((taxAmt / subtotal) * 100)
+  }
+
+  const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
+
   // Generate table rows matching PDF layout
   const rowsHtml = items.length > 0 ? items.map(li => {
     const qty = parseFloat(li.quantity || li.qty || 1)
     const rate = parseFloat(li.rate || li.price || 0)
-    const disc = parseFloat(li.discount || 0)
+    const disc = getExplicitLineDiscount(li)
     const lineTotalGross = rate * qty
-    let itemDisc = 0
-    if (disc > 0) {
-      itemDisc = disc
-    } else if (totalDiscount > 0) {
+    let itemDisc = disc
+    if (itemDisc === 0 && lineDiscounts === 0 && totalDiscount > 0) {
       itemDisc = items.length === 1
         ? totalDiscount
         : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
@@ -108,25 +132,25 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw)
 
     const rawHsn = li.hsn_code || li.hsn || li.sku || ''
-    const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-') 
+    const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
       ? `1006${String(li.product_id || li.id || 1001).padStart(4, '0')}`
       : rawHsn
 
     return `
       <tr>
-        <td style="padding:10px 12px; font-size:12px; font-weight:600; color:#475569; border:1px solid #cbd5e1; font-family:monospace;">${escapeHtml(hsnCode)}</td>
-        <td style="padding:10px 12px; font-size:12.5px; border:1px solid #cbd5e1;">
+        <td style="padding:10px 12px; font-size:10.5px; font-weight:600; color:#475569; border:1px solid #cbd5e1; font-family:monospace; line-height:1.4;">${escapeHtml(hsnCode)}</td>
+        <td style="padding:10px 12px; font-size:11.5px; border:1px solid #cbd5e1; line-height:1.4;">
           <div style="font-weight:700; color:#0f172a;">${escapeHtml(prodName)}</div>
-          ${subtext ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
+          ${subtext ? `<div style="font-size:10.5px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
         </td>
-        <td align="center" style="padding:10px 12px; font-size:12px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center;">
+        <td align="center" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center; line-height:1.4;">
           ${displayQty ? `${displayQty} ${displayUnit}` : displayUnit}
         </td>
-        <td align="right" style="padding:10px 12px; font-size:12.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right;">₹${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td align="right" style="padding:10px 12px; font-size:12px; font-weight:700; color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}; border:1px solid #cbd5e1; text-align:right;">
+        <td align="right" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">₹${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td align="right" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">
           ${itemDisc > 0.01 ? `-₹${itemDisc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
         </td>
-        <td align="right" style="padding:10px 12px; font-size:11.5px; color:#475569; border:1px solid #cbd5e1; text-align:right;">${taxAmt > 0 ? 'CGST (9%) + SGST (9%)' : '0.00% + 0.00%'}</td>
+        <td align="right" style="padding:10px 12px; font-size:10.5px; color:#475569; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">${taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : '0.00% + 0.00%'}</td>
       </tr>
     `
   }).join('') : `
@@ -242,45 +266,50 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
                       </tbody>
                     </table>
 
-                    <!-- ── TOTALS SUMMARY ROW GRID (EXACT PDF MATCH) ── -->
+                    <!-- ── TOTALS SUMMARY ROW GRID (EXACT) ── -->
                     ${(() => {
-                      const hasTax = taxAmt > 0
-                      const hasDisc = totalDiscount > 0
-                      let w = '50%'
-                      if (hasTax && hasDisc) w = '20%'
-                      else if (hasTax || hasDisc) w = '33.33%'
+      const hasTax = taxAmt > 0
+      const hasDisc = totalDiscount > 0
+      let w = '50%'
+      if (hasTax && hasDisc) w = '16.66%'
+      else if (hasTax) w = '25%'
+      else if (hasDisc) w = '33.33%'
 
-                      return `
+      return `
                       <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border:1px solid #cbd5e1; background:#f8fafc; margin-bottom:24px; text-align:center; border-collapse:collapse; table-layout:fixed;">
                         <tr>
-                          <td width="${w}" style="padding:10px 6px; border-right:1px solid #cbd5e1;">
-                            <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">TOT. TAX'BLE AMT</div>
-                            <div style="font-size:12px; font-weight:800; color:#0f172a; margin-top:2px;">₹${subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          ${hasDisc ? `
+                          <td width="${w}" style="padding:10px 4px; border-right:1px solid #cbd5e1;">
+                            <div style="font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase; white-space:nowrap; overflow:hidden;">GROSS SUBTOTAL</div>
+                            <div style="font-size:11.5px; font-weight:800; color:#0f172a; margin-top:2px; white-space:nowrap; overflow:hidden;">₹${grossSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          </td>
+                          <td width="${w}" style="padding:10px 4px; border-right:1px solid #cbd5e1; background:#fef2f2;">
+                            <div style="font-size:9px; font-weight:800; color:#991b1b; text-transform:uppercase; white-space:nowrap; overflow:hidden;">TOTAL DISCOUNT</div>
+                            <div style="font-size:11.5px; font-weight:800; color:#dc2626; margin-top:2px; white-space:nowrap; overflow:hidden">- ₹${totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          </td>
+                          ` : ''}
+                          <td width="${w}" style="padding:10px 4px; border-right:1px solid #cbd5e1;">
+                            <div style="font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase; white-space:nowrap; overflow:hidden;">TOT. TAX'BLE AMT</div>
+                            <div style="font-size:11.5px; font-weight:800; color:#0f172a; margin-top:2px; white-space:nowrap; overflow:hidden;">₹${subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           </td>
                           ${hasTax ? `
-                          <td width="${w}" style="padding:10px 6px; border-right:1px solid #cbd5e1;">
-                            <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">CGST AMT</div>
-                            <div style="font-size:12px; font-weight:800; color:#0f172a; margin-top:2px;">₹${cgst.toFixed(2)}</div>
+                          <td width="${w}" style="padding:10px 4px; border-right:1px solid #cbd5e1;">
+                            <div style="font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase; white-space:nowrap; overflow:hidden;">CGST AMT</div>
+                            <div style="font-size:11.5px; font-weight:800; color:#0f172a; margin-top:2px; white-space:nowrap; overflow:hidden;">₹${cgst.toFixed(2)}</div>
                           </td>
-                          <td width="${w}" style="padding:10px 6px; border-right:1px solid #cbd5e1;">
-                            <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">SGST AMT</div>
-                            <div style="font-size:12px; font-weight:800; color:#0f172a; margin-top:2px;">₹${sgst.toFixed(2)}</div>
-                          </td>
-                          ` : ''}
-                          ${hasDisc ? `
-                          <td width="${w}" style="padding:10px 6px; border-right:1px solid #cbd5e1; background:#fef2f2;">
-                            <div style="font-size:9.5px; font-weight:800; color:#991b1b; text-transform:uppercase;">TOTAL DISCOUNT</div>
-                            <div style="font-size:12px; font-weight:800; color:#dc2626; margin-top:2px;">- ₹${totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <td width="${w}" style="padding:10px 4px; border-right:1px solid #cbd5e1;">
+                            <div style="font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase; white-space:nowrap; overflow:hidden;">SGST AMT</div>
+                            <div style="font-size:11.5px; font-weight:800; color:#0f172a; margin-top:2px; white-space:nowrap; overflow:hidden;">₹${sgst.toFixed(2)}</div>
                           </td>
                           ` : ''}
-                          <td width="${w}" style="padding:10px 6px; background:#0f172a; color:#ffffff;">
-                            <div style="font-size:9.5px; font-weight:800; color:#94a3b8; text-transform:uppercase;">TOTAL QUOTE.AMT</div>
-                            <div style="font-size:13px; font-weight:900; color:#ffffff; margin-top:2px;">₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <td width="${w}" style="padding:10px 4px; background:#0f172a; color:#ffffff;">
+                            <div style="font-size:9px; font-weight:800; color:#94a3b8; text-transform:uppercase; white-space:nowrap; overflow:hidden;">TOTAL QUOTE.AMT</div>
+                            <div style="font-size:12.5px; font-weight:900; color:#ffffff; margin-top:2px; white-space:nowrap; overflow:hidden;">₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           </td>
                         </tr>
                       </table>
                       `
-                    })()}
+    })()}
 
                     <!-- ── INTERACTIVE ACCEPT & REJECT BUTTONS ── -->
                     <div style="text-align:center; padding:16px 0; margin-bottom:20px;">

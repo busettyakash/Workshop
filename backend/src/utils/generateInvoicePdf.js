@@ -169,7 +169,20 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     const p = parseFloat(li.price || li.rate || 0)
     return s + (p * q)
   }, 0)
-  const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
+function getExplicitLineDiscount(li) {
+  const explicit = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
+  if (!isNaN(explicit) && explicit >= 0) return explicit
+  const qty = parseFloat(li.quantity || li.qty || 1)
+  const rate = parseFloat(li.rate || li.price || 0)
+  const lineGross = qty * rate
+  const lineAmt = parseFloat(li.amount ?? li.line_total ?? NaN)
+  if (!isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
+    return Math.round((lineGross - lineAmt) * 100) / 100
+  }
+  return 0
+}
+
+  const lineDiscounts = items.reduce((s, li) => s + getExplicitLineDiscount(li), 0)
   const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
   const explicitTotalAmount = parseFloat(doc.amount || doc.total_amount || 0)
 
@@ -203,10 +216,10 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (taxableSubtotal + taxAmt)
 
   let effectiveTaxRate = 0
-  if (taxAmt > 0 && taxableSubtotal > 0) {
-    effectiveTaxRate = Math.round((taxAmt / taxableSubtotal) * 100)
-  } else if (explicitTaxRate > 0) {
+  if (explicitTaxRate !== null && explicitTaxRate !== undefined && !isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
     effectiveTaxRate = explicitTaxRate
+  } else if (taxAmt > 0 && taxableSubtotal > 0) {
+    effectiveTaxRate = Math.round((taxAmt / taxableSubtotal) * 100)
   }
 
   const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
@@ -220,12 +233,10 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   const rowsHtml = items.length > 0 ? items.map((li, i) => {
     const qty = parseFloat(li.qty || li.quantity || 1)
     const price = parseFloat(li.price || li.rate || 0)
-    const disc = parseFloat(li.discount || 0)
+    const disc = getExplicitLineDiscount(li)
     const lineTotalGross = price * qty
-    let itemDisc = 0
-    if (disc > 0) {
-      itemDisc = disc
-    } else if (totalDiscount > 0) {
+    let itemDisc = disc
+    if (itemDisc === 0 && lineDiscounts === 0 && totalDiscount > 0) {
       itemDisc = items.length === 1
         ? totalDiscount
         : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
@@ -271,23 +282,22 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
       : rawHsn
 
     return `<tr>
-      <td style="font-weight:600;color:#475569;font-size:10px;font-family:monospace;padding:7px 10px;border:1px solid #cbd5e1">${hsnCode}</td>
-      <td style="padding:7px 10px;border:1px solid #cbd5e1">
-        <div style="font-weight:700;color:#0f172a;font-size:11px">${prodName}</div>
-        ${subtext ? `<div style="font-size:10px;color:#64748b">${subtext}</div>` : ''}
+      <td style="font-weight:600;color:#475569;font-size:10.5px;font-family:monospace;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">${hsnCode}</td>
+      <td style="padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">
+        <div style="font-weight:700;color:#0f172a;font-size:11.5px">${prodName}</div>
+        ${subtext ? `<div style="font-size:10.5px;color:#64748b;margin-top:2px">${subtext}</div>` : ''}
       </td>
-      <td style="text-align:center;font-weight:600;padding:7px 10px;border:1px solid #cbd5e1;font-size:11px">${displayQty} ${displayUnit}</td>
-      <td style="text-align:right;font-weight:700;padding:7px 10px;border:1px solid #cbd5e1;font-size:11px">${INR(lineTotalGross)}</td>
-      <td style="text-align:right;font-weight:700;padding:7px 10px;border:1px solid #cbd5e1;font-size:11px;color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}">
+      <td style="text-align:center;font-weight:600;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${displayQty} ${displayUnit}</td>
+      <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${INR(lineTotalGross)}</td>
+      <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4;color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}">
         ${itemDisc > 0.01 ? `-${INR(itemDisc)}` : '-'}
       </td>
-      <td style="text-align:right;font-size:10px;color:#475569;padding:7px 10px;border:1px solid #cbd5e1">
+      <td style="text-align:right;font-size:10.5px;color:#475569;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">
         ${taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : '-'}
       </td>
     </tr>`
   }).join('') : `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:24px">No line items found</td></tr>`
 
-  // Totals summary
   const totalsHtml = `
     <div style="display:flex;border:1px solid #cbd5e1;background:#f8fafc;margin-bottom:20px;text-align:center;width:100%">
       ${totalDiscount > 0 ? `

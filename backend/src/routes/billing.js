@@ -451,20 +451,11 @@ router.post('/', async (req, res) => {
         newStock,
         'Bill',
         insertedRows[0]?.id || null,
-        noteDetail
+        noteDetail,
+        newLooseKg
       ).catch(e => console.warn('[Stock History Log Error]', e.message))
 
-      // Update import_stock table
-      await query(
-        `UPDATE import_stock 
-         SET stock = $1, loose_kg = $2, updated_at = NOW() 
-         WHERE (user_id::text = $3::text OR user_id = 'default-user' OR $3 = 'default-user') 
-           AND (
-             name ILIKE $4 
-             OR ($5::text <> '' AND (hsn_code = $5 OR sku = $5))
-           )`,
-        [newStock, newLooseKg, userId || 'default-user', prod.name || itemName, prod.hsn_code || prod.sku || itemCode]
-      ).catch(e => console.error('[ImportStock Update Error]', e.message))
+      // Note: import_stock table is NOT updated here so it preserves the original purchased quantity
     }
 
     // Clear redis cache

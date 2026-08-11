@@ -25,6 +25,7 @@ pool.query(`
 `).catch(() => { })
 pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT`).catch(() => { })
 pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => { })
+pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2)`).catch(() => { })
 
 
 const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
@@ -110,17 +111,7 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
       [newStock, newLooseKg, prod.id]
     ).catch(e => console.error('[Quote Products Stock Decrease Error]', e.message))
 
-    // Update import_stock table with loose_kg
-    await pool.query(
-      `UPDATE import_stock 
-       SET stock = $1, loose_kg = $2, updated_at = NOW() 
-       WHERE (user_id::text = $3::text OR user_id = 'default-user' OR $3 = 'default-user') 
-         AND (
-           name ILIKE $4 
-           OR ($5::text <> '' AND (hsn_code = $5 OR sku = $5))
-         )`,
-      [newStock, newLooseKg, userId || 'default-user', prod.name || itemName, prod.hsn_code || prod.sku || itemCode]
-    ).catch(e => console.error('[Quote ImportStock Decrease Error]', e.message))
+    // Note: import_stock table is NOT updated here so it preserves the original purchased quantity
 
     if (userId) {
       const keys1 = await redis.keys(`*${userId}*`).catch(() => [])
@@ -157,7 +148,8 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
       newStock,
       'Quote',
       quoteRef ? String(quoteRef) : null,
-      noteDetail
+      noteDetail,
+      newLooseKg
     ).catch(e => console.error('[Quote Stock History Log Error]', e.message))
   }
 }
@@ -792,6 +784,7 @@ router.post('/', apiLimiter, async (req, res) => {
       customer_email,
       total_amount,
       tax_amount,
+      tax_rate = 18,
       status = 'Draft',
       issue_date = new Date().toISOString().split('T')[0],
       valid_until,
@@ -818,13 +811,13 @@ router.post('/', apiLimiter, async (req, res) => {
     const result = await pool.query(
       `INSERT INTO quotes (
         quote_number, shop_name, customer_company, customer_name, customer_phone, customer_email, 
-        total_amount, tax_amount, status, issue_date, valid_until, 
+        total_amount, tax_amount, tax_rate, status, issue_date, valid_until, 
         notes, line_items, user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *`,
       [
         qNum, finalShopName, customer_company, customer_name, customer_phone, customer_email,
-        parseFloat(total_amount || 0), parseFloat(tax_amount || 0),
+        parseFloat(total_amount || 0), parseFloat(tax_amount || 0), parseFloat(tax_rate || 0),
         status, issue_date, valid_until || null, notes, itemsJson, userId
       ]
     )
@@ -855,6 +848,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
       customer_email,
       total_amount,
       tax_amount,
+      tax_rate,
       status,
       issue_date,
       valid_until,
@@ -874,18 +868,20 @@ router.put('/:id', apiLimiter, async (req, res) => {
         customer_email = COALESCE($6, customer_email),
         total_amount = COALESCE($7, total_amount),
         tax_amount = COALESCE($8, tax_amount),
-        status = COALESCE($9, status),
-        issue_date = COALESCE($10, issue_date),
-        valid_until = COALESCE($11, valid_until),
-        notes = COALESCE($12, notes),
-        line_items = COALESCE($13, line_items),
+        tax_rate = COALESCE($9, tax_rate),
+        status = COALESCE($10, status),
+        issue_date = COALESCE($11, issue_date),
+        valid_until = COALESCE($12, valid_until),
+        notes = COALESCE($13, notes),
+        line_items = COALESCE($14, line_items),
         updated_at = NOW()
-      WHERE id = $14 AND user_id = $15
+      WHERE id = $15 AND user_id = $16
       RETURNING *`,
       [
         quote_number, shop_name, customer_company, customer_name, customer_phone, customer_email,
         total_amount !== undefined ? parseFloat(total_amount) : null,
         tax_amount !== undefined ? parseFloat(tax_amount) : null,
+        tax_rate !== undefined ? parseFloat(tax_rate) : null,
         status, issue_date, valid_until, notes, itemsJson, id, userId
       ]
     )

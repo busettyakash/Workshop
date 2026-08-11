@@ -45,7 +45,7 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
           </button>
         </div>
 
-        <div className="ws-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="ws-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '75vh', overflowY: 'auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
               <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, marginBottom: 6 }}>CUSTOMER</div>
@@ -106,18 +106,18 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
             </div>
           </div>
 
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, maxHeight: 300, overflowY: 'auto', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.79rem' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', color: '#475569', textAlign: 'left' }}>
-                  <th style={{ padding: '8px 10px' }}>Item</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Qty</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Rate</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Gross Amt</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Discount</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Taxable Amt</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Tax</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Total</th>
+              <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 2 }}>
+                <tr style={{ color: '#475569', textAlign: 'left' }}>
+                  <th style={{ padding: '9px 10px', whiteSpace: 'nowrap' }}>Item</th>
+                  <th style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>Qty</th>
+                  <th style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>Rate</th>
+                  <th style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>Gross Amt</th>
+                  <th style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>Discount</th>
+                  <th style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>Taxable Amt</th>
+                  <th style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>Tax</th>
+                  <th style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -130,7 +130,7 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
                     const q = parseFloat(item.quantity || item.qty || 1)
                     const r = parseFloat(item.rate || item.price || 0)
                     const gross = q * r
-                    const disc = parseFloat(item.discount || 0)
+                    const disc = parseFloat(item.discount ?? item.discount_amount ?? item.discountAmount ?? item.disc ?? 0)
                     const taxable = parseFloat(item.amount || item.line_total || (gross - disc))
 
                     const explicitTaxAmt = parseFloat(quote?.tax_amount || 0)
@@ -149,18 +149,18 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
 
                     return (
                       <tr key={item.id || index} style={{ borderTop: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '7px 10px', fontWeight: 700, color: '#0f172a' }}>{item.name || item.product_name || 'Item'}</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{q}</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{money(r)}</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{money(gross)}</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', color: disc > 0 ? '#dc2626' : '#64748b' }}>
+                        <td style={{ padding: '9px 10px', fontWeight: 700, color: '#0f172a', verticalAlign: 'top' }}>{item.name || item.product_name || 'Item'}</td>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{q}</td>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{money(r)}</td>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{money(gross)}</td>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap', color: disc > 0 ? '#dc2626' : '#64748b' }}>
                           {disc > 0 ? `- ${money(disc)}` : '-'}
                         </td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{money(taxable)}</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', color: itemTax > 0 ? '#2563eb' : '#64748b' }}>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{money(taxable)}</td>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap', color: itemTax > 0 ? '#2563eb' : '#64748b' }}>
                           {itemTax > 0 ? `+ ${money(itemTax)}` : '-'}
                         </td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#15803d' }}>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap', fontWeight: 700, color: '#15803d' }}>
                           {money(itemFinal)}
                         </td>
                       </tr>

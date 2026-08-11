@@ -73,12 +73,13 @@ async function logPriceHistory(productId, userId, oldPrice, newPrice, effectiveD
   }
 }
 
-export async function logStockHistory(productId, userId, changeType, qtyChange, stockBefore, stockAfter, source, sourceRef, notes) {
+export async function logStockHistory(productId, userId, changeType, qtyChange, stockBefore, stockAfter, source, sourceRef, notes, looseKgAfter = null) {
   try {
+    await query(`ALTER TABLE product_stock_history ADD COLUMN IF NOT EXISTS loose_kg_after NUMERIC(10, 2)`).catch(() => {})
     await query(
-      `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, source_ref, notes, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-      [productId, userId, changeType, qtyChange, stockBefore ?? null, stockAfter ?? null, source || null, sourceRef || null, notes || null]
+      `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, loose_kg_after, source, source_ref, notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+      [productId, userId, changeType, qtyChange, stockBefore ?? null, stockAfter ?? null, looseKgAfter ?? null, source || null, sourceRef || null, notes || null]
     )
   } catch (e) {
     console.warn('[Products] Stock history log error:', e.message)
@@ -366,13 +367,7 @@ router.put('/:id', async (req, res) => {
 
     let finalUpdatedPrice = oldProduct?.updated_price
     if (updated_price !== undefined && updated_price !== null && updated_price !== '') {
-      let upVal = parseFloat(updated_price)
-      const bw = bag_weight ? parseFloat(bag_weight) : parseFloat(oldProduct?.bag_weight || 1)
-      const pc = price_covers !== undefined && price_covers !== null && price_covers !== '' ? parseFloat(price_covers) : parseFloat(oldProduct?.price_covers || 0)
-      if (pc > 0 && bw > 0 && pc !== bw && upVal >= 2000) {
-        upVal = (upVal / pc) * bw
-      }
-      finalUpdatedPrice = upVal
+      finalUpdatedPrice = parseFloat(updated_price)
     }
 
     const { rows } = await query(
@@ -484,11 +479,7 @@ router.patch('/:id/stock', async (req, res) => {
       ).catch(() => {})
     }
 
-    // Sync back to import_stock if matching record exists
-    await query(
-      'UPDATE import_stock SET stock = $1, updated_at = NOW() WHERE user_id = $2 AND (sku = $3 OR name = $4)',
-      [newStock, userId, oldProduct.sku || 'N/A', oldProduct.name]
-    ).catch(() => {})
+    // Note: import_stock table is NOT synced here so it preserves the original purchased quantity
 
     res.json(rows[0])
   } catch (err) {

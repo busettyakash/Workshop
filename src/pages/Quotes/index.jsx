@@ -42,11 +42,16 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
 
   useCloseOnOutsideClick(containerRef, setOpen)
 
-  const filtered = vendorsOnly.filter(p =>
-    p.name?.toLowerCase().includes(query.toLowerCase()) ||
-    (p.phone && p.phone.includes(query)) ||
-    (p.email && p.email.toLowerCase().includes(query.toLowerCase()))
-  )
+  const filtered = vendorsOnly.filter(p => {
+    const q = query.toLowerCase()
+    return (
+      p.name?.toLowerCase().includes(q) ||
+      (p.company && p.company.toLowerCase().includes(q)) ||
+      (p.company_name && p.company_name.toLowerCase().includes(q)) ||
+      (p.phone && p.phone.includes(q)) ||
+      (p.email && p.email.toLowerCase().includes(q))
+    )
+  })
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
@@ -62,7 +67,9 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
           color: selectedPerson ? '#0f172a' : '#94a3b8', fontWeight: selectedPerson ? 600 : 400,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 'calc(100% - 20px)'
         }}>
-          {selectedPerson ? `${selectedPerson.name} ${selectedPerson.phone ? `(${selectedPerson.phone})` : ''}` : 'Search vendor from People...'}
+          {selectedPerson
+            ? `${selectedPerson.name} ${(selectedPerson.company || selectedPerson.company_name) ? `(${selectedPerson.company || selectedPerson.company_name})` : selectedPerson.phone ? `(${selectedPerson.phone})` : ''}`
+            : 'Search vendor from People...'}
         </span>
         <Search size={12} style={{ color: '#64748b', flexShrink: 0 }} />
       </div>
@@ -75,7 +82,7 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
         }}>
           <input
             type="text"
-            placeholder="Type vendor name, phone or email..."
+            placeholder="Type vendor name, company, phone or email..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{ width: '100%', height: 30, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.78rem', marginBottom: 4, outline: 'none' }}
@@ -100,7 +107,12 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                <span style={{ fontWeight: 600, color: '#1e293b' }}>{p.name}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ fontWeight: 600, color: '#1e293b' }}>{p.name}</span>
+                  {(p.company || p.company_name) && (
+                    <span style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600 }}>{p.company || p.company_name}</span>
+                  )}
+                </div>
                 <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{p.phone || p.email || ''}</span>
               </div>
             ))
@@ -194,7 +206,7 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <span style={{ fontWeight: 700, color: '#0f172a' }}>{p.name}</span>
-                  <span style={{ fontSize: '0.68rem', color: '#64748b' }}>Stock: {p.stock} {p.unit || 'pcs'}</span>
+                  <span style={{ fontSize: '0.68rem', color: '#64748b' }}>Stock: {formatStockDisplay(p.stock, p.bag_weight, p.unit, p.loose_kg)}</span>
                 </div>
                 <span style={{ fontWeight: 700, color: '#059669', fontSize: '0.78rem', flexShrink: 0 }}>
                   ₹{parseFloat(p.updated_price || p.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -297,24 +309,35 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     }
   }, [])
 
-  const [gstOption, setGstOption] = useState(() => {
-    return parseFloat(quote?.tax_amount || 0) > 0 ? 'with_gst' : 'without_gst'
+  const [gstRate, setGstRate] = useState(() => {
+    if (quote?.tax_rate !== undefined && quote?.tax_rate !== null && !isNaN(parseFloat(quote.tax_rate))) {
+      return parseFloat(quote.tax_rate)
+    }
+    const taxAmt = parseFloat(quote?.tax_amount || 0)
+    const subtotal = (quote?.line_items && Array.isArray(quote.line_items))
+      ? quote.line_items.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0)
+      : 0
+    if (taxAmt > 0 && subtotal > 0) {
+      return Math.round((taxAmt / subtotal) * 100)
+    }
+    return 18 // Default 18% GST as requested
   })
 
-  // Calculate totals whenever items or GST option change
+  // Calculate totals whenever items or GST rate change
   useEffect(() => {
     const subtotal = lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0)
     let tax = 0
-    if (gstOption === 'with_gst') {
-      tax = subtotal * 0.18 // 18% GST
+    if (gstRate > 0) {
+      tax = subtotal * (gstRate / 100)
     }
     const finalTotal = subtotal + tax
     setFormData(prev => ({
       ...prev,
+      tax_rate: gstRate,
       tax_amount: tax.toFixed(2),
       total_amount: finalTotal.toFixed(2)
     }))
-  }, [lineItems, gstOption])
+  }, [lineItems, gstRate])
 
   const handlePersonSelect = (personId) => {
     if (!personId) return
@@ -456,32 +479,38 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
       if (i === index) {
         const qty = parseFloat(item.quantity) || 0
         const rate = parseFloat(item.rate) || 0
-        return { ...item, discount: disc, amount: Math.max(0, (qty * rate) - numDisc) }
+        return { ...item, discount: disc, discount_amount: numDisc, amount: Math.max(0, (qty * rate) - numDisc) }
       }
       return item
     }))
   }
 
   const addLineItem = () => {
-    setLineItems(prev => [...prev, { id: Date.now(), product_id: '', name: '', quantity: 1, rate: 0, discount: 0, amount: 0 }])
+    setLineItems(prev => [...prev, { id: Date.now(), product_id: '', name: '', quantity: 1, rate: 0, discount: 0, discount_amount: 0, amount: 0 }])
   }
 
   const removeLineItem = (index) => {
     if (lineItems.length > 1) {
       setLineItems(prev => prev.filter((_, i) => i !== index))
     } else {
-      setLineItems([{ id: Date.now(), product_id: '', name: '', quantity: 1, rate: 0, discount: 0, amount: 0 }])
+      setLineItems([{ id: Date.now(), product_id: '', name: '', quantity: 1, rate: 0, discount: 0, discount_amount: 0, amount: 0 }])
       dispatch(addToast({ message: 'Line item cleared', type: 'info' }))
     }
   }
 
   const saveQuoteAsync = async (overrideStatus = null) => {
+    const custName = formData.customer_name?.trim() || 'Draft Customer'
     const payload = {
       ...formData,
-      status: overrideStatus || formData.status,
-      line_items: lineItems
+      customer_name: custName,
+      status: overrideStatus || formData.status || 'Draft',
+      line_items: lineItems.map(it => ({
+        ...it,
+        discount: parseFloat(it.discount || 0),
+        discount_amount: parseFloat(it.discount || 0)
+      }))
     }
-    if (isEdit) {
+    if (isEdit || quote?.id) {
       const res = await api.put(`/quotes/${quote.id}`, payload)
       return res.data
     } else {
@@ -491,14 +520,9 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   }
 
   const handleSaveDraft = async () => {
-    if (!formData.customer_name?.trim()) {
-      dispatch(addToast({ message: 'Please enter customer name in Step 1', type: 'error' }))
-      setStep(1)
-      return
-    }
     setSubmitting(true)
     try {
-      const saved = await saveQuoteAsync()
+      const saved = await saveQuoteAsync('Draft')
       onSaved(saved)
     } catch {
       dispatch(addToast({ message: 'Failed to save quote', type: 'error' }))
@@ -540,6 +564,18 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     }
   }
 
+  const handleBackToQuotes = async () => {
+    const hasData = Boolean(formData.customer_name?.trim() || lineItems.some(it => it.name || it.product_id))
+    if (hasData) {
+      try {
+        const saved = await saveQuoteAsync('Draft')
+        if (onSaved) await onSaved(saved)
+        dispatch(addToast({ message: 'Quotation saved as Draft', type: 'info' }))
+      } catch (_e) { }
+    }
+    onBack()
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Top Header Bar */}
@@ -568,7 +604,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
           <button
             type="button"
             className="attio-btn attio-btn-primary"
-            onClick={onBack}
+            onClick={handleBackToQuotes}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, fontSize: '0.78rem', padding: '0 12px' }}
           >
             <ArrowLeft size={13} /> Back to Quotes
@@ -793,11 +829,12 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             <tbody>
               {lineItems.map((item, index) => {
                 const selectedProd = products.find(p => String(p.id) === String(item.product_id))
-                const bulkUnit = getBulkUnitDetails(item.unit || selectedProd?.unit)
                 const bw = parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
-                const unitLabel = (selectedProd && bw > 1)
+                const rawUnit = selectedProd?.unit || item.unit || 'pcs'
+                const bulkUnit = getBulkUnitDetails(rawUnit)
+                const unitLabel = bw > 1
                   ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
-                  : (bulkUnit?.short || item.unit || 'pcs')
+                  : (bulkUnit?.short || rawUnit)
 
                 const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? parseFloat(selectedProd.stock) : null
                 const isExceeded = maxStock !== null && maxStock >= 0 && (parseFloat(item.quantity) || 0) > maxStock
@@ -946,34 +983,31 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
             {/* GST Calculation Selection Panel in Step 3 */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0', marginTop: 2, flexWrap: 'wrap', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#334155' }}>Tax / GST Selection:</span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, color: gstOption === 'with_gst' ? '#15803d' : '#475467' }}>
-                  <input
-                    type="radio"
-                    name="gstOptionStep3"
-                    value="with_gst"
-                    checked={gstOption === 'with_gst'}
-                    onChange={() => setGstOption('with_gst')}
-                  />
-                  With GST (18%)
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, color: gstOption === 'without_gst' ? '#1e40af' : '#475467' }}>
-                  <input
-                    type="radio"
-                    name="gstOptionStep3"
-                    value="without_gst"
-                    checked={gstOption === 'without_gst'}
-                    onChange={() => setGstOption('without_gst')}
-                  />
-                  Without GST (0%)
-                </label>
+                {[
+                  { rate: 18, label: '18% GST' },
+                  { rate: 12, label: '12% GST' },
+                  { rate: 5, label: '5% GST' },
+                  { rate: 0, label: 'Without GST (0%)' }
+                ].map(opt => (
+                  <label key={opt.rate} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, color: gstRate === opt.rate ? '#15803d' : '#475467' }}>
+                    <input
+                      type="radio"
+                      name="gstRateOption"
+                      value={opt.rate}
+                      checked={gstRate === opt.rate}
+                      onChange={() => setGstRate(opt.rate)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
               </div>
 
               <div style={{ textAlign: 'right', fontSize: '0.78rem' }}>
                 <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
-                <span style={{ color: gstOption === 'with_gst' ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST (18%): ₹{(parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                <span style={{ color: gstRate > 0 ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST ({gstRate}%): ₹{(parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
                 <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.82rem' }}>
                   Final Total: ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}

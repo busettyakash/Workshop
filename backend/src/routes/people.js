@@ -25,6 +25,8 @@ const ensureTable = async () => {
     )
   `)
   await query(`ALTER TABLE people ADD COLUMN IF NOT EXISTS user_id TEXT`).catch(() => {})
+  await query(`ALTER TABLE people ADD COLUMN IF NOT EXISTS company TEXT`).catch(() => {})
+  await query(`ALTER TABLE people ADD COLUMN IF NOT EXISTS company_name TEXT`).catch(() => {})
 }
 
 let ensureTablePromise
@@ -58,7 +60,7 @@ router.get('/', async (req, res) => {
   const conditions = ['user_id = $1']
   if (search) {
     params.push(`%${search}%`)
-    conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length})`)
+    conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length} OR company ILIKE $${params.length} OR company_name ILIKE $${params.length})`)
   }
   if (status && status !== 'all') {
     params.push(status)
@@ -118,13 +120,14 @@ router.get('/', async (req, res) => {
 /* POST /api/people */
 router.post('/', async (req, res) => {
   const userId = req.workspaceId
-  const { name, email, phone, persona, status, notes } = req.body
+  const { name, email, phone, persona, status, notes, company, company_name } = req.body
   if (!name) return res.status(400).json({ error: 'name is required' })
+  const compVal = company || company_name || ''
   try {
     const { rows } = await query(
-      `INSERT INTO people (name, email, phone, persona, status, notes, user_id, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING *`,
-      [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', userId]
+      `INSERT INTO people (name, email, phone, persona, status, notes, company, company_name, user_id, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW()) RETURNING *`,
+      [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', compVal, compVal, userId]
     )
     clearPeopleCache(userId)
     res.status(201).json(rows[0])
@@ -148,13 +151,14 @@ router.get('/:id', async (req, res) => {
 /* PUT /api/people/:id */
 router.put('/:id', async (req, res) => {
   const userId = req.workspaceId
-  const { name, email, phone, persona, status, notes } = req.body
+  const { name, email, phone, persona, status, notes, company, company_name } = req.body
   if (!name) return res.status(400).json({ error: 'name is required' })
+  const compVal = company || company_name || ''
   try {
     const { rows } = await query(
-      `UPDATE people SET name=$1, email=$2, phone=$3, persona=$4, status=$5, notes=$6, updated_at=NOW()
-       WHERE id=$7 AND user_id = $8 RETURNING *`,
-      [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', req.params.id, userId]
+      `UPDATE people SET name=$1, email=$2, phone=$3, persona=$4, status=$5, notes=$6, company=$7, company_name=$8, updated_at=NOW()
+       WHERE id=$9 AND user_id = $10 RETURNING *`,
+      [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', compVal, compVal, req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Person not found' })
     clearPeopleCache(userId)

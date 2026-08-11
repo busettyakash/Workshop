@@ -65,7 +65,6 @@ const getDisplayPrice = (rawP, bw, pc) => {
   const bagW = parseFloat(bw) || 1
   const priceC = parseFloat(pc) || 0
   if (priceC > 0 && bagW > 0 && priceC !== bagW) {
-    if (p >= 2000) return p
     return (p / bagW) * priceC
   }
   return p
@@ -638,7 +637,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                         </td>
                         <td>
                           <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                            {formatStockDisplay(s.stock_after ?? product.stock, product.bag_weight, product.unit, product.loose_kg)}
+                            {formatStockDisplay(s.stock_after ?? product.stock, product.bag_weight, product.unit, s.loose_kg_after !== undefined && s.loose_kg_after !== null ? s.loose_kg_after : product.loose_kg)}
                           </span>
                         </td>
                         <td>

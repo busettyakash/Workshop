@@ -522,11 +522,7 @@ export default function ImportStock() {
 
                               let priceVal = rawP
                               if (pc > 0 && bw > 0 && pc !== bw) {
-                                if (rawP < 2000) {
-                                  priceVal = (rawP / bw) * pc
-                                } else {
-                                  priceVal = rawP
-                                }
+                                priceVal = (rawP / bw) * pc
                               }
 
                               const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
@@ -554,11 +550,7 @@ export default function ImportStock() {
 
                               let updatedPriceVal = rawUP
                               if (pc > 0 && bw > 0 && pc !== bw) {
-                                if (rawUP < 2000) {
-                                  updatedPriceVal = (rawUP / bw) * pc
-                                } else {
-                                  updatedPriceVal = rawUP
-                                }
+                                updatedPriceVal = (rawUP / bw) * pc
                               }
 
                               const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)

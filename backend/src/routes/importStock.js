@@ -49,19 +49,31 @@ async function ensureImportStockSchema() {
       amount DECIMAL(10, 2) NOT NULL,
       payment_mode VARCHAR(50) NOT NULL,
       created_at TIMESTAMP DEFAULT NOW()
-    )
-  `).catch((err) => {
-    console.error('[ImportStock] Failed to create import_stock_payments table:', err.message)
-  })
+    );
+    ALTER TABLE import_stock_payments ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE import_stock_payments FORCE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS import_stock_payments_user_policy ON public.import_stock_payments;
+    CREATE POLICY import_stock_payments_user_policy ON public.import_stock_payments FOR ALL TO public USING ((select auth.uid()::text) = user_id OR user_id = 'default-user');
+  `).catch(() => {})
   await query(`UPDATE import_stock SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
   await query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
+  // Restore import_stock.stock to original purchased qty using the earliest stock_before in history
+  // (The stock history records what the quantity was BEFORE each deduction, so max = original purchased qty)
   await query(`
-    UPDATE products p
-    SET stock = i.stock, loose_kg = 0, updated_at = NOW()
-    FROM import_stock i
-    WHERE (p.sku = i.sku OR p.name = i.name)
-      AND i.stock IS NOT NULL
-      AND i.updated_at >= p.updated_at
+    UPDATE import_stock i
+    SET stock = orig.original_stock
+    FROM (
+      SELECT p.id AS product_id,
+             MAX(psh.stock_before::numeric) AS original_stock
+      FROM product_stock_history psh
+      JOIN products p ON p.id = psh.product_id
+      WHERE psh.source IN ('Bill', 'Quote')
+      GROUP BY p.id
+    ) orig
+    JOIN products p ON p.id = orig.product_id
+    WHERE (LOWER(TRIM(i.name)) = LOWER(TRIM(p.name)) OR (i.sku IS NOT NULL AND i.sku <> '' AND i.sku <> 'N/A' AND i.sku = p.sku))
+      AND i.status = 'added'
+      AND orig.original_stock > i.stock
   `).catch(() => {})
 }
 
@@ -223,13 +235,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const userId = req.workspaceId
   console.log(`${LOG_PREFIX} GET /${req.params.id} — userId: ${userId}`)
-  const cacheKey = `import_stock_note:${userId}:${req.params.id}`
   try {
-    const cached = await redis.get(cacheKey).catch(() => null)
-    if (cached) {
-      console.log(`${LOG_PREFIX} GET /${req.params.id} — CACHE HIT`)
-      return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
-    }
 
     const { rows } = await query(
       `SELECT i.id, i.status, i.created_at, i.updated_at, i.user_id, i.buying_price, i.buyer_name, i.buyer_phone, i.buyer_city, i.buyer_state, i.add_stock_qty, i.supplier_total_cost, i.paid_amount, i.payment_mode,
@@ -244,11 +250,11 @@ router.get('/:id', async (req, res) => {
           WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, i.updated_at::date), i.updated_price_date, i.updated_at::date)
           ELSE COALESCE(p.updated_price_date, i.updated_price_date)
         END AS updated_price_date,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock) ELSE i.stock END AS stock,
+        i.stock AS stock,
         CASE WHEN i.status = 'added' THEN COALESCE(p.unit, i.unit) ELSE i.unit END AS unit,
         CASE WHEN i.status = 'added' THEN COALESCE(p.description, i.description) ELSE i.description END AS description,
         CASE WHEN i.status = 'added' THEN COALESCE(p.bag_weight, i.bag_weight) ELSE i.bag_weight END AS bag_weight,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.loose_kg, i.loose_kg) ELSE i.loose_kg END AS loose_kg
+        i.loose_kg AS loose_kg
        FROM import_stock i
        LEFT JOIN LATERAL (
          SELECT name, sku, category, price, price_covers, updated_price, updated_price_date, stock, unit, description, bag_weight, loose_kg, updated_at
@@ -277,13 +283,22 @@ router.get('/:id', async (req, res) => {
       [req.params.id, userId]
     )
     
+    const rec = rows[0]
+    const prodRes = await query(
+      `SELECT stock, loose_kg FROM products WHERE user_id=$1 AND (sku=$2 OR name=$3) LIMIT 1`,
+      [userId, rec.sku || 'N/A', rec.name]
+    )
+    const liveProductStock = prodRes.rows.length > 0 ? parseFloat(prodRes.rows[0].stock || 0) : null
+    const looseKg = prodRes.rows.length > 0 ? parseFloat(prodRes.rows[0].loose_kg || 0) : 0
+
     const responsePayload = {
       data: {
-        ...rows[0],
+        ...rec,
+        live_product_stock: liveProductStock,
+        loose_kg: looseKg,
         payments: payments.rows
       }
     }
-    await redis.set(cacheKey, JSON.stringify(responsePayload), { ex: 300 }).catch(() => {})
     res.json(responsePayload)
   } catch (err) {
     console.error('%s GET /%s — ERROR: %s', LOG_PREFIX, req.params.id, err.message)
@@ -332,7 +347,7 @@ router.put('/:id', async (req, res) => {
   const { name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state, note, add_stock_qty, supplier_total_cost } = req.body
   console.log(`${LOG_PREFIX} PUT /${req.params.id} — userId: ${userId}, name: ${name}`)
   try {
-    const oldImport = await query('SELECT sku, name, updated_price, updated_price_date FROM import_stock WHERE id = $1 AND user_id = $2', [req.params.id, userId]);
+    const oldImport = await query('SELECT sku, name, stock, updated_price, updated_price_date FROM import_stock WHERE id = $1 AND user_id = $2', [req.params.id, userId]);
     const oldRec = oldImport.rows[0]
 
     const isUpdatedPriceChanged = updated_price !== undefined && updated_price !== null && String(updated_price) !== String(oldRec?.updated_price)
@@ -344,13 +359,7 @@ router.put('/:id', async (req, res) => {
 
     let finalUpdatedPrice = oldRec?.updated_price
     if (updated_price !== undefined && updated_price !== null && updated_price !== '') {
-      let upVal = parseFloat(updated_price)
-      const bw = parseFloat(bag_weight) || 1
-      const pc = parseFloat(price_covers) || 0
-      if (pc > 0 && bw > 0 && pc !== bw && upVal >= 2000) {
-        upVal = (upVal / pc) * bw
-      }
-      finalUpdatedPrice = upVal
+      finalUpdatedPrice = parseFloat(updated_price)
     }
 
     const { rows } = await query(
@@ -387,9 +396,23 @@ router.put('/:id', async (req, res) => {
           ? parseFloat(prod.updated_price)
           : parseFloat(prod.price || 0)
 
-        const oldStockVal = prod.stock !== undefined && prod.stock !== null ? parseFloat(prod.stock) : 0
-        const newStockVal = stock !== undefined && stock !== null ? parseFloat(stock) : oldStockVal
-        const stockDiff = newStockVal - oldStockVal
+        const currentLiveStock = prod.stock !== undefined && prod.stock !== null ? parseFloat(prod.stock) : 0
+        const explicitAddStock = (add_stock_qty !== undefined && add_stock_qty !== null && add_stock_qty !== '') ? parseFloat(add_stock_qty) : 0
+
+        const oldBatchStock = parseFloat(oldRec.stock || 0)
+        const newBatchStock = stock !== undefined && stock !== null ? parseFloat(stock) : oldBatchStock
+        const batchStockDiff = newBatchStock - oldBatchStock
+
+        // If explicit add_stock_qty was entered, use that; otherwise fall back to batchStockDiff
+        const totalStockDelta = explicitAddStock !== 0 ? explicitAddStock : batchStockDiff
+        const finalProductStock = currentLiveStock + totalStockDelta
+        const finalImportBatchStock = explicitAddStock !== 0 ? (oldBatchStock + explicitAddStock) : newBatchStock
+
+        // Update import_stock with final batch stock and reset add_stock_qty to NULL so it does not re-apply on future edits
+        await query(
+          `UPDATE import_stock SET stock = $1, add_stock_qty = NULL WHERE id = $2 AND user_id = $3`,
+          [finalImportBatchStock, req.params.id, userId]
+        );
 
         await query(
           `UPDATE products SET name=$1, sku=$2, category=$3, price=$4, price_covers=$5, updated_price=$6, updated_price_date=$7, stock=$8, unit=$9, description=$10, bag_weight=$11, updated_at=NOW()
@@ -398,21 +421,21 @@ router.put('/:id', async (req, res) => {
             name, sku, category, price, price_covers ? parseFloat(price_covers) : null,
             finalUpdatedPrice,
             finalPriceDate,
-            stock !== undefined && stock !== null ? parseFloat(stock) : 0,
+            finalProductStock,
             unit || 'pcs', description, parseFloat(bag_weight) || 1, prod.id
           ]
         );
 
-        if (stockDiff !== 0) {
-          const changeType = stockDiff > 0 ? 'added' : 'deducted'
-          const changeNotes = stockDiff > 0
-            ? `Stock updated via Import Stock edit (+${stockDiff} ${unit || 'bags'})`
-            : `Stock updated via Import Stock edit (${stockDiff} ${unit || 'bags'})`
+        if (totalStockDelta !== 0) {
+          const changeType = totalStockDelta > 0 ? 'added' : 'deducted'
+          const changeNotes = totalStockDelta > 0
+            ? `Stock updated via Import Stock edit (+${totalStockDelta} ${unit || 'bags'})`
+            : `Stock updated via Import Stock edit (${totalStockDelta} ${unit || 'bags'})`
 
           await query(
             `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-            [prod.id, userId, changeType, stockDiff, oldStockVal, newStockVal, 'Import Stock Update', changeNotes]
+            [prod.id, userId, changeType, totalStockDelta, currentLiveStock, finalProductStock, 'Import Stock Update', changeNotes]
           ).catch(() => {})
         }
 
@@ -560,8 +583,8 @@ router.post('/bulk-add-to-products', async (req, res) => {
 
         // Restock existing product and set status to active
         await query(
-          `UPDATE products SET stock = stock + $1, price = $2, price_covers = $3, updated_price = $4, updated_price_date = $5, bag_weight = $6, status = 'active', updated_at = NOW() WHERE id = $7`,
-          [item.stock, item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.bag_weight || 1, targetId]
+          `UPDATE products SET stock = stock + $1, loose_kg = COALESCE(loose_kg, 0) + $2, price = $3, price_covers = $4, updated_price = $5, updated_price_date = $6, bag_weight = $7, status = 'active', updated_at = NOW() WHERE id = $8`,
+          [item.stock, parseFloat(item.loose_kg || 0), item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.bag_weight || 1, targetId]
         )
 
         await query(
@@ -572,9 +595,9 @@ router.post('/bulk-add-to-products', async (req, res) => {
       } else {
         // Insert new product
         const newProd = await query(
-          `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, unit, status, description, user_id, bag_weight, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12, NOW(), NOW()) RETURNING id`,
-          [item.name, item.sku, item.category, item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.stock, item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
+          `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, unit, status, description, user_id, bag_weight, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, NOW(), NOW()) RETURNING id`,
+          [item.name, item.sku, item.category, item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.stock, parseFloat(item.loose_kg || 0), item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
         )
         const targetId = newProd.rows[0].id
         await query(
@@ -638,16 +661,16 @@ router.post('/:id/add-to-products', async (req, res) => {
       prevPrice = existing.rows[0].updated_price || existing.rows[0].price
       // Restock existing product and set status to active
       await query(
-        `UPDATE products SET stock = stock + $1, price = $2, price_covers = $3, updated_price = $4, updated_price_date = $5, bag_weight = $6, status = 'active', updated_at = NOW() WHERE id = $7`,
-        [item.stock, item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.bag_weight || 1, targetProductId]
+        `UPDATE products SET stock = stock + $1, loose_kg = COALESCE(loose_kg, 0) + $2, price = $3, price_covers = $4, updated_price = $5, updated_price_date = $6, bag_weight = $7, status = 'active', updated_at = NOW() WHERE id = $8`,
+        [item.stock, parseFloat(item.loose_kg || 0), item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.bag_weight || 1, targetProductId]
       )
     } else {
       isNewProd = true
       // Insert new product
       const newProdRes = await query(
-        `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, unit, status, description, user_id, bag_weight, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12, NOW(), NOW()) RETURNING id`,
-        [item.name, item.sku, item.category, item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.stock, item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
+        `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, unit, status, description, user_id, bag_weight, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, NOW(), NOW()) RETURNING id`,
+        [item.name, item.sku, item.category, item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.stock, parseFloat(item.loose_kg || 0), item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
       )
       targetProductId = newProdRes.rows[0].id
     }

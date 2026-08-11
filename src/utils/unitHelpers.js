@@ -240,16 +240,16 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0)
   if (isNaN(numStock) && isNaN(passedLoose)) return '0';
 
   const validStock = isNaN(numStock) ? 0 : numStock;
-  const bulkUnit = getBulkUnitDetails(unit) || (bw > 1 ? { isBulk: true, name: 'Bag', pluralName: 'Bags', short: 'kg' } : null);
+  const bulkUnit = getBulkUnitDetails(unit);
 
-  if (bulkUnit && bw > 1) {
+  if (bw > 1 || (bulkUnit && bulkUnit.isBulk)) {
     const fullBags = Math.floor(validStock);
     let looseQty = passedLoose > 0 ? passedLoose : (validStock - fullBags) * bw;
     looseQty = Math.round(looseQty * 100) / 100;
 
-    const containerName = bulkUnit.name || 'Bag';
-    const containerPlural = bulkUnit.pluralName || `${containerName}s`;
-    const shortUnit = bulkUnit.short || unit || 'kg';
+    const containerName = (bulkUnit && bulkUnit.isBulk && bulkUnit.name) ? bulkUnit.name : 'Bag';
+    const containerPlural = (bulkUnit && bulkUnit.isBulk && bulkUnit.pluralName) ? bulkUnit.pluralName : `${containerName}s`;
+    const shortUnit = (bulkUnit && bulkUnit.short && bulkUnit.short !== unit) ? bulkUnit.short : 'kg';
 
     const packLabel = fullBags === 1 ? containerName : containerPlural;
     const uLow = String(shortUnit).toLowerCase();

@@ -152,7 +152,10 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
     return s + (p * q)
   }, 0)
 
-  const lineDiscounts = items.reduce((s, li) => s + parseFloat(li.discount || 0), 0)
+  const lineDiscounts = items.reduce((s, li) => {
+    const d = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? 0)
+    return s + (isNaN(d) ? 0 : d)
+  }, 0)
   const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
   const explicitTotalAmount = parseFloat(doc.amount || doc.total_amount || 0)
 
@@ -186,10 +189,10 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (subtotal + taxAmt)
 
   let effectiveTaxRate = 0
-  if (taxAmt > 0 && subtotal > 0) {
-    effectiveTaxRate = Math.round((taxAmt / subtotal) * 100)
-  } else if (explicitTaxRate > 0) {
+  if (explicitTaxRate !== null && explicitTaxRate !== undefined && !isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
     effectiveTaxRate = explicitTaxRate
+  } else if (taxAmt > 0 && subtotal > 0) {
+    effectiveTaxRate = Math.round((taxAmt / subtotal) * 100)
   }
 
   const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
@@ -449,11 +452,11 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                       ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
                       : rawHsn
 
-                    const explicitDisc = parseFloat(li.discount || 0)
+                    const explicitDisc = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? 0)
                     const lineTotalGross = price * qty
                     const itemDisc = explicitDisc > 0
                       ? explicitDisc
-                      : (totalDiscount > 0
+                      : (lineDiscounts === 0 && totalDiscount > 0
                         ? (items.length === 1
                           ? totalDiscount
                           : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100

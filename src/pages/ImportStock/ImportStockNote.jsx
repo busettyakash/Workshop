@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Edit3, Trash2, Copy, Check, FileText, X } from 'lucide-react'
 import api from '../../api/client'
-import { getBulkUnitDetails } from '../../utils/unitHelpers'
+import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 
@@ -42,39 +42,7 @@ export default function ImportStockNote() {
     return integerPart + decimalPart
   }
 
-  const generateNoteText = (item) => {
-    if (!item) return ''
-    const bulkUnit = getBulkUnitDetails(item.unit)
-    const unitShort = bulkUnit?.short || 'unit'
-    const unitPlural = bulkUnit?.pluralName || 'Bags / Units'
-    const bw = parseFloat(item.bag_weight || 1)
-    
-    const buyRatePerUnit = parseFloat(item.buying_price || 0) > 0
-      ? (item.price_covers > 0 ? (parseFloat(item.buying_price) / item.price_covers).toFixed(2) : (bw > 0 ? (parseFloat(item.buying_price) / bw).toFixed(2) : '0.00'))
-      : '0.00'
 
-    return `=== REVIEW IMPORT STOCK SUMMARY ===
-
-SUPPLIER / BUYER DETAILS:
-Name: ${item.buyer_name || 'Not provided'}
-Phone: ${item.buyer_phone || 'Not provided'}
-Location: ${[item.buyer_city, item.buyer_state].filter(Boolean).join(', ') || 'Not provided'}
-
-PRODUCT SPECIFICATIONS:
-Product Name: ${item.name}
-SKU / Barcode: ${item.sku || 'N/A'}
-Category: ${item.category || 'General'}
-Pack Weight: ${item.bag_weight} ${unitShort} per pack
-
-PRICING & UNIT RATE ANALYSIS:
-Buyer Price (Supplier): ₹${item.buying_price ? parseFloat(item.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'} (₹${buyRatePerUnit} / ${unitShort} cost)
-Updated Market Price: ${item.updated_price ? `₹${parseFloat(item.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
-
-TOTAL INVENTORY STOCK:
-Amount of Bags: ${item.stock} ${unitPlural}
-Pack Size: ${item.bag_weight} ${unitShort} / pack
-Total Weight: ${(parseFloat(item.stock || 0) * bw).toLocaleString('en-IN')} ${unitShort}`
-  }
 
   useEffect(() => {
     dispatch(setActiveNav('Import Stock'))
@@ -88,7 +56,7 @@ Total Weight: ${(parseFloat(item.stock || 0) * bw).toLocaleString('en-IN')} ${un
       const item = res.data?.data
       if (item) {
         setStockItem(item)
-        setNoteText(item.note || generateNoteText(item))
+        setNoteText(item.note || '')
         setPayments(item.payments || [])
         setPaidAmt('')
         setPayMode('')
@@ -322,11 +290,11 @@ Total Weight: ${(parseFloat(item.stock || 0) * bw).toLocaleString('en-IN')} ${un
                     <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       {/* Left: Stock Overview & Pack Details */}
                       <div>
-                        <div style={{ fontSize: '0.74rem', color: '#1e40af', fontWeight: 600 }}>Total Inventory Stock</div>
+                        <div style={{ fontSize: '0.74rem', color: '#1e40af', fontWeight: 600 }}>Purchased Batch Stock Overview</div>
                         <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1e3a8a', marginTop: 3 }}>
-                          {finalStock} {unitPlural}
+                          {(parseFloat(stockItem?.stock || 0) + addQty)} {unitPlural}
                         </div>
-                        <div style={{ fontSize: '0.74rem', color: '#2563eb', display: 'flex', gap: 12, marginTop: 6 }}>
+                        <div style={{ fontSize: '0.74rem', color: '#2563eb', display: 'flex', gap: 12, marginTop: 4 }}>
                           <div>Pack Size: <strong>{stockItem?.bag_weight} {unitShort} / pack</strong></div>
                           <div>Total Weight: <strong>{totalWeight.toLocaleString('en-IN')} {unitShort}</strong></div>
                         </div>
@@ -335,13 +303,13 @@ Total Weight: ${(parseFloat(item.stock || 0) * bw).toLocaleString('en-IN')} ${un
                       {/* Right: Transition Details */}
                       {addQty !== 0 ? (
                         <div style={{ textAlign: 'right', fontSize: '0.74rem', color: '#1e40af', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                          <div>Previous: <strong>{prevStock} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{prevStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
-                          <div>{addQty > 0 ? 'Added' : 'Decreased'}: <strong>{addQty > 0 ? `+${addQty}` : `${addQty}`} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{Math.abs(addStockCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
-                          <div>Total: <strong>{finalStock} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{totalStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
+                          <div>Initial Batch Qty: <strong>{stockItem?.stock || 0} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{prevStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
+                          <div>Added Stock: <strong>+{addQty} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{Math.abs(addStockCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
+                          <div>Total Batch Purchased: <strong>{(parseFloat(stockItem?.stock || 0) + addQty)} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{totalStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
                         </div>
                       ) : (
                         <div style={{ textAlign: 'right', fontSize: '0.74rem', color: '#1e40af' }}>
-                          Total Cost: <strong>₹{totalStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                          Total Batch Cost: <strong>₹{totalStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                         </div>
                       )}
                     </div>

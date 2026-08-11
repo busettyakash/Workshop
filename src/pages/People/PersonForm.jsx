@@ -64,7 +64,7 @@ export default function PersonForm() {
   const [focus, setFocus] = useState(null)
 
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', persona: 'Lead', status: 'active', notes: ''
+    name: '', company: '', email: '', phone: '', persona: 'Lead', status: 'active', notes: ''
   })
 
   useEffect(() => {
@@ -79,6 +79,7 @@ export default function PersonForm() {
       if (item) {
         setForm({
           name: item.name || '',
+          company: item.company || item.company_name || '',
           email: item.email || '',
           phone: item.phone || '',
           persona: item.persona || 'Lead',
@@ -110,12 +111,13 @@ export default function PersonForm() {
 
     setSaving(true)
     try {
+      const payload = { ...form, company_name: form.company }
       if (id) {
-        await api.put(`/people/${id}`, form)
+        await api.put(`/people/${id}`, payload)
         dispatch(addToast({ message: 'Person updated successfully!', type: 'success' }))
         navigate(returnUrl || '/people')
       } else {
-        const res = await api.post('/people', form)
+        const res = await api.post('/people', payload)
         const newPerson = res.data?.data || res.data
         dispatch(addToast({ message: 'Person added successfully!', type: 'success' }))
         if (returnUrl) {
@@ -181,10 +183,19 @@ export default function PersonForm() {
                     <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.9375rem', margin: 0 }}>Contact Information</p>
                   </div>
                   <div style={{ padding: '20px' }}>
-                    <div style={S.field}>
-                      <label style={S.label}>Full Name <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Akash Busetty" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
-                      {errors.name && <span style={S.error}>{errors.name}</span>}
+                    <div style={{ display: 'grid', gridTemplateColumns: (form.persona === 'Vendor' || form.persona === 'Customer') ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 20 }}>
+                      <div>
+                        <label style={S.label}>Full Name <span style={{ color: '#dc2626' }}>*</span></label>
+                        <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Vinod Kumar Busetty" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
+                        {errors.name && <span style={S.error}>{errors.name}</span>}
+                      </div>
+
+                      {(form.persona === 'Vendor' || form.persona === 'Customer') && (
+                        <div>
+                          <label style={S.label}>Company / Shop Name</label>
+                          <input name="company" value={form.company} onChange={handleChange} placeholder="e.g. Sri Lakshmi Rice Traders" style={inp('company')} onFocus={() => setFocus('company')} onBlur={() => setFocus(null)} />
+                        </div>
+                      )}
                     </div>
                     
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>

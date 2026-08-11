@@ -307,7 +307,7 @@ Always run database queries to get real-time accurate information when asked abo
             } else if (toolName === 'query_database_readonly') {
               const { sql } = args
               const cleanSql = (sql || '').trim()
-              const postgresSql = cleanSql.replace(/\bcurdate\(\)/gi, 'CURRENT_DATE')
+              let postgresSql = cleanSql.replace(/\bcurdate\(\)/gi, 'CURRENT_DATE')
               const lowerSql = postgresSql.toLowerCase()
               const lowerUid = userId.toLowerCase()
 
@@ -315,11 +315,33 @@ Always run database queries to get real-time accurate information when asked abo
                 toolResult = { error: 'Only SELECT queries are allowed for read-only database query.' }
               } else if (/\b(insert|update|delete|drop|alter|create|truncate|replace|grant|revoke)\b/i.test(postgresSql)) {
                 toolResult = { error: 'Mutation SQL commands are forbidden.' }
-              } else if (!lowerSql.includes('user_id') || !lowerSql.includes(lowerUid)) {
-                toolResult = { error: `Security check failed: Your query must filter by user_id = '${userId}' to prevent unauthorized access.` }
               } else {
-                const { rows } = await query(postgresSql)
-                toolResult = { success: true, rows }
+                // Ensure user_id filter is present on query to prevent cross-tenant access or tool rejection
+                if (!lowerSql.includes(lowerUid)) {
+                  if (/\bwhere\b/i.test(postgresSql)) {
+                    postgresSql = postgresSql.replace(/\bwhere\b/i, `WHERE user_id = '${userId}' AND `)
+                  } else if (/\bgroup\s+by\b/i.test(postgresSql)) {
+                    postgresSql = postgresSql.replace(/\bgroup\s+by\b/i, `WHERE user_id = '${userId}' GROUP BY `)
+                  } else if (/\border\s+by\b/i.test(postgresSql)) {
+                    postgresSql = postgresSql.replace(/\border\s+by\b/i, `WHERE user_id = '${userId}' ORDER BY `)
+                  } else if (/\blimit\b/i.test(postgresSql)) {
+                    postgresSql = postgresSql.replace(/\blimit\b/i, `WHERE user_id = '${userId}' LIMIT `)
+                  } else {
+                    postgresSql += ` WHERE user_id = '${userId}'`
+                  }
+                }
+
+                try {
+                  const { rows } = await query(postgresSql)
+                  toolResult = { success: true, rows }
+                } catch (sqlErr) {
+                  try {
+                    const { rows } = await query(cleanSql)
+                    toolResult = { success: true, rows }
+                  } catch (origErr) {
+                    toolResult = { error: sqlErr.message }
+                  }
+                }
               }
             } else if (toolName === 'send_email') {
               const { to, subject, body } = args

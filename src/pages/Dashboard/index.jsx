@@ -8,7 +8,7 @@ import { useLocation, useNavigate, Link } from 'react-router'
 import {
   ChevronDown, ArrowUp, Plus, Bot, Loader2, Star, Clock, Trash2,
   Home, HelpCircle, ChevronLeft, ChevronRight, MoreHorizontal, Compass, Paperclip,
-  FileText, Mail, StickyNote, Inbox
+  FileText, Mail, StickyNote, Inbox, Sparkles, TrendingUp, Package, UserPlus
 } from 'lucide-react'
 import './Dashboard.css'
 
@@ -128,7 +128,13 @@ export default function Dashboard() {
     setView('chat')
     try {
       const res = await api.get(`/chat/sessions/${id}`)
-      setMessages(res.data.messages || [])
+      const rawMsgs = res.data?.messages || []
+      const formatted = rawMsgs.map((m, idx) => ({
+        ...m,
+        id: m.id || (Date.now() + idx),
+        time: m.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }))
+      setMessages(formatted)
       setCurrentSessionId(id)
 
       // Find or query title
@@ -398,7 +404,13 @@ export default function Dashboard() {
                     {sessions.length > 0 && (
                       <>
                         <span>·</span>
-                        <span style={{ color: '#4b5563', textTransform: 'none', letterSpacing: 'normal', fontWeight: 500 }}>{sessions[0].title}</span>
+                        <span 
+                          style={{ color: '#2563eb', textTransform: 'none', letterSpacing: 'normal', fontWeight: 600, cursor: 'pointer' }}
+                          onClick={() => navigate(`/dashboard?session=${sessions[0].id}`)}
+                          title="Open recent chat"
+                        >
+                          {sessions[0].title}
+                        </span>
                       </>
                     )}
                   </div>
@@ -523,7 +535,28 @@ export default function Dashboard() {
           <>
             {/* Chat header */}
             <header className="ws-chat-header">
-              <div className="ws-chat-header-left">
+              <div className="ws-chat-header-left" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button 
+                  onClick={() => navigate('/dashboard')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #e2e8f0',
+                    background: '#f8fafc',
+                    color: '#475569',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  title="Go to Home"
+                >
+                  <Home size={14} />
+                  <span>Home</span>
+                </button>
+                <span style={{ color: '#cbd5e1' }}>|</span>
                 <span className="ws-chat-header-title">{chatTitle}</span>
                 <button 
                   className={`ws-chat-star-btn ${favorited ? 'active' : ''}`}
@@ -583,27 +616,77 @@ export default function Dashboard() {
             {/* Chat message list area */}
             <main className="ws-chat-body">
               {messages.length === 0 ? (
-                <div className="ws-chat-welcome-container">
-                  <div className="ws-chat-welcome-avatar">
-                    <Bot size={32} />
+                <div style={{ maxWidth: 680, margin: '30px auto 0', textAlign: 'center', padding: '0 16px' }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 16, background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 8px 24px rgba(37, 99, 235, 0.25)', marginBottom: 16 }}>
+                    <Sparkles size={26} />
                   </div>
-                  <h2 className="ws-chat-welcome-title">How can I help you today?</h2>
-                  <p className="ws-chat-welcome-subtitle">Ask anything about your products, customers, bills, or workflows.</p>
-                  
-                  <div className="ws-chat-welcome-pills">
-                    <button className="ws-chat-welcome-pill" onClick={() => sendMessage('How do I manage my workflows?')}>
-                      <span>How to automate business?</span>
-                    </button>
-                    <button className="ws-chat-welcome-pill" onClick={() => sendMessage('Show me my products and check inventory status')}>
-                      <span>List all products</span>
-                    </button>
+
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+                    What can I help you with today?
+                  </h2>
+                  <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 24px', maxWidth: 480, marginInline: 'auto' }}>
+                    Ask anything about your products, stock levels, quotes, bills, or dispatch automated customer emails.
+                  </p>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, textAlign: 'left' }}>
+                    <div 
+                      onClick={() => sendMessage("Show today's total revenue, bills created, and sales summary")}
+                      style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                      className="attio-table-card"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#2563eb', fontWeight: 600, fontSize: '0.84rem', marginBottom: 4 }}>
+                        <TrendingUp size={16} /> Sales & Revenue Summary
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4 }}>
+                        Check today's bills, total revenue, and top-selling products.
+                      </div>
+                    </div>
+
+                    <div 
+                      onClick={() => sendMessage("Check low stock items and list current inventory levels")}
+                      style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                      className="attio-table-card"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#16a34a', fontWeight: 600, fontSize: '0.84rem', marginBottom: 4 }}>
+                        <Package size={16} /> Stock & Inventory Status
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4 }}>
+                        View low stock alerts, remaining quantities, and batch imports.
+                      </div>
+                    </div>
+
+                    <div 
+                      onClick={() => sendMessage("Show me quotes created today and quote status summary")}
+                      style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                      className="attio-table-card"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d97706', fontWeight: 600, fontSize: '0.84rem', marginBottom: 4 }}>
+                        <FileText size={16} /> Check Today's Quotes
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4 }}>
+                        Review quotations sent to buyers and check pending quote deals.
+                      </div>
+                    </div>
+
+                    <div 
+                      onClick={() => sendMessage("Add a new contact person to database")}
+                      style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                      className="attio-table-card"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#9333ea', fontWeight: 600, fontSize: '0.84rem', marginBottom: 4 }}>
+                        <UserPlus size={16} /> Add Customer or Contact
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4 }}>
+                        Create a new customer, lead, or supplier contact instantly.
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="ws-chat-messages-wrapper">
-                  {messages.map(msg => (
+                  {messages.map((msg, idx) => (
                     <div 
-                      key={msg.id} 
+                      key={msg.id || `msg-${idx}`} 
                       className={`ws-chat-message-row ws-chat-message-${msg.role}`}
                     >
                       <div className="ws-chat-message-container">
@@ -619,8 +702,6 @@ export default function Dashboard() {
                               }}>
                                 Copy
                               </button>
-                              <span className="ws-chat-action-divider">•</span>
-                              {msg.cached && <span className="ws-chat-cached-label">cached</span>}
                             </div>
                           )}
                         </div>

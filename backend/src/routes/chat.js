@@ -201,6 +201,7 @@ Database tables available for SELECT queries:
 - people: id, name, email, phone, persona, status, notes, user_id, created_at, updated_at (stores customers, leads, partners)
 - bills: id, bill_number, customer_id, amount, discount, tax_rate, status (paid/unpaid/cancelled), due_date, notes, order_number, paid_at, user_id, created_at, updated_at
 - bill_items: id, bill_id, product_id, name, qty, price, discount, unit, hsn_code, user_id, created_at (each row is one line item in a bill)
+- quotes: id, quote_number, customer_name, customer_phone, customer_email, total_amount, tax_amount, status, issue_date, valid_until, notes, line_items, user_id, created_at, updated_at
 - deals: id, title, value, stage, owner, close_date, notes, status, user_id, created_at, updated_at
 - deal_logs: id, deal_id, deal_title, event, from_value, to_value, done_by, user_id, created_at
 - notes: id, title, body, user_id, created_at, updated_at
@@ -208,7 +209,8 @@ Database tables available for SELECT queries:
 - product_stock_history: id, product_id, user_id, change_type, qty_change, stock_before, stock_after, source, source_ref, notes, created_at
 - product_price_history: id, product_id, user_id, old_price, new_price, effective_date, notes, created_at
 
-Useful billing analytics queries:
+Useful billing & quotes analytics queries:
+- Today's quotes: SELECT * FROM quotes WHERE user_id = '...' AND created_at::date = CURRENT_DATE
 - Bills per day: SELECT created_at::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = '...' GROUP BY day ORDER BY day DESC
 - Today's bills: SELECT * FROM bills WHERE user_id = '...' AND created_at::date = CURRENT_DATE
 - Top products sold: SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = '...' GROUP BY bi.name ORDER BY total_qty DESC LIMIT 10
@@ -219,7 +221,7 @@ For example: \`SELECT * FROM products WHERE user_id = '${userId}'\`.
 If you join tables, filter both or use aliases: \`SELECT * FROM bills b JOIN people p ON b.customer_id = p.id WHERE b.user_id = '${userId}' AND p.user_id = '${userId}'\`.
 Your query will FAIL if it does not contain the filter \`user_id = '${userId}'\` on every table queried!
 
-Always run database queries to get real-time accurate information when asked about specific business data (e.g. products, bills, people/customers) instead of using placeholders or dump data.`
+Always run database queries to get real-time accurate information when asked about specific business data (e.g. products, bills, quotes, people/customers) instead of using placeholders or dump data.`
     }
 
     let apiMessages = [systemPrompt, ...messages.map(m => ({ role: m.role, content: m.content }))]
@@ -227,27 +229,45 @@ Always run database queries to get real-time accurate information when asked abo
     let finalContent = ''
 
     while (loopCount < 5) {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://workshop.app',
-          'X-Title': 'Workshop AI Assistant'
-        },
-        body: JSON.stringify({
-          model: 'anthropic/claude-sonnet-4-6',
-          messages: apiMessages,
-          tools: tools,
-          max_tokens: 1024,
-          temperature: 0.7
-        })
-      })
+      let response
+      let lastErrText = ''
+      const MODELS = ['openai/gpt-4o-mini', 'openrouter/free', 'meta-llama/llama-3.3-70b-instruct']
 
-      if (!response.ok) {
-        const errText = await response.text()
-        console.error('[OPENROUTER ERROR]', response.status, errText)
-        return res.status(502).json({ error: 'AI service unavailable', details: errText })
+      for (const modelCandidate of MODELS) {
+        try {
+          const resCandidate = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': 'https://workshop.app',
+              'X-Title': 'Workshop AI Assistant'
+            },
+            body: JSON.stringify({
+              model: modelCandidate,
+              messages: apiMessages,
+              tools: tools,
+              max_tokens: 1024,
+              temperature: 0.7
+            })
+          })
+
+          if (resCandidate.ok) {
+            response = resCandidate
+            break
+          } else {
+            lastErrText = await resCandidate.text()
+            console.warn(`[OPENROUTER MODEL FAIL] ${modelCandidate} status ${resCandidate.status}: ${lastErrText}`)
+          }
+        } catch (fetchErr) {
+          lastErrText = fetchErr.message
+          console.warn(`[OPENROUTER FETCH ERROR] ${modelCandidate}: ${fetchErr.message}`)
+        }
+      }
+
+      if (!response || !response.ok) {
+        console.error('[OPENROUTER ALL MODELS FAILED]', lastErrText)
+        return res.status(502).json({ error: 'AI service unavailable', details: lastErrText })
       }
 
       const data = await response.json()
@@ -287,14 +307,18 @@ Always run database queries to get real-time accurate information when asked abo
             } else if (toolName === 'query_database_readonly') {
               const { sql } = args
               const cleanSql = (sql || '').trim()
-              if (!/^select\b/i.test(cleanSql)) {
+              const postgresSql = cleanSql.replace(/\bcurdate\(\)/gi, 'CURRENT_DATE')
+              const lowerSql = postgresSql.toLowerCase()
+              const lowerUid = userId.toLowerCase()
+
+              if (!/^select\b/i.test(postgresSql)) {
                 toolResult = { error: 'Only SELECT queries are allowed for read-only database query.' }
-              } else if (/\b(insert|update|delete|drop|alter|create|truncate|replace|grant|revoke)\b/i.test(cleanSql)) {
+              } else if (/\b(insert|update|delete|drop|alter|create|truncate|replace|grant|revoke)\b/i.test(postgresSql)) {
                 toolResult = { error: 'Mutation SQL commands are forbidden.' }
-              } else if (!cleanSql.toLowerCase().includes('user_id') || !cleanSql.includes(`'${userId}'`)) {
+              } else if (!lowerSql.includes('user_id') || !lowerSql.includes(lowerUid)) {
                 toolResult = { error: `Security check failed: Your query must filter by user_id = '${userId}' to prevent unauthorized access.` }
               } else {
-                const { rows } = await query(cleanSql)
+                const { rows } = await query(postgresSql)
                 toolResult = { success: true, rows }
               }
             } else if (toolName === 'send_email') {

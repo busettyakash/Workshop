@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router'
 import {
   Home, Bell, BarChart3, Settings,
-  Package, BookOpen, Receipt, CheckCircle, XCircle,
+  Package, BookOpen, Receipt, CheckCircle, CheckCircle2, XCircle,
   Users, UserCheck, GitBranch, Building2,
   Search, ChevronDown, ChevronRight, LogOut, UserPlus, Zap, Menu, X,
   Briefcase, User, CheckSquare, FileText, Mail, Phone, Send, Folder, LayoutGrid, Play, Star,
@@ -42,6 +42,8 @@ const ICON_MAP = {
   Settings:      <Settings size={14} />,
   Pipeline:      <Briefcase size={14} />,
   ImportStock:   <Upload size={14} />,
+  UserPlus:      <UserPlus size={14} />,
+  LogOut:        <LogOut size={14} />,
 }
 
 // All nav items for Favorites lookup
@@ -70,6 +72,7 @@ const MAIN_NAV = [
   { label: 'Notes',   icon: 'Notes',   path: ROUTES.NOTES },
   { label: 'Emails',  icon: 'Emails',  path: ROUTES.EMAILS },
   { label: 'Reports', icon: 'Reports', path: ROUTES.REPORTS },
+  { label: 'Settings', icon: 'Settings', path: '/settings' },
 ]
 
 const RECORDS_NAV = [
@@ -87,8 +90,24 @@ const INVOICES_NAV = [
   { label: 'Unpaid',  icon: 'Unpaid',  path: ROUTES.UNPAID },
 ]
 
-const LISTS_NAV = [
-  { label: 'Settings',  icon: 'Settings', path: '/settings' },
+const SEARCH_ITEMS = [
+  { label: 'Home', path: ROUTES.DASHBOARD, icon: 'Home', category: 'Navigation', keywords: 'dashboard main overview start' },
+  { label: 'Notes', path: ROUTES.NOTES, icon: 'Notes', category: 'Navigation', keywords: 'memo text' },
+  { label: 'Emails', path: ROUTES.EMAILS, icon: 'Emails', category: 'Navigation', keywords: 'messages mail send inbox' },
+  { label: 'Reports', path: ROUTES.REPORTS, icon: 'Reports', category: 'Navigation', keywords: 'analytics stats metrics chart' },
+  { label: 'Products', path: ROUTES.PRODUCTS, icon: 'Products', category: 'Records', keywords: 'inventory item stock goods' },
+  { label: 'People', path: '/people', icon: 'People', category: 'Records', keywords: 'customers contacts client users' },
+  { label: 'Product History', path: '/price-history', icon: 'PriceHistory', category: 'Records', keywords: 'price changes log track history' },
+  { label: 'Quotes', path: '/quotes', icon: 'Quotes', category: 'Records', keywords: 'estimates proposal vendor customer' },
+  { label: 'Orders', path: '/orders', icon: 'Orders', category: 'Records', keywords: 'sales purchases transactions' },
+  { label: 'Import Stock', path: ROUTES.IMPORT_STOCK, icon: 'ImportStock', category: 'Records', keywords: 'upload csv inventory bulk' },
+  { label: 'Billing', path: ROUTES.BILLING, icon: 'Billing', category: 'Invoices & Finance', keywords: 'payment invoices money finance' },
+  { label: 'Paid Invoices', path: ROUTES.PAID, icon: 'Paid', category: 'Invoices & Finance', keywords: 'completed payment settled' },
+  { label: 'Unpaid Invoices', path: ROUTES.UNPAID, icon: 'Unpaid', category: 'Invoices & Finance', keywords: 'pending overdue due bill' },
+  { label: 'Workflows', path: '/workflows', icon: 'Workflows', category: 'Automations', keywords: 'automation triggers sequences flow' },
+  { label: 'Settings', path: '/settings', icon: 'Settings', category: 'Account', keywords: 'preferences config profile workspace' },
+  { label: 'Invite Teammates', action: 'invite', icon: 'UserPlus', category: 'Actions', keywords: 'team invite user member share' },
+  { label: 'Sign Out', action: 'logout', icon: 'LogOut', category: 'Account', keywords: 'exit logout logoff' },
 ]
 
 function NavItem({ item, active, onClick, favorites, onToggleFav }) {
@@ -138,7 +157,65 @@ export default function Sidebar() {
   const [billingOpen, setBillingOpen] = useState(() => {
     return ['/billing', '/paid', '/unpaid'].some(path => window.location.pathname.startsWith(path))
   })
-  const [listsOpen, setListsOpen] = useState(false)
+  const [searchModalOpen, setSearchModalOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchModalOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [])
+
+  const filteredSearchItems = SEARCH_ITEMS.filter(item => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.toLowerCase().trim()
+    return (
+      item.label.toLowerCase().includes(q) ||
+      item.category.toLowerCase().includes(q) ||
+      (item.keywords && item.keywords.toLowerCase().includes(q))
+    )
+  })
+
+  const handleExecuteSearchItem = (item) => {
+    setSearchModalOpen(false)
+    setSearchQuery('')
+    if (item.path) {
+      handleNav(item.label)
+      navigate(item.path)
+    } else if (item.action === 'invite') {
+      setInviteModalOpen(true)
+    } else if (item.action === 'logout') {
+      handleLogout()
+    }
+  }
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (filteredSearchItems.length > 0) {
+        setSelectedIndex(prev => (prev + 1) % filteredSearchItems.length)
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (filteredSearchItems.length > 0) {
+        setSelectedIndex(prev => (prev - 1 + filteredSearchItems.length) % filteredSearchItems.length)
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filteredSearchItems.length > 0 && selectedIndex < filteredSearchItems.length) {
+        handleExecuteSearchItem(filteredSearchItems[selectedIndex])
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setSearchModalOpen(false)
+    }
+  }
 
   const toggleAutomations = () => {
     const next = !automationsOpen
@@ -199,6 +276,9 @@ export default function Sidebar() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState('Member')
+  const [inviteTeam, setInviteTeam] = useState('')
+  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false)
+  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false)
   const [inviting, setInviting] = useState(false)
 
   // Reactive workspace state
@@ -229,6 +309,13 @@ export default function Sidebar() {
       dispatch(addToast({ message: msg, type: 'error' }))
     } finally {
       setInviting(false)
+    }
+  }
+
+  const handleInviteKeyDown = (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault()
+      handleInviteSubmit(e)
     }
   }
 
@@ -403,7 +490,7 @@ export default function Sidebar() {
 
         {/* Search */}
         <div className="ws-sb-search">
-          <button className="ws-sb-searchbox">
+          <button className="ws-sb-searchbox" onClick={() => setSearchModalOpen(true)}>
             <Search size={13} />
             <span>Quick actions</span>
             <kbd className="ws-sb-kbd">⌘K</kbd>
@@ -579,46 +666,7 @@ export default function Sidebar() {
             )}
           </div>
 
-          {/* Collapsible Lists Item */}
-          {LISTS_NAV.length > 0 && (
-            <div className="ws-sb-collapsible-item">
-              <div className="ws-sb-nav-item-wrapper">
-                <button 
-                  className="ws-sb-nav-item-btn"
-                  onClick={() => setListsOpen(!listsOpen)}
-                >
-                  <LayoutGrid size={14} />
-                  <span>Lists</span>
-                </button>
-                <button 
-                  className={`ws-sb-arrow-btn ${listsOpen ? 'rotated' : ''}`}
-                  onClick={() => setListsOpen(!listsOpen)}
-                  aria-label="Toggle sublist"
-                >
-                  <ChevronRight size={12} className="ws-sb-arrow" />
-                </button>
-              </div>
-              
-              {listsOpen && (
-                <div className="ws-sb-sublist">
-                  {LISTS_NAV.map(item => (
-                    <Link to={item.path} key={item.label} style={{ textDecoration: 'none' }} onClick={() => handleNav(item.label)}>
-                      <div className={`ws-sb-subitem ${activeNav === item.label ? 'active' : ''}`}>
-                        {ICON_MAP[item.icon]}
-                        <span>{item.label}</span>
-                        <button 
-                          className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
-                          onClick={(e) => toggleFavorite(item.label, e)}
-                        >
-                          <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
-                        </button>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+
         </nav>
 
         {/* Bottom */}
@@ -638,108 +686,404 @@ export default function Sidebar() {
 
       {/* Invite Teammate Modal */}
       {inviteModalOpen && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backdropFilter: 'blur(2px)'
-        }}>
-          <div style={{
-            background: '#fff',
-            width: '400px',
-            borderRadius: '12px',
-            padding: '24px',
-            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 99999,
             display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, color: '#111827', fontFamily: 'sans-serif' }}>Invite Teammate</h3>
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            paddingTop: '10vh',
+            paddingLeft: '20px',
+            paddingRight: '20px',
+            paddingBottom: '20px',
+            overflowY: 'auto'
+          }} 
+          onClick={() => setInviteModalOpen(false)}
+        >
+          <div 
+            style={{
+              background: '#ffffff',
+              width: '100%',
+              maxWidth: '480px',
+              borderRadius: '14px',
+              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.18)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid #e2e8f0'
+            }} 
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '14px 20px',
+              borderBottom: '1px solid #f1f5f9'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UserRound size={16} style={{ color: '#475569' }} />
+                <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', fontFamily: 'inherit' }}>
+                  Invite team members
+                </h3>
+              </div>
               <button 
                 onClick={() => setInviteModalOpen(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px', display: 'flex', alignItems: 'center' }}
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
-            <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#4b5563', fontFamily: 'sans-serif' }}>Teammate Email Address</label>
-                <input 
-                  type="email"
-                  required
-                  placeholder="name@company.com"
-                  value={inviteEmail}
-                  onChange={e => setInviteEmail(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid #d1d5db',
-                    fontSize: '0.875rem',
-                    outline: 'none',
-                    fontFamily: 'sans-serif'
-                  }}
-                />
+
+            {/* Form */}
+            <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                
+                {/* Send Invite to... */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 500, color: '#64748b', fontFamily: 'inherit' }}>
+                    Send Invite to ...
+                  </label>
+                  <textarea 
+                    rows={3}
+                    required
+                    placeholder="Enter email address"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    onKeyDown={handleInviteKeyDown}
+                    style={{
+                      width: '100%',
+                      minHeight: '76px',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '0.875rem',
+                      outline: 'none',
+                      color: '#0f172a',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                      lineHeight: '1.4',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                    }}
+                  />
+                </div>
+
+                {/* Invite as */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 500, color: '#64748b', fontFamily: 'inherit' }}>
+                    Invite as
+                  </label>
+                  
+                  {/* Select Box Button */}
+                  <button
+                    type="button"
+                    onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0',
+                      background: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.875rem',
+                      fontWeight: 600,
+                      color: '#0f172a',
+                      cursor: 'pointer',
+                      outline: 'none'
+                    }}
+                  >
+                    <span>{inviteRole}</span>
+                    <ChevronDown 
+                      size={16} 
+                      style={{ 
+                        color: '#64748b', 
+                        transform: roleDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s' 
+                      }} 
+                    />
+                  </button>
+
+                  {/* Dropdown Options Card */}
+                  {roleDropdownOpen && (
+                    <div style={{
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '10px',
+                      padding: '5px',
+                      background: '#ffffff',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      marginTop: '4px'
+                    }}>
+                      {/* Member */}
+                      <div 
+                        onClick={() => {
+                          setInviteRole('Member')
+                          setRoleDropdownOpen(false)
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '9px 14px',
+                          borderRadius: '6px',
+                          background: inviteRole === 'Member' ? '#f8fafc' : 'transparent',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
+                          <span style={{ fontWeight: 600, color: '#0f172a' }}>Member</span>
+                          <span style={{ color: '#cbd5e1' }}>•</span>
+                          <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 500 }}>can edit</span>
+                        </div>
+                        {inviteRole === 'Member' && (
+                          <CheckCircle2 size={15} fill="#2563eb" color="#ffffff" />
+                        )}
+                      </div>
+
+                      {/* Admin */}
+                      <div 
+                        onClick={() => {
+                          setInviteRole('Admin')
+                          setRoleDropdownOpen(false)
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '9px 14px',
+                          borderRadius: '6px',
+                          background: inviteRole === 'Admin' ? '#f8fafc' : 'transparent',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
+                          <span style={{ fontWeight: 600, color: '#0f172a' }}>Admin</span>
+                          <span style={{ color: '#cbd5e1' }}>•</span>
+                          <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 500 }}>full access</span>
+                        </div>
+                        {inviteRole === 'Admin' && (
+                          <CheckCircle2 size={15} fill="#2563eb" color="#ffffff" />
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#4b5563', fontFamily: 'sans-serif' }}>Role</label>
-                <select 
-                  value={inviteRole}
-                  onChange={e => setInviteRole(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid #d1d5db',
-                    fontSize: '0.875rem',
-                    background: '#fff',
-                    outline: 'none',
-                    fontFamily: 'sans-serif'
-                  }}
-                >
-                  <option value="Member">Member</option>
-                  <option value="Admin">Admin</option>
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' }}>
-                <button 
-                  type="button"
-                  onClick={() => setInviteModalOpen(false)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid #d1d5db',
-                    background: '#fff',
-                    fontSize: '0.875rem',
-                    cursor: 'pointer',
-                    fontFamily: 'sans-serif'
-                  }}
-                >
-                  Cancel
-                </button>
+
+              {/* Footer */}
+              <div style={{
+                padding: '12px 24px 18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end'
+              }}>
                 <button 
                   type="submit"
-                  disabled={inviting}
+                  disabled={inviting || !inviteEmail.trim()}
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 14px',
+                    borderRadius: '7px',
                     border: 'none',
-                    background: 'var(--color-blue, #3d68f5)',
-                    color: '#fff',
-                    fontSize: '0.875rem',
-                    cursor: 'pointer',
-                    fontWeight: 500,
-                    fontFamily: 'sans-serif'
+                    background: 'var(--color-blue, #2563eb)',
+                    color: '#ffffff',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    cursor: inviting || !inviteEmail.trim() ? 'not-allowed' : 'pointer',
+                    opacity: inviting || !inviteEmail.trim() ? 0.65 : 1,
+                    boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)',
+                    transition: 'opacity 0.15s'
                   }}
                 >
-                  {inviting ? 'Inviting...' : 'Send Invitation'}
+                  <span>{inviting ? 'Sending...' : 'Send Invites'}</span>
+                  <span style={{
+                    fontSize: '0.6rem',
+                    background: 'rgba(255, 255, 255, 0.25)',
+                    padding: '1.5px 4px',
+                    borderRadius: '4px',
+                    fontWeight: 600,
+                    letterSpacing: '0.3px'
+                  }}>
+                    CTRL ↵
+                  </span>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Actions Search Modal */}
+      {searchModalOpen && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            paddingTop: '10vh'
+          }}
+          onClick={() => setSearchModalOpen(false)}
+        >
+          <div 
+            style={{
+              background: '#ffffff',
+              width: '100%',
+              maxWidth: '580px',
+              borderRadius: '12px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid #e2e8f0'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Input Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '14px 18px',
+              borderBottom: '1px solid #f1f5f9',
+              gap: '12px'
+            }}>
+              <Search size={18} style={{ color: '#94a3b8', flexShrink: 0 }} />
+              <input 
+                type="text"
+                autoFocus
+                placeholder="Type a command or search..."
+                value={searchQuery}
+                onChange={e => {
+                  setSearchQuery(e.target.value)
+                  setSelectedIndex(0)
+                }}
+                onKeyDown={handleSearchKeyDown}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  outline: 'none',
+                  fontSize: '0.95rem',
+                  color: '#1e293b',
+                  background: 'transparent',
+                  fontFamily: 'inherit'
+                }}
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2 }}
+                >
+                  <X size={16} />
+                </button>
+              )}
+              <span style={{
+                fontSize: '0.7rem',
+                padding: '2px 6px',
+                background: '#f1f5f9',
+                color: '#64748b',
+                borderRadius: '4px',
+                fontWeight: 600
+              }}>
+                ESC
+              </span>
+            </div>
+
+            {/* Results List */}
+            <div style={{
+              maxHeight: '380px',
+              overflowY: 'auto',
+              padding: '8px 0'
+            }}>
+              {filteredSearchItems.length === 0 ? (
+                <div style={{
+                  padding: '32px 20px',
+                  textAlign: 'center',
+                  color: '#94a3b8',
+                  fontSize: '0.875rem'
+                }}>
+                  No commands or results found for "{searchQuery}"
+                </div>
+              ) : (
+                filteredSearchItems.map((item, idx) => {
+                  const isSelected = idx === selectedIndex
+                  return (
+                    <div
+                      key={item.label}
+                      onClick={() => handleExecuteSearchItem(item)}
+                      onMouseEnter={() => setSelectedIndex(idx)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 18px',
+                        cursor: 'pointer',
+                        background: isSelected ? '#eff6ff' : 'transparent',
+                        color: isSelected ? '#1d4ed8' : '#334155',
+                        transition: 'background 0.1s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div>
+                          <div style={{ fontWeight: isSelected ? 600 : 500, fontSize: '0.875rem' }}>
+                            {item.label}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          color: isSelected ? '#3b82f6' : '#94a3b8',
+                          background: isSelected ? '#dbeafe' : '#f8fafc',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontWeight: 500
+                        }}>
+                          {item.category}
+                        </span>
+                        {isSelected && (
+                          <span style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: 600 }}>↵</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '10px 18px',
+              background: '#f8fafc',
+              borderTop: '1px solid #f1f5f9',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '0.75rem',
+              color: '#64748b'
+            }}>
+              <span>Search actions & navigation</span>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <span><kbd style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: 3, padding: '1px 4px', fontSize: '0.68rem' }}>↑↓</kbd> Navigate</span>
+                <span><kbd style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: 3, padding: '1px 4px', fontSize: '0.68rem' }}>↵</kbd> Select</span>
+                <span><kbd style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: 3, padding: '1px 4px', fontSize: '0.68rem' }}>esc</kbd> Dismiss</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

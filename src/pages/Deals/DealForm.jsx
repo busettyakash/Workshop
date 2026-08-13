@@ -311,7 +311,7 @@ export default function DealForm() {
 
                     <div style={S.field}>
                       <label style={S.label}>Deal Title <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input name="title" value={form.title} onChange={handleChange} placeholder="e.g. Enterprise License (10% Discount)" style={inp('title')} onFocus={() => setFocus('title')} onBlur={() => setFocus(null)} />
+                      <input name="title" value={form.title} onChange={handleChange} placeholder="Deal Title" style={inp('title')} onFocus={() => setFocus('title')} onBlur={() => setFocus(null)} />
                       {errors.title && <span style={S.error}>{errors.title}</span>}
                     </div>
                     

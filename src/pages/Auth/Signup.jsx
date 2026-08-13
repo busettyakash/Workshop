@@ -556,7 +556,7 @@ export default function Signup() {
                   if (errors.gstin) setErrors(prev => ({ ...prev, gstin: '' }))
                 }}
                 error={errors.gstin} />
-              <p className="ws-field-hint">15-character GST Identification Number (e.g., 22AAAAA0000A1Z5)</p>
+              <p className="ws-field-hint">15-character GST Identification Number</p>
             </div>
 
             <button type="submit" className="ws-auth-submit-btn" style={{ marginTop: '8px' }}>

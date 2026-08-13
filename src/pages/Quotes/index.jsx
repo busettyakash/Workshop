@@ -668,7 +668,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               </label>
               <input
                 type="text"
-                placeholder="e.g. Busetty Traders"
+                placeholder="Shop / Company Name"
                 value={formData.shop_name}
                 onChange={(e) => setFormData(p => ({ ...p, shop_name: e.target.value }))}
                 style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem', fontWeight: 600 }}
@@ -693,7 +693,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               </label>
               <input
                 type="text"
-                placeholder="e.g. Sri Lakshmi Rice Traders"
+                placeholder="Customer Shop / Company Name"
                 value={formData.customer_company}
                 onChange={(e) => setFormData(p => ({ ...p, customer_company: e.target.value }))}
                 style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
@@ -704,7 +704,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Customer Name *</label>
               <input
                 type="text"
-                placeholder="e.g. Vinod Kumar Busetty"
+                placeholder="Customer Name"
                 value={formData.customer_name}
                 onChange={(e) => setFormData(p => ({ ...p, customer_name: e.target.value }))}
                 style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
@@ -716,7 +716,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Phone Number</label>
               <input
                 type="text"
-                placeholder="+91 9876543210"
+                placeholder="Phone Number"
                 value={formData.customer_phone}
                 onChange={(e) => setFormData(p => ({ ...p, customer_phone: e.target.value }))}
                 style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
@@ -727,7 +727,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Email Address *</label>
               <input
                 type="email"
-                placeholder="busettyakash@gmail.com"
+                placeholder="Email Address"
                 value={formData.customer_email}
                 onChange={(e) => setFormData(p => ({ ...p, customer_email: e.target.value }))}
                 style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 5, border: '1px solid #cbd5e1', fontSize: '0.78rem' }}

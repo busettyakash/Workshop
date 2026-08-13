@@ -121,12 +121,12 @@ function QuickAddProductModal({ onClose, onSaved }) {
                 value={form.hsn_code || form.sku || ''}
                 onChange={e => setForm({ ...form, hsn_code: e.target.value, sku: e.target.value })}
                 style={{ ...S.input, fontFamily: 'monospace', color: '#1e293b', fontWeight: 600 }}
-                placeholder="e.g. 10064000"
+                placeholder="HSN Code / SKU"
               />
             </div>
             <div>
               <label style={S.label}>Category</label>
-              <input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} style={S.input} placeholder="e.g. Electronics" />
+              <input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} style={S.input} placeholder="Category" />
             </div>
             <div>
               <label style={S.label}>Unit of Measure</label>
@@ -170,7 +170,7 @@ function QuickAddProductModal({ onClose, onSaved }) {
                     const packPrice = p100 ? ((p100 / 100) * bw).toFixed(2) : form.price
                     setForm(prev => ({ ...prev, bag_weight: e.target.value, price: packPrice }))
                   }}
-                  placeholder="e.g. 25, 50, 75, 100"
+                  placeholder="Package / Bag Weight"
                   style={S.input}
                 />
                 {bulkUnit.quickSizes && (
@@ -908,36 +908,40 @@ const calcMaxStock = (prod, itemUnit) => {
                 </div>
 
                 {/* Product Catalog */}
-                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 360 }}>
-                  <div style={{ padding: '10px 14px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem', margin: 0 }}>Product Catalog</p>
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', height: 440, minHeight: 440 }}>
+                  <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', flexShrink: 0 }}>
+                    <p style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.925rem', margin: 0, fontFamily: 'inherit' }}>Product Catalog</p>
                   </div>
 
                   {/* Search */}
-                  <div style={{ padding: '8px 12px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', gap: 6, background: '#f9fafb' }}>
-                    <Search size={14} color="#9ca3af" style={{ flexShrink: 0 }} />
+                  <div style={{ position: 'relative', padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', flexShrink: 0 }}>
+                    <Search size={15} color="#94a3b8" style={{ flexShrink: 0 }} />
                     <input
                       type="text"
                       placeholder="Search catalog..."
                       value={productSearch}
                       onChange={e => setProductSearch(e.target.value)}
-                      style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.8125rem', color: '#111827', width: '100%', padding: '2px 0' }}
+                      style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.85rem', color: '#0f172a', width: '100%', padding: '2px 24px 2px 0', fontFamily: 'inherit' }}
                     />
                     {productSearch && (
-                      <button type="button" onClick={() => setProductSearch('')} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#9ca3af' }}>
-                        <X size={13} />
+                      <button 
+                        type="button" 
+                        onClick={() => setProductSearch('')} 
+                        style={{ position: 'absolute', right: 12, border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+                      >
+                        <X size={14} />
                       </button>
                     )}
                   </div>
 
                   {/* List */}
-                  <div style={{ overflowY: 'auto', flex: 1, maxHeight: '380px' }}>
+                  <div style={{ overflowY: 'scroll', flex: 1 }}>
                     {loadingProds ? (
-                      <div style={{ padding: '30px 16px', display: 'flex', justifyContent: 'center' }}>
-                        <Loader2 size={20} className="ws-chat-loader-spin" style={{ color: '#9ca3af' }} />
+                      <div style={{ padding: '35px 16px', display: 'flex', justifyContent: 'center' }}>
+                        <Loader2 size={22} className="ws-chat-loader-spin" style={{ color: '#94a3b8' }} />
                       </div>
                     ) : filteredProducts.length === 0 ? (
-                      <div style={{ padding: '24px 14px', fontSize: '0.8125rem', color: '#9ca3af', textAlign: 'center' }}>
+                      <div style={{ padding: '28px 16px', fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center' }}>
                         {productSearch ? 'No products match search' : 'No active products found'}
                       </div>
                     ) : (
@@ -975,43 +979,49 @@ const calcMaxStock = (prod, itemUnit) => {
                             disabled={hasNoStock || (isStockDepleted && !alreadyAdded)}
                             style={{
                               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                              width: '100%', padding: '8px 12px', border: 'none', borderBottom: '1px solid #f3f4f6',
-                              background: alreadyAdded ? '#f0fdf4' : '#fff',
+                              width: '100%', padding: '12px 16px', border: 'none', borderBottom: '1px solid #f1f5f9',
+                              background: alreadyAdded ? '#f0fdf4' : '#ffffff',
                               cursor: (hasNoStock || (isStockDepleted && !alreadyAdded)) ? 'not-allowed' : 'pointer',
-                              textAlign: 'left', transition: 'background 0.1s', gap: 10,
+                              textAlign: 'left', transition: 'all 0.15s ease', gap: 12,
                               opacity: (hasNoStock || (isStockDepleted && !alreadyAdded)) ? 0.55 : 1
                             }}
-                            onMouseEnter={e => !alreadyAdded && !(hasNoStock || isStockDepleted) && (e.currentTarget.style.background = '#f9fafb')}
-                            onMouseLeave={e => !alreadyAdded && !(hasNoStock || isStockDepleted) && (e.currentTarget.style.background = '#fff')}
+                            onMouseEnter={e => !alreadyAdded && !(hasNoStock || isStockDepleted) && (e.currentTarget.style.background = '#f8fafc')}
+                            onMouseLeave={e => !alreadyAdded && !(hasNoStock || isStockDepleted) && (e.currentTarget.style.background = '#ffffff')}
                           >
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: '#111827', marginBottom: 2 }}>
+                              <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', marginBottom: 3, fontFamily: 'inherit' }}>
                                 {p.name}
                               </div>
-                              <div style={{ fontSize: '0.7rem', color: '#6b7280', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                              <div style={{ fontSize: '0.74rem', color: '#64748b', display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 {(() => {
                                   const prices = calcProductPrices(p)
                                   if (bulkUnit && p.bag_weight > 1) {
                                     return (
-                                      <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>
-                                        {bulkUnit.name}: {INR(prices.perPackPrice)} ({p.bag_weight}{bulkUnit.short}) • {INR(prices.perUnitRate)}/{bulkUnit.short}
-                                        {p.updated_price && <span style={{ color: '#10b981', fontWeight: 600, marginLeft: 4 }}>(Updated)</span>}
-                                      </span>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: '0.74rem', color: '#64748b', lineHeight: 1.3 }}>
+                                        <span>{bulkUnit.name}: {INR(prices.perPackPrice)} ({p.bag_weight}{bulkUnit.short})</span>
+                                        <span style={{ color: '#cbd5e1' }}>•</span>
+                                        <span>{INR(prices.perUnitRate)}/{bulkUnit.short}</span>
+                                        {p.updated_price && (
+                                          <span style={{ color: '#10b981', fontWeight: 600 }}>(Updated)</span>
+                                        )}
+                                      </div>
                                     )
                                   }
                                   return (
-                                    <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>
-                                      Price: {INR(prices.perUnitRate)}/{p.unit || 'pcs'}
-                                      {p.updated_price && <span style={{ color: '#10b981', fontWeight: 600, marginLeft: 4 }}>(Updated)</span>}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: '0.74rem', color: '#64748b', lineHeight: 1.3 }}>
+                                      <span>Price: {INR(prices.perUnitRate)}/{p.unit || 'pcs'}</span>
+                                      {p.updated_price && (
+                                        <span style={{ color: '#10b981', fontWeight: 600 }}>(Updated)</span>
+                                      )}
+                                    </div>
                                   )
                                 })()}
 
-                                <div style={{ marginTop: 1 }}>
+                                <div style={{ marginTop: 3 }}>
                                   {hasNoStock || isStockDepleted ? (
-                                    <span style={{ color: '#b91c1c', fontWeight: 600, background: '#fee2e2', padding: '1px 5px', borderRadius: 4, fontSize: '0.68rem' }}>Out of Stock</span>
+                                    <span style={{ color: '#b91c1c', fontWeight: 600, background: '#fee2e2', padding: '2px 7px', borderRadius: 5, fontSize: '0.7rem' }}>Out of Stock</span>
                                   ) : (
-                                    <span style={{ color: '#4b5563', background: '#f3f4f6', padding: '1px 5px', borderRadius: 4, fontSize: '0.68rem' }}>
+                                    <span style={{ color: '#475569', background: '#f1f5f9', padding: '2px 7px', borderRadius: 5, fontSize: '0.72rem', fontWeight: 500, display: 'inline-block' }}>
                                       Stock: {formatStockDisplayFromBase(remainingBaseQty, p.bag_weight, p.unit)}
                                     </span>
                                   )}
@@ -1020,10 +1030,10 @@ const calcMaxStock = (prod, itemUnit) => {
                             </div>
                             <div style={{ flexShrink: 0 }}>
                               {alreadyAdded ? (
-                                <span style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>Added</span>
+                                <span style={{ fontSize: '0.75rem', background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>Added</span>
                               ) : (
-                                <div style={{ background: '#f3f4f6', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4b5563' }}>
-                                  <Plus size={13} />
+                                <div style={{ background: '#f1f5f9', width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', transition: 'all 0.15s ease' }}>
+                                  <Plus size={15} />
                                 </div>
                               )}
                             </div>

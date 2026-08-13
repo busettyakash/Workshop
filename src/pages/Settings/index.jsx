@@ -534,7 +534,7 @@ export default function Settings() {
                       <input
                         type="text"
                         required
-                        placeholder="e.g. ltr, mtr, kgs"
+                        placeholder="UOM Code"
                         value={uomForm.code}
                         onChange={e => setUomForm({ ...uomForm, code: e.target.value })}
                         style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: '0.875rem' }}
@@ -545,7 +545,7 @@ export default function Settings() {
                       <input
                         type="text"
                         required
-                        placeholder="e.g. Liters, Meters"
+                        placeholder="Unit Name"
                         value={uomForm.name}
                         onChange={e => setUomForm({ ...uomForm, name: e.target.value })}
                         style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: '0.875rem' }}
@@ -570,7 +570,7 @@ export default function Settings() {
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Container Presets (comma-separated)</label>
                     <input
                       type="text"
-                      placeholder="e.g. 1, 5, 20, 25, 50, 200"
+                      placeholder="Container Presets"
                       value={uomForm.presets}
                       onChange={e => setUomForm({ ...uomForm, presets: e.target.value })}
                       style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: '0.875rem' }}

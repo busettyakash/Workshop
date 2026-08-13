@@ -186,14 +186,14 @@ export default function PersonForm() {
                     <div style={{ display: 'grid', gridTemplateColumns: (form.persona === 'Vendor' || form.persona === 'Customer') ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 20 }}>
                       <div>
                         <label style={S.label}>Full Name <span style={{ color: '#dc2626' }}>*</span></label>
-                        <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Vinod Kumar Busetty" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
+                        <input name="name" value={form.name} onChange={handleChange} placeholder="Full Name" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
                         {errors.name && <span style={S.error}>{errors.name}</span>}
                       </div>
 
                       {(form.persona === 'Vendor' || form.persona === 'Customer') && (
                         <div>
                           <label style={S.label}>Company / Shop Name</label>
-                          <input name="company" value={form.company} onChange={handleChange} placeholder="e.g. Sri Lakshmi Rice Traders" style={inp('company')} onFocus={() => setFocus('company')} onBlur={() => setFocus(null)} />
+                          <input name="company" value={form.company} onChange={handleChange} placeholder="Company / Shop Name" style={inp('company')} onFocus={() => setFocus('company')} onBlur={() => setFocus(null)} />
                         </div>
                       )}
                     </div>
@@ -201,11 +201,11 @@ export default function PersonForm() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
                       <div>
                         <label style={S.label}>Email Address</label>
-                        <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="email@example.com" style={inp('email')} onFocus={() => setFocus('email')} onBlur={() => setFocus(null)} />
+                        <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="Email Address" style={inp('email')} onFocus={() => setFocus('email')} onBlur={() => setFocus(null)} />
                       </div>
                       <div>
                         <label style={S.label}>Phone Number</label>
-                        <input name="phone" type="tel" value={form.phone} onChange={handleChange} placeholder="+91 98765 43210" style={inp('phone')} onFocus={() => setFocus('phone')} onBlur={() => setFocus(null)} />
+                        <input name="phone" type="tel" value={form.phone} onChange={handleChange} placeholder="Phone Number" style={inp('phone')} onFocus={() => setFocus('phone')} onBlur={() => setFocus(null)} />
                       </div>
                     </div>
 

@@ -372,7 +372,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         name="buyer_name"
                         value={form.buyer_name}
                         onChange={handleChange}
-                        placeholder="e.g. Lalitha Traders / John Doe"
+                        placeholder="Supplier / Buyer Name"
                         style={inp('buyer_name')}
                         onFocus={() => setFocus('buyer_name')}
                         onBlur={() => setFocus(null)}
@@ -387,7 +387,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         name="buyer_phone"
                         value={form.buyer_phone}
                         onChange={handleChange}
-                        placeholder="e.g. +91 9876543210"
+                        placeholder="Phone Number"
                         style={inp('buyer_phone')}
                         onFocus={() => setFocus('buyer_phone')}
                         onBlur={() => setFocus(null)}
@@ -403,7 +403,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         name="buyer_city"
                         value={form.buyer_city}
                         onChange={handleChange}
-                        placeholder="e.g. Hyderabad / Vijayawada"
+                        placeholder="City"
                         style={inp('buyer_city')}
                         onFocus={() => setFocus('buyer_city')}
                         onBlur={() => setFocus(null)}
@@ -418,7 +418,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         name="buyer_state"
                         value={form.buyer_state}
                         onChange={handleChange}
-                        placeholder="e.g. Telangana / Andhra Pradesh"
+                        placeholder="State"
                         style={inp('buyer_state')}
                         onFocus={() => setFocus('buyer_state')}
                         onBlur={() => setFocus(null)}
@@ -467,7 +467,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Product Name *</label>
-                      <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Lalitha-Rice / Wireless Mouse" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
+                      <input name="name" value={form.name} onChange={handleChange} placeholder="Product Name" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
                       {errors.name && <span style={S.error}>{errors.name}</span>}
                     </div>
 
@@ -485,12 +485,12 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                           Auto Generate
                         </button>
                       </div>
-                      <input name="hsn_code" value={form.hsn_code || form.sku || ''} onChange={e => setForm({ ...form, hsn_code: e.target.value, sku: e.target.value })} placeholder="e.g. 10064000" style={{ ...inp('hsn_code'), fontFamily: 'monospace', color: '#475569', fontWeight: 600 }} onFocus={() => setFocus('hsn_code')} onBlur={() => setFocus(null)} />
+                      <input name="hsn_code" value={form.hsn_code || form.sku || ''} onChange={e => setForm({ ...form, hsn_code: e.target.value, sku: e.target.value })} placeholder="HSN Code / SKU" style={{ ...inp('hsn_code'), fontFamily: 'monospace', color: '#475569', fontWeight: 600 }} onFocus={() => setFocus('hsn_code')} onBlur={() => setFocus(null)} />
                     </div>
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Category</label>
-                      <input name="category" value={form.category} onChange={handleChange} placeholder="e.g. Food / Rice" style={inp('category')} onFocus={() => setFocus('category')} onBlur={() => setFocus(null)} />
+                      <input name="category" value={form.category} onChange={handleChange} placeholder="Category" style={inp('category')} onFocus={() => setFocus('category')} onBlur={() => setFocus(null)} />
                     </div>
 
                     <div>
@@ -519,7 +519,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         step="0.01"
                         value={form.buying_price}
                         onChange={handleChange}
-                        placeholder="e.g. 5500"
+                        placeholder="Buying Price"
                         style={inp('buying_price')}
                         onFocus={() => setFocus('buying_price')}
                         onBlur={() => setFocus(null)}
@@ -537,7 +537,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         step="0.1"
                         value={form.price_covers}
                         onChange={handleChange}
-                        placeholder="e.g. 100"
+                        placeholder="Price Covers Qty"
                         style={inp('price_covers')}
                         onFocus={() => setFocus('price_covers')}
                         onBlur={() => setFocus(null)}
@@ -564,7 +564,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                           setForm(prev => ({ ...prev, price_100: val, price: calculatedPrice }))
                           if (errors.price) setErrors(prev => ({ ...prev, price: '' }))
                         }}
-                        placeholder="e.g. 6150"
+                        placeholder="Selling Price"
                         style={inp('price_100')}
                         onFocus={() => setFocus('price_100')}
                         onBlur={() => setFocus(null)}
@@ -594,7 +594,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                           setForm(prev => ({ ...prev, bag_weight: bw, price: calculatedPrice }))
                           if (errors.bag_weight) setErrors(prev => ({ ...prev, bag_weight: '' }))
                         }}
-                        placeholder="e.g. 10, 25, 50, 100"
+                        placeholder="Pack Size / Weight"
                         style={inp('bag_weight')}
                         onFocus={() => setFocus('bag_weight')}
                         onBlur={() => setFocus(null)}
@@ -669,7 +669,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                             updated_price_date: todayStr
                           }))
                         }}
-                        placeholder={pc > 0 ? `e.g. price for ${pc}kg` : 'e.g. 3300'}
+                        placeholder={pc > 0 ? `Price for ${pc}kg` : '3300'}
                         style={inp('updated_price_100')}
                         onFocus={() => setFocus('updated_price_100')}
                         onBlur={() => setFocus(null)}
@@ -700,7 +700,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                             add_stock_qty: val
                           }))
                         }}
-                        placeholder="e.g. +10 to add to current stock"
+                        placeholder="Quantity to add to stock"
                         style={inp('add_stock_qty')}
                         onFocus={() => setFocus('add_stock_qty')}
                         onBlur={() => setFocus(null)}

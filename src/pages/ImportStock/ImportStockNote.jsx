@@ -333,7 +333,7 @@ export default function ImportStockNote() {
                               const finalValue = parts[0] + (parts.length > 1 ? '.' + parts[1] : '')
                               setPaidAmt(finalValue)
                             }}
-                            placeholder="e.g. 1,30,000"
+                            placeholder="Paid Amount"
                             style={{ width: '100%', boxSizing: 'border-box', height: 32, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: '0.8rem', color: '#1e293b' }}
                           />
                         </div>

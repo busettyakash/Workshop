@@ -536,27 +536,6 @@ export default function Dashboard() {
             {/* Chat header */}
             <header className="ws-chat-header">
               <div className="ws-chat-header-left" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <button 
-                  onClick={() => navigate('/dashboard')}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    padding: '4px 10px',
-                    borderRadius: 6,
-                    border: '1px solid #e2e8f0',
-                    background: '#f8fafc',
-                    color: '#475569',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                  title="Go to Home"
-                >
-                  <Home size={14} />
-                  <span>Home</span>
-                </button>
-                <span style={{ color: '#cbd5e1' }}>|</span>
                 <span className="ws-chat-header-title">{chatTitle}</span>
                 <button 
                   className={`ws-chat-star-btn ${favorited ? 'active' : ''}`}

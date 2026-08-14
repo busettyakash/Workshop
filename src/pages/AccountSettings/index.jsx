@@ -13,15 +13,13 @@ import '../Dashboard/Dashboard.css'
 function getSanitizedImageUrl(url) {
   if (!url || typeof url !== 'string') return ''
   const trimmed = url.trim()
-  if (
-    trimmed.startsWith('blob:') ||
-    trimmed.startsWith('data:image/') ||
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://')
-  ) {
-    return trimmed
+  const isSafeProtocol = /^(blob:|data:image\/(png|jpeg|jpg|gif|webp);base64,|https?:\/\/)/i.test(trimmed)
+  if (!isSafeProtocol) return ''
+  try {
+    return encodeURI(decodeURI(trimmed))
+  } catch {
+    return encodeURI(trimmed)
   }
-  return ''
 }
 
 export default function AccountSettings() {

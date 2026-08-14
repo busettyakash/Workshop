@@ -192,6 +192,11 @@ export default function Settings() {
   const handleAvatarChange = (e) => {
     const file = e.target.files?.[0]
     if (file) {
+      const allowedImageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
+      if (!allowedImageTypes.includes(file.type)) {
+        dispatch(addToast({ message: 'Invalid file type. Please upload a PNG, JPEG, GIF, or WEBP image.', type: 'error' }))
+        return
+      }
       const tempUrl = URL.createObjectURL(file)
       setAvatarUrl(tempUrl)
       localStorage.setItem('ws_avatar_url', tempUrl)

@@ -39,6 +39,11 @@ export default function AccountSettings() {
   const handleAvatarChange = (e) => {
     const file = e.target.files?.[0]
     if (file) {
+      const allowedImageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
+      if (!allowedImageTypes.includes(file.type)) {
+        dispatch(addToast({ message: 'Invalid file type. Please upload a PNG, JPEG, GIF, or WEBP image.', type: 'error' }))
+        return
+      }
       setAvatarUrl(URL.createObjectURL(file))
       dispatch(addToast({ message: 'Profile picture updated', type: 'success' }))
     }

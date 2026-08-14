@@ -10,6 +10,20 @@ import {
 } from 'lucide-react'
 import '../Dashboard/Dashboard.css'
 
+function getSanitizedImageUrl(url) {
+  if (!url || typeof url !== 'string') return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:image/') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://')
+  ) {
+    return trimmed
+  }
+  return ''
+}
+
 export default function AccountSettings() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
@@ -326,8 +340,8 @@ export default function AccountSettings() {
 
                 {/* Profile Picture Section */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 28 }}>
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="Profile" style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }} />
+                  {getSanitizedImageUrl(avatarUrl) ? (
+                    <img src={getSanitizedImageUrl(avatarUrl)} alt="Profile" style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }} />
                   ) : (
                     <div style={{
                       width: 64,

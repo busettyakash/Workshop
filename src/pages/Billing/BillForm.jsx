@@ -294,7 +294,7 @@ export default function BillForm() {
     try {
       const [resCust, resProd] = await Promise.all([
         api.get('/people?limit=100'),
-        api.get('/products?status=active&limit=500')
+        api.get('/products?status=active&limit=100')
       ])
       const custs = resCust.data?.data || []
       const prods = resProd.data?.data || []

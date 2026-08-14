@@ -1,289 +1,1072 @@
-import React, { useState, useEffect } from 'react'
-import Sidebar from '../../components/layout/Sidebar'
-import Topbar from '../../components/layout/Topbar'
+import React, { useState, useEffect, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
-import { selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
+import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
+import { updateUser } from '../../redux/slices/authSlice'
 import { useAuth } from '../../hooks/useAuth'
 import { 
-  Settings as SettingsIcon, User, Lock, Layers, Receipt, Plus, Edit2, Trash2, Check, Save, ShieldCheck, Scale, Eye, EyeOff 
+  ChevronLeft, ArrowLeft, Search, User, Palette, Bell, Lock, Building2, LayoutGrid, Scale, Users, DollarSign, Info, Camera, HelpCircle, Save, Plus, Trash2, Copy, Download, Calendar, X
 } from 'lucide-react'
-import { ALL_UOM_OPTIONS, getBulkUnitDetails } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 
 export default function Settings() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const dispatch = useAppDispatch()
-  const sidebarOpen = useAppSelector(selectSidebarOpen)
   const { user, shopName } = useAuth()
 
-  const [activeTab, setActiveTab] = useState('uom') // 'profile' | 'password' | 'uom' | 'billing'
-  const [showPassword, setShowPassword] = useState(false)
+  const VALID_SECTIONS = ['profile', 'general', 'uom', 'members', 'billing']
 
-  // Profile Form
-  const [profile, setProfile] = useState({
-    shopName: shopName || 'My Business',
-    userName: user?.name || user?.email?.split('@')[0] || 'Admin User',
-    email: user?.email || 'admin@business.com',
-    phone: '+91 9876543210',
-    gstin: '36ABCDE1234F1Z5',
-    address: '123 Industrial Area, Tech Park, Hyderabad, Telangana'
+  // Determine initial active section based on URL or pathname or localStorage
+  const [activeSection, setActiveSection] = useState(() => {
+    if (location.pathname === '/workspace-settings') return 'general'
+    if (location.pathname === '/account-settings') return 'profile'
+    const searchParams = new URLSearchParams(location.search)
+    const tab = searchParams.get('tab')
+    if (tab && VALID_SECTIONS.includes(tab)) return tab
+    const saved = localStorage.getItem('ws_active_settings_tab')
+    if (saved && VALID_SECTIONS.includes(saved)) return saved
+    return 'profile'
   })
 
-  // Password Form
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  })
-  const [passwordUpdating, setPasswordUpdating] = useState(false)
+  useEffect(() => {
+    dispatch(setActiveNav('Settings'))
+  }, [dispatch])
 
-  // UOM Management via Backend API
+  useEffect(() => {
+    if (location.pathname === '/workspace-settings') {
+      setActiveSection('general')
+    } else if (location.pathname === '/account-settings') {
+      setActiveSection('profile')
+    } else {
+      const searchParams = new URLSearchParams(location.search)
+      const tab = searchParams.get('tab')
+      if (tab && VALID_SECTIONS.includes(tab)) {
+        setActiveSection(tab)
+      } else if (!VALID_SECTIONS.includes(activeSection)) {
+        setActiveSection('profile')
+      }
+    }
+  }, [location.pathname, location.search])
+
+  const selectSection = (key) => {
+    const validKey = VALID_SECTIONS.includes(key) ? key : 'profile'
+    setActiveSection(validKey)
+    localStorage.setItem('ws_active_settings_tab', validKey)
+    if (validKey === 'general') {
+      navigate('/workspace-settings', { replace: true })
+    } else if (validKey === 'profile') {
+      navigate('/account-settings', { replace: true })
+    } else {
+      navigate(`/settings?tab=${validKey}`, { replace: true })
+    }
+  }
+
+  const profileInputRef = useRef(null)
+  const logoInputRef = useRef(null)
+
+  // Profile Form state
+  const [firstName, setFirstName] = useState(() => {
+    const saved = localStorage.getItem('ws_profile_settings')
+    if (saved) {
+      try { return JSON.parse(saved).firstName || '' } catch { }
+    }
+    return user?.firstName || user?.name?.split(' ')[0] || ''
+  })
+  const [lastName, setLastName] = useState(() => {
+    const saved = localStorage.getItem('ws_profile_settings')
+    if (saved) {
+      try { return JSON.parse(saved).lastName || '' } catch { }
+    }
+    return user?.lastName || user?.name?.split(' ').slice(1).join(' ') || ''
+  })
+  const [email, setEmail] = useState(() => {
+    const saved = localStorage.getItem('ws_profile_settings')
+    if (saved) {
+      try { return JSON.parse(saved).email || '' } catch { }
+    }
+    return user?.email || ''
+  })
+  const [timezone, setTimezone] = useState('Asia/Kolkata')
+  const [startWeekOn, setStartWeekOn] = useState('Monday')
+  const [avatarUrl, setAvatarUrl] = useState(() => {
+    return localStorage.getItem('ws_avatar_url') || ''
+  })
+
+  // Workspace Form state
+  const [workspaceForm, setWorkspaceForm] = useState(() => {
+    const saved = localStorage.getItem('ws_workspace_settings')
+    if (saved) {
+      try { return JSON.parse(saved) } catch { }
+    }
+    return {
+      shopName: shopName || user?.shopName || '',
+      phone: '',
+      gstin: '',
+      address: ''
+    }
+  })
+
+  // Billing Preferences state
+  const [billingForm, setBillingForm] = useState(() => {
+    const saved = localStorage.getItem('ws_billing_preferences')
+    if (saved) {
+      try { return JSON.parse(saved) } catch { }
+    }
+    return {
+      currencySymbol: '₹ (INR)',
+      defaultGstRate: '18',
+      invoicePrefix: 'INV-',
+      paymentTerms: 'Due on Receipt',
+      footerNote: 'Thank you for your business! Terms & Conditions apply.'
+    }
+  })
+
+  const handleSaveBillingPreferences = (e) => {
+    e.preventDefault()
+    localStorage.setItem('ws_billing_preferences', JSON.stringify(billingForm))
+    dispatch(addToast({ message: 'Billing preferences saved successfully!', type: 'success' }))
+  }
+
+  // Password state
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+
+  // Settings Search state
+  const [settingsSearch, setSettingsSearch] = useState('')
+
+  const personalMenuItems = [
+    { key: 'profile', label: 'Profile', icon: User }
+  ]
+
+  const workspaceMenuItems = [
+    { key: 'general', label: 'General', icon: LayoutGrid },
+    { key: 'uom', label: 'Unit of Measure (UOM)', icon: Scale },
+    { key: 'members', label: 'Members & Teams', icon: Users },
+    { key: 'billing', label: 'Billing', icon: DollarSign }
+  ]
+
+  const filteredPersonal = personalMenuItems.filter(item =>
+    item.label.toLowerCase().includes(settingsSearch.toLowerCase().trim())
+  )
+
+  const filteredWorkspace = workspaceMenuItems.filter(item =>
+    item.label.toLowerCase().includes(settingsSearch.toLowerCase().trim())
+  )
+
+  // UOM state
   const [uomList, setUomList] = useState([])
-  const [uomLoading, setUomLoading] = useState(false)
 
   const fetchUoms = async () => {
-    setUomLoading(true)
     try {
       const res = await api.get('/uoms')
       setUomList(res.data || [])
-    } catch {
-      // fallback
-    } finally {
-      setUomLoading(false)
-    }
+    } catch { }
   }
 
   useEffect(() => {
     fetchUoms()
-  }, [])
+    api.get('/auth/profile')
+      .then(res => {
+        if (res.data) {
+          const fName = res.data.firstName || res.data.first_name || ''
+          const lName = res.data.lastName || res.data.last_name || ''
+          if (fName) setFirstName(fName)
+          if (lName) setLastName(lName)
+          if (res.data.email) setEmail(res.data.email)
+          dispatch(updateUser({ firstName: fName, lastName: lName, email: res.data.email }))
+          setWorkspaceForm(prev => ({
+            ...prev,
+            shopName: res.data.shopName || prev.shopName || '',
+            phone: res.data.phone || prev.phone || '',
+            gstin: res.data.gstin || prev.gstin || '',
+            address: res.data.address || prev.address || ''
+          }))
+        }
+      })
+      .catch(() => {})
+  }, [dispatch])
 
-  const [uomModalOpen, setUomModalOpen] = useState(false)
-  const [editingUom, setEditingUom] = useState(null)
-  const [uomForm, setUomForm] = useState({ code: '', name: '', category: 'Count', presets: '', status: 'Active' })
+  const handleAvatarChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const tempUrl = URL.createObjectURL(file)
+      setAvatarUrl(tempUrl)
+      localStorage.setItem('ws_avatar_url', tempUrl)
 
-  // Billing Preferences
-  const [billingPref, setBillingPref] = useState({
-    currency: '₹ (INR)',
-    taxRate: '18',
-    invoicePrefix: 'INV-',
-    paymentTerms: 'Due on Receipt',
-    footerNote: 'Thank you for your business! Terms & Conditions apply.'
-  })
-
-  // Profile submit
-  const handleSaveProfile = (e) => {
-    e.preventDefault()
-    dispatch(addToast({ message: 'Profile updated successfully!', type: 'success' }))
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        if (reader.result) {
+          setAvatarUrl(reader.result)
+          localStorage.setItem('ws_avatar_url', reader.result)
+        }
+      }
+      reader.readAsDataURL(file)
+      dispatch(addToast({ message: 'Workspace logo updated successfully!', type: 'success' }))
+    }
   }
 
-  // Password submit
-  const handleUpdatePassword = async (e) => {
+  const handleWorkspaceNameChange = (val) => {
+    const updatedForm = { ...workspaceForm, shopName: val }
+    setWorkspaceForm(updatedForm)
+
+    // Auto-save locally & update sidebar header live!
+    localStorage.setItem('ws_workspace_settings', JSON.stringify(updatedForm))
+    sessionStorage.setItem('ws_active_workspace_name', val)
+    localStorage.setItem('ws_workspace_name', val)
+    dispatch(updateUser({ shopName: val }))
+    window.dispatchEvent(new Event('workspace_updated'))
+
+    // Debounced API call to backend
+    if (window.wsNameDebounce) clearTimeout(window.wsNameDebounce)
+    window.wsNameDebounce = setTimeout(() => {
+      api.put('/auth/workspace', updatedForm).catch(() => {})
+    }, 400)
+  }
+
+  const handleDeleteWorkspace = async () => {
+    const wsName = workspaceForm.shopName || 'this workspace'
+    if (window.confirm(`Are you sure you want to delete "${wsName}"? All data will be permanently removed.`)) {
+      try {
+        localStorage.removeItem('ws_workspace_settings')
+        sessionStorage.removeItem('ws_active_workspace_name')
+        sessionStorage.removeItem('ws_active_workspace_id')
+        dispatch(addToast({ message: 'Workspace deleted successfully.', type: 'info' }))
+        navigate('/dashboard')
+      } catch {
+        dispatch(addToast({ message: 'Failed to delete workspace.', type: 'error' }))
+      }
+    }
+  }
+
+  const handleSaveProfile = async (e) => {
     e.preventDefault()
-    if (!passwordForm.currentPassword) {
+    if (newPassword || currentPassword) {
+      if (!currentPassword) {
+        dispatch(addToast({ message: 'Please enter current password', type: 'error' }))
+        return
+      }
+      if (newPassword.length < 6) {
+        dispatch(addToast({ message: 'New password must be at least 6 characters', type: 'error' }))
+        return
+      }
+      if (newPassword !== confirmPassword) {
+        dispatch(addToast({ message: 'Passwords do not match', type: 'error' }))
+        return
+      }
+
+      try {
+        await api.post('/auth/update-password', { currentPassword, newPassword })
+        dispatch(addToast({ message: 'Password updated successfully!', type: 'success' }))
+      } catch (err) {
+        dispatch(addToast({ message: err.response?.data?.message || 'Failed to update password', type: 'error' }))
+        return
+      }
+
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    }
+
+    const updated = { firstName, lastName, email }
+    localStorage.setItem('ws_profile_settings', JSON.stringify(updated))
+    dispatch(updateUser({ firstName, lastName, email }))
+
+    try {
+      await api.put('/auth/profile', updated)
+    } catch {}
+
+    dispatch(addToast({ message: 'Profile details saved successfully!', type: 'success' }))
+  }
+
+  const handleSaveWorkspace = async (e) => {
+    e.preventDefault()
+    localStorage.setItem('ws_workspace_settings', JSON.stringify(workspaceForm))
+    sessionStorage.setItem('ws_active_workspace_name', workspaceForm.shopName)
+    localStorage.setItem('ws_workspace_name', workspaceForm.shopName)
+    dispatch(updateUser({ shopName: workspaceForm.shopName }))
+    window.dispatchEvent(new Event('workspace_updated'))
+
+    try {
+      await api.put('/auth/workspace', workspaceForm)
+    } catch {}
+
+    dispatch(addToast({ message: 'Workspace details saved successfully!', type: 'success' }))
+  }
+
+  const handleSavePassword = (e) => {
+    e.preventDefault()
+    if (!currentPassword) {
       dispatch(addToast({ message: 'Please enter current password', type: 'error' }))
       return
     }
-    if (passwordForm.newPassword.length < 6) {
+    if (newPassword.length < 6) {
       dispatch(addToast({ message: 'New password must be at least 6 characters', type: 'error' }))
       return
     }
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      dispatch(addToast({ message: 'New passwords do not match', type: 'error' }))
+    if (newPassword !== confirmPassword) {
+      dispatch(addToast({ message: 'Passwords do not match', type: 'error' }))
       return
     }
-
-    setPasswordUpdating(true)
-    try {
-      const res = await api.post('/auth/update-password', {
-        currentPassword: passwordForm.currentPassword,
-        newPassword: passwordForm.newPassword
-      })
-      dispatch(addToast({ message: res.data?.message || 'Password updated successfully!', type: 'success' }))
-      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
-    } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to update password. Check your current password.'
-      dispatch(addToast({ message: msg, type: 'error' }))
-    } finally {
-      setPasswordUpdating(false)
-    }
+    dispatch(addToast({ message: 'Password updated successfully!', type: 'success' }))
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
   }
 
-  // UOM Save to Backend DB
-  const handleSaveUom = async (e) => {
-    e.preventDefault()
-    if (!uomForm.code.trim() || !uomForm.name.trim()) {
-      dispatch(addToast({ message: 'Please enter Code and Name', type: 'error' }))
-      return
-    }
-
-    try {
-      if (editingUom) {
-        await api.put(`/uoms/${editingUom.id}`, uomForm)
-        dispatch(addToast({ message: `UOM ${uomForm.code.toUpperCase()} updated`, type: 'success' }))
-      } else {
-        await api.post('/uoms', uomForm)
-        dispatch(addToast({ message: `UOM ${uomForm.code.toUpperCase()} created`, type: 'success' }))
-      }
-      fetchUoms()
-      setUomModalOpen(false)
-      setEditingUom(null)
-      setUomForm({ code: '', name: '', category: 'Count', presets: '', status: 'Active' })
-    } catch (err) {
-      dispatch(addToast({ message: err?.response?.data?.error || 'Failed to save UOM', type: 'error' }))
-    }
-  }
-
-  // UOM Delete from Backend DB
   const handleDeleteUom = async (id) => {
     try {
       await api.delete(`/uoms/${id}`)
       dispatch(addToast({ message: 'UOM deleted', type: 'info' }))
       fetchUoms()
-    } catch (err) {
-      dispatch(addToast({ message: 'Failed to delete UOM', type: 'error' }))
-    }
+    } catch { }
   }
 
-  // Edit UOM click
-  const handleEditUomClick = (item) => {
-    setEditingUom(item)
-    setUomForm({ code: item.code, name: item.name, category: item.category, presets: item.presets || '', status: item.status || 'Active' })
-    setUomModalOpen(true)
-  }
 
-  // Save Billing Pref
-  const handleSaveBillingPref = (e) => {
-    e.preventDefault()
-    dispatch(addToast({ message: 'Billing preferences saved!', type: 'success' }))
-  }
 
   return (
-    <div className="ws-dash-layout">
-      <Sidebar />
-      <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
-        <Topbar />
-        <main className="ws-dash-body">
-          <div className="attio-products-container">
-            <div className="ws-unified-page-header">
-              <div className="ws-unified-header-left">
-                <span className="ws-unified-header-title">Settings & Preferences</span>
-              </div>
-            </div>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      width: '100vw',
+      height: '100vh',
+      overflow: 'hidden',
+      background: '#ffffff',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    }}>
+      
+      {/* Settings Top Header Bar (Matching Image 3) */}
+      <div style={{
+        height: 44,
+        borderBottom: '1px solid #e2e8f0',
+        background: '#ffffff',
+        display: 'flex',
+        alignItems: 'center',
+        flexShrink: 0
+      }}>
+        {/* Left header zone (aligned with left Settings sidebar) */}
+        <div style={{
+          width: 235,
+          height: '100%',
+          borderRight: '1px solid #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '0 12px',
+          boxSizing: 'border-box',
+          flexShrink: 0
+        }}>
+          <button
+            onClick={() => navigate('/dashboard')}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              color: '#0f172a',
+              padding: 0,
+              fontFamily: 'inherit'
+            }}
+          >
+            <ChevronLeft size={16} style={{ color: '#64748b' }} />
+            <span style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>Settings</span>
+          </button>
+        </div>
 
-          {/* Settings Nav Boxes */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
-            {[
-              { id: 'uom', label: 'Unit of Measure', icon: <Scale size={18} />, desc: 'Manage your product units' },
-              { id: 'profile', label: 'Business Profile', icon: <User size={18} />, desc: 'Update business details' },
-              { id: 'password', label: 'Security', icon: <Lock size={18} />, desc: 'Change your password' },
-              { id: 'billing', label: 'Billing Preferences', icon: <Receipt size={18} />, desc: 'Configure invoices' },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className="attio-table-card"
+        {/* Right header zone (aligned with content area - NO profile icon matching Image 3!) */}
+        <div style={{
+          flex: 1,
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 24px',
+          boxSizing: 'border-box'
+        }}>
+          <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0f172a' }}>
+            {activeSection === 'profile' ? 'Profile' : 
+             activeSection === 'general' ? 'General' :
+             activeSection === 'uom' ? 'Unit of Measure (UOM)' :
+             activeSection === 'members' ? 'Members & Teams' :
+             activeSection === 'billing' ? 'Billing' : 'Settings'}
+          </span>
+
+          <button
+            onClick={() => dispatch(addToast({ message: 'Help center opened', type: 'info' }))}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: '#64748b', fontSize: '0.78rem', fontFamily: 'inherit' }}
+          >
+            <HelpCircle size={15} />
+            <span>Help</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Settings Inner Body */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', background: '#ffffff' }}>
+        
+        {/* Unified Left Settings Sidebar containing ALL Personal & Workspace Sections */}
+        <div style={{
+          width: 235,
+          borderRight: '1px solid #e2e8f0',
+          background: '#ffffff',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '10px 8px',
+          overflowY: 'auto',
+          flexShrink: 0,
+          fontFamily: 'inherit'
+        }}>
+          {/* Search Box */}
+          <div style={{ padding: '2px 0 8px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              height: 27,
+              padding: '0 8px',
+              borderRadius: 7,
+              border: '1px solid #e2e8f0',
+              background: '#ffffff'
+            }}>
+              <Search size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+              <input
+                type="text"
+                placeholder="Search settings..."
+                value={settingsSearch}
+                onChange={e => setSettingsSearch(e.target.value)}
                 style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: 8,
-                  padding: '16px',
-                  background: activeTab === tab.id ? '#eff6ff' : '#ffffff',
-                  border: activeTab === tab.id ? '1px solid #3d68f5' : '1px solid #e2e8f0',
-                  boxShadow: activeTab === tab.id ? '0 2px 4px rgba(61, 104, 245, 0.1)' : '0 1px 2px rgba(0, 0, 0, 0.05)',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'all 0.15s'
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  width: '100%',
+                  fontSize: '0.77rem',
+                  color: '#0f172a',
+                  fontFamily: 'inherit'
                 }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: activeTab === tab.id ? '#3d68f5' : '#4b5563', fontWeight: 600, fontSize: '0.875rem' }}>
-                  {tab.icon}
-                  {tab.label}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                  {tab.desc}
-                </div>
-              </button>
-            ))}
+              />
+              {settingsSearch && (
+                <button
+                  type="button"
+                  onClick={() => setSettingsSearch('')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex' }}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* TAB 1: UOM MANAGEMENT */}
-          {activeTab === 'uom' && (
-            <div className="attio-table-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <div className="ws-table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
-                <div>
-                  <h2 className="ws-table-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '1rem', fontWeight: 600 }}>
-                    Unit of Measure (UOM)
-                    <span className="ws-badge-count">{uomList.length} units</span>
+          {/* Section: Personal */}
+          {filteredPersonal.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{
+                fontSize: '0.68rem',
+                fontWeight: 600,
+                color: '#94a3b8',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                padding: '8px 8px 4px'
+              }}>
+                Personal
+              </div>
+
+              {filteredPersonal.map(item => {
+                const IconComponent = item.icon
+                const isActive = activeSection === item.key
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => selectSection(item.key)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '5px 8px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: isActive ? '#f1f5f9' : 'transparent',
+                      color: isActive ? '#0f172a' : '#344054',
+                      fontWeight: isActive ? 600 : 500,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontFamily: 'inherit',
+                      marginBottom: 1
+                    }}
+                  >
+                    <IconComponent size={14} style={{ color: isActive ? '#0f172a' : '#64748b' }} />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Section: WORKSPACE */}
+          {filteredWorkspace.length > 0 && (
+            <div>
+              <div style={{
+                fontSize: '0.68rem',
+                fontWeight: 600,
+                color: '#94a3b8',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                padding: '8px 8px 4px'
+              }}>
+                WORKSPACE
+              </div>
+
+              {filteredWorkspace.map(item => {
+                const IconComponent = item.icon
+                const isActive = activeSection === item.key
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => selectSection(item.key)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '5px 8px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: isActive ? '#f1f5f9' : 'transparent',
+                      color: isActive ? '#0f172a' : '#344054',
+                      fontWeight: isActive ? 600 : 500,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontFamily: 'inherit',
+                      marginBottom: 1
+                    }}
+                  >
+                    <IconComponent size={14} style={{ color: isActive ? '#0f172a' : '#64748b' }} />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {filteredPersonal.length === 0 && filteredWorkspace.length === 0 && (
+            <div style={{ padding: '16px 8px', textAlign: 'center', fontSize: '0.78rem', color: '#94a3b8' }}>
+              No settings found
+            </div>
+          )}
+        </div>
+
+        {/* Main Content Area */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          padding: '36px 24px 20px',
+          overflowY: 'auto',
+          background: '#ffffff'
+        }}>
+
+          
+          {/* PROFILE SECTION */}
+          {(activeSection === 'profile' || !VALID_SECTIONS.includes(activeSection)) && (
+            <div style={{ width: '100%', maxWidth: 640 }}>
+              
+              {/* Header Title & Subtitle */}
+              <div style={{ marginBottom: 12 }}>
+                <h1 style={{ fontSize: '1.45rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.02em' }}>
+                  Profile
+                </h1>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Manage your personal details. 
+                  <a href="#" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 500 }} onClick={e => e.preventDefault()}>
+                    Learn more ↗
+                  </a>
+                </p>
+              </div>
+
+              {/* Info Alert Box */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #f1f5f9',
+                borderRadius: 10,
+                padding: '9px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: 16,
+                color: '#475569',
+                fontSize: '0.79rem'
+              }}>
+                <Info size={15} style={{ color: '#64748b', flexShrink: 0 }} />
+                <span>Changes to your profile will apply to all of your workspaces.</span>
+              </div>
+
+              {/* Profile Picture Section */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Profile" style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: '50%',
+                    background: '#10b981',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.4rem',
+                    fontWeight: 700,
+                    flexShrink: 0
+                  }}>
+                    {(firstName || 'A')[0].toUpperCase()}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0f172a' }}>Profile Picture</span>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>We only support PNGs, JPEGs and GIFs under 10MB</span>
+                  <div style={{ marginTop: 2 }}>
+                    <button
+                      type="button"
+                      onClick={() => profileInputRef.current?.click()}
+                      style={{
+                        background: '#2563eb',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 7,
+                        padding: '4px 12px',
+                        fontSize: '0.76rem',
+                        fontWeight: 500,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit'
+                      }}
+                    >
+                      <Camera size={13} />
+                      Upload Image
+                    </button>
+                    <input ref={profileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Fields: First Name & Last Name */}
+              <form onSubmit={handleSaveProfile}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>First Name</label>
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={e => setFirstName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 7,
+                        fontSize: '0.84rem',
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>Last Name</label>
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={e => setLastName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 7,
+                        fontSize: '0.84rem',
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Primary email address */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>Primary email address</label>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    height: 36,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 7,
+                    padding: '0 6px 0 12px',
+                    background: '#ffffff',
+                    boxSizing: 'border-box'
+                  }}>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      style={{
+                        flex: 1,
+                        border: 'none',
+                        outline: 'none',
+                        background: 'transparent',
+                        fontSize: '0.84rem',
+                        color: '#0f172a'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => dispatch(addToast({ message: 'Email edit requested', type: 'info' }))}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 5,
+                        padding: '3px 10px',
+                        fontSize: '0.74rem',
+                        fontWeight: 500,
+                        color: '#334155',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </div>
+
+                {/* Password Reset Section (Replacing Time Preferences) */}
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f1f5f9' }}>
+                  <h2 style={{ fontSize: '0.96rem', fontWeight: 600, color: '#0f172a', margin: '0 0 2px' }}>
+                    Password Reset
                   </h2>
-                  <p className="ws-table-sub" style={{ marginTop: 4, fontSize: '0.8rem', color: '#64748b' }}>Configure units and container capacity presets.</p>
+                  <p style={{ fontSize: '0.76rem', color: '#64748b', margin: '0 0 12px' }}>
+                    Update your account password
+                  </p>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>Current Password</label>
+                      <input
+                        type="password"
+                        value={currentPassword}
+                        onChange={e => setCurrentPassword(e.target.value)}
+                        style={{
+                          width: '100%',
+                          height: 36,
+                          padding: '0 12px',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 7,
+                          fontSize: '0.84rem',
+                          color: '#0f172a',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>New Password</label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={e => setNewPassword(e.target.value)}
+                        style={{
+                          width: '100%',
+                          height: 36,
+                          padding: '0 12px',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 7,
+                          fontSize: '0.84rem',
+                          color: '#0f172a',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>Confirm Password</label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={e => setConfirmPassword(e.target.value)}
+                        style={{
+                          width: '100%',
+                          height: 36,
+                          padding: '0 12px',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 7,
+                          fontSize: '0.84rem',
+                          color: '#0f172a',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Save button */}
+                <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="submit"
+                    style={{
+                      background: '#2563eb',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 7,
+                      padding: '7px 18px',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit'
+                    }}
+                  >
+                    Save Profile
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* GENERAL WORKSPACE SECTION */}
+          {activeSection === 'general' && (
+            <div style={{ width: '100%', maxWidth: 720 }}>
+              
+              {/* Header Title & Subtitle */}
+              <div style={{ marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid #f1f5f9' }}>
+                <h1 style={{ fontSize: '1.45rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.02em' }}>
+                  General
+                </h1>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Change the settings for your current workspace. 
+                  <a href="#" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 500 }} onClick={e => e.preventDefault()}>
+                    Learn more ↗
+                  </a>
+                </p>
+              </div>
+
+              {/* Workspace Logo Section */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Workspace Logo" style={{ width: 52, height: 52, borderRadius: 12, objectFit: 'cover' }} />
+                ) : (
+                  <div style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 12,
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.4rem',
+                    fontWeight: 700,
+                    flexShrink: 0
+                  }}>
+                    {(workspaceForm.shopName || 'W')[0].toUpperCase()}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0f172a' }}>Workspace logo</span>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>We only support PNGs, JPEGs and GIFs under 10MB</span>
+                  <div style={{ marginTop: 2 }}>
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      style={{
+                        background: '#2563eb',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 7,
+                        padding: '5px 14px',
+                        fontSize: '0.76rem',
+                        fontWeight: 500,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit'
+                      }}
+                    >
+                      <Camera size={13} />
+                      Upload logo
+                    </button>
+                    <input ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Fields: Name & Slug */}
+              <form onSubmit={e => e.preventDefault()}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={workspaceForm.shopName}
+                      onChange={e => handleWorkspaceNameChange(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 38,
+                        padding: '0 12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 7,
+                        fontSize: '0.84rem',
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>Slug</label>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      height: 38,
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 7,
+                      padding: '0 10px',
+                      background: '#f8fafc',
+                      boxSizing: 'border-box'
+                    }}>
+                      <span style={{ flex: 1, fontSize: '0.84rem', color: '#0f172a', fontWeight: 500 }}>
+                        {(workspaceForm.shopName || 'workspace').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const slug = (workspaceForm.shopName || 'workspace').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+                          navigator.clipboard.writeText(slug)
+                          dispatch(addToast({ message: 'Slug copied to clipboard!', type: 'success' }))
+                        }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2 }}
+                        title="Copy slug"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Danger Zone Section */}
+                <div>
+                  <h2 style={{ fontSize: '0.96rem', fontWeight: 600, color: '#0f172a', margin: '0 0 10px' }}>
+                    Danger zone
+                  </h2>
+
+                  <div style={{
+                    border: '1px solid #fee2e2',
+                    borderRadius: 10,
+                    padding: '14px 18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: '#ffffff'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>
+                        Delete workspace
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                        Once deleted, your workspace cannot be recovered
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleDeleteWorkspace}
+                      style={{
+                        background: '#ef4444',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 7,
+                        padding: '7px 16px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit'
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      Delete workspace
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* UOM SECTION */}
+          {activeSection === 'uom' && (
+            <div style={{ width: '100%', maxWidth: 720 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Unit of Measure (UOM)</h1>
+                  <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '2px 0 0' }}>Configure units and container capacity presets.</p>
                 </div>
                 <button
-                  className="attio-btn attio-btn-primary"
-                  onClick={() => {
-                    setEditingUom(null)
-                    setUomForm({ code: '', name: '', category: 'Count', presets: '', status: 'Active' })
-                    setUomModalOpen(true)
+                  onClick={() => dispatch(addToast({ message: 'Create UOM modal', type: 'info' }))}
+                  style={{
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 7,
+                    padding: '6px 14px',
+                    fontSize: '0.78rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5
                   }}
                 >
-                  <Plus size={15} style={{ marginRight: 6 }} />
-                  Add New UOM
+                  <Plus size={14} />
+                  Add UOM
                 </button>
               </div>
 
-              <div className="attio-table-wrap">
-                <table className="attio-table">
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
                   <thead>
-                    <tr>
-                      <th>CODE</th>
-                      <th>UNIT NAME</th>
-                      <th>CATEGORY</th>
-                      <th>CONTAINER PRESETS</th>
-                      <th>STATUS</th>
-                      <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                      <th style={{ padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>CODE</th>
+                      <th style={{ padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>UNIT NAME</th>
+                      <th style={{ padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>CATEGORY</th>
+                      <th style={{ padding: '8px 12px', color: '#64748b', fontWeight: 600, textAlign: 'right' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {uomList.map(item => (
-                      <tr key={item.id}>
-                        <td style={{ fontWeight: 600, color: '#111827' }}>
-                          <span style={{ background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', fontSize: '0.8rem', fontFamily: 'monospace' }}>
-                            {item.code}
-                          </span>
-                        </td>
-                        <td style={{ fontWeight: 600, color: '#0f172a' }}>{item.name}</td>
-                        <td>
-                          <span className="ws-pill-topic" style={{ background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' }}>
-                            {item.category}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: '0.8125rem', color: '#4b5563' }}>
-                          {item.presets || '—'}
-                        </td>
-                        <td>
-                          <span className="ws-pill-topic" style={{ background: '#f0fdf4', color: '#15803d', borderColor: '#bbf7d0' }}>
-                            {item.status || 'Active'}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                            <button
-                              className="ws-chat-history-delete-btn"
-                              style={{ padding: 6 }}
-                              onClick={() => handleEditUomClick(item)}
-                              title="Edit UOM"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              className="ws-chat-history-delete-btn"
-                              style={{ padding: 6, color: '#ef4444' }}
-                              onClick={() => handleDeleteUom(item.id)}
-                              title="Delete UOM"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+                      <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 600, color: '#0f172a' }}>{item.code}</td>
+                        <td style={{ padding: '8px 12px', color: '#334155' }}>{item.name}</td>
+                        <td style={{ padding: '8px 12px', color: '#64748b' }}>{item.category}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                          <button onClick={() => handleDeleteUom(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 3 }}>
+                            <Trash2 size={14} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -293,226 +1076,153 @@ export default function Settings() {
             </div>
           )}
 
-          {/* TAB 2: PROFILE */}
-          {activeTab === 'profile' && (
-            <div className="attio-table-card" style={{ maxWidth: 640, padding: 24 }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 600 }}>Business Profile</h3>
-              <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Business / Shop Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={profile.shopName}
-                    onChange={e => setProfile({ ...profile, shopName: e.target.value })}
-                    style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                  />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* BILLING SECTION */}
+          {activeSection === 'billing' && (
+            <div style={{ width: '100%', maxWidth: 720 }}>
+              <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #f1f5f9' }}>
+                <h1 style={{ fontSize: '1.45rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.02em' }}>
+                  Billing
+                </h1>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>
+                  Manage currency, tax defaults, and invoice preferences for your workspace.
+                </p>
+              </div>
+
+              <form onSubmit={handleSaveBillingPreferences}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>User Name</label>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>
+                      Currency Symbol
+                    </label>
                     <input
                       type="text"
-                      value={profile.userName}
-                      onChange={e => setProfile({ ...profile, userName: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
+                      value={billingForm.currencySymbol}
+                      onChange={e => setBillingForm({ ...billingForm, currencySymbol: e.target.value })}
+                      style={{
+                        width: '100%',
+                        height: 38,
+                        padding: '0 12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 7,
+                        fontSize: '0.84rem',
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
                     />
                   </div>
+
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Email Address</label>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>
+                      Default GST Rate (%)
+                    </label>
                     <input
-                      type="email"
-                      required
-                      value={profile.email}
-                      onChange={e => setProfile({ ...profile, email: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
+                      type="text"
+                      value={billingForm.defaultGstRate}
+                      onChange={e => setBillingForm({ ...billingForm, defaultGstRate: e.target.value })}
+                      style={{
+                        width: '100%',
+                        height: 38,
+                        padding: '0 12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 7,
+                        fontSize: '0.84rem',
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>
+                      Invoice Number Prefix
+                    </label>
+                    <input
+                      type="text"
+                      value={billingForm.invoicePrefix}
+                      onChange={e => setBillingForm({ ...billingForm, invoicePrefix: e.target.value })}
+                      style={{
+                        width: '100%',
+                        height: 38,
+                        padding: '0 12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 7,
+                        fontSize: '0.84rem',
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>
+                      Default Payment Terms
+                    </label>
+                    <input
+                      type="text"
+                      value={billingForm.paymentTerms}
+                      onChange={e => setBillingForm({ ...billingForm, paymentTerms: e.target.value })}
+                      style={{
+                        width: '100%',
+                        height: 38,
+                        padding: '0 12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 7,
+                        fontSize: '0.84rem',
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
                     />
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Phone Number</label>
-                    <input
-                      type="text"
-                      value={profile.phone}
-                      onChange={e => setProfile({ ...profile, phone: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>GSTIN Number</label>
-                    <input
-                      type="text"
-                      value={profile.gstin}
-                      onChange={e => setProfile({ ...profile, gstin: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Business Address</label>
+
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>
+                    Invoice Terms & Conditions Footer Note
+                  </label>
                   <textarea
                     rows={3}
-                    value={profile.address}
-                    onChange={e => setProfile({ ...profile, address: e.target.value })}
-                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem', resize: 'vertical' }}
+                    value={billingForm.footerNote}
+                    onChange={e => setBillingForm({ ...billingForm, footerNote: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 7,
+                      fontSize: '0.84rem',
+                      color: '#0f172a',
+                      outline: 'none',
+                      background: '#ffffff',
+                      boxSizing: 'border-box',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                      lineHeight: 1.5
+                    }}
                   />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <button
-                    type="submit"
-                    className="ws-table-btn ws-table-btn--primary"
-                    style={{ padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <Save size={15} />
-                    Save Profile
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
 
-          {/* TAB 3: PASSWORD */}
-          {activeTab === 'password' && (
-            <div className="attio-table-card" style={{ maxWidth: 480, padding: 24 }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 600 }}>Security & Update Password</h3>
-              <form onSubmit={handleUpdatePassword} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Current Password *</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={passwordForm.currentPassword}
-                      onChange={e => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 36px 0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 2 }}
-                      title={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>New Password *</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={passwordForm.newPassword}
-                      onChange={e => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 36px 0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 2 }}
-                      title={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Confirm New Password *</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={passwordForm.confirmPassword}
-                      onChange={e => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 36px 0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 2 }}
-                      title={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button
                     type="submit"
-                    disabled={passwordUpdating}
-                    className="ws-table-btn ws-table-btn--primary"
-                    style={{ padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 6 }}
+                    style={{
+                      background: '#2563eb',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 7,
+                      padding: '7px 18px',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit'
+                    }}
                   >
-                    <ShieldCheck size={15} />
-                    {passwordUpdating ? 'Updating...' : 'Update Password'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* TAB 4: BILLING PREFERENCES */}
-          {activeTab === 'billing' && (
-            <div className="attio-table-card" style={{ maxWidth: 640, padding: 24 }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 600 }}>Billing Preferences</h3>
-              <form onSubmit={handleSaveBillingPref} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Currency Symbol</label>
-                    <input
-                      type="text"
-                      value={billingPref.currency}
-                      onChange={e => setBillingPref({ ...billingPref, currency: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Default GST Rate (%)</label>
-                    <input
-                      type="number"
-                      value={billingPref.taxRate}
-                      onChange={e => setBillingPref({ ...billingPref, taxRate: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Invoice Number Prefix</label>
-                    <input
-                      type="text"
-                      value={billingPref.invoicePrefix}
-                      onChange={e => setBillingPref({ ...billingPref, invoicePrefix: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Default Payment Terms</label>
-                    <input
-                      type="text"
-                      value={billingPref.paymentTerms}
-                      onChange={e => setBillingPref({ ...billingPref, paymentTerms: e.target.value })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem' }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Invoice Terms & Conditions Footer Note</label>
-                  <textarea
-                    rows={3}
-                    value={billingPref.footerNote}
-                    onChange={e => setBillingPref({ ...billingPref, footerNote: e.target.value })}
-                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem', resize: 'vertical' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <button
-                    type="submit"
-                    className="ws-table-btn ws-table-btn--primary"
-                    style={{ padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <Save size={15} />
                     Save Preferences
                   </button>
                 </div>
@@ -520,84 +1230,8 @@ export default function Settings() {
             </div>
           )}
 
-          {/* UOM ADD / EDIT MODAL */}
-          {uomModalOpen && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ background: '#fff', width: 440, borderRadius: 12, padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-                <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 600 }}>
-                  {editingUom ? 'Edit Unit of Measure (UOM)' : 'Add New Unit of Measure (UOM)'}
-                </h3>
-                <form onSubmit={handleSaveUom} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>UOM Code *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="UOM Code"
-                        value={uomForm.code}
-                        onChange={e => setUomForm({ ...uomForm, code: e.target.value })}
-                        style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: '0.875rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Unit Name *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Unit Name"
-                        value={uomForm.name}
-                        onChange={e => setUomForm({ ...uomForm, name: e.target.value })}
-                        style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: '0.875rem' }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Category</label>
-                    <select
-                      value={uomForm.category}
-                      onChange={e => setUomForm({ ...uomForm, category: e.target.value })}
-                      style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: '0.875rem', background: '#fff' }}
-                    >
-                      <option value="Volume">Volume (Liters, ml)</option>
-                      <option value="Length">Length (Meters, ft)</option>
-                      <option value="Weight">Weight (Kilograms, g)</option>
-                      <option value="Package">Package (Box, Carton)</option>
-                      <option value="Count">Count (Pieces, Dozen)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: 4 }}>Container Presets (comma-separated)</label>
-                    <input
-                      type="text"
-                      placeholder="Container Presets"
-                      value={uomForm.presets}
-                      onChange={e => setUomForm({ ...uomForm, presets: e.target.value })}
-                      style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: '0.875rem' }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
-                    <button
-                      type="button"
-                      onClick={() => setUomModalOpen(false)}
-                      style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', fontSize: '0.875rem', cursor: 'pointer' }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="ws-table-btn ws-table-btn--primary"
-                      style={{ padding: '8px 16px', fontSize: '0.875rem' }}
-                    >
-                      {editingUom ? 'Update UOM' : 'Save UOM'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-          </div>
-        </main>
+        </div>
+
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import Topbar from '../../components/layout/Topbar'
 import Sidebar from '../../components/layout/Sidebar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen } from '../../redux/slices/uiSlice'
@@ -22,17 +23,7 @@ export default function ReportsPage() {
     <div className="ws-dash-layout">
       <Sidebar />
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
-        
-        {/* Custom Topbar matching Reports Screenshot */}
-        <header className="ws-chat-header" style={{ padding: '0 28px' }}>
-          <div className="ws-chat-header-left" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Reports</span>
-          </div>
-          <div className="ws-chat-header-right" style={{ color: '#6b7280', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <HelpCircle size={15} />
-            <span>Help</span>
-          </div>
-        </header>
+        <Topbar />
 
         <main className="ws-dash-body" style={{ background: '#ffffff', padding: '24px 28px' }}>
           

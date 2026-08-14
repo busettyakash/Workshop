@@ -59,16 +59,14 @@ app.disable('x-powered-by')
 const PORT = process.env.PORT || 5000
 
 /* ── Request Logger Middleware ── */
-if (isDevelopment) {
+if (!process.env.VERCEL) {
   app.use((req, res, next) => {
     const start = Date.now()
-    const originalSend = res.send
-    res.send = function (...args) {
+    res.on('finish', () => {
       const duration = Date.now() - start
       const logLine = `[Request] ${req.method} ${req.originalUrl} - Status: ${res.statusCode} (${duration}ms) - Auth: ${req.headers.authorization ? 'Yes' : 'No'} - Workspace: ${req.headers['x-workspace-id'] || 'None'}`
       console.log(logLine)
-      return originalSend.apply(res, args)
-    }
+    })
     next()
   })
 }
@@ -191,12 +189,20 @@ query(`
   ALTER TABLE import_stock_payments ENABLE ROW LEVEL SECURITY;
   ALTER TABLE import_stock_payments FORCE ROW LEVEL SECURITY;
   DROP POLICY IF EXISTS import_stock_payments_user_policy ON public.import_stock_payments;
-  CREATE POLICY import_stock_payments_user_policy ON public.import_stock_payments FOR ALL TO public USING ((select auth.uid()::text) = user_id OR user_id = 'default-user');
+  DROP POLICY IF EXISTS user_isolation_policy ON public.import_stock_payments;
+  CREATE POLICY user_isolation_policy ON public.import_stock_payments FOR ALL USING ((user_id = current_setting('app.current_user_id'::text, true)) OR (current_setting('app.bypass_rls'::text, true) = 'on'::text));
 `).catch(() => {})
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
+  })
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[Server Warning] Port ${PORT} is already in use by a running backend process.`)
+    } else {
+      console.error('[Server Error]', err)
+    }
   })
 }
 

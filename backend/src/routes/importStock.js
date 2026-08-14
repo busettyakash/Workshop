@@ -53,7 +53,8 @@ async function ensureImportStockSchema() {
     ALTER TABLE import_stock_payments ENABLE ROW LEVEL SECURITY;
     ALTER TABLE import_stock_payments FORCE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS import_stock_payments_user_policy ON public.import_stock_payments;
-    CREATE POLICY import_stock_payments_user_policy ON public.import_stock_payments FOR ALL TO public USING ((select auth.uid()::text) = user_id OR user_id = 'default-user');
+    DROP POLICY IF EXISTS user_isolation_policy ON public.import_stock_payments;
+    CREATE POLICY user_isolation_policy ON public.import_stock_payments FOR ALL USING ((user_id = current_setting('app.current_user_id'::text, true)) OR (current_setting('app.bypass_rls'::text, true) = 'on'::text));
   `).catch(() => {})
   await query(`UPDATE import_stock SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
   await query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})

@@ -95,6 +95,10 @@ const authSlice = createSlice({
     setEmailStep(state, action) {
       state.emailStep = action.payload
     },
+    updateUser(state, action) {
+      state.user = { ...state.user, ...action.payload }
+      sessionStorage.setItem('ws_user', JSON.stringify(state.user))
+    },
   },
   extraReducers: (builder) => {
     // Login
@@ -145,7 +149,7 @@ const authSlice = createSlice({
   },
 })
 
-export const { logout, clearError, setEmailStep } = authSlice.actions
+export const { logout, clearError, setEmailStep, updateUser } = authSlice.actions
 export default authSlice.reducer
 
 // Selectors

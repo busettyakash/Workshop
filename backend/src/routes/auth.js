@@ -38,6 +38,9 @@ const ensureWorkspaceTable = async () => {
     ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
     ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
     ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(50);
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT;
   `).catch(err => console.error('[DB] Error ensuring columns on shop_profiles:', err.message))
 }
 
@@ -948,6 +951,87 @@ router.get('/diagnostic', async (req, res) => {
   }
 
   res.json(status)
+})
+
+  /* GET /api/auth/profile - Fetch user profile & workspace info */
+router.get('/profile', apiLimiter, requireAuth, async (req, res) => {
+  try {
+    const email = req.user?.email
+    if (!email) return res.status(401).json({ error: 'Unauthorized' })
+
+    const { rows } = await query(
+      `SELECT user_id, shop_name, email, first_name, last_name, phone, gstin, address FROM shop_profiles WHERE LOWER(email) = LOWER($1)`,
+      [email]
+    )
+
+    if (rows.length === 0) {
+      return res.json({
+        email,
+        firstName: req.user?.firstName || req.user?.name?.split(' ')[0] || '',
+        lastName: req.user?.lastName || req.user?.name?.split(' ').slice(1).join(' ') || '',
+        shopName: req.user?.shopName || '',
+        phone: '',
+        gstin: '',
+        address: ''
+      })
+    }
+
+    const row = rows[0]
+    res.json({
+      userId: row.user_id,
+      email: row.email,
+      firstName: row.first_name || req.user?.firstName || req.user?.name?.split(' ')[0] || '',
+      lastName: row.last_name || req.user?.lastName || req.user?.name?.split(' ').slice(1).join(' ') || '',
+      shopName: row.shop_name || req.user?.shopName || '',
+      phone: row.phone || '',
+      gstin: row.gstin || '',
+      address: row.address || ''
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* PUT /api/auth/profile - Update user profile details */
+router.put('/profile', apiLimiter, requireAuth, async (req, res) => {
+  try {
+    const userEmail = req.user?.email
+    if (!userEmail) return res.status(401).json({ error: 'Unauthorized' })
+
+    const { firstName, lastName, email } = req.body
+
+    await query(
+      `UPDATE shop_profiles 
+       SET first_name = $1, last_name = $2, email = COALESCE($3, email) 
+       WHERE LOWER(email) = LOWER($4)`,
+      [firstName, lastName, email, userEmail]
+    )
+
+    res.json({ message: 'Profile details saved successfully!' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* PUT /api/auth/workspace - Update workspace details */
+router.put('/workspace', apiLimiter, requireAuth, async (req, res) => {
+  try {
+    const userEmail = req.user?.email
+    if (!userEmail) return res.status(401).json({ error: 'Unauthorized' })
+
+    const { shopName, phone, gstin, address } = req.body
+
+    await query(
+      `UPDATE shop_profiles 
+       SET shop_name = $1, phone = $2, gstin = $3, address = $4 
+       WHERE LOWER(email) = LOWER($5)`,
+      [shopName, phone, gstin, address, userEmail]
+    )
+
+    res.json({ message: 'Workspace details saved successfully!' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 export default router

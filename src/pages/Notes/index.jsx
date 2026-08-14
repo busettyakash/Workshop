@@ -260,7 +260,6 @@ export default function Notes() {
                 </div>
               ) : filtered.length === 0 ? (
                 <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: '0.82rem' }}>
-                  <StickyNote size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
                   <p style={{ margin: 0 }}>{search ? 'No notes match search' : 'No notes created yet'}</p>
                 </div>
               ) : (
@@ -388,7 +387,6 @@ export default function Notes() {
               </>
             ) : !loading && (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-                <FileText size={40} style={{ marginBottom: 12, opacity: 0.35 }} />
                 <p style={{ fontSize: '0.875rem', fontWeight: 500 }}>Select a note or create a new one</p>
               </div>
             )}

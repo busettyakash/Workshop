@@ -102,7 +102,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
 
         const [resProfile, resProds] = await Promise.all([
           fetch('/api/companies/my-profile', { headers }).catch(() => null),
-          fetch('/api/products?limit=500', { headers }).catch(() => null)
+          fetch('/api/products?limit=100', { headers }).catch(() => null)
         ])
 
         if (resProfile && resProfile.ok) {

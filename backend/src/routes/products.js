@@ -39,6 +39,8 @@ async function ensureProductsSchema() {
     notes TEXT,
     created_at TIMESTAMP DEFAULT NOW()
   )`).catch(() => {})
+  await query(`CREATE INDEX IF NOT EXISTS idx_products_user_status ON public.products (user_id, status)`).catch(() => {})
+  await query(`CREATE INDEX IF NOT EXISTS idx_products_user_created ON public.products (user_id, created_at DESC)`).catch(() => {})
   await query(`ALTER TABLE product_price_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_price_history FORCE ROW LEVEL SECURITY;`).catch(() => {})
   await query(`ALTER TABLE product_stock_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_stock_history FORCE ROW LEVEL SECURITY;`).catch(() => {})
 }

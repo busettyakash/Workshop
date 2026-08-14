@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import Sidebar from '../../components/layout/Sidebar'
+import Topbar from '../../components/layout/Topbar'
 import api from '../../api/client'
 import { useAuth } from '../../hooks/useAuth'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
@@ -7,8 +8,8 @@ import { addToast, setActiveNav, selectSidebarOpen } from '../../redux/slices/ui
 import { useLocation, useNavigate, Link } from 'react-router'
 import {
   ChevronDown, ArrowUp, Plus, Bot, Loader2, Star, Clock, Trash2,
-  Home, HelpCircle, ChevronLeft, ChevronRight, MoreHorizontal, Compass, Paperclip,
-  FileText, Mail, StickyNote, Inbox, Sparkles, TrendingUp, Package, UserPlus
+  Home, HelpCircle, ChevronLeft, ChevronRight, MoreHorizontal, MoreVertical, Compass, Paperclip,
+  FileText, Mail, StickyNote, Inbox, Sparkles, TrendingUp, Package, UserPlus, GraduationCap, Mic
 } from 'lucide-react'
 import './Dashboard.css'
 
@@ -373,21 +374,10 @@ export default function Dashboard() {
       <Sidebar />
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         
-        {/* ─── HOME VIEW (Image 1 Style) ─── */}
+        {/* ─── HOME VIEW ─── */}
         {view === 'home' && (
           <>
-            {/* Home header */}
-            <header className="ws-chat-header" style={{ padding: '0 28px' }}>
-              <div className="ws-chat-header-left" style={{ color: '#6b7280', fontSize: '0.9rem', fontWeight: 500 }}>
-                <Home size={15} style={{ marginRight: 6 }} />
-                <span>Home</span>
-              </div>
-              <div className="ws-chat-header-right" style={{ color: '#6b7280', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <HelpCircle size={15} />
-                <span>Help</span>
-              </div>
-            </header>
-
+            <Topbar />
             <main className="ws-dash-body" style={{ background: '#ffffff', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={{ maxWidth: 720, width: '100%', padding: '40px 20px 60px' }}>
                 
@@ -398,15 +388,22 @@ export default function Dashboard() {
 
                 {/* Central Recent Chat card */}
                 <div className="ws-chat-input-wrapper" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 4px 18px rgba(0,0,0,0.03)', marginBottom: 40, padding: '16px 18px 12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>
-                    <Bot size={12} style={{ color: '#6b7280' }} />
+                  <div 
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', color: '#64748b', fontWeight: 400, marginBottom: 12, cursor: sessions.length > 0 ? 'pointer' : 'default' }}
+                    onClick={() => {
+                      if (sessions.length > 0) {
+                        navigate(`/dashboard?session=${sessions[0].id}`)
+                        fetchSessionById(sessions[0].id)
+                      }
+                    }}
+                  >
+                    <Clock size={13} style={{ color: '#64748b', flexShrink: 0 }} />
                     <span>Recent chat</span>
                     {sessions.length > 0 && (
                       <>
                         <span>·</span>
                         <span 
-                          style={{ color: '#2563eb', textTransform: 'none', letterSpacing: 'normal', fontWeight: 600, cursor: 'pointer' }}
-                          onClick={() => navigate(`/dashboard?session=${sessions[0].id}`)}
+                          style={{ color: '#334155', fontWeight: 500 }}
                           title="Open recent chat"
                         >
                           {sessions[0].title}
@@ -530,36 +527,41 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* ─── CHAT VIEW (Image 2 Style) ─── */}
+        {/* ─── CHAT VIEW ─── */}
         {view === 'chat' && (
-          <>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: '#ffffff' }}>
+            
             {/* Chat header */}
-            <header className="ws-chat-header">
-              <div className="ws-chat-header-left" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span className="ws-chat-header-title">{chatTitle}</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', borderBottom: '1px solid #f1f5f9', background: '#ffffff', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: '0.92rem', fontWeight: 600, color: '#0f172a' }}>{chatTitle || 'Untitled chat'}</span>
                 <button 
-                  className={`ws-chat-star-btn ${favorited ? 'active' : ''}`}
                   onClick={() => setFavorited(!favorited)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}
                   title={favorited ? "Remove favorite" : "Favorite chat"}
                 >
                   <Star size={14} fill={favorited ? "#f59e0b" : "none"} stroke={favorited ? "#f59e0b" : "currentColor"} />
                 </button>
               </div>
               
-              <div className="ws-chat-header-right">
-                <button className="ws-chat-control-btn" onClick={handleNewChatClick} title="New chat">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button 
+                  onClick={handleNewChatClick}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#ffffff', fontSize: '0.78rem', fontWeight: 500, color: '#0f172a', cursor: 'pointer', transition: 'all 0.12s ease' }}
+                  title="Start new chat"
+                >
                   <Plus size={14} />
                   <span>New chat</span>
                 </button>
+
                 <div style={{ position: 'relative' }}>
                   <button 
-                    className={`ws-chat-control-btn ${showHistory ? 'active' : ''}`} 
                     onClick={() => setShowHistory(!showHistory)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 5, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     title="History"
                   >
-                    <Clock size={15} />
+                    <Clock size={16} />
                   </button>
-                  
                   {showHistory && (
                     <div className="ws-chat-history-dropdown">
                       <div className="ws-chat-history-title">Recent Chats</div>
@@ -589,115 +591,144 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
+
+                <button 
+                  onClick={handleNewChatClick}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 5, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  title="More options"
+                >
+                  <MoreVertical size={16} />
+                </button>
               </div>
-            </header>
+            </div>
 
             {/* Chat message list area */}
-            <main className="ws-chat-body">
+            <main style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
               {messages.length === 0 ? (
-                <div style={{ maxWidth: 680, margin: '30px auto 0', textAlign: 'center', padding: '0 16px' }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 16, background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 8px 24px rgba(37, 99, 235, 0.25)', marginBottom: 16 }}>
-                    <Sparkles size={26} />
-                  </div>
+                <div style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 16px 20px' }}>
+                  
+                  {/* Title */}
+                  <h1 style={{ fontSize: '1.55rem', fontWeight: 600, color: '#0f172a', margin: '0 0 28px', letterSpacing: '-0.02em', textAlign: 'center' }}>
+                    What can I help with?
+                  </h1>
 
-                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-                    What can I help you with today?
-                  </h2>
-                  <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 24px', maxWidth: 480, marginInline: 'auto' }}>
-                    Ask anything about your products, stock levels, quotes, bills, or dispatch automated customer emails.
-                  </p>
+                  {/* Main Central Card */}
+                  <div style={{
+                    width: '100%',
+                    maxWidth: 640,
+                    background: '#ffffff',
+                    border: '1.5px solid #dbeafe',
+                    borderRadius: 16,
+                    padding: '16px 18px 12px',
+                    boxShadow: '0 4px 20px rgba(59, 130, 246, 0.05)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+                  }}>
+                    <textarea
+                      ref={textareaRef}
+                      placeholder="Ask anything..."
+                      value={inputText}
+                      onChange={e => setInputText(e.target.value)}
+                      onKeyDown={e => handleKey(e, 'chat')}
+                      rows={3}
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        outline: 'none',
+                        background: 'transparent',
+                        fontSize: '0.92rem',
+                        color: '#0f172a',
+                        resize: 'none',
+                        fontFamily: 'inherit'
+                      }}
+                      autoFocus
+                    />
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, textAlign: 'left' }}>
-                    <div 
-                      onClick={() => sendMessage("Show today's total revenue, bills created, and sales summary")}
-                      style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
-                      className="attio-table-card"
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#2563eb', fontWeight: 600, fontSize: '0.84rem', marginBottom: 4 }}>
-                        <TrendingUp size={16} /> Sales & Revenue Summary
-                      </div>
-                      <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4 }}>
-                        Check today's bills, total revenue, and top-selling products.
-                      </div>
-                    </div>
-
-                    <div 
-                      onClick={() => sendMessage("Check low stock items and list current inventory levels")}
-                      style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
-                      className="attio-table-card"
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#16a34a', fontWeight: 600, fontSize: '0.84rem', marginBottom: 4 }}>
-                        <Package size={16} /> Stock & Inventory Status
-                      </div>
-                      <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4 }}>
-                        View low stock alerts, remaining quantities, and batch imports.
-                      </div>
-                    </div>
-
-                    <div 
-                      onClick={() => sendMessage("Show me quotes created today and quote status summary")}
-                      style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
-                      className="attio-table-card"
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d97706', fontWeight: 600, fontSize: '0.84rem', marginBottom: 4 }}>
-                        <FileText size={16} /> Check Today's Quotes
-                      </div>
-                      <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4 }}>
-                        Review quotations sent to buyers and check pending quote deals.
-                      </div>
-                    </div>
-
-                    <div 
-                      onClick={() => sendMessage("Add a new contact person to database")}
-                      style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
-                      className="attio-table-card"
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#9333ea', fontWeight: 600, fontSize: '0.84rem', marginBottom: 4 }}>
-                        <UserPlus size={16} /> Add Customer or Contact
-                      </div>
-                      <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4 }}>
-                        Create a new customer, lead, or supplier contact instantly.
-                      </div>
+                    {/* Bottom controls row inside card */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                      <button 
+                        onClick={() => sendMessage()}
+                        disabled={!inputText.trim() || isLoading}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: '50%',
+                          background: inputText.trim() && !isLoading ? '#3b82f6' : '#bfdbfe',
+                          color: '#ffffff',
+                          border: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: inputText.trim() && !isLoading ? 'pointer' : 'not-allowed',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <ArrowUp size={14} />
+                      </button>
                     </div>
                   </div>
+
+                  {/* Bottom Footer "Learn more" Card */}
+                  <div style={{ marginTop: 44, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 8, fontWeight: 500 }}>
+                      Learn more
+                    </span>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '12px 16px',
+                      borderRadius: 14,
+                      border: '1px solid #e2e8f0',
+                      background: '#ffffff',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
+                      width: 340,
+                      cursor: 'pointer'
+                    }}>
+                      <div style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        border: '1px solid #e2e8f0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#475569',
+                        background: '#f8fafc',
+                        flexShrink: 0
+                      }}>
+                        <GraduationCap size={20} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0f172a' }}>Ask Assistant</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>See what Ask Assistant can do for you</div>
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
               ) : (
-                <div className="ws-chat-messages-wrapper">
+                <div style={{ maxWidth: 720, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
                   {messages.map((msg, idx) => (
-                    <div 
-                      key={msg.id || `msg-${idx}`} 
-                      className={`ws-chat-message-row ws-chat-message-${msg.role}`}
-                    >
-                      <div className="ws-chat-message-container">
-                        <div className="ws-chat-message-bubble-wrap">
-                          <div className="ws-chat-message-bubble">
-                            {msg.role === 'assistant' ? renderMarkdown(msg.content) : renderContent(msg.content)}
-                          </div>
-                          {msg.role === 'assistant' && (
-                            <div className="ws-chat-assistant-actions">
-                              <button className="ws-chat-action-btn" title="Copy response" onClick={() => {
-                                navigator.clipboard.writeText(msg.content)
-                                dispatch(addToast({ message: 'Copied to clipboard', type: 'success' }))
-                              }}>
-                                Copy
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                    <div key={msg.id || `msg-${idx}`} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                      <div style={{
+                        maxWidth: '85%',
+                        padding: '10px 14px',
+                        borderRadius: 12,
+                        background: msg.role === 'user' ? '#0f172a' : '#f1f5f9',
+                        color: msg.role === 'user' ? '#ffffff' : '#0f172a',
+                        fontSize: '0.85rem',
+                        lineHeight: 1.6
+                      }}>
+                        {msg.role === 'assistant' ? renderMarkdown(msg.content) : renderContent(msg.content)}
                       </div>
                     </div>
                   ))}
                   {isLoading && (
-                    <div className="ws-chat-message-row ws-chat-message-assistant">
-                      <div className="ws-chat-message-container">
-                        <div className="ws-chat-message-bubble-wrap">
-                          <div className="ws-chat-message-bubble ws-chat-typing">
-                            <span className="ws-chat-dot" />
-                            <span className="ws-chat-dot" />
-                            <span className="ws-chat-dot" />
-                          </div>
-                        </div>
-                      </div>
+                    <div style={{ display: 'flex', gap: 6, padding: '10px 14px', borderRadius: 12, background: '#f1f5f9', width: 'fit-content' }}>
+                      <Loader2 size={16} className="ws-chat-loader-spin" style={{ color: '#2563eb' }} />
+                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Thinking...</span>
                     </div>
                   )}
                   <div ref={messagesEndRef} />
@@ -705,34 +736,30 @@ export default function Dashboard() {
               )}
             </main>
 
-            {/* Chat bottom floating input */}
-            <div className="ws-chat-input-section">
-              <div className="ws-chat-input-wrapper">
-                <textarea
-                  ref={textareaRef}
-                  className="ws-chat-textarea"
-                  placeholder="Ask anything..."
-                  value={inputText}
-                  onChange={e => setInputText(e.target.value)}
-                  onKeyDown={e => handleKey(e, 'chat')}
-                  rows={1}
-                />
-                <div className="ws-chat-input-controls">
-                  <div className="ws-chat-input-right-controls" style={{ marginLeft: 'auto' }}>
-                    {isLoading && <Loader2 size={14} className="ws-chat-loader-spin" />}
-                    <button 
-                      className={`ws-chat-send-btn ${inputText.trim() && !isLoading ? 'active' : ''}`}
-                      onClick={() => sendMessage()}
-                      disabled={!inputText.trim() || isLoading}
-                      aria-label="Send message"
-                    >
-                      <ArrowUp size={16} />
-                    </button>
-                  </div>
+            {/* Chat bottom floating input only when conversation has messages */}
+            {messages.length > 0 && (
+              <div style={{ padding: '12px 20px 20px', borderTop: '1px solid #e5e7eb', background: '#ffffff', flexShrink: 0 }}>
+                <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 12, background: '#ffffff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                  <textarea
+                    ref={textareaRef}
+                    placeholder="Ask anything..."
+                    value={inputText}
+                    onChange={e => setInputText(e.target.value)}
+                    onKeyDown={e => handleKey(e, 'chat')}
+                    rows={1}
+                    style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: '0.85rem', color: '#0f172a', resize: 'none', fontFamily: 'inherit' }}
+                  />
+                  <button 
+                    onClick={() => sendMessage()}
+                    disabled={!inputText.trim() || isLoading}
+                    style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: inputText.trim() && !isLoading ? '#2563eb' : '#e2e8f0', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: inputText.trim() && !isLoading ? 'pointer' : 'not-allowed' }}
+                  >
+                    <ArrowUp size={16} />
+                  </button>
                 </div>
               </div>
-            </div>
-          </>
+            )}
+          </div>
         )}
 
       </div>

@@ -1,6 +1,33 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
+import dns from 'dns'
 import pg from 'pg'
+
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4'])
+} catch {}
+
+const originalLookup = dns.lookup
+dns.lookup = function (hostname, options, callback) {
+  if (typeof options === 'function') {
+    callback = options
+    options = {}
+  }
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return originalLookup(hostname, options, callback)
+  }
+  dns.resolve4(hostname, (err, addresses) => {
+    if (err || !addresses || addresses.length === 0) {
+      return originalLookup(hostname, options, callback)
+    }
+    if (options && options.all) {
+      const results = addresses.map(addr => ({ address: addr, family: 4 }))
+      callback(null, results)
+    } else {
+      callback(null, addresses[0], 4)
+    }
+  })
+}
 
 const { Pool, types } = pg
 
@@ -8,7 +35,7 @@ const { Pool, types } = pg
 types.setTypeParser(1082, (val) => val)
 
 const dbUrl = process.env.DATABASE_URL
-const isDevelopment = process.env.NODE_ENV === 'development' && !process.env.VERCEL
+const isDevelopment = process.env.NODE_ENV !== 'production' && !process.env.VERCEL
 
 const getPoolMax = () => {
   const configuredMax = Number.parseInt(process.env.PG_POOL_MAX, 10)
@@ -16,7 +43,7 @@ const getPoolMax = () => {
   if (process.env.VERCEL) return 1
   if (isDevelopment) return 5
   if (process.env.NODE_ENV === 'production') return 3
-  return 3 // fallback for test/staging/unset NODE_ENV — stay conservative
+  return 5
 }
 
 const createPool = () => new Pool({
@@ -24,12 +51,12 @@ const createPool = () => new Pool({
   application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
   ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
-  idleTimeoutMillis: 5000,
-  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 15000,
   statement_timeout: 30000,
   idle_in_transaction_session_timeout: 30000,
   query_timeout: 30000,
-  allowExitOnIdle: true,
+  allowExitOnIdle: false,
   maxUses: 500,
 })
 

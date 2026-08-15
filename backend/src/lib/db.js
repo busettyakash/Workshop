@@ -51,13 +51,16 @@ const createPool = () => new Pool({
   application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
   ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
-  idleTimeoutMillis: 30000,
+  min: isDevelopment ? 2 : 1,
+  idleTimeoutMillis: 300000,
   connectionTimeoutMillis: 15000,
   statement_timeout: 30000,
   idle_in_transaction_session_timeout: 30000,
   query_timeout: 30000,
   allowExitOnIdle: false,
-  maxUses: 500,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
+  maxUses: 2000,
 })
 
 const pool = globalThis.__workshopPgPool || createPool()
@@ -71,6 +74,13 @@ pool.on('connect', () => {
   if (isDevelopment) {
     console.log('[DB] New client connected to pool')
   }
+})
+
+// Warm up the pool immediately so queries never hit cold TLS handshake delay
+pool.query('SELECT 1').then(() => {
+  if (isDevelopment) console.log('[DB] Pool warm & ready ✅')
+}).catch(err => {
+  console.warn('[DB Warmup Warning]', err.message)
 })
 
 let poolClosed = false

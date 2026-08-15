@@ -73,16 +73,6 @@ router.get('/', async (req, res) => {
       [req.workspaceId]
     )
 
-    if (rows.length === 0) {
-      // Seed default workflow for user
-      const seedResult = await query(
-        `INSERT INTO workflows (user_id, name, is_live, nodes)
-         VALUES ($1, 'Automotive Deal Onboarding', true, $2) RETURNING *`,
-         [req.workspaceId, JSON.stringify(DEFAULT_NODES)]
-      )
-      return res.json(seedResult.rows)
-    }
-
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })

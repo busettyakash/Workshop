@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [inputText, setInputText] = useState('')
   const [homeInputText, setHomeInputText] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [sessionLoading, setSessionLoading] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState(null)
   const [conversationId, setConversationId] = useState(() => `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
   const [chatTitle, setChatTitle] = useState('Untitled chat')
@@ -125,38 +126,42 @@ export default function Dashboard() {
   }
 
   const fetchSessionById = async (id) => {
-    setIsLoading(true)
+    if (!id) return
+    const idStr = String(id)
+
+    // If already viewing this session and messages are loaded, just switch view
+    if (String(currentSessionId) === idStr && messages.length > 0) {
+      setView('chat')
+      return
+    }
+
+    setSessionLoading(true)
     setView('chat')
+    setCurrentSessionId(id)
+
+    // Pre-populate title and conversation_id immediately from existing sessions list if known
+    const knownSession = sessions.find(item => String(item.id) === idStr)
+    if (knownSession) {
+      if (knownSession.title) setChatTitle(knownSession.title)
+      if (knownSession.conversation_id) setConversationId(knownSession.conversation_id)
+    }
+
     try {
       const res = await api.get(`/chat/sessions/${id}`)
-      const rawMsgs = res.data?.messages || []
+      const data = res.data || {}
+      const rawMsgs = data.messages || []
       const formatted = rawMsgs.map((m, idx) => ({
         ...m,
         id: m.id || (Date.now() + idx),
         time: m.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }))
       setMessages(formatted)
-      setCurrentSessionId(id)
-
-      // Find or query title
-      const s = sessions.find(item => String(item.id) === String(id))
-      if (s) {
-        setChatTitle(s.title)
-        setConversationId(s.conversation_id)
-      } else {
-        const sessionsRes = await api.get('/chat/sessions')
-        const freshSessions = sessionsRes.data || []
-        setSessions(freshSessions)
-        const found = freshSessions.find(item => String(item.id) === String(id))
-        if (found) {
-          setChatTitle(found.title)
-          setConversationId(found.conversation_id)
-        }
-      }
+      if (data.title) setChatTitle(data.title)
+      if (data.conversation_id) setConversationId(data.conversation_id)
     } catch (err) {
       dispatch(addToast({ message: 'Could not load chat session', type: 'error' }))
     } finally {
-      setIsLoading(false)
+      setSessionLoading(false)
     }
   }
 
@@ -230,13 +235,21 @@ export default function Dashboard() {
     }
   }
 
-  const handleHomeSend = () => {
+  const handleHomeSend = async () => {
     const text = homeInputText.trim()
     if (!text) return
     setHomeInputText('')
-    handleNewChat()
-    setView('chat')
-    sendMessage(text)
+
+    if (sessions.length > 0 && sessions[0]?.id) {
+      const recentId = sessions[0].id
+      navigate(`/dashboard?session=${recentId}`)
+      await fetchSessionById(recentId)
+      sendMessage(text)
+    } else {
+      handleNewChat()
+      setView('chat')
+      sendMessage(text)
+    }
   }
 
   const handleKey = (e, target) => {
@@ -393,7 +406,6 @@ export default function Dashboard() {
                     onClick={() => {
                       if (sessions.length > 0) {
                         navigate(`/dashboard?session=${sessions[0].id}`)
-                        fetchSessionById(sessions[0].id)
                       }
                     }}
                   >
@@ -604,7 +616,12 @@ export default function Dashboard() {
 
             {/* Chat message list area */}
             <main style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
-              {messages.length === 0 ? (
+              {sessionLoading ? (
+                <div style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+                  <Loader2 size={32} className="ws-chat-loader-spin" style={{ color: '#2563eb' }} />
+                  <span style={{ fontSize: '0.88rem', fontWeight: 500, color: '#64748b' }}>Loading conversation...</span>
+                </div>
+              ) : messages.length === 0 ? (
                 <div style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 16px 20px' }}>
                   
                   {/* Title */}

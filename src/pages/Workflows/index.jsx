@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import './Workflows.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import { useAuth } from '../../hooks/useAuth'
 
 /* ─── Trigger data ─── */
 const TRIGGER_CATEGORIES = [
@@ -127,11 +128,11 @@ export default function Workflows() {
   }
 
   /* ── Helpers ── */
-  const getUserInfo = () => {
-    try { return JSON.parse(sessionStorage.getItem('ws_user') || '{}') } catch { return {} }
-  }
-  const userInfo = getUserInfo()
-  const initials = (userInfo.shopName || 'AB').slice(0, 2).toUpperCase()
+  const { user, shopName } = useAuth()
+  const userFirstName = user?.firstName || user?.first_name || ''
+  const userLastName = user?.lastName || user?.last_name || ''
+  const userFullName = [userFirstName, userLastName].filter(Boolean).join(' ') || user?.name || (user?.email ? user.email.split('@')[0] : 'User')
+  const initials = (shopName || userFullName || 'WS').slice(0, 2).toUpperCase()
 
   const statusBadge = (wf) => {
     if (wf.is_live) return { label: 'Live',   cls: 'live' }
@@ -282,7 +283,7 @@ export default function Workflows() {
                           <td className="ws-wfl-td">
                             <div className="ws-wfl-creator">
                               <div className="ws-wfl-creator-av">{initials}</div>
-                              <span>Akash Busetty</span>
+                              <span>{userFullName}</span>
                             </div>
                           </td>
                           <td className="ws-wfl-td ws-wfl-td--muted">

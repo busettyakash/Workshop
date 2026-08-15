@@ -36,9 +36,9 @@ export default function AccountSettings() {
   const fileInputRef = useRef(null)
 
   // Profile Form state
-  const [firstName, setFirstName] = useState(() => user?.name?.split(' ')[0] || 'Akash')
-  const [lastName, setLastName] = useState(() => user?.name?.split(' ').slice(1).join(' ') || 'Busetty')
-  const [email, setEmail] = useState(() => user?.email || '21btrcs126@jainuniversity.ac.in')
+  const [firstName, setFirstName] = useState(() => user?.firstName || user?.name?.split(' ')[0] || '')
+  const [lastName, setLastName] = useState(() => user?.lastName || user?.name?.split(' ').slice(1).join(' ') || '')
+  const [email, setEmail] = useState(() => user?.email || '')
   const [timezone, setTimezone] = useState('Asia/Kolkata')
   const [startWeekOn, setStartWeekOn] = useState('Monday')
   const [avatarUrl, setAvatarUrl] = useState('')

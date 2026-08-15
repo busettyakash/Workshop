@@ -492,9 +492,6 @@ router.get('/sessions', async (req, res) => {
       `SELECT id, conversation_id, title, last_message, updated_at 
        FROM chat_sessions 
        WHERE user_id = $1 
-          OR conversation_id IN (
-             SELECT 'deal-' || id FROM deals WHERE user_id = $1::text OR company_shop_id = $1::text
-          )
        ORDER BY updated_at DESC 
        LIMIT 20`,
       [req.workspaceId]
@@ -506,21 +503,47 @@ router.get('/sessions', async (req, res) => {
   }
 })
 
-/* GET /api/chat/sessions/:id — get messages for a session */
+/* GET /api/chat/sessions/:id — get full session details and messages */
 router.get('/sessions/:id', async (req, res) => {
   try {
     const { rows } = await query(
-      `SELECT messages FROM chat_sessions 
-       WHERE id = $1 AND (
-         user_id = $2 
-         OR conversation_id IN (
-             SELECT 'deal-' || id FROM deals WHERE user_id = $2::text OR company_shop_id = $2::text
-         )
+      `SELECT id, conversation_id, title, messages, last_message, updated_at 
+       FROM chat_sessions 
+       WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.workspaceId]
+    )
+
+    if (rows.length > 0) {
+      return res.json({
+        id: rows[0].id,
+        conversation_id: rows[0].conversation_id,
+        title: rows[0].title,
+        messages: rows[0].messages || [],
+        last_message: rows[0].last_message,
+        updated_at: rows[0].updated_at
+      })
+    }
+
+    // Fallback check for deal peer-to-peer chats if needed
+    const dealRows = await query(
+      `SELECT cs.id, cs.conversation_id, cs.title, cs.messages, cs.last_message, cs.updated_at 
+       FROM chat_sessions cs
+       WHERE cs.id = $1 AND cs.conversation_id IN (
+         SELECT 'deal-' || id FROM deals WHERE user_id = $2::text OR company_shop_id = $2::text
        )`,
       [req.params.id, req.workspaceId]
     )
-    if (!rows.length) return res.status(404).json({ error: 'Session not found' })
-    res.json({ messages: rows[0].messages })
+
+    if (!dealRows.length) return res.status(404).json({ error: 'Session not found' })
+
+    res.json({
+      id: dealRows[0].id,
+      conversation_id: dealRows[0].conversation_id,
+      title: dealRows[0].title,
+      messages: dealRows[0].messages || [],
+      last_message: dealRows[0].last_message,
+      updated_at: dealRows[0].updated_at
+    })
   } catch (err) {
     console.error('Session load error:', err.message)
     res.status(500).json({ error: err.message })

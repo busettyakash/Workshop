@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import { apiLimiter } from '../middleware/rateLimit.js'
 import redis from '../lib/redis.js'
 import { verifyQStashSignature, publishWorkflowStep, setLocalStepRunner } from '../lib/qstash.js'
 import { sendEmail } from '../lib/smtp.js'
@@ -334,12 +335,12 @@ setLocalStepRunner(executeWorkflowStep)
    Must be declared BEFORE router.use(requireAuth) because QStash calls
    this endpoint directly with an HMAC/JWT signature header instead of JWT auth.
 ───────────────────────────────────────────────────────────── */
-router.post('/qstash-callback', verifyQStashSignature, async (req, res) => {
+router.post('/qstash-callback', apiLimiter, verifyQStashSignature, async (req, res) => {
   const payload = req.body || {}
   const runId = payload.runId
   const step = Number(payload.step)
 
-  console.log(`[QSTASH WEBHOOK] Received callback for run #${runId}, step ${step}`, {
+  console.log('[QSTASH WEBHOOK] Received callback for run #%s, step %d', runId, step, {
     signatureVerified: Boolean(req.qstashVerified),
     headers: {
       messageId: req.headers['upstash-message-id'] || req.headers['Upstash-Message-Id'],
@@ -354,7 +355,7 @@ router.post('/qstash-callback', verifyQStashSignature, async (req, res) => {
     }
     return res.status(200).json(result)
   } catch (err) {
-    console.error(`[QSTASH WEBHOOK ERROR] Processing failed for run #${runId} step ${step}:`, err)
+    console.error('[QSTASH WEBHOOK ERROR] Processing failed for run #%s step %d:', runId, step, err)
     // Return 500 so QStash will trigger automated retry according to retry policy
     return res.status(500).json({
       error: 'Step Execution Error',
@@ -369,6 +370,7 @@ router.post('/qstash-callback', verifyQStashSignature, async (req, res) => {
    Authenticated Workflow Management Routes (Protected by requireAuth)
 ───────────────────────────────────────────────────────────── */
 router.use(requireAuth)
+router.use(apiLimiter)
 
 async function healStalledRuns() {
   try {

@@ -89,6 +89,11 @@ export default function Dashboard() {
       setView('chat')
     } else {
       setView('home')
+      // Clean slate for Home view
+      setMessages([])
+      setCurrentSessionId(null)
+      setConversationId(`conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
+      setChatTitle('Untitled chat')
     }
   }, [location.search])
 
@@ -180,12 +185,14 @@ export default function Dashboard() {
   }
 
   const handleNewChat = () => {
+    const freshConvId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     setMessages([])
     setInputText('')
     setCurrentSessionId(null)
-    setConversationId(`conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
+    setConversationId(freshConvId)
     setChatTitle('Untitled chat')
     setFavorited(false)
+    return freshConvId
   }
 
   const handleNewChatClick = () => {
@@ -193,29 +200,41 @@ export default function Dashboard() {
     navigate('/dashboard?chat=true')
   }
 
-  const sendMessage = async (overrideText) => {
+  const sendMessage = async (overrideText, customOpts = {}) => {
     const text = (overrideText || inputText).trim()
     if (!text || isLoading) return
+
+    const isNew = Boolean(customOpts.isNewChat)
+    const activeConvId = customOpts.conversationId || (isNew ? `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` : conversationId)
+    const baseMessages = isNew ? [] : (customOpts.messages !== undefined ? customOpts.messages : messages)
 
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     const userMsg = { id: Date.now(), role: 'user', content: text, time }
 
-    const updated = [...messages, userMsg]
+    const updated = [...baseMessages, userMsg]
     setMessages(updated)
     if (!overrideText) setInputText('')
     setIsLoading(true)
 
-    let currentTitle = chatTitle
-    if (messages.length === 0 || chatTitle === 'Untitled chat') {
+    let currentTitle = isNew ? (text.length > 35 ? text.slice(0, 35) + '…' : text) : chatTitle
+    if (!isNew && (baseMessages.length === 0 || chatTitle === 'Untitled chat')) {
       currentTitle = text.length > 35 ? text.slice(0, 35) + '…' : text
       setChatTitle(currentTitle)
+    }
+
+    if (isNew) {
+      setCurrentSessionId(null)
+      setConversationId(activeConvId)
+      setChatTitle(currentTitle)
+      setFavorited(false)
+      setView('chat')
     }
 
     try {
       const payload = updated.map(m => ({ role: m.role, content: m.content }))
       const res = await api.post('/chat', {
         messages: payload,
-        conversationId,
+        conversationId: activeConvId,
         title: currentTitle
       })
 
@@ -240,16 +259,9 @@ export default function Dashboard() {
     if (!text) return
     setHomeInputText('')
 
-    if (sessions.length > 0 && sessions[0]?.id) {
-      const recentId = sessions[0].id
-      navigate(`/dashboard?session=${recentId}`)
-      await fetchSessionById(recentId)
-      sendMessage(text)
-    } else {
-      handleNewChat()
-      setView('chat')
-      sendMessage(text)
-    }
+    const freshConvId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    navigate('/dashboard?chat=true')
+    sendMessage(text, { isNewChat: true, conversationId: freshConvId, messages: [] })
   }
 
   const handleKey = (e, target) => {
@@ -287,7 +299,7 @@ export default function Dashboard() {
     let listItems = []
     let inList = false
     let inTable = false
-    let tableRows = []
+    let rawTableLines = []
     
     const flushList = (key) => {
       if (listItems.length > 0) {
@@ -302,13 +314,60 @@ export default function Dashboard() {
     }
 
     const flushTable = (key) => {
-      if (tableRows.length > 0) {
-        elements.push(
-          <div key={`table-${key}`} style={{ display: 'flex', flexDirection: 'column', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', margin: '12px 0', maxWidth: '100%' }}>
-            {tableRows}
-          </div>
-        )
-        tableRows = []
+      if (rawTableLines.length > 0) {
+        // Parse all rows
+        const parsedRows = rawTableLines
+          .map(line => line.split('|').map(c => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1))
+          .filter(row => row.length > 0 && !row.every(c => /^[-:]+$/.test(c)))
+
+        if (parsedRows.length > 0) {
+          const headerRow = parsedRows[0]
+          // Find indices of internal technical columns to exclude (ID, user_id, etc.)
+          const excludedIndices = new Set()
+          headerRow.forEach((col, cIdx) => {
+            const cleanCol = col.replace(/\*/g, '').trim().toLowerCase()
+            if (cleanCol === 'id' || cleanCol === 'user_id' || cleanCol === 'uid') {
+              excludedIndices.add(cIdx)
+            }
+          })
+
+          const cleanRows = parsedRows.map(row => row.filter((_, idx) => !excludedIndices.has(idx)))
+
+          if (cleanRows.length > 0) {
+            const headers = cleanRows[0]
+            const dataRows = cleanRows.slice(1)
+
+            elements.push(
+              <div key={`table-${key}`} style={{ margin: '14px 0', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', maxWidth: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        {headers.map((h, hIdx) => (
+                          <th key={hIdx} style={{ padding: '10px 14px', fontWeight: 650, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                            {renderInlineBold(h)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dataRows.map((row, rIdx) => (
+                        <tr key={rIdx} style={{ borderBottom: rIdx === dataRows.length - 1 ? 'none' : '1px solid #f1f5f9', background: rIdx % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                          {row.map((cell, cIdx) => (
+                            <td key={cIdx} style={{ padding: '9px 14px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                              {renderInlineBold(cell)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          }
+        }
+        rawTableLines = []
       }
       inTable = false
     }
@@ -320,20 +379,7 @@ export default function Dashboard() {
       if (trimmed.startsWith('|')) {
         if (inList) flushList(idx)
         inTable = true
-        // Skip separator lines like |---|---|
-        if (trimmed.includes('---')) return
-        
-        const cells = line.split('|').map(c => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1)
-        const isHeader = tableRows.length === 0
-        tableRows.push(
-          <div key={`tr-${idx}`} style={{ display: 'flex', background: isHeader ? '#f9fafb' : '#ffffff', borderBottom: '1px solid #e5e7eb', padding: '10px 14px', gap: '16px' }}>
-            {cells.map((cell, cIdx) => (
-              <span key={cIdx} style={{ flex: 1, fontSize: '0.86rem', fontWeight: isHeader ? '600' : '450', color: isHeader ? '#111827' : '#374151' }}>
-                {renderInlineBold(cell)}
-              </span>
-            ))}
-          </div>
-        )
+        rawTableLines.push(trimmed)
         return
       } else {
         if (inTable) flushTable(idx)
@@ -395,34 +441,51 @@ export default function Dashboard() {
               <div style={{ maxWidth: 720, width: '100%', padding: '40px 20px 60px' }}>
                 
                 {/* Greeting */}
-                <h1 className="ws-home-greeting" style={{ textAlign: 'left', marginBottom: 28 }}>
+                <h1 className="ws-home-greeting" style={{ textAlign: 'left', marginBottom: 24 }}>
                   {getGreeting()}, {userFullName}.
                 </h1>
 
-                {/* Central Recent Chat card */}
-                <div className="ws-chat-input-wrapper" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 4px 18px rgba(0,0,0,0.03)', marginBottom: 40, padding: '16px 18px 12px' }}>
-                  <div 
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', color: '#64748b', fontWeight: 400, marginBottom: 12, cursor: sessions.length > 0 ? 'pointer' : 'default' }}
-                    onClick={() => {
-                      if (sessions.length > 0) {
-                        navigate(`/dashboard?session=${sessions[0].id}`)
-                      }
-                    }}
-                  >
-                    <Clock size={13} style={{ color: '#64748b', flexShrink: 0 }} />
-                    <span>Recent chat</span>
-                    {sessions.length > 0 && (
-                      <>
-                        <span>·</span>
-                        <span 
-                          style={{ color: '#334155', fontWeight: 500 }}
-                          title="Open recent chat"
-                        >
-                          {sessions[0].title}
-                        </span>
-                      </>
-                    )}
+                {/* Recent Chat Indicator Pill (Cleanly separated) */}
+                {sessions.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+                    <div 
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 14px',
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 20,
+                        fontSize: '0.80rem',
+                        color: '#475569',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        maxWidth: '100%'
+                      }}
+                      onClick={() => navigate(`/dashboard?session=${sessions[0].id}`)}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.borderColor = '#cbd5e1'
+                        e.currentTarget.style.background = '#f1f5f9'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = '#e2e8f0'
+                        e.currentTarget.style.background = '#f8fafc'
+                      }}
+                      title="Open recent chat conversation"
+                    >
+                      <Clock size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+                      <span style={{ color: '#64748b', fontWeight: 500 }}>Recent chat:</span>
+                      <span style={{ color: '#0f172a', fontWeight: 600, maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {sessions[0].title}
+                      </span>
+                      <ChevronRight size={13} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                    </div>
                   </div>
+                )}
+
+                {/* Central New Chat card */}
+                <div className="ws-chat-input-wrapper" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 4px 18px rgba(0,0,0,0.03)', marginBottom: 40, padding: '16px 18px 12px' }}>
                   <textarea
                     className="ws-chat-textarea"
                     placeholder="Ask anything..."
@@ -434,12 +497,13 @@ export default function Dashboard() {
                   />
                   <div className="ws-chat-input-controls">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {/* Controls removed */}
+                      {/* Controls */}
                     </div>
                     <button 
                       className={`ws-chat-send-btn ${homeInputText.trim() ? 'active' : ''}`}
                       onClick={handleHomeSend}
                       disabled={!homeInputText.trim()}
+                      title="Start new chat"
                     >
                       <ArrowUp size={16} />
                     </button>
@@ -504,7 +568,7 @@ export default function Dashboard() {
                     <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
                       <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No emails yet</p>
                       <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Compose your first email or wait for replies</p>
-                      <Link to="/emails?compose=true" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#111827', color: '#fff', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none' }}>
+                      <Link to="/emails?compose=true" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 16px', background: '#2563eb', color: '#fff', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none', transition: 'background 0.15s' }}>
                         <Plus size={13} /> Compose
                       </Link>
                     </div>

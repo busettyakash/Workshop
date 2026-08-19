@@ -2,47 +2,127 @@ import express from 'express'
 import pool from '../lib/db.js'
 import { sendEmail } from '../lib/smtp.js'
 import { apiLimiter, emailLimiter } from '../middleware/rateLimit.js'
-import { getInvoiceEmailTemplate, getQuoteEmailTemplate, getOrderConfirmationTemplate } from '../utils/emailTemplates.js'
+import { getInvoiceEmailTemplate, getQuoteEmailTemplate, getQuoteDeclinedTemplate, getOrderConfirmationTemplate } from '../utils/emailTemplates.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
 import redis from '../lib/redis.js'
 
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
+import { publishWorkflowStep } from '../lib/qstash.js'
 
 const router = express.Router()
 
-pool.query(`
-  CREATE TABLE IF NOT EXISTS bill_items (
-    id SERIAL PRIMARY KEY,
-    bill_id INT,
-    product_id INT,
-    product_name TEXT,
-    quantity NUMERIC(10,2),
-    price NUMERIC(10,2),
-    line_total NUMERIC(10,2),
-    created_at TIMESTAMP DEFAULT NOW()
-  )
-`).catch(() => { })
-pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT`).catch(() => { })
-pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => { })
-pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2)`).catch(() => { })
+// One-time schema migration — runs only once per server start
+let _initSchemaPromise = null
+async function initSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bill_items (
+      id SERIAL PRIMARY KEY,
+      bill_id INT,
+      product_id INT,
+      product_name TEXT,
+      quantity NUMERIC(10,2),
+      price NUMERIC(10,2),
+      line_total NUMERIC(10,2),
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `).catch(() => {})
+  await pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT`).catch(() => {})
+  await pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => {})
+  await pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2)`).catch(() => {})
+  await pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {})
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {})
+  await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {})
+}
+router.use((_req, _res, next) => {
+  _initSchemaPromise ||= initSchema().catch(e => { _initSchemaPromise = null; throw e })
+  _initSchemaPromise.then(() => next()).catch(next)
+})
 
 
 const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
 
-const triggerWorkflowForQuote = async (userId, quote, _actionName = 'Record created') => {
+const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record created') => {
   try {
-    let wfRes = await pool.query('SELECT id, name FROM workflows WHERE user_id::text = $1::text LIMIT 1', [userId]).catch(() => ({ rows: [] }))
-    if (wfRes.rows.length === 0) {
-      wfRes = await pool.query('SELECT id, name FROM workflows ORDER BY id ASC LIMIT 1').catch(() => ({ rows: [] }))
+    let effectiveUserId = userId || quote?.user_id || '00000000-0000-0000-0000-000000000000'
+    const quoteId = quote?.id || quote?.quote_number || 'new'
+    // Debounce / Deduplication Lock: Prevent duplicate runner if triggered within 30 seconds for the same quote
+    const dedupKey = `workflow:dedup:quote:${effectiveUserId}:${quoteId}`
+    const alreadyTriggered = await redis.get(dedupKey).catch(() => null)
+    if (alreadyTriggered) {
+      console.log(`[Quote Workflow] ⏸️ Duplicate workflow runner prevented for quote #${quoteId} (Event: ${actionName}). Already dispatched.`)
+      return
     }
-    if (wfRes.rows.length > 0) {
-      const wf = wfRes.rows[0]
-      await pool.query(
-        `INSERT INTO workflow_runs (workflow_id, user_id, status, duration, test_company, test_value, current_step, created_at)
-         VALUES ($1, $2, 'Completed', '0.3s', $3, $4, 1, NOW())`,
-        [wf.id, userId, `${quote.customer_name || 'Customer'} (${quote.quote_number || 'Quote'})`, parseFloat(quote.total_amount || 0)]
-      ).catch(e => console.error('[Workflow Run Insert Error]', e.message))
+    // Set 30s cooldown lock to prevent duplicate runners
+    await redis.set(dedupKey, '1', { ex: 30 }).catch(() => {})
+
+    // 1. Fetch only active LIVE workflows
+    const wfRes = await pool.query(
+      `SELECT id, name, is_live FROM workflows 
+       WHERE is_live = true 
+         AND (user_id::text = $1::text OR user_id::text = '00000000-0000-0000-0000-000000000000' OR $1::text = '00000000-0000-0000-0000-000000000000' OR user_id::text = 'default-user' OR $1::text = 'default-user')
+       ORDER BY updated_at DESC LIMIT 1`,
+      [effectiveUserId]
+    ).catch(e => { console.error('[Quote Workflow Fetch Error]', e.message); return { rows: [] } })
+
+    if (wfRes.rows.length === 0) {
+      console.log(`[Quote Workflow] ⏸️ Skipping automation for quote ${quote?.quote_number || quote?.id || ''}: No LIVE workflow found for user ${effectiveUserId}`)
+      return
+    }
+    if (!wfRes.rows[0].is_live) {
+      console.log(`[Quote Workflow] ⏸️ Skipping automation for quote ${quote?.quote_number || quote?.id || ''}: Workflow "${wfRes.rows[0].name}" is in Draft mode`)
+      return
+    }
+
+    const wf = wfRes.rows[0]
+    const wfId = wf.id
+
+    // 2. Check Redis live cache for immediate toggle state
+    const cachedLive = await redis.get(`workflow:${wfId}:is_live`).catch(() => null)
+    if (cachedLive === '0') {
+      console.log(`[Quote Workflow] ⏸️ Workflow #${wfId} is paused in Redis. Skipping execution.`)
+      return
+    }
+
+    if (wfId && quote) {
+      const custName = quote.customer_name || 'Customer'
+      const totalVal = parseFloat(quote.total_amount || 0)
+      const quoteNum = quote.quote_number || `QT-${quote.id || 'New'}`
+      const isDeclined = actionName === 'Declined'
+      const companyLabel = isDeclined ? `${custName} (${quoteNum}) · Declined` : `${custName} (${quoteNum})`
+
+      const runRes = await pool.query(
+        `INSERT INTO workflow_runs (workflow_id, user_id, status, test_company, test_value, current_step, created_at)
+         VALUES ($1, $2, 'Executing', $3, $4, 0, NOW()) RETURNING *`,
+        [wfId, effectiveUserId, companyLabel, totalVal]
+      ).catch(e => { console.error('[Workflow Run Insert Error]', e.message); return { rows: [] } })
+
+      const run = runRes.rows[0]
+      if (run) {
+        const logKey = `run:${run.id}:logs`
+        await redis.rpush(logKey, JSON.stringify({
+          time: new Date().toISOString(),
+          step: 0,
+          text: `Trigger: ${actionName} — Customer '${custName}' (#${quoteNum}) for ₹${totalVal.toLocaleString('en-IN')}`
+        })).catch(() => {})
+        await redis.expire(logKey, 86400).catch(() => {})
+
+        // Invalidate workflows list cache
+        await redis.del(`workflows:list:${effectiveUserId}`).catch(() => {})
+
+        // Asynchronously publish to QStash with branch indicator
+        await publishWorkflowStep({
+          runId: run.id,
+          workflowId: wfId,
+          step: 1,
+          test_company: companyLabel,
+          test_value: totalVal,
+          branch: isDeclined ? 'declined' : 'accepted',
+          isDeclined
+        }, { delay: 1, retries: 3, retryDelay: '5s' }).catch(e => console.warn('[QStash Workflow Publish Notice]', e.message))
+
+        console.log(`[Quote Workflow Triggered] ✅ Run #${run.id} started for LIVE workflow #${wfId} (${actionName}, branch: ${isDeclined ? 'declined' : 'accepted'})`)
+      }
     }
   } catch (err) {
     console.error('[Quote Workflow Trigger Error]', err.message)
@@ -154,8 +234,146 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
   }
 }
 
+const isEmailStepActiveInWorkflow = async (userId, branch = 'accepted') => {
+  try {
+    const wfRes = await pool.query(
+      `SELECT nodes, is_live, name FROM workflows 
+       WHERE (user_id::text = $1::text OR user_id::text = '00000000-0000-0000-0000-000000000000' OR $1::text = '00000000-0000-0000-0000-000000000000' OR user_id::text = 'default-user' OR $1::text = 'default-user')
+       ORDER BY updated_at DESC LIMIT 1`,
+      [userId || 'default-user']
+    ).catch(e => { console.error('[Email Check Fetch Error]', e.message); return { rows: [] } })
+
+    if (!wfRes.rows.length) {
+      console.log(`[Email Check] No workflow found for user ${userId} — skipping email`)
+      return false
+    }
+    const wf = wfRes.rows[0]
+
+    // If workflow is not live (draft), skip email
+    if (!wf.is_live) {
+      console.log(`[Email Check] Workflow "${wf.name}" is in Draft mode — skipping email`)
+      return false
+    }
+
+    let nodes = wf.nodes
+    if (typeof nodes === 'string') {
+      try { nodes = JSON.parse(nodes) } catch { nodes = null }
+    }
+
+    let stepsToCheck = []
+    if (nodes && typeof nodes === 'object') {
+      if (branch === 'declined') {
+        stepsToCheck = Array.isArray(nodes.declinedSteps) ? nodes.declinedSteps : []
+      } else {
+        if (Array.isArray(nodes.acceptedSteps)) {
+          stepsToCheck = nodes.acceptedSteps
+        } else if (Array.isArray(nodes)) {
+          stepsToCheck = nodes
+        }
+      }
+    }
+
+    const hasEmailStep = stepsToCheck.some(s => {
+      if (!s) return false
+      const tag = String(s.tag || '').toLowerCase()
+      const badge = String(s.badge || '').toLowerCase()
+      const title = String(s.title || '').toLowerCase()
+      const icon = String(s.icon || '').toLowerCase()
+      const iconType = String(s.iconType || '').toLowerCase()
+      const id = String(s.id || '').toLowerCase()
+
+      // Exclude billing & inventory steps
+      if (tag === 'billing' || tag === 'inventory' || id === 'step-inventory' || id === 'step-bill') {
+        return false
+      }
+
+      return (
+        tag === 'email' ||
+        tag === 'multi-contact' ||
+        badge === 'email' ||
+        icon === 'mail' ||
+        iconType === 'send' ||
+        iconType === 'mail' ||
+        id === 'act-multi-recipient' ||
+        id === 'step-email' ||
+        title.includes('send invoice email') ||
+        title.includes('multiple') ||
+        title.includes('rejection') ||
+        title.includes('decline')
+      )
+    })
+
+    console.log(`[Email Check] Workflow "${wf.name}" (${branch}, live: ${wf.is_live}) — hasEmailStep: ${hasEmailStep}`)
+    return hasEmailStep
+  } catch (e) {
+    console.warn('[Email Check Error]', e.message)
+    return false
+  }
+}
+
+const sendQuoteDeclinedEmailToCustomer = async (quote) => {
+  if (!quote?.customer_email) return
+
+  // Check if "Send Rejection Follow-up Email" node is enabled in active workflow
+  const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id, 'declined')
+  if (!isEmailEnabled) {
+    console.log(`[Declined Email] ⏸️ Skipping decline email for quote #${quote.quote_number || quote.id}: "Send Rejection Follow-up Email" node was not enabled in Declined workflow branch.`)
+    return
+  }
+
+  const shopProfileRes = await pool.query('SELECT shop_name, phone, email, address FROM shop_profiles WHERE user_id::text = $1::text LIMIT 1', [quote.user_id || 'default-user']).catch(() => ({ rows: [] }))
+  const shop = shopProfileRes.rows[0] || {}
+  const shopName = shop.shop_name || quote.shop_name || 'Workshop'
+
+  const emailHtml = getQuoteDeclinedTemplate({
+    quote,
+    shopName,
+    supportEmail: shop.email,
+    supportPhone: shop.phone
+  })
+
+  const subject = `Update: Quotation #${quote.quote_number || quote.id} Declined — ${shopName}`
+
+  const sendRes = await sendEmail({
+    to: quote.customer_email,
+    subject,
+    html: emailHtml
+  }).catch(e => {
+    console.error('[Declined Email Send Error]', e.message)
+    return { error: e }
+  })
+
+  if (sendRes?.error) {
+    console.error('[Declined Email Failed]', sendRes.error.message)
+  } else {
+    console.log(`[Declined Email Sent] ✅ Sent quotation decline follow-up email to ${quote.customer_email}`)
+    
+    // Save email log into emails table
+    await pool.query(
+      `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'sent', $7, NOW(), NOW())`,
+      [
+        shopName,
+        process.env.SMTP_USER || 'noreply@workshop.app',
+        quote.customer_email,
+        subject,
+        emailHtml,
+        `Follow-up on declined Quotation #${quote.quote_number || quote.id} for ${quote.customer_name || 'Customer'}`,
+        quote.user_id || 'default-user'
+      ]
+    ).catch(e => console.error('[Declined Email Record Save Error]', e.message))
+  }
+}
+
 const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
   if (!quote?.customer_email) return
+
+  // Check if "Send Invoice Email" node is enabled in active workflow
+  const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
+  if (!isEmailEnabled) {
+    console.log(`[Invoice Email] ⏸️ Skipping automatic invoice email for quote #${quote.quote_number || quote.id}: "Send Invoice Email" node was removed from workflow.`)
+    return
+  }
 
   const shopProfileRes = await pool.query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles WHERE user_id::text = $1::text LIMIT 1', [quote.user_id || 'default-user']).catch(() => ({ rows: [] }))
   const shop = shopProfileRes.rows[0] || {}
@@ -203,7 +421,6 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
   }
 
   // 3. Save Email Log Record
-  await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => { })
   await pool.query(
     `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, 'sent', $7, NOW(), NOW())`,
@@ -222,6 +439,13 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
 const sendOrderConfirmationEmailToCustomer = async (quote, bill, billItems, orderNumber) => {
   if (!quote?.customer_email) {
     console.warn('[Order Confirmation Email] Skipped — no customer_email found on quote')
+    return
+  }
+
+  // Check if "Send Invoice Email" node is enabled in active workflow
+  const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
+  if (!isEmailEnabled) {
+    console.log(`[Order Confirmation Email] ⏸️ Skipping automatic order confirmation email for quote #${quote.quote_number || quote.id}: "Send Invoice Email" node was removed from workflow.`)
     return
   }
 
@@ -286,7 +510,6 @@ const sendOrderConfirmationEmailToCustomer = async (quote, bill, billItems, orde
   }
 
   // Save email log
-  await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => { })
   await pool.query(
     `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, 'sent', $7, NOW(), NOW())`,
@@ -393,24 +616,11 @@ router.get('/respond', emailLimiter, async (req, res) => {
 
     const generatedOrderNum = (quote.order_number && quote.order_number !== 'null') ? quote.order_number : `ORD-${Math.floor(10000 + Math.random() * 90000)}`
 
-    await pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => { })
+    // order_number column ensured at startup in initSchema()
     await pool.query(
       'UPDATE quotes SET status = $1, order_number = $2, updated_at = NOW() WHERE id = $3',
       [action, generatedOrderNum, id]
     )
-
-    // Update associated deal stage in CRM
-    if (action === 'Accepted') {
-      await pool.query(
-        "UPDATE deals SET stage = 'Closed Won', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
-        [quote.customer_name || '', `%${quote.quote_number}%`, quote.user_id || 'default-user']
-      ).catch(() => { })
-    } else if (action === 'Declined' || action === 'Rejected') {
-      await pool.query(
-        "UPDATE deals SET stage = 'Closed Lost', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
-        [quote.customer_name || '', `%${quote.quote_number}%`, quote.user_id || 'default-user']
-      ).catch(() => { })
-    }
 
     // Insert notification record into emails table so it immediately appears in the workspace Inbox
     await pool.query(
@@ -468,7 +678,6 @@ router.get('/respond', emailLimiter, async (req, res) => {
         const enrichedItems = enrichItemsWithCache(items, catalogMap)
         const autoBillNum = `INV-${Math.floor(100000 + Math.random() * 900000)}`
 
-        await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => { })
         const lineSum = enrichedItems.reduce((acc, it) => acc + (parseFloat(it.quantity || 1) * parseFloat(it.rate || it.price || 0)), 0)
         const quoteTotal = parseFloat(quote.total_amount || 0)
         const numericDiscount = lineSum > quoteTotal ? (lineSum - quoteTotal) : 0
@@ -525,25 +734,49 @@ router.get('/respond', emailLimiter, async (req, res) => {
         // Decrease product inventory stock for accepted quotation line items
         await decreaseProductStockForQuote(items, quote.user_id, quote.quote_number || quote.id)
 
-        // Send combined Order Confirmation + Invoice email (just 1 email)
-        await sendOrderConfirmationEmailToCustomer(quote, bill, createdItems.length > 0 ? createdItems : items, generatedOrderNum).catch(e => console.error('[Order Email Send Error]', e.message))
+        // Check if "Send Invoice Email" / "Send Onboarding Email" node is active in the workflow
+        const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
+
+        // Send combined Order Confirmation + Invoice email ONLY if the node is present in the workflow
+        if (isEmailEnabled) {
+          await sendOrderConfirmationEmailToCustomer(quote, bill, createdItems.length > 0 ? createdItems : items, generatedOrderNum).catch(e => console.error('[Order Email Send Error]', e.message))
+        }
         triggerWorkflowForQuote(quote.user_id || 'default-user', quote, 'Accepted').catch(e => console.error('[Workflow Trigger Error]', e.message))
+
+        const emailNoticeText = isEmailEnabled
+          ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
+          : ''
 
         autoBillNotice = `<div style="background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:20px; border-radius:12px; margin-top:20px; text-align:center;">
           <div style="font-size:1.15rem; font-weight:800; margin-bottom:6px; color:#047857;">Official Billing Invoice Issued Successfully</div>
-          <div style="font-size:0.95rem; line-height:1.5;">Order <strong>${generatedOrderNum}</strong> · Invoice <strong>#${bill.bill_number || autoBillNum}</strong> has been generated and sent to Unpaid Bills. The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!</div>
+          <div style="font-size:0.95rem; line-height:1.5;">Order <strong>${generatedOrderNum}</strong> · Invoice <strong>#${bill.bill_number || autoBillNum}</strong> has been generated and sent to Unpaid Bills.${emailNoticeText}</div>
         </div>`
       } catch (billErr) {
         console.error('[Auto Bill Generation Error]', billErr.message)
+        const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id).catch(() => false)
+        const emailNoticeText = isEmailEnabled
+          ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
+          : ''
         autoBillNotice = `<div style="background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:20px; border-radius:12px; margin-top:20px; text-align:center;">
           <div style="font-size:1.15rem; font-weight:800; margin-bottom:6px; color:#047857;">Official Billing Invoice Issued Successfully</div>
-          <div style="font-size:0.95rem; line-height:1.5;">Order <strong>${generatedOrderNum}</strong> · The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!</div>
+          <div style="font-size:0.95rem; line-height:1.5;">Order <strong>${generatedOrderNum}</strong> ·${emailNoticeText}</div>
         </div>`
       }
     } else {
-      autoBillNotice = `<div style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:16px; border-radius:10px; margin-top:20px; text-align:center;">
-        <div style="font-size:1rem; font-weight:700;">Quotation Declined</div>
-        <div style="font-size:0.875rem; margin-top:4px;">No billing invoice has been generated.</div>
+      // Check if "Send Rejection Follow-up Email" is enabled in the workflow
+      const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id, 'declined')
+      if (isEmailEnabled) {
+        await sendQuoteDeclinedEmailToCustomer(quote).catch(e => console.error('[Declined Email Send Error]', e.message))
+      }
+      triggerWorkflowForQuote(quote.user_id || 'default-user', quote, 'Declined').catch(e => console.error('[Workflow Trigger Error]', e.message))
+
+      const emailNoticeText = isEmailEnabled
+        ? ` A confirmation and follow-up has been sent to your email (<strong>${quote.customer_email || 'your email'}</strong>).`
+        : ''
+
+      autoBillNotice = `<div style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:18px 20px; border-radius:12px; margin-top:20px; text-align:center;">
+        <div style="font-size:1.1rem; font-weight:800; color:#dc2626; margin-bottom:4px;">Quotation Declined</div>
+        <div style="font-size:0.9rem; color:#7f1d1d; line-height:1.5;">No charges or billing invoices have been issued.${emailNoticeText} If you need a revised quotation or customized pricing, feel free to reply or contact us!</div>
       </div>`
     }
 
@@ -667,10 +900,10 @@ router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
     // Decrease product inventory stock for accepted quotation line items
     await decreaseProductStockForQuote(items, userId, quote.quote_number || quote.id)
 
-    // Send invoice email to customer and trigger workflow automation
+    // Send invoice email to customer
+    // Note: workflow trigger is already handled by PUT /quotes/:id (called before this endpoint)
     const updatedQuote = { ...quote, status: 'Accepted' }
     await sendInvoiceEmailToCustomer(updatedQuote, bill, createdItems.length > 0 ? createdItems : items)
-    await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
 
     res.json({ message: 'Converted to bill successfully and invoice sent to customer', bill })
   } catch (err) {
@@ -743,12 +976,6 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
     }
 
     await pool.query("UPDATE quotes SET status = 'Sent', updated_at = NOW() WHERE id = $1", [id])
-
-    // Reopen deal stage in CRM when quotation is resent
-    await pool.query(
-      "UPDATE deals SET stage = 'Proposal/Price Quote', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
-      [quote.customer_name || '', `%${quote.quote_number}%`, userId]
-    ).catch(() => { })
 
     // Save outgoing email into emails table so it appears in Sent tab
     await pool.query(
@@ -824,8 +1051,10 @@ router.post('/', apiLimiter, async (req, res) => {
 
     const createdQuote = result.rows[0]
 
-    // Trigger workflow automation
-    await triggerWorkflowForQuote(userId, createdQuote, 'Record created')
+    // Trigger workflow automation only when quote is created as Accepted
+    if (createdQuote.status === 'Accepted') {
+      await triggerWorkflowForQuote(userId, createdQuote, 'Accepted')
+    }
 
     res.status(201).json(createdQuote)
   } catch (err) {
@@ -839,6 +1068,11 @@ router.put('/:id', apiLimiter, async (req, res) => {
   try {
     const userId = getUserId(req)
     const { id } = req.params
+
+    // Fetch the current (old) status before update — so we only trigger workflow on status CHANGE to Accepted
+    const prevRes = await pool.query('SELECT status FROM quotes WHERE id = $1', [id]).catch(() => ({ rows: [] }))
+    const prevStatus = prevRes.rows[0]?.status || null
+
     const {
       quote_number,
       shop_name,
@@ -892,25 +1126,14 @@ router.put('/:id', apiLimiter, async (req, res) => {
 
     const updatedQuote = result.rows[0]
 
-    // Update deal stage if quote is Declined, Rejected, or Accepted
-    if (updatedQuote.status === 'Declined' || updatedQuote.status === 'Rejected') {
-      await pool.query(
-        "UPDATE deals SET stage = 'Closed Lost', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
-        [updatedQuote.customer_name || '', `%${updatedQuote.quote_number}%`, userId]
-      ).catch(() => { })
-    } else if (updatedQuote.status === 'Accepted') {
+    if (updatedQuote.status === 'Accepted') {
       const orderNum = updatedQuote.order_number || `ORD-${Math.floor(10000 + Math.random() * 90000)}`
-      await pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => { })
+      // order_number column ensured at startup
       await pool.query(
         "UPDATE quotes SET order_number = $1, updated_at = NOW() WHERE id = $2",
         [orderNum, updatedQuote.id]
       ).catch(() => { })
       updatedQuote.order_number = orderNum
-
-      await pool.query(
-        "UPDATE deals SET stage = 'Closed Won', updated_at = NOW() WHERE (company_name ILIKE $1 OR title ILIKE $2) AND (user_id::text = $3::text OR user_id = 'default-user')",
-        [updatedQuote.customer_name || '', `%${updatedQuote.quote_number}%`, userId]
-      ).catch(() => { })
 
       let itemsToDeduct = []
       if (Array.isArray(updatedQuote.line_items)) {
@@ -953,13 +1176,71 @@ router.put('/:id', apiLimiter, async (req, res) => {
       await sendOrderConfirmationEmailToCustomer(updatedQuote, bill, itemsToDeduct, orderNum).catch(e => console.error('[PUT Quote Order Confirmation Email Error]', e.message))
     }
 
-    // Trigger workflow automation
-    await triggerWorkflowForQuote(userId, updatedQuote, 'Record updated')
+    // Trigger workflow ONLY when status is TRANSITIONING to Accepted (not if it was already Accepted)
+    if (updatedQuote.status === 'Accepted' && prevStatus !== 'Accepted') {
+      await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
+    }
 
     res.json(updatedQuote)
   } catch (err) {
     console.error('[Quotes PUT Error]', err)
     res.status(500).json({ error: 'Failed to update quote' })
+  }
+})
+
+/* ── PATCH /api/quotes/:id/status ── */
+router.patch('/:id/status', apiLimiter, async (req, res) => {
+  try {
+    const userId = getUserId(req)
+    const { id } = req.params
+    const { status } = req.body
+
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' })
+    }
+
+    const quoteRes = await pool.query(
+      'SELECT * FROM quotes WHERE id = $1 AND (user_id::text = $2::text OR user_id = \'default-user\' OR $2 = \'default-user\')',
+      [id, userId]
+    )
+    if (quoteRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Quote not found' })
+    }
+
+    const quote = quoteRes.rows[0]
+    let orderNum = quote.order_number
+
+    if (status === 'Accepted') {
+      if (!orderNum || orderNum === 'null') {
+        orderNum = `ORD-${Math.floor(10000 + Math.random() * 90000)}`
+      }
+      let itemsToDeduct = []
+      if (Array.isArray(quote.line_items)) {
+        itemsToDeduct = quote.line_items
+      } else if (typeof quote.line_items === 'string') {
+        try { itemsToDeduct = JSON.parse(quote.line_items) } catch { }
+      }
+      if (itemsToDeduct.length > 0) {
+        await decreaseProductStockForQuote(itemsToDeduct, userId, quote.quote_number || quote.id)
+      }
+    }
+
+    const updateRes = await pool.query(
+      'UPDATE quotes SET status = $1, order_number = COALESCE($2, order_number), updated_at = NOW() WHERE id = $3 RETURNING *',
+      [status, orderNum || null, id]
+    )
+
+    const updatedQuote = updateRes.rows[0]
+
+    // Trigger workflow ONLY when quote is accepted
+    if (status === 'Accepted') {
+      await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
+    }
+
+    res.json(updatedQuote)
+  } catch (err) {
+    console.error('[Quotes Status PATCH Error]', err)
+    res.status(500).json({ error: 'Failed to update quote status' })
   }
 })
 

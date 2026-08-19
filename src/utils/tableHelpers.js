@@ -36,11 +36,25 @@ export function getSingleLetter(name) {
 }
 
 export function getCategoryTagStyle(category) {
-  if (!category) return { bg: '#f1f5f9', text: '#475467', border: '#cbd5e1' }
+  if (!category) return { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' }
   const clean = category.toString().toLowerCase().trim()
 
-  if (clean.includes('food') || clean.includes('grain') || clean.includes('rice') || clean.includes('fruit') || clean.includes('veg')) {
-    return { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' } // Green
+  // Unified Mint Green category style matching Food, Grains, Weight, Volume, Count, Package, Length, etc.
+  if (
+    clean.includes('food') || 
+    clean.includes('grain') || 
+    clean.includes('rice') || 
+    clean.includes('fruit') || 
+    clean.includes('veg') ||
+    clean.includes('weight') ||
+    clean.includes('volume') ||
+    clean.includes('count') ||
+    clean.includes('package') ||
+    clean.includes('length') ||
+    clean.includes('other') ||
+    clean.includes('custom')
+  ) {
+    return { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' } // Mint Green
   }
   if (clean.includes('electronic') || clean.includes('gadget') || clean.includes('tech') || clean.includes('device')) {
     return { bg: '#f3e8ff', text: '#6b21a8', border: '#e9d5ff' } // Purple
@@ -55,21 +69,8 @@ export function getCategoryTagStyle(category) {
     return { bg: '#fdf2f8', text: '#9d174d', border: '#fce7f3' } // Pink
   }
 
-  // Dynamic hash palette for custom categories
-  let hash = 0
-  for (let i = 0; i < clean.length; i++) {
-    hash = clean.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  const colorSchemes = [
-    { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' }, // Green
-    { bg: '#f3e8ff', text: '#6b21a8', border: '#e9d5ff' }, // Purple
-    { bg: '#dbeafe', text: '#1e40af', border: '#bfdbfe' }, // Blue
-    { bg: '#fff7ed', text: '#9a3412', border: '#ffedd5' }, // Orange
-    { bg: '#fdf2f8', text: '#9d174d', border: '#fce7f3' }, // Pink
-    { bg: '#f0fdfa', text: '#0f766e', border: '#ccfbf1' }, // Teal
-    { bg: '#fef3c7', text: '#92400e', border: '#fde68a' }, // Amber
-  ]
-  return colorSchemes[Math.abs(hash) % colorSchemes.length]
+  // Default to the exact Mint Green category pill style
+  return { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' }
 }
 
 export function getPillStyle(label) {

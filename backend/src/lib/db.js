@@ -40,10 +40,8 @@ const isDevelopment = process.env.NODE_ENV !== 'production' && !process.env.VERC
 const getPoolMax = () => {
   const configuredMax = Number.parseInt(process.env.PG_POOL_MAX, 10)
   if (Number.isInteger(configuredMax) && configuredMax > 0) return configuredMax
-  if (process.env.VERCEL) return 1
-  if (isDevelopment) return 5
-  if (process.env.NODE_ENV === 'production') return 3
-  return 5
+  if (process.env.VERCEL) return 2
+  return 10
 }
 
 const createPool = () => new Pool({
@@ -51,16 +49,16 @@ const createPool = () => new Pool({
   application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
   ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
-  min: isDevelopment ? 2 : 1,
-  idleTimeoutMillis: 300000,
-  connectionTimeoutMillis: 15000,
+  min: 1,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
   statement_timeout: 30000,
-  idle_in_transaction_session_timeout: 30000,
+  idle_in_transaction_session_timeout: 10000,
   query_timeout: 30000,
   allowExitOnIdle: false,
   keepAlive: true,
-  keepAliveInitialDelayMillis: 10000,
-  maxUses: 2000,
+  keepAliveInitialDelayMillis: 5000,
+  maxUses: 1000,
 })
 
 const pool = globalThis.__workshopPgPool || createPool()

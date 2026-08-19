@@ -45,7 +45,6 @@ import workflowRoutes from './routes/workflows.js'
 import chatRoutes from './routes/chat.js'
 import importStockRoutes from './routes/importStock.js'
 import peopleRoutes from './routes/people.js'
-import companiesRoutes from './routes/companies.js'
 import billTemplateRoutes from './routes/billTemplates.js'
 import recordRoutes from './routes/records.js'
 import notesRoutes from './routes/notes.js'
@@ -78,7 +77,12 @@ app.use(cors({
   origin: (origin, callback) => callback(null, true),
   credentials: true,
 }))
-app.use(express.json({ limit: '10mb' }))
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, _res, buf) => {
+    req.rawBody = buf.toString('utf-8')
+  }
+}))
 app.use(express.urlencoded({ extended: true }))
 
 /* ── Response Gzip Compression ── */
@@ -155,7 +159,6 @@ app.use('/api/workflows', workflowRoutes)
 app.use('/api/chat', chatRoutes)
 app.use('/api/import-stock', importStockRoutes)
 app.use('/api/people', peopleRoutes)
-app.use('/api/companies', companiesRoutes)
 app.use('/api/bill-templates', billTemplateRoutes)
 app.use('/api/records', recordRoutes)
 app.use('/api/notes', notesRoutes)
@@ -175,25 +178,9 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || 'Internal server error' })
 })
 
-import { query } from './lib/db.js'
 
-query(`
-  CREATE TABLE IF NOT EXISTS import_stock_payments (
-    id SERIAL PRIMARY KEY,
-    import_stock_id INT NOT NULL,
-    user_id TEXT NOT NULL,
-    amount DECIMAL(10, 2) NOT NULL,
-    payment_mode VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-  );
-  ALTER TABLE import_stock_payments ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE import_stock_payments FORCE ROW LEVEL SECURITY;
-  DROP POLICY IF EXISTS import_stock_payments_user_policy ON public.import_stock_payments;
-  DROP POLICY IF EXISTS user_isolation_policy ON public.import_stock_payments;
-  CREATE POLICY user_isolation_policy ON public.import_stock_payments FOR ALL USING ((user_id = current_setting('app.current_user_id'::text, true)) OR (current_setting('app.bypass_rls'::text, true) = 'on'::text));
-`).catch(() => {})
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
   })

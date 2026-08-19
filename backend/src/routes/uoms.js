@@ -9,65 +9,60 @@ router.use(apiLimiter)
 
 let ensureUomsTablePromise
 
-function ensureUomsTable() {
-  ensureUomsTablePromise ||= query(`
-    CREATE TABLE IF NOT EXISTS uoms (
-      id SERIAL PRIMARY KEY,
-      user_id TEXT,
-      code VARCHAR(50) NOT NULL,
-      name VARCHAR(100) NOT NULL,
-      category VARCHAR(50) DEFAULT 'Count',
-      is_bulk BOOLEAN DEFAULT false,
-      presets TEXT DEFAULT '1',
-      status VARCHAR(20) DEFAULT 'Active',
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    )
-  `).catch((err) => {
-    ensureUomsTablePromise = null
-    throw err
-  })
+async function ensureUomsTable() {
+  if (!ensureUomsTablePromise) {
+    ensureUomsTablePromise = (async () => {
+      await query(`
+        CREATE TABLE IF NOT EXISTS uoms (
+          id SERIAL PRIMARY KEY,
+          user_id TEXT,
+          code VARCHAR(50) NOT NULL,
+          name VARCHAR(100) NOT NULL,
+          category VARCHAR(50) DEFAULT 'Count',
+          is_bulk BOOLEAN DEFAULT false,
+          presets TEXT DEFAULT '1',
+          status VARCHAR(20) DEFAULT 'Active',
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `)
+    })().catch((err) => {
+      ensureUomsTablePromise = null
+      throw err
+    })
+  }
 
   return ensureUomsTablePromise
 }
 
-const DEFAULT_UOMS = [
-  { code: 'pcs', name: 'Pieces', category: 'Count', is_bulk: false, presets: '1' },
-  { code: 'box', name: 'Box / Pack', category: 'Package', is_bulk: true, presets: '10, 24, 50, 100' },
-  { code: 'kgs', name: 'Kilograms', category: 'Weight', is_bulk: true, presets: '1, 5, 10, 25, 50, 1000' },
-  { code: 'mtr', name: 'Meters', category: 'Length', is_bulk: true, presets: '1, 10, 25, 50, 100' },
-  { code: 'ltr', name: 'Liters', category: 'Volume', is_bulk: true, presets: '1, 5, 20, 25, 50, 200' },
-  { code: 'doz', name: 'Dozen', category: 'Count', is_bulk: true, presets: '12, 60' },
-  { code: 'g',   name: 'Grams', category: 'Weight', is_bulk: false, presets: '100, 250, 500' },
-  { code: 'ml',  name: 'Milliliters', category: 'Volume', is_bulk: false, presets: '250, 500, 750' },
-  { code: 'ft',  name: 'Feet', category: 'Length', is_bulk: true, presets: '10, 20, 50' },
-]
-
-async function seedDefaultUoms(userId) {
+/* GET /api/uoms - List UOMs created for the workspace */
+router.get('/', async (req, res) => {
+  const workspaceId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
+  const userId = req.user?.id || workspaceId
   try {
     await ensureUomsTable()
-    const { rows } = await query('SELECT COUNT(*) FROM uoms WHERE user_id::text = $1::text', [userId])
-    if (parseInt(rows[0].count) === 0) {
-      for (const u of DEFAULT_UOMS) {
-        await query(
-          `INSERT INTO uoms (user_id, code, name, category, is_bulk, presets, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'Active') ON CONFLICT DO NOTHING`,
-          [String(userId), u.code, u.name, u.category, u.is_bulk, u.presets]
-        )
-      }
-    }
-  } catch (err) {
-    console.error('[DB Seed UOMs Warning]', err.message)
-  }
-}
-
-/* GET /api/uoms - List UOMs */
-router.get('/', async (req, res) => {
-  const userId = req.workspaceId
-  try {
-    await seedDefaultUoms(userId)
-    const { rows } = await query("SELECT * FROM uoms WHERE (user_id::text = $1::text OR user_id::text = 'default-user' OR $1::text = 'default-user' OR user_id IS NULL) ORDER BY id ASC", [userId])
+    const { rows } = await query(
+      "SELECT * FROM uoms WHERE user_id::text = $1 OR user_id::text = $2 OR user_id::text = 'default-user' OR user_id IS NULL ORDER BY id ASC",
+      [String(workspaceId), String(userId)]
+    )
     res.json(rows)
+  } catch (err) {
+    console.error('[GET /api/uoms Error]', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* DELETE /api/uoms/all - Clear all UOMs */
+router.delete('/all', async (req, res) => {
+  const workspaceId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
+  const userId = req.user?.id || workspaceId
+  try {
+    await ensureUomsTable()
+    await query(
+      "DELETE FROM uoms WHERE user_id::text = $1 OR user_id::text = $2 OR user_id::text = 'default-user' OR user_id IS NULL",
+      [String(workspaceId), String(userId)]
+    )
+    res.json({ message: 'All UOMs cleared' })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -75,7 +70,7 @@ router.get('/', async (req, res) => {
 
 /* POST /api/uoms - Create UOM */
 router.post('/', async (req, res) => {
-  const userId = req.workspaceId
+  const userId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
   const { code, name, category, is_bulk, presets, status } = req.body
   if (!code || !name) return res.status(400).json({ error: 'code and name are required' })
 
@@ -88,20 +83,22 @@ router.post('/', async (req, res) => {
     )
     res.status(201).json(rows[0])
   } catch (err) {
+    console.error('[POST /api/uoms Error]', err)
     res.status(500).json({ error: err.message })
   }
 })
 
 /* PUT /api/uoms/:id - Update UOM */
 router.put('/:id', async (req, res) => {
-  const userId = req.workspaceId
+  const workspaceId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
+  const userId = req.user?.id || workspaceId
   const { code, name, category, is_bulk, presets, status } = req.body
   try {
     await ensureUomsTable()
     const { rows } = await query(
       `UPDATE uoms SET code=$1, name=$2, category=$3, is_bulk=$4, presets=$5, status=$6, updated_at=NOW()
-       WHERE id=$7 AND user_id::text=$8::text RETURNING *`,
-      [code.toLowerCase().trim(), name.trim(), category, Boolean(is_bulk), presets, status, req.params.id, String(userId)]
+       WHERE id=$7 AND (user_id::text=$8 OR user_id::text=$9 OR user_id::text='default-user' OR user_id IS NULL) RETURNING *`,
+      [code.toLowerCase().trim(), name.trim(), category, Boolean(is_bulk), presets, status, req.params.id, String(workspaceId), String(userId)]
     )
     if (!rows.length) return res.status(404).json({ error: 'UOM not found' })
     res.json(rows[0])
@@ -112,10 +109,14 @@ router.put('/:id', async (req, res) => {
 
 /* DELETE /api/uoms/:id - Delete UOM */
 router.delete('/:id', async (req, res) => {
-  const userId = req.workspaceId
+  const workspaceId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
+  const userId = req.user?.id || workspaceId
   try {
     await ensureUomsTable()
-    await query('DELETE FROM uoms WHERE id = $1 AND user_id::text = $2::text', [req.params.id, String(userId)])
+    await query(
+      "DELETE FROM uoms WHERE id = $1 AND (user_id::text = $2 OR user_id::text = $3 OR user_id::text = 'default-user' OR user_id IS NULL)",
+      [req.params.id, String(workspaceId), String(userId)]
+    )
     res.json({ message: 'UOM deleted' })
   } catch (err) {
     res.status(500).json({ error: err.message })

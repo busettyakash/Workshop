@@ -26,22 +26,26 @@ async function clearImportStockCache(userId) {
 }
 
 async function ensureImportStockSchema() {
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50)`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2)`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_name TEXT`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_phone TEXT`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_city TEXT`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_state TEXT`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buying_price DECIMAL(10, 2)`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2)`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS note TEXT`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS add_stock_qty NUMERIC`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS supplier_total_cost DECIMAL(10, 2)`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(10, 2) DEFAULT 0`).catch(() => {})
-  await query(`ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50)`).catch(() => {})
+  // Batch all ALTER TABLE ADD COLUMN calls into a single DO $$ block — 1 round trip instead of 15+
   await query(`
+    DO $$
+    BEGIN
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_name TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_phone TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_city TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_state TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buying_price DECIMAL(10, 2);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS note TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS add_stock_qty NUMERIC;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS supplier_total_cost DECIMAL(10, 2);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(10, 2) DEFAULT 0;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);
+    END $$;
     CREATE TABLE IF NOT EXISTS import_stock_payments (
       id SERIAL PRIMARY KEY,
       import_stock_id INT NOT NULL,
@@ -56,8 +60,13 @@ async function ensureImportStockSchema() {
     DROP POLICY IF EXISTS user_isolation_policy ON public.import_stock_payments;
     CREATE POLICY user_isolation_policy ON public.import_stock_payments FOR ALL USING ((user_id = current_setting('app.current_user_id'::text, true)) OR (current_setting('app.bypass_rls'::text, true) = 'on'::text));
   `).catch(() => {})
-  await query(`UPDATE import_stock SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
-  await query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {})
+
+  // Run data-fix queries in parallel — no dependency between them
+  await Promise.all([
+    query(`UPDATE import_stock SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {}),
+    query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {}),
+  ])
+
   // Restore import_stock.stock to original purchased qty using the earliest stock_before in history
   // (The stock history records what the quantity was BEFORE each deduction, so max = original purchased qty)
   await query(`

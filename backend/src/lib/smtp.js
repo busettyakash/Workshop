@@ -2,32 +2,37 @@ import nodemailer from 'nodemailer'
 import dotenv from 'dotenv'
 dotenv.config()
 
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
+const createTransporter = () => nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: parseInt(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_PORT === '465',
+  secure: String(process.env.SMTP_PORT) === '465',
+  pool: true,
+  maxConnections: 5,
+  maxMessages: 100,
+  rateLimit: 14,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-  connectionTimeout: 15000,
-  greetingTimeout: 10000,
-  socketTimeout: 20000,
+  connectionTimeout: 20000,
+  greetingTimeout: 15000,
+  socketTimeout: 30000,
   tls: {
     rejectUnauthorized: false
   }
 })
 
+let transporter = createTransporter()
+
 transporter.verify((error) => {
   if (error) {
-    console.error('[SMTP] Connection failed:', error.message)
+    console.error('[SMTP] Connection verify warning:', error.message)
   } else {
     console.log('[SMTP] Ready ✅ — using', process.env.SMTP_USER)
   }
 })
 
-export const sendEmail = async ({ to, subject, html, attachments = [] }) => {
+export const sendEmail = async ({ to, subject, html, attachments = [] }, retriesLeft = 2) => {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     const missing = [
       !process.env.SMTP_HOST && 'SMTP_HOST',
@@ -49,7 +54,27 @@ export const sendEmail = async ({ to, subject, html, attachments = [] }) => {
     console.log('[SMTP] Email sent ✅ id:', info.messageId)
     return { data: { id: info.messageId }, error: null }
   } catch (err) {
-    console.error('[SMTP] Send failed:', err.message)
+    console.error(`[SMTP Warning] Send attempt error (${err.message}). Retries remaining: ${retriesLeft}`)
+    const isConnErr =
+      err.code === 'ECONNRESET' ||
+      err.code === 'ETIMEDOUT' ||
+      err.code === 'EPIPE' ||
+      err.message?.includes('ECONNRESET') ||
+      err.message?.includes('socket') ||
+      err.message?.includes('connection')
+
+    if (isConnErr && retriesLeft > 0) {
+      console.log('[SMTP RECONNECT] Re-establishing fresh SMTP transport connection...')
+      try {
+        transporter.close()
+      } catch {
+        // ignore close errors
+      }
+      transporter = createTransporter()
+      await new Promise(r => setTimeout(r, 600))
+      return sendEmail({ to, subject, html, attachments }, retriesLeft - 1)
+    }
+
     return { data: null, error: err }
   }
 }

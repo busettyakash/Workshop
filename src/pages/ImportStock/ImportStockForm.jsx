@@ -6,7 +6,6 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Info, Check, User, Package, DollarSign, FileText, ArrowRight } from 'lucide-react'
 import api from '../../api/client'
-import { getBulkUnitDetails, getDynamicFieldLabels, ALL_UOM_OPTIONS } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
 
 const S = {
@@ -78,12 +77,13 @@ export default function ImportStockForm() {
     updated_price_date: todayStr,
     stock: 0,
     status: 'pending',
-    unit: 'kgs',
+    unit: '',
     description: '',
-    bag_weight: 100
+    bag_weight: ''
   })
 
-  const [uomOptions, setUomOptions] = useState(ALL_UOM_OPTIONS)
+  const [uomRecords, setUomRecords] = useState([])
+  const [uomOptions, setUomOptions] = useState([])
 
   useEffect(() => {
     dispatch(setActiveNav('Import Stock'))
@@ -91,12 +91,25 @@ export default function ImportStockForm() {
 
     api.get('/uoms').then(res => {
       if (Array.isArray(res.data) && res.data.length > 0) {
-        const dbOptions = res.data.map(u => ({
+        const activeUnits = res.data.filter(u => u.status !== 'Inactive')
+        setUomRecords(activeUnits)
+        const dbOptions = activeUnits.map(u => ({
           value: u.code,
           label: `${u.name} (${u.code})`,
           category: u.category
         }))
         setUomOptions(dbOptions)
+        if (!id && activeUnits.length > 0) {
+          const firstUom = activeUnits[0]
+          const presets = firstUom?.presets ? String(firstUom.presets).split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0) : []
+          const initialWeight = presets.length > 0 ? presets[0] : 1
+          setForm(prev => ({
+            ...prev,
+            unit: firstUom.code,
+            bag_weight: prev.bag_weight || initialWeight,
+            price_covers: prev.price_covers || initialWeight
+          }))
+        }
       }
     }).catch(() => { })
   }, [id, dispatch])
@@ -161,8 +174,50 @@ export default function ImportStockForm() {
     dispatch(addToast({ message: `Generated SKU: ${code}`, type: 'info' }))
   }
 
+  const currentUomObj = React.useMemo(() => {
+    return uomRecords.find(u => u.code?.toLowerCase() === String(form.unit || '').toLowerCase().trim())
+  }, [uomRecords, form.unit])
+
+  const uomPresets = React.useMemo(() => {
+    if (!currentUomObj?.presets) return []
+    return String(currentUomObj.presets)
+      .split(',')
+      .map(s => parseFloat(s.trim()))
+      .filter(n => !isNaN(n) && n > 0)
+  }, [currentUomObj])
+
+  const uomShort = currentUomObj?.code || form.unit || 'unit'
+  const uomName = currentUomObj?.name || form.unit || 'Unit'
+  const isBulkUom = Boolean(currentUomObj?.is_bulk)
+
   const handleChange = (e) => {
     const { name, value } = e.target
+    if (name === 'unit') {
+      const matchedUom = uomRecords.find(u => u.code?.toLowerCase() === String(value).toLowerCase().trim())
+      const presets = matchedUom?.presets ? String(matchedUom.presets).split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0) : []
+      const nextBw = presets.length > 0 ? presets[0] : ''
+      const nextPc = presets.length > 0 ? presets[0] : ''
+
+      setForm(prev => {
+        const pc = parseFloat(nextPc || prev.price_covers || 1)
+        const bwVal = parseFloat(nextBw || prev.bag_weight || 1)
+        let calculatedPrice = prev.price
+        if (prev.price_100 && !isNaN(prev.price_100)) {
+          const p100 = parseFloat(prev.price_100)
+          calculatedPrice = pc > 0 ? ((p100 / pc) * bwVal).toFixed(2) : p100.toFixed(2)
+        }
+        return {
+          ...prev,
+          unit: value,
+          bag_weight: nextBw || prev.bag_weight,
+          price_covers: nextPc || prev.price_covers,
+          price: calculatedPrice
+        }
+      })
+      if (errors.unit) setErrors(prev => ({ ...prev, unit: '' }))
+      return
+    }
+
     setForm(prev => ({ ...prev, [name]: value }))
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }))
   }
@@ -178,11 +233,10 @@ export default function ImportStockForm() {
 
   const validateStep2 = () => {
     const err = {}
-    const bulkUnit = getBulkUnitDetails(form.unit)
     if (!form.name.trim()) err.name = 'Product name is required'
     if (!form.price || isNaN(form.price) || parseFloat(form.price) <= 0) err.price = 'Enter a valid selling price'
-    if (bulkUnit && (!form.bag_weight || isNaN(form.bag_weight) || parseFloat(form.bag_weight) <= 0)) {
-      err.bag_weight = `Enter a valid ${bulkUnit.label.toLowerCase()} size (e.g. 25)`
+    if (isBulkUom && (!form.bag_weight || isNaN(form.bag_weight) || parseFloat(form.bag_weight) <= 0)) {
+      err.bag_weight = `Enter a valid pack size / capacity (${uomShort})`
     }
     setErrors(err)
     return Object.keys(err).length === 0
@@ -209,9 +263,8 @@ export default function ImportStockForm() {
 
     setSaving(true)
     try {
-      const bulkUnit = getBulkUnitDetails(form.unit)
-      const unitShort = bulkUnit?.short || 'unit'
-      const unitPlural = bulkUnit?.pluralName || 'Bags / Units'
+      const unitShort = uomShort
+      const unitPlural = uomName
 
       const noteBody = `=== REVIEW IMPORT STOCK SUMMARY ===
 
@@ -494,7 +547,19 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Unit of Measure (UOM)</label>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569' }}>Unit of Measure (UOM)</label>
+                        {uomOptions.length === 0 && (
+                          <a
+                            href="/settings?tab=uom"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600, textDecoration: 'underline' }}
+                          >
+                            + Add UOM in Settings
+                          </a>
+                        )}
+                      </div>
                       <select
                         name="unit"
                         value={form.unit}
@@ -503,12 +568,24 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         onFocus={() => setFocus('unit')}
                         onBlur={() => setFocus(null)}
                       >
-                        {uomOptions.map(opt => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
+                        {uomOptions.length === 0 ? (
+                          <option value="">-- No UOM found (Create in Settings &gt; UOM) --</option>
+                        ) : (
+                          <>
+                            <option value="" disabled>-- Select Unit of Measure --</option>
+                            {uomOptions.map(opt => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </>
+                        )}
                       </select>
+                      {uomOptions.length === 0 && (
+                        <span style={{ fontSize: '0.70rem', color: '#dc2626', marginTop: 3, display: 'block' }}>
+                          ⚠️ No measurement units created yet. Please add your units in Settings &gt; UOM.
+                        </span>
+                      )}
                     </div>
 
                     <div>
@@ -525,12 +602,12 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         onBlur={() => setFocus(null)}
                       />
                       <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3, display: 'block' }}>
-                        {form.buying_price ? `₹${(parseFloat(form.buying_price) / parseFloat(form.price_covers || 100)).toFixed(2)} / ${getDynamicFieldLabels(form.unit).short} cost` : 'Purchase cost paid to supplier'}
+                        {form.buying_price ? `₹${(parseFloat(form.buying_price) / parseFloat(form.price_covers || 1)).toFixed(2)} / ${uomShort} cost` : 'Purchase cost paid to supplier'}
                       </span>
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>{getDynamicFieldLabels(form.unit).priceCoversLabel}</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Price Covers ({uomShort})</label>
                       <input
                         name="price_covers"
                         type="number"
@@ -571,12 +648,14 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                       />
                       {errors.price && <span style={S.error}>{errors.price}</span>}
                       <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3, display: 'block' }}>
-                        {sellRatePerUnit > 0 ? `₹${sellRatePerUnit} / ${getDynamicFieldLabels(form.unit).short} rate` : 'Base market price'}
+                        {sellRatePerUnit > 0 ? `₹${sellRatePerUnit} / ${uomShort} rate` : 'Base market price'}
                       </span>
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>{getDynamicFieldLabels(form.unit).packWeightLabel}</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
+                        {isBulkUom ? `Package Weight / Capacity (${uomShort}) *` : `Pack Size (${uomShort}) *`}
+                      </label>
                       <input
                         name="bag_weight"
                         type="number"
@@ -599,9 +678,9 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         onFocus={() => setFocus('bag_weight')}
                         onBlur={() => setFocus(null)}
                       />
-                      {getBulkUnitDetails(form.unit)?.quickSizes && (
+                      {uomPresets.length > 0 && (
                         <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-                          {getBulkUnitDetails(form.unit).quickSizes.map(size => {
+                          {uomPresets.map(size => {
                             const isSelected = Number(form.bag_weight) === size
                             return (
                               <button
@@ -627,7 +706,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                                   cursor: 'pointer'
                                 }}
                               >
-                                {size}{getBulkUnitDetails(form.unit).short}
+                                {size}{uomShort}
                               </button>
                             )
                           })}
@@ -638,7 +717,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
-                        Initial Purchased Quantity ({getBulkUnitDetails(form.unit)?.pluralName || 'Bags'})
+                        Initial Purchased Quantity ({uomName})
                       </label>
                       <input name="stock" type="number" value={form.stock} onChange={handleChange} placeholder="0" style={inp('stock')} onFocus={() => setFocus('stock')} onBlur={() => setFocus(null)} />
                       <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, display: 'block' }}>
@@ -686,7 +765,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>
-                        Add New Stock to Inventory ({getBulkUnitDetails(form.unit)?.pluralName || 'Bags'})
+                        Add New Stock to Inventory ({uomName})
                       </label>
                       <input
                         name="add_stock_qty"
@@ -765,7 +844,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         <div><strong style={{ color: '#1e293b' }}>Product Name:</strong> {form.name}</div>
                         <div><strong style={{ color: '#1e293b' }}>SKU / Barcode:</strong> {form.sku || 'N/A'}</div>
                         <div><strong style={{ color: '#1e293b' }}>Category:</strong> {form.category || 'General'}</div>
-                        <div><strong style={{ color: '#1e293b' }}>Pack Weight:</strong> {form.bag_weight} {getBulkUnitDetails(form.unit)?.short || form.unit} per pack</div>
+                        <div><strong style={{ color: '#1e293b' }}>Pack Weight:</strong> {form.bag_weight} {uomShort} per pack</div>
                       </div>
                     </div>
                   </div>
@@ -784,7 +863,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                           {form.buying_price ? `₹${parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
-                          ₹{parseFloat(buyRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {getBulkUnitDetails(form.unit)?.short || 'unit'} cost
+                          ₹{parseFloat(buyRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {uomShort} cost
                         </div>
                       </div>
 
@@ -794,7 +873,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                           ₹{sell100 > 0 ? sell100.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
-                          ₹{parseFloat(sellRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {getBulkUnitDetails(form.unit)?.short || 'unit'} selling
+                          ₹{parseFloat(sellRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {uomShort} selling
                         </div>
                       </div>
 
@@ -818,19 +897,19 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                       <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1e3a8a', marginTop: 2 }}>
                         {form.add_stock_qty && parseFloat(form.add_stock_qty) > 0 ? (
                           <span>
-                            Total After Addition: <strong style={{ color: '#15803d' }}>{(parseFloat(form.initial_stock ?? form.stock ?? 0) + parseFloat(form.add_stock_qty || 0))} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags'}</strong>
+                            Total After Addition: <strong style={{ color: '#15803d' }}>{(parseFloat(form.initial_stock ?? form.stock ?? 0) + parseFloat(form.add_stock_qty || 0))} {uomName}</strong>
                           </span>
                         ) : (
-                          <span>{form.stock} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags / Units'}</span>
+                          <span>{form.stock} {uomName}</span>
                         )}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', fontSize: '0.75rem', color: '#2563eb' }}>
-                      <div>Initial Batch Qty: <strong>{form.initial_stock ?? form.stock} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags'}</strong></div>
+                      <div>Initial Batch Qty: <strong>{form.initial_stock ?? form.stock} {uomName}</strong></div>
                       {form.add_stock_qty && parseFloat(form.add_stock_qty) > 0 && (
-                        <div style={{ color: '#15803d', fontWeight: 600 }}>Adding to Stock: <strong>+{form.add_stock_qty} {getBulkUnitDetails(form.unit)?.pluralName || 'Bags'}</strong></div>
+                        <div style={{ color: '#15803d', fontWeight: 600 }}>Adding to Stock: <strong>+{form.add_stock_qty} {uomName}</strong></div>
                       )}
-                      <div>Pack Size: <strong>{form.bag_weight} {getBulkUnitDetails(form.unit)?.short || 'kg'}</strong> / pack</div>
+                      <div>Pack Size: <strong>{form.bag_weight} {uomShort}</strong> / pack</div>
                     </div>
                   </div>
 

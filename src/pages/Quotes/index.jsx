@@ -1198,16 +1198,18 @@ export default function Quotes() {
     return pages
   }
 
-  const fetchQuotes = async (currentPage = page) => {
-    setLoading(true)
+  const fetchQuotes = async (currentPage = page, isBackground = false) => {
+    if (!isBackground) setLoading(true)
     try {
       const res = await api.get(`/quotes?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&status=${filterStatus}`)
       setQuotes(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
-      dispatch(addToast({ message: 'Failed to load quotes', type: 'error' }))
+      if (!isBackground) {
+        dispatch(addToast({ message: 'Failed to load quotes', type: 'error' }))
+      }
     } finally {
-      setLoading(false)
+      if (!isBackground) setLoading(false)
     }
   }
 
@@ -1215,7 +1217,30 @@ export default function Quotes() {
     dispatch(setActiveNav('Quotes'))
     dispatch(setSidebarOpen(true))
     fetchQuotes(page)
+
+    // Real-time auto polling so quote acceptance/rejection from customer emails or other tabs updates automatically without full page reload
+    const pollTimer = setInterval(() => {
+      fetchQuotes(page, true)
+    }, 3500)
+
+    return () => clearInterval(pollTimer)
   }, [dispatch, page, search, filterStatus])
+
+  const handleUpdateStatus = async (quoteId, newStatus) => {
+    // Optimistic UI state update
+    setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status: newStatus } : q))
+    if (viewingQuote && viewingQuote.id === quoteId) {
+      setViewingQuote(prev => prev ? { ...prev, status: newStatus } : null)
+    }
+    try {
+      await api.patch(`/quotes/${quoteId}/status`, { status: newStatus })
+      dispatch(addToast({ message: `Quote #${quoteId} marked as ${newStatus}`, type: 'success' }))
+      fetchQuotes(page, true)
+    } catch (err) {
+      dispatch(addToast({ message: 'Failed to update quote status', type: 'error' }))
+      fetchQuotes(page)
+    }
+  }
 
   const handleSaveQuote = (savedQuote) => {
     setIsFormOpen(false)
@@ -1523,6 +1548,7 @@ export default function Quotes() {
             setViewingQuote(null)
             setEditingQuote(q)
           }}
+          onStatusChange={handleUpdateStatus}
         />
       )}
 

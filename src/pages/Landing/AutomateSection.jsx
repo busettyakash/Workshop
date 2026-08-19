@@ -2,7 +2,8 @@ import React from 'react'
 import {
   CircleDollarSign, GitBranch, Send, Plus, Target,
   RefreshCw, Star, Anchor, Sparkles, FileText, Heart,
-  Search, Bell, Zap, Users, Mail, TrendingUp, Package, Clock
+  Search, Bell, Zap, Users, Mail, TrendingUp, Package, Clock,
+  Disc, Layers
 } from 'lucide-react'
 
 const pills = [
@@ -71,114 +72,445 @@ export default function AutomateSection() {
         <a href="#" className="cds-link">Explore automations →</a>
       </div>
 
-      {/* ── CENTER ── */}
-      <div className="cds-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: '500px', height: '520px', position: 'relative' }}>
+      {/* ── CENTER: New Quotation Sequential Workflow Diagram ── */}
+      <div className="cds-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 15px 35px', overflow: 'hidden' }}>
+        <div style={{
+          position: 'relative',
+          width: '660px',
+          minHeight: '700px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          userSelect: 'none',
+          transform: 'scale(0.92)',
+          transformOrigin: 'top center'
+        }}>
 
-          <svg viewBox="0 0 500 540" xmlns="http://www.w3.org/2000/svg"
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}>
-            <circle cx="155" cy="130" r="4" fill="#fff" stroke="#10b981" strokeWidth="1.5" className="ws-svg-fade" />
-            <path d="M 155 134 C 155 158, 295 158, 295 175" stroke="#10b981" strokeWidth="1.5" fill="none" pathLength="1" className="ws-svg-draw" />
-            <path d="M 291 171 L 295 175 L 299 171" stroke="#10b981" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className="ws-svg-fade" />
-            <circle cx="295" cy="270" r="4" fill="#fff" stroke="#10b981" strokeWidth="1.5" className="ws-svg-fade" />
-            <path d="M 295 274 C 295 308, 105 308, 105 340" stroke="#10b981" strokeWidth="1.5" fill="none" pathLength="1" className="ws-svg-draw" />
-            <path d="M 101 336 L 105 340 L 109 336" stroke="#10b981" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className="ws-svg-fade" />
-            <path d="M 295 274 C 295 308, 400 308, 400 340" stroke="#d1d5db" strokeWidth="1.5" fill="none" pathLength="1" className="ws-svg-draw" />
-            <path d="M 396 336 L 400 340 L 404 336" stroke="#d1d5db" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className="ws-svg-fade" />
-            <circle cx="105" cy="445" r="4" fill="#fff" stroke="#10b981" strokeWidth="1.5" className="ws-svg-fade" />
-            <path d="M 105 449 L 105 480" stroke="#d1d5db" strokeWidth="1.5" pathLength="1" className="ws-svg-draw" />
-            <circle cx="400" cy="445" r="4" fill="#fff" stroke="#d1d5db" strokeWidth="1.5" className="ws-svg-fade" />
-            <path d="M 400 449 L 400 480" stroke="#d1d5db" strokeWidth="1.5" pathLength="1" className="ws-svg-draw" />
+          {/* ── SVG Curved Cable Overlay for Switch Branching ── */}
+          <svg
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+              zIndex: 1,
+              overflow: 'visible'
+            }}
+          >
+            <defs>
+              <marker
+                id="landing-green-arrow"
+                viewBox="0 0 10 10"
+                refX="5"
+                refY="5"
+                markerWidth="5"
+                markerHeight="5"
+                orient="auto"
+              >
+                <path d="M 1 2 L 8 5 L 1 8 z" fill="#10b981" />
+              </marker>
+              <marker
+                id="landing-gray-arrow"
+                viewBox="0 0 10 10"
+                refX="5"
+                refY="5"
+                markerWidth="5"
+                markerHeight="5"
+                orient="auto"
+              >
+                <path d="M 1 2 L 8 5 L 1 8 z" fill="#94a3b8" />
+              </marker>
+            </defs>
+
+            {/* Cable: Short vertical line between Trigger (y: 64) and Switch (y: 108) */}
+            <path
+              d="M 330 64 L 330 108"
+              stroke="#10b981"
+              strokeWidth="2.2"
+              fill="none"
+              strokeLinecap="round"
+            />
+
+            {/* Cable (Accepted Branch): Originates directly from Switch bottom (x: 330, y: 172) to Step 1 Top Center (x: 148, y: 256) */}
+            <path
+              d="M 330 172 C 330 216, 148 214, 148 256"
+              stroke="#10b981"
+              strokeWidth="2.2"
+              fill="none"
+              strokeLinecap="round"
+              markerEnd="url(#landing-green-arrow)"
+            />
+
+            {/* Cable (Right Branch): Originates directly from Switch bottom (x: 330, y: 172) to Log Record Top Center (x: 512, y: 256) */}
+            <path
+              d="M 330 172 C 330 216, 512 214, 512 256"
+              stroke="#94a3b8"
+              strokeWidth="2.2"
+              fill="none"
+              strokeLinecap="round"
+              markerEnd="url(#landing-gray-arrow)"
+            />
+
+            {/* Split Connector Circle directly at Switch bottom center (x: 330, y: 172) */}
+            <circle cx="330" cy="172" r="4" fill="#ffffff" stroke="#10b981" strokeWidth="2.2" />
           </svg>
 
-          {[
-            { label: 'Upsell', left: '200px', color: '#10b981', border: '#10b981' },
-            { label: 'Nurture', left: '350px', color: '#9ca3af', border: '#e5e7eb' },
-          ].map(({ label, left, color, border }) => (
-            <div key={label} style={{
-              top: '308px', left, position: 'absolute',
-              transform: 'translate(-50%, -50%)', zIndex: 2,
-              background: '#fff', padding: '2px 10px', borderRadius: '12px',
-              fontSize: '0.65rem', fontWeight: 600, color, border: `1px solid ${border}`,
-            }}>{label}</div>
-          ))}
+          {/* ── Absolute Pill Badges Centered Exactly on Branch Curve Wires ── */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 239,
+              top: 214,
+              transform: 'translate(-50%, -50%)',
+              zIndex: 4,
+              pointerEvents: 'none',
+              background: '#ffffff',
+              border: '1.5px solid #10b981',
+              borderRadius: 12,
+              padding: '2px 9px',
+              fontSize: '0.68rem',
+              fontWeight: 700,
+              color: '#059669',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Accepted
+          </div>
 
-          {/* Trigger Node */}
-          <div className="ws-node-fade-in" style={{ top: '20px', left: '50px', width: '210px', position: 'absolute', zIndex: 3 }}>
-            <div className="ws-automate-node ws-automate-node--trigger">
-              {/* Top bar: label + green line + status */}
-              <div className="ws-automate-topbar ws-automate-topbar--green">
-                <span className="ws-automate-toplabel">
-                  <Target size={11} strokeWidth={2.5} />
-                  Trigger
-                </span>
-                <span className="ws-automate-topstatus ws-automate-topstatus--green">✓ Triggered</span>
+          <div
+            style={{
+              position: 'absolute',
+              left: 421,
+              top: 214,
+              transform: 'translate(-50%, -50%)',
+              zIndex: 4,
+              pointerEvents: 'none',
+              background: '#ffffff',
+              border: '1.5px solid #94a3b8',
+              borderRadius: 12,
+              padding: '2px 9px',
+              fontSize: '0.68rem',
+              fontWeight: 600,
+              color: '#475569',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Declined / Draft
+          </div>
+
+          {/* ── ROW 1: TRIGGER NODE (Centered) ── */}
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'center', zIndex: 2, position: 'relative' }}>
+            <div
+              style={{
+                width: 260,
+                background: '#ffffff',
+                border: '1.5px solid #2563eb',
+                borderRadius: 12,
+                padding: '10px 14px',
+                position: 'relative',
+                boxShadow: '0 0 0 3px rgba(37,99,235,0.10), 0 4px 14px rgba(0,0,0,0.04)',
+                cursor: 'default'
+              }}
+            >
+              {/* Top Left Badge: Trigger */}
+              <div style={{
+                position: 'absolute', top: -10, left: 14,
+                background: '#ffffff', border: '1px solid #e2e8f0',
+                borderRadius: 10, padding: '1px 7px', fontSize: '0.66rem',
+                fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: 4,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+              }}>
+                <Disc size={10} color="#64748b" /> Trigger
               </div>
-              <div className="ws-automate-node-main">
-                <div className="ws-automate-icon-box ws-automate-icon-blue"><CircleDollarSign size={14} strokeWidth={2.5} /></div>
-                <div className="ws-automate-node-info">
-                  <div className="ws-automate-node-name">When Deal updated <span className="ws-automate-node-badge">Deals</span></div>
+
+              {/* Node Inner Content */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 2 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 800, fontSize: '0.95rem', flexShrink: 0
+                }}>
+                  $
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a' }}>
+                      When Quote updated
+                    </span>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 600, background: '#f1f5f9', color: '#64748b', padding: '1px 5px', borderRadius: 4 }}>
+                      Quotes
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2, lineHeight: 1.3 }}>
+                    Trigger when Quote status updates
+                  </div>
                 </div>
               </div>
-              <div className="ws-automate-node-sub">Trigger when a Deal's status is updated</div>
             </div>
           </div>
 
-          {/* Switch Node */}
-          <div className="ws-node-fade-in ws-delay-1" style={{ top: '175px', left: '190px', width: '210px', position: 'absolute', zIndex: 3 }}>
-            <div className="ws-automate-node ws-automate-node--switch">
-              {/* Status only, right-aligned */}
-              <div className="ws-automate-topbar ws-automate-topbar--green ws-automate-topbar--right">
-                <span className="ws-automate-topstatus ws-automate-topstatus--green">✓ Completed</span>
-              </div>
-              <div className="ws-automate-node-main">
-                <div className="ws-automate-icon-box ws-automate-icon-blue"><GitBranch size={14} strokeWidth={2.5} /></div>
-                <div className="ws-automate-node-info">
-                  <div className="ws-automate-node-name">Switch <span className="ws-automate-node-badge">Condition</span></div>
+          {/* ── ROW 2: SWITCH / CONDITION NODE (Centered) ── */}
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: 44, zIndex: 2, position: 'relative' }}>
+            <div
+              style={{
+                width: 260,
+                background: '#ffffff',
+                border: '1.5px solid #10b981',
+                borderRadius: 12,
+                padding: '10px 14px',
+                position: 'relative',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+                cursor: 'default'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                }}>
+                  <GitBranch size={15} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a' }}>
+                      Switch
+                    </span>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 600, background: '#f1f5f9', color: '#64748b', padding: '1px 5px', borderRadius: 4 }}>
+                      Condition
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2, lineHeight: 1.3 }}>
+                    Route if Quote is Accepted or Draft
+                  </div>
                 </div>
               </div>
-              <div className="ws-automate-node-sub">Route to upsell or nurture</div>
             </div>
           </div>
 
-          {/* Upsell Node */}
-          <div className="ws-node-fade-in ws-delay-2" style={{ top: '340px', left: '0px', width: '210px', position: 'absolute', zIndex: 3 }}>
-            <div className="ws-automate-node ws-automate-node--trigger">
-              {/* Status only, left-aligned */}
-              <div className="ws-automate-topbar ws-automate-topbar--green ws-automate-topbar--left">
-                <span className="ws-automate-topstatus ws-automate-topstatus--green">✓ Completed</span>
-              </div>
-              <div className="ws-automate-node-main">
-                <div className="ws-automate-icon-box ws-automate-icon-blue"><Send size={14} strokeWidth={2.5} /></div>
-                <div className="ws-automate-node-info">
-                  <div className="ws-automate-node-name">Enroll in sequence <span className="ws-automate-node-badge">Sequences</span></div>
+          {/* ── ROW 3: BRANCH CONTENT (Left = 3 Connected Steps, Right = Log Record) ── */}
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '0 25px', marginTop: 84, zIndex: 2, position: 'relative' }}>
+            
+            {/* ── LEFT COLUMN: 3 SEQUENTIAL STEPS WITH SOLID CONTIGUOUS WIRING ── */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 240 }}>
+              
+              {/* STEP 1: Inventory Stock Deduction */}
+              <div
+                style={{
+                  width: 246,
+                  background: '#ffffff',
+                  border: '1.5px solid #10b981',
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                  position: 'relative',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+                  cursor: 'default'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                  <div style={{
+                    width: 30, height: 30, borderRadius: 8,
+                    background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                  }}>
+                    <Layers size={14} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.79rem', color: '#0f172a' }}>
+                        1. Inventory Deduction
+                      </span>
+                      <span style={{ fontSize: '0.58rem', fontWeight: 600, background: '#f0fdf4', color: '#16a34a', padding: '1px 4px', borderRadius: 4 }}>
+                        Inventory
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, lineHeight: 1.3 }}>
+                      Decreases stock & records stock history log
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="ws-automate-node-sub">Enroll person in "Power user upsell"</div>
-            </div>
-          </div>
 
-          {/* Nurture Node (faded) */}
-          <div className="ws-automate-node--faded ws-node-fade-in ws-delay-2" style={{ top: '340px', left: '300px', width: '200px', position: 'absolute', zIndex: 3 }}>
-            <div className="ws-automate-node">
-              <div className="ws-automate-node-main">
-                <div className="ws-automate-icon-box ws-automate-icon-gray"><Send size={14} strokeWidth={2.5} /></div>
-                <div className="ws-automate-node-info">
-                  <div className="ws-automate-node-name">Enroll in sequence <span className="ws-automate-node-badge">Sequences</span></div>
+              {/* In-Flow Wire from Step 1 to Step 2 */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: 24, width: 20, justifyContent: 'center', position: 'relative' }}>
+                <div style={{ width: 2.2, height: 18, background: '#10b981' }} />
+                <div style={{
+                  width: 0, height: 0,
+                  borderLeft: '4px solid transparent',
+                  borderRight: '4px solid transparent',
+                  borderTop: '5px solid #10b981',
+                  marginTop: -1
+                }} />
+              </div>
+
+              {/* STEP 2: Auto-generate Official Bill */}
+              <div
+                style={{
+                  width: 246,
+                  background: '#ffffff',
+                  border: '1.5px solid #10b981',
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                  position: 'relative',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+                  cursor: 'default'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                  <div style={{
+                    width: 30, height: 30, borderRadius: 8,
+                    background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                  }}>
+                    <FileText size={14} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.79rem', color: '#0f172a' }}>
+                        2. Auto-generate Bill
+                      </span>
+                      <span style={{ fontSize: '0.58rem', fontWeight: 600, background: '#eff6ff', color: '#2563eb', padding: '1px 4px', borderRadius: 4 }}>
+                        Billing
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, lineHeight: 1.3 }}>
+                      Generates Tax Invoice #INV-... & Order in Unpaid Bills
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="ws-automate-node-sub">Enroll person in "Nurture"</div>
+
+              {/* In-Flow Wire from Step 2 to Step 3 */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: 24, width: 20, justifyContent: 'center', position: 'relative' }}>
+                <div style={{ width: 2.2, height: 18, background: '#10b981' }} />
+                <div style={{
+                  width: 0, height: 0,
+                  borderLeft: '4px solid transparent',
+                  borderRight: '4px solid transparent',
+                  borderTop: '5px solid #10b981',
+                  marginTop: -1
+                }} />
+              </div>
+
+              {/* STEP 3: Send Tax Invoice PDF Email */}
+              <div
+                style={{
+                  width: 246,
+                  background: '#ffffff',
+                  border: '1.5px solid #10b981',
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                  position: 'relative',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+                  cursor: 'default'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                  <div style={{
+                    width: 30, height: 30, borderRadius: 8,
+                    background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                  }}>
+                    <Send size={13} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.79rem', color: '#0f172a' }}>
+                        3. Send Invoice Email
+                      </span>
+                      <span style={{ fontSize: '0.58rem', fontWeight: 600, background: '#fdf4ff', color: '#c026d3', padding: '1px 4px', borderRadius: 4 }}>
+                        Email
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, lineHeight: 1.3 }}>
+                      Emails official PDF invoice & barcode guidelines
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Wire to Plus Button */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: 20, width: 20, justifyContent: 'center' }}>
+                <div style={{ width: 2, height: '100%', background: '#cbd5e1' }} />
+              </div>
+
+              {/* Plus Button Underneath Step 3 */}
+              <div style={{ zIndex: 3 }}>
+                <div
+                  style={{
+                    width: 26, height: 26, borderRadius: '50%',
+                    background: '#3b82f6', color: '#ffffff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(59,130,246,0.35)'
+                  }}
+                >
+                  <Plus size={14} strokeWidth={2.5} />
+                </div>
+              </div>
             </div>
-          </div>
 
-          {/* Plus — left */}
-          <div className="ws-abs-plus ws-node-fade-in ws-delay-3" style={{ top: '480px', left: '93px', position: 'absolute', zIndex: 3, background: '#3b82f6', color: '#fff', border: 'none' }}>
-            <Plus size={14} strokeWidth={3} />
-          </div>
+            {/* ── RIGHT COLUMN: LOG QUOTATION RECORD (DECLINED / DRAFT) ── */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 246 }}>
+              <div
+                style={{
+                  width: 246,
+                  background: '#ffffff',
+                  border: '1.5px solid #e2e8f0',
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                  position: 'relative',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+                  cursor: 'default'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                  <div style={{
+                    width: 30, height: 30, borderRadius: 8,
+                    background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                  }}>
+                    <FileText size={14} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.79rem', color: '#1e293b' }}>
+                        Log Quote Record
+                      </span>
+                      <span style={{ fontSize: '0.58rem', fontWeight: 600, background: '#f1f5f9', color: '#64748b', padding: '1px 4px', borderRadius: 4 }}>
+                        Records
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, lineHeight: 1.3 }}>
+                      Update quote status in database (no bill issued)
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-          {/* Circle — right faded */}
-          <div className="ws-abs-plus ws-automate-plus-btn--faded ws-node-fade-in ws-delay-3" style={{ top: '480px', left: '388px', position: 'absolute', zIndex: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ width: '8px', height: '8px', border: '2px solid var(--color-gray-300)', borderRadius: '50%' }} />
+              {/* Wire from Log Record to Port */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: 20, width: 20, justifyContent: 'center' }}>
+                <div style={{ width: 2, height: '100%', background: '#cbd5e1' }} />
+              </div>
+
+              {/* Terminal Port Underneath */}
+              <div style={{ zIndex: 3 }}>
+                <div
+                  style={{
+                    width: 22, height: 22, borderRadius: '50%',
+                    background: '#ffffff', border: '1.5px solid #cbd5e1',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}
+                >
+                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#cbd5e1' }} />
+                </div>
+              </div>
+            </div>
+
           </div>
 
         </div>

@@ -100,22 +100,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
         if (token) headers['Authorization'] = `Bearer ${token}`
         if (wsId) headers['x-workspace-id'] = wsId
 
-        const [resProfile, resProds] = await Promise.all([
-          fetch('/api/companies/my-profile', { headers }).catch(() => null),
-          fetch('/api/products?limit=100', { headers }).catch(() => null)
-        ])
-
-        if (resProfile && resProfile.ok) {
-          const jsonProf = await resProfile.json()
-          if (jsonProf.data) {
-            setProfile(prev => ({
-              shopName: jsonProf.data.name || jsonProf.data.shop_name || prev.shopName,
-              shopGstin: jsonProf.data.gstin || prev.shopGstin,
-              shopPhone: jsonProf.data.phone || prev.shopPhone,
-              shopAddress: jsonProf.data.address || prev.shopAddress
-            }))
-          }
-        }
+        const resProds = await fetch('/api/products?limit=100', { headers }).catch(() => null)
 
         if (resProds && resProds.ok) {
           const jsonProds = await resProds.json()

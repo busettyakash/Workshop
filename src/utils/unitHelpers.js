@@ -240,22 +240,22 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0)
   if (isNaN(numStock) && isNaN(passedLoose)) return '0';
 
   const validStock = isNaN(numStock) ? 0 : numStock;
-  const bulkUnit = getBulkUnitDetails(unit);
+  const rawUnit = String(unit || '').trim();
+  const uLow = rawUnit.toLowerCase();
+  const unitCode = ['lit', 'lite', 'liter', 'liters', 'litre', 'litres'].includes(uLow) ? 'ltr' : rawUnit;
 
-  if (bw > 1 || (bulkUnit && bulkUnit.isBulk)) {
+  // If bagWeight > 1 (bulk packaging like a 50kg bag or 200L barrel), format with container + loose
+  if (bw > 1) {
+    const bulkUnit = getBulkUnitDetails(unitCode);
     const fullBags = Math.floor(validStock);
     let looseQty = passedLoose > 0 ? passedLoose : (validStock - fullBags) * bw;
     looseQty = Math.round(looseQty * 100) / 100;
 
-    const containerName = (bulkUnit && bulkUnit.isBulk && bulkUnit.name) ? bulkUnit.name : 'Bag';
-    const containerPlural = (bulkUnit && bulkUnit.isBulk && bulkUnit.pluralName) ? bulkUnit.pluralName : `${containerName}s`;
-    const shortUnit = (bulkUnit && bulkUnit.short && bulkUnit.short !== unit) ? bulkUnit.short : 'kg';
+    const containerName = (bulkUnit && bulkUnit.name) ? bulkUnit.name : 'Pack';
+    const containerPlural = (bulkUnit && bulkUnit.pluralName) ? bulkUnit.pluralName : `${containerName}s`;
+    const looseUnitLabel = unitCode || (bulkUnit && bulkUnit.short) || 'unit';
 
     const packLabel = fullBags === 1 ? containerName : containerPlural;
-    const uLow = String(shortUnit).toLowerCase();
-    const looseUnitLabel = looseQty === 1
-      ? (uLow === 'kg' ? 'kg' : uLow === 'ltr' ? 'ltr' : uLow === 'mtr' ? 'mtr' : shortUnit)
-      : (uLow === 'kg' ? 'kgs' : uLow === 'ltr' ? 'ltrs' : uLow === 'mtr' ? 'mtrs' : shortUnit);
 
     if (looseQty > 0 && fullBags > 0) {
       return `${fullBags} ${packLabel} ${looseQty} ${looseUnitLabel}`;
@@ -268,13 +268,10 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0)
     }
   }
 
-  if (passedLoose > 0) {
-    const total = validStock + passedLoose;
-    return `${total} ${unit || 'pcs'}`;
-  }
-
-  const unitLabel = unit || 'pcs';
-  return `${validStock} ${unitLabel}`;
+  // Standard non-bulk item (or bagWeight <= 1): Display exact stock amount + exact UOM code (e.g. "100 ltr", "40 kgs")
+  const totalStock = validStock + (passedLoose > 0 ? passedLoose : 0);
+  const displayUnit = unitCode || 'pcs';
+  return `${totalStock} ${displayUnit}`;
 };
 
 export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '') => {
@@ -283,20 +280,19 @@ export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '
   if (isNaN(total)) return '0';
 
   const bw = parseFloat(bagWeight) || 1;
-  const bulkUnit = getBulkUnitDetails(unit) || (bw > 1 ? { isBulk: true, name: 'Bag', pluralName: 'Bags', short: 'kg' } : null);
+  const rawUnit = String(unit || '').trim();
+  const uLow = rawUnit.toLowerCase();
+  const unitCode = ['lit', 'lite', 'liter', 'liters', 'litre', 'litres'].includes(uLow) ? 'ltr' : rawUnit;
 
-  if (bulkUnit && bw > 1) {
+  if (bw > 1) {
+    const bulkUnit = getBulkUnitDetails(unitCode) || { name: 'Pack', pluralName: 'Packs' };
     const fullBags = Math.floor(total / bw);
     let looseQty = Math.round((total % bw) * 100) / 100;
-    const containerName = bulkUnit.name || 'Bag';
+    const containerName = bulkUnit.name || 'Pack';
     const containerPlural = bulkUnit.pluralName || `${containerName}s`;
-    const shortUnit = bulkUnit.short || unit || 'kg';
+    const looseUnitLabel = unitCode || (bulkUnit && bulkUnit.short) || 'unit';
 
     const packLabel = fullBags === 1 ? containerName : containerPlural;
-    const uLow = String(shortUnit).toLowerCase();
-    const looseUnitLabel = looseQty === 1
-      ? (uLow === 'kg' ? 'kg' : uLow === 'ltr' ? 'ltr' : uLow === 'mtr' ? 'mtr' : shortUnit)
-      : (uLow === 'kg' ? 'kgs' : uLow === 'ltr' ? 'ltrs' : uLow === 'mtr' ? 'mtrs' : shortUnit);
 
     if (looseQty > 0 && fullBags > 0) {
       return `${fullBags} ${packLabel} ${looseQty} ${looseUnitLabel}`;
@@ -309,8 +305,8 @@ export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '
     }
   }
 
-  const unitLabel = unit || 'pcs';
-  return `${total} ${unitLabel}`;
+  const displayUnit = unitCode || 'pcs';
+  return `${total} ${displayUnit}`;
 };
 
 export const getPackWeightLabel = (unit) => {

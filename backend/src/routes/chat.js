@@ -216,6 +216,11 @@ Useful billing & quotes analytics queries:
 - Top products sold: SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = '...' GROUP BY bi.name ORDER BY total_qty DESC LIMIT 10
 - Revenue by customer: SELECT COALESCE(p.name, 'General Customer') AS customer, SUM(b.amount) AS total FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = '...' GROUP BY customer ORDER BY total DESC
 
+CRITICAL DISPLAY & FORMATTING RULES:
+- When presenting product tables, bills, stock, or business data in markdown tables or lists, NEVER include internal technical database columns like "id", "ID", "user_id", or numerical primary keys.
+- Present clean, business-friendly columns such as: Name, SKU, Category, Price (₹), Stock, Status, Unit, Description.
+- Format all currency and prices with the Rupee symbol (₹).
+
 CRITICAL SECURITY RULE: You MUST always filter every table in your query by \`user_id = '${userId}'\`. 
 For example: \`SELECT * FROM products WHERE user_id = '${userId}'\`. 
 If you join tables, filter both or use aliases: \`SELECT * FROM bills b JOIN people p ON b.customer_id = p.id WHERE b.user_id = '${userId}' AND p.user_id = '${userId}'\`.

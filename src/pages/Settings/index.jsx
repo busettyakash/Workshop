@@ -8,6 +8,7 @@ import {
   ChevronLeft, ArrowLeft, Search, User, Palette, Bell, Lock, Building2, LayoutGrid, Scale, Users, DollarSign, Info, Camera, HelpCircle, Save, Plus, Trash2, Copy, Download, Calendar, X
 } from 'lucide-react'
 import api from '../../api/client'
+import UomManager from '../../components/settings/UomManager'
 import '../Dashboard/Dashboard.css'
 
 function getSanitizedImageUrl(url) {
@@ -168,18 +169,7 @@ export default function Settings() {
     item.label.toLowerCase().includes(settingsSearch.toLowerCase().trim())
   )
 
-  // UOM state
-  const [uomList, setUomList] = useState([])
-
-  const fetchUoms = async () => {
-    try {
-      const res = await api.get('/uoms')
-      setUomList(res.data || [])
-    } catch { }
-  }
-
   useEffect(() => {
-    fetchUoms()
     api.get('/auth/profile')
       .then(res => {
         if (res.data) {
@@ -331,14 +321,6 @@ export default function Settings() {
     setCurrentPassword('')
     setNewPassword('')
     setConfirmPassword('')
-  }
-
-  const handleDeleteUom = async (id) => {
-    try {
-      await api.delete(`/uoms/${id}`)
-      dispatch(addToast({ message: 'UOM deleted', type: 'info' }))
-      fetchUoms()
-    } catch { }
   }
 
 
@@ -583,9 +565,9 @@ export default function Settings() {
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
+          alignItems: activeSection === 'uom' ? 'stretch' : 'center',
           justifyContent: 'flex-start',
-          padding: '36px 24px 20px',
+          padding: activeSection === 'uom' ? '20px 24px' : '36px 24px 20px',
           overflowY: 'auto',
           background: '#ffffff'
         }}>
@@ -1037,60 +1019,7 @@ export default function Settings() {
 
           {/* UOM SECTION */}
           {activeSection === 'uom' && (
-            <div style={{ width: '100%', maxWidth: 720 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <div>
-                  <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Unit of Measure (UOM)</h1>
-                  <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '2px 0 0' }}>Configure units and container capacity presets.</p>
-                </div>
-                <button
-                  onClick={() => dispatch(addToast({ message: 'Create UOM modal', type: 'info' }))}
-                  style={{
-                    background: '#2563eb',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: 7,
-                    padding: '6px 14px',
-                    fontSize: '0.78rem',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5
-                  }}
-                >
-                  <Plus size={14} />
-                  Add UOM
-                </button>
-              </div>
-
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                      <th style={{ padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>CODE</th>
-                      <th style={{ padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>UNIT NAME</th>
-                      <th style={{ padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>CATEGORY</th>
-                      <th style={{ padding: '8px 12px', color: '#64748b', fontWeight: 600, textAlign: 'right' }}>ACTIONS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {uomList.map(item => (
-                      <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '8px 12px', fontWeight: 600, color: '#0f172a' }}>{item.code}</td>
-                        <td style={{ padding: '8px 12px', color: '#334155' }}>{item.name}</td>
-                        <td style={{ padding: '8px 12px', color: '#64748b' }}>{item.category}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                          <button onClick={() => handleDeleteUom(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 3 }}>
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <UomManager />
           )}
 
           {/* BILLING SECTION */}

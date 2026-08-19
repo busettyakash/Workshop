@@ -11,38 +11,41 @@ import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
 let ensureProductsSchemaPromise
 
 async function ensureProductsSchema() {
-  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS next_restock_time TEXT DEFAULT 'TBD'`).catch(() => {})
-  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2)`).catch(() => {})
-  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE`).catch(() => {})
-  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50)`).catch(() => {})
-  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2)`).catch(() => {})
-  await query(`CREATE TABLE IF NOT EXISTS product_price_history (
-    id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL,
-    user_id TEXT NOT NULL,
-    old_price NUMERIC(10, 2),
-    new_price NUMERIC(10, 2) NOT NULL,
-    effective_date DATE DEFAULT CURRENT_DATE,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
-  )`).catch(() => {})
-  await query(`CREATE TABLE IF NOT EXISTS product_stock_history (
-    id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL,
-    user_id TEXT NOT NULL,
-    change_type TEXT NOT NULL,
-    qty_change NUMERIC(10, 2) NOT NULL,
-    stock_before NUMERIC(10, 2),
-    stock_after NUMERIC(10, 2),
-    source TEXT,
-    source_ref TEXT,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
-  )`).catch(() => {})
-  await query(`CREATE INDEX IF NOT EXISTS idx_products_user_status ON public.products (user_id, status)`).catch(() => {})
-  await query(`CREATE INDEX IF NOT EXISTS idx_products_user_created ON public.products (user_id, created_at DESC)`).catch(() => {})
-  await query(`ALTER TABLE product_price_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_price_history FORCE ROW LEVEL SECURITY;`).catch(() => {})
-  await query(`ALTER TABLE product_stock_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_stock_history FORCE ROW LEVEL SECURITY;`).catch(() => {})
+  // Run all migrations in parallel instead of serially to avoid 9 sequential round-trips
+  await Promise.all([
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS next_restock_time TEXT DEFAULT 'TBD'`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2)`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50)`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2)`).catch(() => {}),
+    query(`CREATE TABLE IF NOT EXISTS product_price_history (
+      id SERIAL PRIMARY KEY,
+      product_id INT NOT NULL,
+      user_id TEXT NOT NULL,
+      old_price NUMERIC(10, 2),
+      new_price NUMERIC(10, 2) NOT NULL,
+      effective_date DATE DEFAULT CURRENT_DATE,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`).catch(() => {}),
+    query(`CREATE TABLE IF NOT EXISTS product_stock_history (
+      id SERIAL PRIMARY KEY,
+      product_id INT NOT NULL,
+      user_id TEXT NOT NULL,
+      change_type TEXT NOT NULL,
+      qty_change NUMERIC(10, 2) NOT NULL,
+      stock_before NUMERIC(10, 2),
+      stock_after NUMERIC(10, 2),
+      source TEXT,
+      source_ref TEXT,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_products_user_status ON public.products (user_id, status)`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_products_user_created ON public.products (user_id, created_at DESC)`).catch(() => {}),
+    query(`ALTER TABLE product_price_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_price_history FORCE ROW LEVEL SECURITY;`).catch(() => {}),
+    query(`ALTER TABLE product_stock_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_stock_history FORCE ROW LEVEL SECURITY;`).catch(() => {})
+  ])
 }
 
 router.use(async (_req, _res, next) => {
@@ -136,17 +139,17 @@ router.get('/', async (req, res) => {
       return res.json({ data: rows, limit, hasNextPage, nextCursor })
     }
 
+    // Single query: use window function to get COUNT + data in one DB round-trip
     const where = `WHERE ${conditions.join(' AND ')}`
-    const count = await query(`SELECT COUNT(*) FROM products ${where}`, params)
-    const total = parseInt(count.rows[0].count, 10) || 0
-    const totalPages = Math.ceil(total / limit) || 1
-
     const queryParams = [...params, limit, offset]
-    const { rows } = await query(
-      `SELECT * FROM products ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
+    const { rows: rawRows } = await query(
+      `SELECT *, COUNT(*) OVER() AS _total_count FROM products ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
       queryParams
     )
 
+    const total = rawRows.length > 0 ? parseInt(rawRows[0]._total_count, 10) : 0
+    const rows = rawRows.map(r => { const { _total_count, ...rest } = r; return rest })
+    const totalPages = Math.ceil(total / limit) || 1
     const hasNextPage = page < totalPages
     const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
     const nextCursor = (hasNextPage && lastRow)

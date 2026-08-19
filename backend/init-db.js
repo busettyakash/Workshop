@@ -16,6 +16,13 @@ async function createTables() {
   console.log('Connecting to InsForge Database to initialize tables...');
 
   try {
+    // Drop deprecated tables if they still exist
+    await pool.query(`
+      DROP TABLE IF EXISTS deal_logs CASCADE;
+      DROP TABLE IF EXISTS deals CASCADE;
+      DROP TABLE IF EXISTS companies CASCADE;
+    `).catch(() => {});
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS shop_profiles (
         user_id UUID PRIMARY KEY,
@@ -212,6 +219,14 @@ async function createTables() {
 
       ALTER TABLE quotes ADD COLUMN IF NOT EXISTS shop_name VARCHAR(255) DEFAULT 'Workshop Store';
       ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_company VARCHAR(255);
+      ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2);
+      ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50);
+      ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50);
+      ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50);
+      ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT;
+      ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2);
+      ALTER TABLE workflows ADD COLUMN IF NOT EXISTS is_starred BOOLEAN DEFAULT false;
+      ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT;
 
       CREATE TABLE IF NOT EXISTS uoms (
         id SERIAL PRIMARY KEY,
@@ -230,7 +245,7 @@ async function createTables() {
 
     // ── Enforce RLS on all tables with user isolation ──
     const allTables = [
-      'bill_items', 'companies', 'deals', 'shop_profiles', 'bill_templates', 'deal_logs', 'workspace_members',
+      'bill_items', 'shop_profiles', 'bill_templates', 'workspace_members',
       'products', 'product_price_history', 'product_stock_history', 'import_stock', 'customers', 'people', 'bills', 'notifications',
       'workflows', 'workflow_runs', 'chat_sessions', 'notes', 'emails', 'uoms', 'quotes'
     ];
@@ -286,7 +301,6 @@ async function createTables() {
       "CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items(bill_id)",
       "CREATE INDEX IF NOT EXISTS idx_bill_items_product_id ON bill_items(product_id)",
       "CREATE INDEX IF NOT EXISTS idx_bills_customer_id ON bills(customer_id)",
-      "CREATE INDEX IF NOT EXISTS idx_deal_logs_deal_id ON deal_logs(deal_id)",
       "CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON workflow_runs(workflow_id)"
     ];
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
@@ -69,13 +69,21 @@ function QuickAddPersonModal({ onClose, onSaved }) {
 function QuickAddProductModal({ onClose, onSaved }) {
   const [form, setForm] = useState({ name: '', sku: '', category: '', price: '', stock: 0, unit: 'pcs', description: '', bag_weight: 100 })
   const [saving, setSaving] = useState(false)
-  const [uomOptions, setUomOptions] = useState(ALL_UOM_OPTIONS)
+  const [uomOptions, setUomOptions] = useState([])
   const dispatch = useAppDispatch()
 
   useEffect(() => {
     api.get('/uoms').then(res => {
       if (Array.isArray(res.data) && res.data.length > 0) {
-        setUomOptions(res.data.map(u => ({ value: u.code, label: `${u.name} (${u.code})`, category: u.category })))
+        const activeUnits = res.data.filter(u => u.status !== 'Inactive')
+        const opts = activeUnits.map(u => ({ value: u.code, label: `${u.name} (${u.code})`, category: u.category }))
+        setUomOptions(opts)
+        if (opts.length > 0) {
+          setForm(prev => ({
+            ...prev,
+            unit: opts.some(o => o.value === prev.unit) ? prev.unit : opts[0].value
+          }))
+        }
       }
     }).catch(() => { })
   }, [])
@@ -131,7 +139,11 @@ function QuickAddProductModal({ onClose, onSaved }) {
             <div>
               <label style={S.label}>Unit of Measure</label>
               <select value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} style={S.input}>
-                {uomOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                {uomOptions.length === 0 ? (
+                  <option value="">-- No UOM found (Create in Settings) --</option>
+                ) : (
+                  uomOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)
+                )}
               </select>
             </div>
             {bulkUnit ? (
@@ -284,6 +296,30 @@ export default function BillForm() {
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState({})
   const [focus, setFocus] = useState(null)
+
+  const custSearchInputRef = useRef(null)
+  const custDropdownRef = useRef(null)
+
+  useEffect(() => {
+    if (showCustDropdown) {
+      custSearchInputRef.current?.focus({ preventScroll: true })
+    }
+  }, [showCustDropdown])
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (custDropdownRef.current && !custDropdownRef.current.contains(e.target)) {
+        setShowCustDropdown(false)
+        setCustSearch('')
+      }
+    }
+    if (showCustDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showCustDropdown])
 
   useEffect(() => {
     dispatch(setActiveNav('Billing'))
@@ -747,39 +783,47 @@ const calcMaxStock = (prod, itemUnit) => {
                     ) : (
                       <>
                         {/* Full-width Searchable Dropdown trigger */}
-                        <div style={{ position: 'relative', width: '100%' }}>
-                          {showCustDropdown && (
-                            <div
-                              style={{ position: 'fixed', inset: 0, zIndex: 9990 }}
-                              onClick={() => { setShowCustDropdown(false); setCustSearch('') }}
-                            />
-                          )}
-
+                        <div ref={custDropdownRef} style={{ position: 'relative', width: '100%' }}>
                           <button
                             type="button"
                             onClick={() => setShowCustDropdown(v => !v)}
                             style={{
                               width: '100%', boxSizing: 'border-box',
                               height: 38, padding: '0 12px',
-                              border: `1px solid ${errors.customer_id ? '#dc2626' : '#d1d5db'}`,
+                              border: `1px solid ${errors.customer_id ? '#dc2626' : (form.customer_id === null ? '#2563eb' : (selectedCustomer ? '#10b981' : '#d1d5db'))}`,
                               borderRadius: '8px', outline: 'none',
                               cursor: 'pointer', display: 'flex',
                               justify: 'space-between', alignItems: 'center',
-                              background: '#fff', fontFamily: 'inherit',
+                              background: form.customer_id === null ? '#eff6ff' : (selectedCustomer ? '#f0fdf4' : '#fff'),
+                              fontFamily: 'inherit',
                             }}
                           >
                             <span style={{
                               flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               fontSize: '0.8125rem',
-                              fontWeight: selectedCustomer ? 600 : 400,
-                              color: selectedCustomer ? '#111827' : '#64748b',
+                              fontWeight: (selectedCustomer || form.customer_id === null) ? 600 : 400,
+                              color: form.customer_id === null ? '#1d4ed8' : (selectedCustomer ? '#15803d' : '#64748b'),
                               textAlign: 'left',
                             }}>
-                              {selectedCustomer
-                                ? `${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
-                                : 'Search & select customer...'}
+                              {form.customer_id === null
+                                ? '🚶 Walk-in Customer Selected'
+                                : (selectedCustomer
+                                    ? `✓ ${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
+                                    : 'Search & select customer...')}
                             </span>
-                            <ChevronDown size={14} color="#9ca3af" style={{ flexShrink: 0, marginLeft: 8 }} />
+                            {(form.customer_id !== '' && form.customer_id !== undefined) ? (
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setForm(prev => ({ ...prev, customer_id: '' }))
+                                }}
+                                style={{ cursor: 'pointer', opacity: 0.7, padding: 2, display: 'flex', color: 'inherit' }}
+                              >
+                                <X size={13} />
+                              </span>
+                            ) : (
+                              <ChevronDown size={14} color="#9ca3af" style={{ flexShrink: 0, marginLeft: 8 }} />
+                            )}
                           </button>
 
                           {/* Absolute Dropdown list */}
@@ -800,13 +844,13 @@ const calcMaxStock = (prod, itemUnit) => {
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: '#f8fafc', borderRadius: '6px', marginBottom: 6, border: '1px solid #e2e8f0' }}>
                                 <Search size={13} color="#9ca3af" />
                                 <input
+                                  ref={custSearchInputRef}
                                   type="text"
                                   placeholder="Search name or phone..."
                                   value={custSearch}
                                   onChange={e => setCustSearch(e.target.value)}
                                   style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.8125rem', width: '100%', fontFamily: 'inherit', color: '#111827' }}
                                   onClick={e => e.stopPropagation()}
-                                  autoFocus
                                 />
                                 {custSearch && (
                                   <button type="button" onClick={() => setCustSearch('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', padding: 2 }}>
@@ -817,15 +861,15 @@ const calcMaxStock = (prod, itemUnit) => {
 
                               <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
                                 {customers.filter(c =>
-                                  c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
-                                  (c.phone && c.phone.includes(custSearch))
+                                  (c?.name || '').toLowerCase().includes(custSearch.toLowerCase()) ||
+                                  (c?.phone && String(c.phone).includes(custSearch))
                                 ).length === 0 ? (
                                   <div style={{ padding: '12px 8px', fontSize: '0.8125rem', color: '#9ca3af', textAlign: 'center' }}>No matches found</div>
                                 ) : (
                                   customers
                                     .filter(c =>
-                                      c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
-                                      (c.phone && c.phone.includes(custSearch))
+                                      (c?.name || '').toLowerCase().includes(custSearch.toLowerCase()) ||
+                                      (c?.phone && String(c.phone).includes(custSearch))
                                     )
                                     .map(c => {
                                       const isSelected = String(c.id) === String(form.customer_id)
@@ -863,43 +907,22 @@ const calcMaxStock = (prod, itemUnit) => {
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                           <button
                             type="button"
-                            onClick={() => setForm(prev => ({ ...prev, customer_id: null }))}
+                            onClick={() => {
+                              setForm(prev => ({ ...prev, customer_id: prev.customer_id === null ? '' : null }))
+                              setShowCustDropdown(false)
+                            }}
                             style={{
                               flex: 1, height: 32, borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
                               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                               background: form.customer_id === null ? '#2563eb' : '#f8fafc',
                               color: form.customer_id === null ? '#fff' : '#334155',
                               border: `1px solid ${form.customer_id === null ? '#2563eb' : '#cbd5e1'}`,
+                              transition: 'background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease'
                             }}
                           >
                             🚶 Walk-in Customer
                           </button>
                         </div>
-
-                        {/* Selected Customer Pill Badge */}
-                        {(form.customer_id || form.customer_id === null) && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <div style={{
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                              padding: '5px 10px', borderRadius: '6px',
-                              background: form.customer_id === null ? '#eff6ff' : '#f0fdf4',
-                              border: `1px solid ${form.customer_id === null ? '#bfdbfe' : '#bbf7d0'}`,
-                              fontSize: '0.78rem', fontWeight: 600,
-                              color: form.customer_id === null ? '#1d4ed8' : '#15803d',
-                            }}>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {form.customer_id === null ? '✓ Walk-in Customer Selected' : `✓ ${selectedCustomer?.name}`}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setForm(prev => ({ ...prev, customer_id: '' }))}
-                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, display: 'flex', color: 'inherit', opacity: 0.7 }}
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        )}
 
                         {errors.customer_id && <span style={S.error}>{errors.customer_id}</span>}
                       </>

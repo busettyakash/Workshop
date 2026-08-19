@@ -8,14 +8,13 @@ import {
   ArrowLeft, Search, User, Palette, Mail, PhoneCall, HardDrive, Share2, Bell, MessageSquare, Plug,
   Building2, Users, Radio, CreditCard, DollarSign, Code, Headphones, ArrowRightLeft, Grid, Info, Scale, Plus, Edit2, Trash2, Save, HelpCircle
 } from 'lucide-react'
-import api from '../../api/client'
+import UomManager from '../../components/settings/UomManager'
 import '../Dashboard/Dashboard.css'
 
 export default function WorkspaceSettings() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
-  const sidebarOpen = useAppSelector(selectSidebarOpen)
-  const { user, shopName } = useAuth()
+  const { shopName } = useAuth()
 
   useEffect(() => {
     dispatch(setActiveNav('Settings'))
@@ -31,66 +30,9 @@ export default function WorkspaceSettings() {
     address: '123 Industrial Area, Tech Park, Hyderabad, Telangana'
   })
 
-  // UOM state
-  const [uomList, setUomList] = useState([])
-  const [uomLoading, setUomLoading] = useState(false)
-  const [uomModalOpen, setUomModalOpen] = useState(false)
-  const [editingUom, setEditingUom] = useState(null)
-  const [uomForm, setUomForm] = useState({ code: '', name: '', category: 'Count', presets: '', status: 'Active' })
-
-  const fetchUoms = async () => {
-    setUomLoading(true)
-    try {
-      const res = await api.get('/uoms')
-      setUomList(res.data || [])
-    } catch {
-      /* silent fallback */
-    } finally {
-      setUomLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchUoms()
-  }, [])
-
   const handleSaveWorkspace = (e) => {
     e.preventDefault()
     dispatch(addToast({ message: 'Workspace details saved!', type: 'success' }))
-  }
-
-  const handleSaveUom = async (e) => {
-    e.preventDefault()
-    if (!uomForm.code.trim() || !uomForm.name.trim()) {
-      dispatch(addToast({ message: 'Please enter Code and Name', type: 'error' }))
-      return
-    }
-
-    try {
-      if (editingUom) {
-        await api.put(`/uoms/${editingUom.id}`, uomForm)
-        dispatch(addToast({ message: `UOM ${uomForm.code.toUpperCase()} updated`, type: 'success' }))
-      } else {
-        await api.post('/uoms', uomForm)
-        dispatch(addToast({ message: `UOM ${uomForm.code.toUpperCase()} created`, type: 'success' }))
-      }
-      fetchUoms()
-      setUomModalOpen(false)
-      setEditingUom(null)
-      setUomForm({ code: '', name: '', category: 'Count', presets: '', status: 'Active' })
-    } catch (err) {
-      dispatch(addToast({ message: err?.response?.data?.error || 'Failed to save UOM', type: 'error' }))
-    }
-  }
-
-  const handleDeleteUom = async (id) => {
-    try {
-      await api.delete(`/uoms/${id}`)
-      dispatch(addToast({ message: 'UOM deleted', type: 'info' }))
-      fetchUoms()
-    } catch {
-      dispatch(addToast({ message: 'Failed to delete UOM', type: 'error' }))
-    }
   }
 
   return (
@@ -333,7 +275,7 @@ export default function WorkspaceSettings() {
         </div>
 
           {/* Main Content Area */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '32px 48px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: activeSection === 'uom' ? '20px 24px' : '32px 48px' }}>
             {activeSection === 'general' && (
               <div style={{ maxWidth: 640 }}>
                 <h1 style={{ fontSize: '1.55rem', fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>General Workspace Settings</h1>
@@ -401,64 +343,7 @@ export default function WorkspaceSettings() {
             )}
 
             {activeSection === 'uom' && (
-              <div style={{ maxWidth: 800 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                  <div>
-                    <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Unit of Measure (UOM)</h1>
-                    <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '4px 0 0' }}>Configure units and container capacity presets.</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setEditingUom(null)
-                      setUomForm({ code: '', name: '', category: 'Count', presets: '', status: 'Active' })
-                      setUomModalOpen(true)
-                    }}
-                    style={{
-                      background: '#2563eb',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 8,
-                      padding: '8px 16px',
-                      fontSize: '0.82rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6
-                    }}
-                  >
-                    <Plus size={15} />
-                    Add UOM
-                  </button>
-                </div>
-
-                <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        <th style={{ padding: '10px 14px', color: '#64748b', fontWeight: 600 }}>CODE</th>
-                        <th style={{ padding: '10px 14px', color: '#64748b', fontWeight: 600 }}>UNIT NAME</th>
-                        <th style={{ padding: '10px 14px', color: '#64748b', fontWeight: 600 }}>CATEGORY</th>
-                        <th style={{ padding: '10px 14px', color: '#64748b', fontWeight: 600, textAlign: 'right' }}>ACTIONS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {uomList.map(item => (
-                        <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '10px 14px', fontWeight: 600, color: '#0f172a' }}>{item.code}</td>
-                          <td style={{ padding: '10px 14px', color: '#334155' }}>{item.name}</td>
-                          <td style={{ padding: '10px 14px', color: '#64748b' }}>{item.category}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                            <button onClick={() => handleDeleteUom(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}>
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <UomManager />
             )}
           </div>
         </div>

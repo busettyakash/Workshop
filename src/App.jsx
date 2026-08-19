@@ -81,12 +81,6 @@ export default function App() {
         <Route path="/people"    element={<PrivateRoute><People /></PrivateRoute>} />
         <Route path="/people/add" element={<PrivateRoute><PersonForm /></PrivateRoute>} />
         <Route path="/people/edit/:id" element={<PrivateRoute><PersonForm /></PrivateRoute>} />
-        <Route path="/companies"    element={<Navigate to="/" replace />} />
-        <Route path="/companies/add" element={<Navigate to="/" replace />} />
-        <Route path="/companies/edit/:id" element={<Navigate to="/" replace />} />
-        <Route path="/deals"     element={<Navigate to="/price-history" replace />} />
-        <Route path="/deals/*"   element={<Navigate to="/price-history" replace />} />
-        <Route path="/deal-logs" element={<Navigate to="/price-history" replace />} />
         <Route path="/settings"  element={<PrivateRoute><Settings /></PrivateRoute>} />
 
         {/* 404 */}

@@ -27,7 +27,7 @@ function dateText(value) {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function QuotePreviewModal({ quote, onClose, onEdit }) {
+export default function QuotePreviewModal({ quote, onClose, onEdit, onStatusChange }) {
   const items = parseItems(quote?.line_items)
 
   return (
@@ -36,8 +36,39 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title">Quotation {quote?.quote_number || `#${quote?.id}`}</h3>
-            <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 2 }}>
-              {quote?.customer_name || 'Customer'} · {quote?.status || 'Draft'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+              <span style={{ color: '#475569', fontSize: '0.82rem', fontWeight: 500 }}>
+                {quote?.customer_name || 'Customer'}
+              </span>
+              {(() => {
+                const s = String(quote?.status || 'Draft').toLowerCase()
+                let bg = '#f1f5f9'
+                let color = '#475569'
+                let border = '#e2e8f0'
+
+                if (s === 'accepted') {
+                  bg = '#dcfce7'
+                  color = '#15803d'
+                  border = '#bbf7d0'
+                } else if (s === 'declined' || s === 'rejected') {
+                  bg = '#fee2e2'
+                  color = '#b91c1c'
+                  border = '#fecaca'
+                } else if (s === 'sent' || s === 'pending') {
+                  bg = '#eff6ff'
+                  color = '#2563eb'
+                  border = '#bfdbfe'
+                }
+
+                return (
+                  <span style={{
+                    fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 12,
+                    background: bg, color: color, border: `1px solid ${border}`
+                  }}>
+                    {quote?.status || 'Draft'}
+                  </span>
+                )
+              })()}
             </div>
           </div>
           <button className="ws-modal-close-x" onClick={onClose} type="button" aria-label="Close">
@@ -178,7 +209,73 @@ export default function QuotePreviewModal({ quote, onClose, onEdit }) {
           )}
         </div>
 
-        <div className="ws-modal-footer">
+        <div className="ws-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            {(() => {
+              const status = String(quote?.status || 'Draft').toLowerCase()
+              const isAccepted = status === 'accepted'
+              const isDeclined = status === 'declined' || status === 'rejected'
+              const isCancelled = status === 'cancelled'
+
+              if (isAccepted) {
+                return (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', background: '#dcfce7', color: '#15803d',
+                    borderRadius: 7, fontSize: '0.80rem', fontWeight: 700, border: '1px solid #bbf7d0'
+                  }}>
+                    ✓ Quotation Accepted
+                  </span>
+                )
+              }
+
+              if (isDeclined) {
+                return (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', background: '#fee2e2', color: '#b91c1c',
+                    borderRadius: 7, fontSize: '0.80rem', fontWeight: 700, border: '1px solid #fecaca'
+                  }}>
+                    ✕ Quotation Declined
+                  </span>
+                )
+              }
+
+              if (isCancelled) {
+                return (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', background: '#f1f5f9', color: '#64748b',
+                    borderRadius: 7, fontSize: '0.80rem', fontWeight: 700, border: '1px solid #e2e8f0'
+                  }}>
+                    ⊘ Quotation Cancelled
+                  </span>
+                )
+              }
+
+              // For Draft / Sent / Pending quotes, allow manual Acceptance
+              return onStatusChange ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    className="attio-btn"
+                    type="button"
+                    style={{ background: '#dcfce7', color: '#15803d', borderColor: '#bbf7d0', fontWeight: 700 }}
+                    onClick={() => onStatusChange(quote.id, 'Accepted')}
+                  >
+                    ✓ Accept Quote
+                  </button>
+                  <button
+                    className="attio-btn"
+                    type="button"
+                    style={{ background: '#fee2e2', color: '#b91c1c', borderColor: '#fecaca', fontWeight: 600 }}
+                    onClick={() => onStatusChange(quote.id, 'Declined')}
+                  >
+                    ✕ Decline Quote
+                  </button>
+                </div>
+              ) : null
+            })()}
+          </div>
           <button className="attio-btn attio-btn-secondary" type="button" onClick={onClose}>Close</button>
         </div>
       </div>

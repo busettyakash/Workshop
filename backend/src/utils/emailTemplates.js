@@ -6,6 +6,7 @@ export { getOtpTemplate } from '../templates/emails/otpTemplate.js'
 export { getPasswordResetOtpTemplate } from '../templates/emails/resetOtpTemplate.js'
 export { getInvoiceEmailTemplate } from '../templates/emails/invoiceTemplate.js'
 export { getQuoteEmailTemplate } from '../templates/emails/quoteTemplate.js'
+export { getQuoteDeclinedTemplate } from '../templates/emails/quoteDeclinedTemplate.js'
 
 export function getOrderConfirmationTemplate({ customerName = 'Customer', orderNumber = '', orderDate = '', totalAmount = 0 } = {}) {
   const total = parseFloat(totalAmount || 0).toLocaleString('en-IN', {

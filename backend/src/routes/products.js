@@ -1,9 +1,11 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import { apiLimiter } from '../middleware/rateLimit.js'
 import { clearProductHsnCache } from '../lib/productCache.js'
 
 const router = Router()
+router.use(apiLimiter)
 router.use(requireAuth)
 
 import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'

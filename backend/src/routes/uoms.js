@@ -4,8 +4,8 @@ import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 
 const router = Router()
-router.use(requireAuth)
 router.use(apiLimiter)
+router.use(requireAuth)
 
 let ensureUomsTablePromise
 

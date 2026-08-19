@@ -369,8 +369,8 @@ router.post('/qstash-callback', apiLimiter, verifyQStashSignature, async (req, r
 /* ─────────────────────────────────────────────────────────────
    Authenticated Workflow Management Routes (Protected by requireAuth)
 ───────────────────────────────────────────────────────────── */
-router.use(requireAuth)
 router.use(apiLimiter)
+router.use(requireAuth)
 
 async function healStalledRuns() {
   try {

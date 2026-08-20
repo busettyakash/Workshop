@@ -551,55 +551,176 @@ function getSystemBrowserPath() {
 }
 
 // ─────────────────────────────────────────────
-// PDFKit Fallback Generator (Guaranteed Buffer)
+// PDFKit Professional Invoice Generator
 // ─────────────────────────────────────────────
 async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   return new Promise((resolve) => {
     try {
-      const doc = new PDFDocument({ margin: 40, size: 'A4' })
+      const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true })
       const chunks = []
       doc.on('data', chunk => chunks.push(chunk))
       doc.on('end', () => resolve(Buffer.concat(chunks)))
 
       const isQuote = type === 'quote' || (!bill?.id && quote?.quote_number)
-      const title = isQuote ? 'QUOTATION' : 'TAX INVOICE'
-      const docNum = isQuote ? (quote.quote_number || 'QT-001') : (bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`)
-      const seller = shop.shop_name || 'Busetty Traders'
+      const docTypeTitle = isQuote ? 'QUOTATION' : 'TAX INVOICE'
+      const docNum = isQuote ? (quote.quote_number || 'QT-001') : (bill.bill_number || `INV-${String(bill.id || 1).padStart(6, '0')}`)
+      const orderNum = quote.order_number || bill.order_number || ''
+      const seller = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
+      const sellerGstin = shop.gstin || quote.shop_gstin || bill.shop_gstin || ''
+      const sellerPhone = shop.phone || quote.shop_phone || bill.shop_phone || ''
+      const sellerEmail = shop.email || quote.shop_email || bill.shop_email || ''
+      const sellerAddress = shop.address || quote.shop_address || bill.shop_address || ''
+
       const customer = quote.customer_name || 'Customer'
-      const totalAmount = parseFloat(bill.amount || quote.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      const customerCompany = quote.customer_company || ''
+      const customerPhone = quote.customer_phone || ''
+      const customerEmail = quote.customer_email || ''
 
-      // Header
-      doc.fontSize(18).fillColor('#1e293b').text(seller, { align: 'left' })
-      doc.fontSize(9).fillColor('#64748b').text(shop.address || '')
-      doc.text(`Phone: ${shop.phone || ''} | Email: ${shop.email || ''}`)
-      if (shop.gstin) doc.text(`GSTIN: ${shop.gstin}`)
-      doc.moveDown()
-
-      // Title & Meta
-      doc.fontSize(14).fillColor('#2563eb').text(title, { align: 'right' })
-      doc.fontSize(9).fillColor('#475569').text(`Number: ${docNum}`, { align: 'right' })
-      doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, { align: 'right' })
-      doc.moveDown()
-
-      // Customer
-      doc.fontSize(11).fillColor('#0f172a').text(`Billed To: ${customer}`)
-      doc.fontSize(9).fillColor('#475569').text(`Total Amount: ₹${totalAmount}`)
-      doc.moveDown()
-
-      // Line Items
       const itemsList = Array.isArray(billItems) && billItems.length ? billItems : parseItems(quote.line_items)
-      if (itemsList.length > 0) {
-        doc.fontSize(10).fillColor('#1e293b').text('Items Summary:')
-        itemsList.forEach((it, idx) => {
-          const name = it.product_name || it.name || `Item ${idx + 1}`
-          const qty = it.quantity || 1
-          const rate = it.price || it.rate || 0
-          doc.fontSize(9).fillColor('#475569').text(`• ${name} - Qty: ${qty} @ ₹${rate}`)
-        })
+      
+      const totalAmountNum = parseFloat(bill.amount || quote.total_amount || 0)
+      const taxableAmount = totalAmountNum / 1.18
+      const gstHalf = (totalAmountNum - taxableAmount) / 2
+
+      // Top Accent Line
+      doc.rect(40, 35, 515, 4).fill('#2563eb')
+
+      // Header Section
+      doc.fontSize(16).fillColor('#0f172a').font('Helvetica-Bold').text(seller, 40, 48)
+      doc.fontSize(8).fillColor('#64748b').font('Helvetica')
+      
+      let headerY = 68
+      if (sellerAddress) {
+        doc.text(sellerAddress, 40, headerY, { width: 300 })
+        headerY += 16
+      }
+      const sellerContact = [sellerPhone && `Phone: ${sellerPhone}`, sellerEmail && `Email: ${sellerEmail}`].filter(Boolean).join('   |   ')
+      if (sellerContact) {
+        doc.text(sellerContact, 40, headerY)
+        headerY += 12
+      }
+      if (sellerGstin) {
+        doc.text(`GSTIN: ${sellerGstin.toUpperCase()}`, 40, headerY)
       }
 
-      doc.moveDown()
-      doc.fontSize(12).fillColor('#15803d').text(`Grand Total: ₹${totalAmount}`, { align: 'right' })
+      // Right Header Badge & Meta
+      doc.roundedRect(390, 48, 165, 24, 4).fill('#eff6ff')
+      doc.fontSize(12).fillColor('#1d4ed8').font('Helvetica-Bold').text(docTypeTitle, 390, 55, { width: 165, align: 'center' })
+
+      doc.fontSize(8.5).fillColor('#475569').font('Helvetica')
+      doc.text(`Invoice No:`, 390, 80)
+      doc.font('Helvetica-Bold').fillColor('#0f172a').text(docNum, 460, 80, { width: 95, align: 'right' })
+
+      if (orderNum) {
+        doc.font('Helvetica').fillColor('#475569').text(`Order No:`, 390, 94)
+        doc.font('Helvetica-Bold').fillColor('#0f172a').text(orderNum, 460, 94, { width: 95, align: 'right' })
+      }
+
+      const dateY = orderNum ? 108 : 94
+      doc.font('Helvetica').fillColor('#475569').text(`Date:`, 390, dateY)
+      doc.font('Helvetica-Bold').fillColor('#0f172a').text(new Date().toLocaleDateString('en-IN'), 460, dateY, { width: 95, align: 'right' })
+
+      // Divider
+      doc.strokeColor('#e2e8f0').lineWidth(0.75).moveTo(40, 128).lineTo(555, 128).stroke()
+
+      // Billed To Card
+      doc.roundedRect(40, 136, 515, 52, 4).fillAndStroke('#f8fafc', '#e2e8f0')
+      doc.fontSize(7.5).fillColor('#64748b').font('Helvetica-Bold').text('BILLED TO / CUSTOMER DETAILS', 50, 142)
+      doc.fontSize(9.5).fillColor('#0f172a').font('Helvetica-Bold').text(customer + (customerCompany ? ` (${customerCompany})` : ''), 50, 154)
+      doc.fontSize(8).fillColor('#475569').font('Helvetica')
+      const custContact = [customerPhone && `Phone: ${customerPhone}`, customerEmail && `Email: ${customerEmail}`].filter(Boolean).join('   |   ')
+      doc.text(custContact || 'No contact details specified', 50, 168)
+
+      // Items Table
+      let tableY = 200
+      const col = { no: 40, name: 65, hsn: 260, unit: 325, qty: 375, rate: 435, amt: 495 }
+      const colW = { no: 25, name: 195, hsn: 65, unit: 50, qty: 60, rate: 60, amt: 60 }
+
+      // Table Header
+      doc.rect(40, tableY, 515, 22).fill('#1e293b')
+      doc.fontSize(7.5).fillColor('#ffffff').font('Helvetica-Bold')
+      doc.text('#', col.no + 5, tableY + 7)
+      doc.text('ITEM DESCRIPTION', col.name, tableY + 7)
+      doc.text('HSN/SAC', col.hsn, tableY + 7)
+      doc.text('UNIT', col.unit, tableY + 7)
+      doc.text('QTY', col.qty, tableY + 7, { width: colW.qty - 5, align: 'right' })
+      doc.text('RATE (₹)', col.rate, tableY + 7, { width: colW.rate - 5, align: 'right' })
+      doc.text('AMOUNT (₹)', col.amt, tableY + 7, { width: colW.amt - 5, align: 'right' })
+
+      tableY += 22
+
+      // Table Rows
+      itemsList.forEach((it, idx) => {
+        const isEven = idx % 2 === 0
+        const rowBg = isEven ? '#ffffff' : '#f8fafc'
+        doc.rect(40, tableY, 515, 20).fill(rowBg)
+        doc.strokeColor('#f1f5f9').lineWidth(0.5).rect(40, tableY, 515, 20).stroke()
+
+        const name = it.product_name || it.name || `Item ${idx + 1}`
+        const hsn = it.hsn_code || '100829'
+        const unit = it.unit || 'Bag'
+        const qty = parseFloat(it.quantity || 1).toFixed(2)
+        const rate = parseFloat(it.price || it.rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        const lineTotal = parseFloat(it.line_total || it.amount || (parseFloat(qty) * parseFloat(it.price || it.rate || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+        doc.fontSize(8).fillColor('#475569').font('Helvetica')
+        doc.text(String(idx + 1), col.no + 5, tableY + 6)
+        doc.fillColor('#0f172a').font('Helvetica-Bold').text(name, col.name, tableY + 6, { width: colW.name - 5, ellipsis: true })
+        doc.fillColor('#64748b').font('Helvetica').text(hsn, col.hsn, tableY + 6)
+        doc.text(unit, col.unit, tableY + 6)
+        doc.text(qty, col.qty, tableY + 6, { width: colW.qty - 5, align: 'right' })
+        doc.text(rate, col.rate, tableY + 6, { width: colW.rate - 5, align: 'right' })
+        doc.fillColor('#0f172a').font('Helvetica-Bold').text(lineTotal, col.amt, tableY + 6, { width: colW.amt - 5, align: 'right' })
+
+        tableY += 20
+      })
+
+      // Bottom Totals & Summary Box
+      tableY += 12
+
+      // Left Column: Bank Details & Notes
+      doc.roundedRect(40, tableY, 280, 84, 4).fillAndStroke('#f8fafc', '#e2e8f0')
+      doc.fontSize(7.5).fillColor('#64748b').font('Helvetica-Bold').text('PAYMENT TERMS & NOTES', 48, tableY + 8)
+      doc.fontSize(8).fillColor('#334155').font('Helvetica')
+      if (shop.bank_name) {
+        doc.text(`Bank Name: ${shop.bank_name}`, 48, tableY + 22)
+        doc.text(`A/C No: ${shop.account_number || '—'}`, 48, tableY + 34)
+        doc.text(`IFSC Code: ${shop.ifsc || '—'}   |   Branch: ${shop.branch || 'Main Branch'}`, 48, tableY + 46)
+      } else {
+        doc.text(`Terms: Payment within 15 days of invoice date.`, 48, tableY + 22)
+        doc.text(`Notes: ${quote.notes || bill.notes || 'Goods once sold will not be taken back or exchanged.'}`, 48, tableY + 36, { width: 260 })
+      }
+
+      // Right Column: Tax Breakdown & Total
+      const totX = 340
+      const valX = 460
+      const totW = 95
+
+      doc.fontSize(8.5).fillColor('#475569').font('Helvetica')
+      doc.text('Taxable Value:', totX, tableY + 4)
+      doc.text(`₹${taxableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, valX, tableY + 4, { width: totW, align: 'right' })
+
+      doc.text('CGST (9.0%):', totX, tableY + 18)
+      doc.text(`₹${gstHalf.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, valX, tableY + 18, { width: totW, align: 'right' })
+
+      doc.text('SGST (9.0%):', totX, tableY + 32)
+      doc.text(`₹${gstHalf.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, valX, tableY + 32, { width: totW, align: 'right' })
+
+      // Grand Total Box
+      doc.roundedRect(totX - 8, tableY + 50, 223, 34, 4).fill('#2563eb')
+      doc.fontSize(9).fillColor('#ffffff').font('Helvetica-Bold').text('GRAND TOTAL:', totX, tableY + 61)
+      doc.fontSize(13).fillColor('#ffffff').font('Helvetica-Bold').text(`₹${totalAmountNum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, valX - 20, tableY + 59, { width: totW + 20, align: 'right' })
+
+      // Signatory Section
+      const signY = tableY + 110
+      doc.fontSize(7.5).fillColor('#64748b').font('Helvetica').text('Terms & Conditions: Goods once sold will not be taken back or exchanged.', 40, signY + 30)
+
+      doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold').text(`For ${seller}`, 380, signY, { width: 175, align: 'center' })
+      doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(390, signY + 36).lineTo(545, signY + 36).stroke()
+      doc.fontSize(7.5).fillColor('#64748b').font('Helvetica').text('Authorised Signatory', 380, signY + 40, { width: 175, align: 'center' })
+
+      // Footer
+      doc.fontSize(7).fillColor('#94a3b8').text(`Official ${docTypeTitle} generated automatically by Workshop CRM · Computer Generated Document`, 40, 780, { width: 515, align: 'center' })
 
       doc.end()
     } catch (err) {

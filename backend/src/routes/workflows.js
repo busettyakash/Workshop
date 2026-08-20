@@ -163,7 +163,7 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
       }
 
       const invNum = bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`
-      const sellerName = shop.shop_name || 'Busetty Traders'
+      const sellerName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
       const totalValFormatted = parseFloat(quote.total_amount || bill.amount || run.test_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
       // Generate the official Tax Invoice PDF attachment buffer

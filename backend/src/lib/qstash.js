@@ -124,7 +124,7 @@ export async function publishWorkflowStep(payload, options = {}) {
 
   // In local development or with local target URLs, use localStepRunner directly
   if (isLocalTarget || !process.env.QSTASH_TOKEN) {
-    console.log(`[WORKFLOW RUNNER] Executing local step runner for run #${payload.runId} step ${payload.step} in ${delaySeconds}s (Local target)...`)
+    console.log('[WORKFLOW RUNNER] Executing local step runner for run #%s step %s in %ds (Local target)...', payload.runId, payload.step, delaySeconds)
     if (localStepRunner && typeof localStepRunner === 'function') {
       setTimeout(() => {
         localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
@@ -134,7 +134,7 @@ export async function publishWorkflowStep(payload, options = {}) {
   }
 
   try {
-    console.log(`[QSTASH] Publishing message to ${targetUrl} for run #${payload.runId} step ${payload.step} (delay: ${delaySeconds}s, retries: ${retriesCount})`)
+    console.log('[QSTASH] Publishing message to %s for run #%s step %s (delay: %ds, retries: %d)', targetUrl, payload.runId, payload.step, delaySeconds, retriesCount)
     
     const result = await qstash.publishJSON({
       url: targetUrl,
@@ -148,10 +148,10 @@ export async function publishWorkflowStep(payload, options = {}) {
       }
     })
 
-    console.log(`[QSTASH] Successfully published step ${payload.step} for run #${payload.runId}. Message ID:`, result.messageId)
+    console.log('[QSTASH] Successfully published step %s for run #%s. Message ID: %s', payload.step, payload.runId, result.messageId)
     return result
   } catch (err) {
-    console.warn(`[QSTASH LOCAL FALLBACK] Target publish failed for run #${payload.runId} step ${payload.step}: ${err.message}. Advancing via local runner...`)
+    console.warn('[QSTASH LOCAL FALLBACK] Target publish failed for run #%s step %s: %s. Advancing via local runner...', payload.runId, payload.step, err.message)
     if (localStepRunner && typeof localStepRunner === 'function') {
       setTimeout(() => {
         localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))

@@ -377,7 +377,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems) => {
 
   const shopProfileRes = await pool.query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles WHERE user_id::text = $1::text LIMIT 1', [quote.user_id || 'default-user']).catch(() => ({ rows: [] }))
   const shop = shopProfileRes.rows[0] || {}
-  const sellerName = shop.shop_name || quote.shop_name || 'Busetty Traders'
+  const sellerName = shop.shop_name || shop.name || quote.shop_name || bill?.shop_name || 'Workshop'
   const invNum = bill?.bill_number || `INV-${String(bill?.id || 1).padStart(4, '0')}`
   const totalAmount = parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
   const totalFormatted = totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

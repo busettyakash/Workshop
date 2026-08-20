@@ -599,12 +599,27 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
         return 0
       }
 
-      const totalDiscount = items.reduce((s, li) => s + getLineDiscount(li), 0)
-      const explicitTotal = parseFloat(bill.amount || quote.total_amount || 0)
-      const totalAmount = explicitTotal > 0 ? explicitTotal : Math.max(0, grossSubtotal - totalDiscount)
-      const taxableSubtotal = grossSubtotal - totalDiscount
-      const cgst = taxableSubtotal * 0.09
-      const sgst = taxableSubtotal * 0.09
+      const lineDiscounts = items.reduce((s, li) => s + getLineDiscount(li), 0)
+      const explicitDocDiscount = parseFloat(quote.discount || bill.discount || quote.discount_amount || bill.discount_amount || 0)
+      const totalDiscount = Math.max(lineDiscounts, explicitDocDiscount)
+
+      const rawTaxRate = quote.tax_rate ?? bill.tax_rate
+      const hasTaxRate = rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !isNaN(parseFloat(rawTaxRate))
+      const explicitTaxRate = hasTaxRate ? parseFloat(rawTaxRate) : 18.00
+
+      const rawTaxAmt = quote.tax_amount ?? bill.tax_amount
+      const hasTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
+      
+      let taxAmt = 0
+      if (hasTaxAmt && parseFloat(rawTaxAmt) >= 0) {
+        taxAmt = parseFloat(rawTaxAmt)
+      } else {
+        taxAmt = taxableSubtotal * (explicitTaxRate / 100)
+      }
+
+      const halfRate = (explicitTaxRate / 2).toFixed(2).replace(/\.00$/, '')
+      const cgst = taxAmt / 2
+      const sgst = taxAmt / 2
 
       const W = 535
       const X = 30
@@ -768,7 +783,7 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
           doc.fontSize(8).fillColor('#64748b').font('Helvetica').text('—', colG.disc, curY + 12, { width: colGW.disc, align: 'right' })
         }
 
-        doc.fontSize(7).fillColor('#475569').font('Helvetica').text('CGST (9%) + SGST (9%)', colG.tax - 15, curY + 12, { width: colGW.tax + 15, align: 'right' })
+        doc.fontSize(7).fillColor('#475569').font('Helvetica').text(`CGST (${halfRate}%) + SGST (${halfRate}%)`, colG.tax - 15, curY + 12, { width: colGW.tax + 15, align: 'right' })
 
         curY += rowH
       })

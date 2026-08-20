@@ -99,8 +99,11 @@ export function setLocalStepRunner(fn) {
  */
 export async function publishWorkflowStep(payload, options = {}) {
   let backendBaseUrl = process.env.BACKEND_URL
-  if (!backendBaseUrl && process.env.VERCEL_URL) {
-    backendBaseUrl = `https://${process.env.VERCEL_URL}`
+  if (!backendBaseUrl) {
+    const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
+    if (vercelHost) {
+      backendBaseUrl = vercelHost.startsWith('http') ? vercelHost : `https://${vercelHost}`
+    }
   }
   if (!backendBaseUrl) {
     backendBaseUrl = 'http://localhost:5000'
@@ -126,9 +129,13 @@ export async function publishWorkflowStep(payload, options = {}) {
   if (isLocalTarget || !process.env.QSTASH_TOKEN) {
     console.log('[WORKFLOW RUNNER] Executing local step runner for run #%s step %s in %ds (Local target)...', payload.runId, payload.step, delaySeconds)
     if (localStepRunner && typeof localStepRunner === 'function') {
-      setTimeout(() => {
+      if (process.env.VERCEL) {
         localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
-      }, Math.max(200, delaySeconds * 1000))
+      } else {
+        setTimeout(() => {
+          localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
+        }, Math.max(200, delaySeconds * 1000))
+      }
     }
     return { local: true, scheduledLocalFallback: true, reason: 'LOCAL_TARGET' }
   }
@@ -153,9 +160,13 @@ export async function publishWorkflowStep(payload, options = {}) {
   } catch (err) {
     console.warn('[QSTASH LOCAL FALLBACK] Target publish failed for run #%s step %s: %s. Advancing via local runner...', payload.runId, payload.step, err.message)
     if (localStepRunner && typeof localStepRunner === 'function') {
-      setTimeout(() => {
+      if (process.env.VERCEL) {
         localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
-      }, Math.max(300, delaySeconds * 1000))
+      } else {
+        setTimeout(() => {
+          localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
+        }, Math.max(300, delaySeconds * 1000))
+      }
     }
 
     return {

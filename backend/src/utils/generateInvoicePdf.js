@@ -602,6 +602,7 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
       const lineDiscounts = items.reduce((s, li) => s + getLineDiscount(li), 0)
       const explicitDocDiscount = parseFloat(quote.discount || bill.discount || quote.discount_amount || bill.discount_amount || 0)
       const totalDiscount = Math.max(lineDiscounts, explicitDocDiscount)
+      const taxableSubtotal = Math.max(0, grossSubtotal - totalDiscount)
 
       const rawTaxRate = quote.tax_rate ?? bill.tax_rate
       const hasTaxRate = rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !isNaN(parseFloat(rawTaxRate))
@@ -616,6 +617,9 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
       } else {
         taxAmt = taxableSubtotal * (explicitTaxRate / 100)
       }
+
+      const explicitTotal = parseFloat(bill.amount || quote.total_amount || 0)
+      const totalAmount = explicitTotal > 0 ? explicitTotal : (taxableSubtotal + taxAmt)
 
       const halfRate = (explicitTaxRate / 2).toFixed(2).replace(/\.00$/, '')
       const cgst = taxAmt / 2

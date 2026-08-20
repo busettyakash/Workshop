@@ -219,6 +219,7 @@ export default function Workflows() {
             zoom={zoom}               setZoom={setZoom}
             initials={initials}
             initialRun={initialRun}
+            workflows={workflows}
             onBack={() => { setView('list'); fetchWorkflows() }}
             onToggleLive={handleToggleLive}
             onSaveName={saveName}
@@ -673,7 +674,7 @@ export default function Workflows() {
 /* ─────────────────────────────────────────────────────────────
    WORKFLOW RUNS & LOGS VIEWER COMPONENT
 ───────────────────────────────────────────────────────────── */
-function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null }) {
+function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, workflows = [] }) {
   const [runs, setRuns] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -681,13 +682,31 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null }) 
   const [selectedRun, setSelectedRun] = useState(initialSelectedRun)
   const [logs, setLogs] = useState([])
   const [loadingLogs, setLoadingLogs] = useState(false)
+  const [internalWfs, setInternalWfs] = useState(Array.isArray(workflows) ? workflows : [])
   const dispatch = useAppDispatch()
+
+  useEffect(() => {
+    if (Array.isArray(workflows) && workflows.length > 0) {
+      setInternalWfs(workflows)
+    } else {
+      api.get('/workflows').then(res => setInternalWfs(res.data || [])).catch(() => {})
+    }
+  }, [workflows])
 
   useEffect(() => {
     if (initialSelectedRun) {
       setSelectedRun(initialSelectedRun)
     }
   }, [initialSelectedRun])
+
+  // Keep selectedRun synchronized when runs list updates from polling
+  useEffect(() => {
+    if (!selectedRun) return
+    const updated = runs.find(r => r.id === selectedRun.id)
+    if (updated && (updated.status !== selectedRun.status || updated.current_step !== selectedRun.current_step || updated.duration !== selectedRun.duration)) {
+      setSelectedRun(prev => ({ ...prev, ...updated }))
+    }
+  }, [runs, selectedRun?.id, selectedRun?.status, selectedRun?.current_step, selectedRun?.duration])
 
   const fetchRuns = async (isBackground = false) => {
     if (!isBackground) setLoading(true)
@@ -1056,7 +1075,9 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null }) 
             <div style={{ padding: '10px 14px', background: '#131e33', borderBottom: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {(() => {
                 const isDeclinedRun = Boolean(selectedRun?.test_company && String(selectedRun.test_company).toLowerCase().includes('declined'))
-                let rawNodes = currentWf?.nodes
+                const allWorkflows = (Array.isArray(internalWfs) && internalWfs.length > 0) ? internalWfs : (Array.isArray(workflows) ? workflows : [])
+                const targetWf = allWorkflows.find(w => w && w.id === selectedRun?.workflow_id) || currentWf
+                let rawNodes = selectedRun?.nodes || targetWf?.nodes || currentWf?.nodes
                 if (typeof rawNodes === 'string') {
                   try { rawNodes = JSON.parse(rawNodes) } catch { rawNodes = null }
                 }
@@ -1064,10 +1085,10 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null }) 
                   ? (Array.isArray(rawNodes?.declinedSteps) ? rawNodes.declinedSteps : DEFAULT_DECLINED_STEPS)
                   : (Array.isArray(rawNodes?.acceptedSteps) ? rawNodes.acceptedSteps : (Array.isArray(rawNodes) ? rawNodes : DEFAULT_ACCEPTED_STEPS))
 
-                const maxStepsCount = Number(selectedRun?.current_step || 0)
                 const stepsList = []
                 const seenKeys = new Set()
-                for (const st of rawStepsList) {
+                for (const st of (rawStepsList || [])) {
+                  if (!st) continue
                   const key = st.id || st.title || st.tag
                   if (!seenKeys.has(key)) {
                     seenKeys.add(key)
@@ -1075,29 +1096,32 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null }) 
                   }
                 }
 
-                const activeRunSteps = (maxStepsCount > 1 && maxStepsCount - 1 < stepsList.length)
-                  ? stepsList.slice(0, maxStepsCount - 1)
-                  : stepsList
+                // For historic completed runs that finished with fewer steps before new steps were added,
+                // accurately display only the steps that actually ran for that historical run.
+                const maxExecutedStep = Number(selectedRun?.current_step || 0)
+                let effectiveStepsList = stepsList
+                if (selectedRun?.status === 'Completed' && maxExecutedStep > 1 && (maxExecutedStep - 1) < stepsList.length) {
+                  effectiveStepsList = stepsList.slice(0, maxExecutedStep - 1)
+                }
 
                 const checklist = [
                   { step: 1, name: isDeclinedRun ? 'Step 1: Check Condition (Quote Status == Declined)' : 'Step 1: Check Condition (Quote Status == Accepted)' }
                 ]
 
-                let stepIndex = 2
-                activeRunSteps.forEach((st, idx) => {
+                effectiveStepsList.forEach((st, idx) => {
                   const title = st.title || st.name || 'Action'
-                  const isLast = idx === activeRunSteps.length - 1
+                  const isLast = idx === effectiveStepsList.length - 1
+                  const stepNum = idx + 2
 
                   checklist.push({
-                    step: stepIndex,
-                    name: `Step ${stepIndex}: ${title}${isLast ? ' (Workflow Ended)' : ''}`
+                    step: stepNum,
+                    name: `Step ${stepNum}: ${title}${isLast ? ' (Workflow Ended)' : ''}`
                   })
-                  stepIndex++
                 })
 
                 return checklist.map(st => {
-                  const isPassed = (Number(selectedRun.current_step) >= st.step) || selectedRun.status === 'Completed'
-                  const isCurrent = Number(selectedRun.current_step) === st.step - 1 && selectedRun.status === 'Executing'
+                  const isPassed = (Number(selectedRun?.current_step || 0) >= st.step) || selectedRun?.status === 'Completed'
+                  const isCurrent = Number(selectedRun?.current_step || 0) === st.step - 1 && selectedRun?.status === 'Executing'
 
                   return (
                     <div key={st.step} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.73rem' }}>
@@ -2104,7 +2128,7 @@ function WorkflowEditor({
   activeTab, setActiveTab,
   triggerSearch, setTriggerSearch,
   selectedTrigger, setSelectedTrigger, filteredCategories,
-  zoom, setZoom, initials, initialRun,
+  zoom, setZoom, initials, initialRun, workflows = [],
   onBack, onToggleLive, onSaveName
 }) {
   const dispatch = useAppDispatch()
@@ -2368,7 +2392,7 @@ function WorkflowEditor({
 
       {/* ── Tab Content: RUNS TAB ── */}
       {activeTab === 'runs' ? (
-        <WorkflowRunsView workflowId={currentWf?.id} currentWf={currentWf} initialSelectedRun={initialRun} />
+        <WorkflowRunsView workflowId={currentWf?.id} currentWf={currentWf} initialSelectedRun={initialRun} workflows={workflows} />
       ) : (
         <>
           {/* ── Banner ── */}

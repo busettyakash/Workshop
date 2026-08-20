@@ -209,73 +209,7 @@ export default function QuotePreviewModal({ quote, onClose, onEdit, onStatusChan
           )}
         </div>
 
-        <div className="ws-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            {(() => {
-              const status = String(quote?.status || 'Draft').toLowerCase()
-              const isAccepted = status === 'accepted'
-              const isDeclined = status === 'declined' || status === 'rejected'
-              const isCancelled = status === 'cancelled'
-
-              if (isAccepted) {
-                return (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '6px 12px', background: '#dcfce7', color: '#15803d',
-                    borderRadius: 7, fontSize: '0.80rem', fontWeight: 700, border: '1px solid #bbf7d0'
-                  }}>
-                    ✓ Quotation Accepted
-                  </span>
-                )
-              }
-
-              if (isDeclined) {
-                return (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '6px 12px', background: '#fee2e2', color: '#b91c1c',
-                    borderRadius: 7, fontSize: '0.80rem', fontWeight: 700, border: '1px solid #fecaca'
-                  }}>
-                    ✕ Quotation Declined
-                  </span>
-                )
-              }
-
-              if (isCancelled) {
-                return (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '6px 12px', background: '#f1f5f9', color: '#64748b',
-                    borderRadius: 7, fontSize: '0.80rem', fontWeight: 700, border: '1px solid #e2e8f0'
-                  }}>
-                    ⊘ Quotation Cancelled
-                  </span>
-                )
-              }
-
-              // For Draft / Sent / Pending quotes, allow manual Acceptance
-              return onStatusChange ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button
-                    className="attio-btn"
-                    type="button"
-                    style={{ background: '#dcfce7', color: '#15803d', borderColor: '#bbf7d0', fontWeight: 700 }}
-                    onClick={() => onStatusChange(quote.id, 'Accepted')}
-                  >
-                    ✓ Accept Quote
-                  </button>
-                  <button
-                    className="attio-btn"
-                    type="button"
-                    style={{ background: '#fee2e2', color: '#b91c1c', borderColor: '#fecaca', fontWeight: 600 }}
-                    onClick={() => onStatusChange(quote.id, 'Declined')}
-                  >
-                    ✕ Decline Quote
-                  </button>
-                </div>
-              ) : null
-            })()}
-          </div>
+        <div className="ws-modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
           <button className="attio-btn attio-btn-secondary" type="button" onClick={onClose}>Close</button>
         </div>
       </div>

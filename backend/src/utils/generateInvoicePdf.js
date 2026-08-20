@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer'
+import PDFDocument from 'pdfkit'
 import { getProductHsnMap } from '../lib/productCache.js'
 
 let chromiumModule = null
@@ -550,62 +551,126 @@ function getSystemBrowserPath() {
 }
 
 // ─────────────────────────────────────────────
+// PDFKit Fallback Generator (Guaranteed Buffer)
+// ─────────────────────────────────────────────
+async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
+  return new Promise((resolve) => {
+    try {
+      const doc = new PDFDocument({ margin: 40, size: 'A4' })
+      const chunks = []
+      doc.on('data', chunk => chunks.push(chunk))
+      doc.on('end', () => resolve(Buffer.concat(chunks)))
+
+      const isQuote = type === 'quote' || (!bill?.id && quote?.quote_number)
+      const title = isQuote ? 'QUOTATION' : 'TAX INVOICE'
+      const docNum = isQuote ? (quote.quote_number || 'QT-001') : (bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`)
+      const seller = shop.shop_name || 'Busetty Traders'
+      const customer = quote.customer_name || 'Customer'
+      const totalAmount = parseFloat(bill.amount || quote.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+      // Header
+      doc.fontSize(18).fillColor('#1e293b').text(seller, { align: 'left' })
+      doc.fontSize(9).fillColor('#64748b').text(shop.address || '')
+      doc.text(`Phone: ${shop.phone || ''} | Email: ${shop.email || ''}`)
+      if (shop.gstin) doc.text(`GSTIN: ${shop.gstin}`)
+      doc.moveDown()
+
+      // Title & Meta
+      doc.fontSize(14).fillColor('#2563eb').text(title, { align: 'right' })
+      doc.fontSize(9).fillColor('#475569').text(`Number: ${docNum}`, { align: 'right' })
+      doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, { align: 'right' })
+      doc.moveDown()
+
+      // Customer
+      doc.fontSize(11).fillColor('#0f172a').text(`Billed To: ${customer}`)
+      doc.fontSize(9).fillColor('#475569').text(`Total Amount: ₹${totalAmount}`)
+      doc.moveDown()
+
+      // Line Items
+      const itemsList = Array.isArray(billItems) && billItems.length ? billItems : parseItems(quote.line_items)
+      if (itemsList.length > 0) {
+        doc.fontSize(10).fillColor('#1e293b').text('Items Summary:')
+        itemsList.forEach((it, idx) => {
+          const name = it.product_name || it.name || `Item ${idx + 1}`
+          const qty = it.quantity || 1
+          const rate = it.price || it.rate || 0
+          doc.fontSize(9).fillColor('#475569').text(`• ${name} - Qty: ${qty} @ ₹${rate}`)
+        })
+      }
+
+      doc.moveDown()
+      doc.fontSize(12).fillColor('#15803d').text(`Grand Total: ₹${totalAmount}`, { align: 'right' })
+
+      doc.end()
+    } catch (err) {
+      console.error('[PDFKit Fallback Error]', err.message)
+      resolve(null)
+    }
+  })
+}
+
+// ─────────────────────────────────────────────
 // Main Export: HTML → PDF Buffer
 // ─────────────────────────────────────────────
 export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
-  const catalogMap = await getProductHsnMap().catch(() => ({}))
-  const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap, type })
-
-  let browser = null
-
-  const isLinux = process.platform === 'linux'
-
-  if (isLinux && chromiumModule && puppeteerCoreModule) {
-    try {
-      const executablePath = await chromiumModule.executablePath()
-      if (executablePath) {
-        browser = await puppeteerCoreModule.launch({
-          args: chromiumModule.args,
-          defaultViewport: chromiumModule.defaultViewport,
-          executablePath,
-          headless: chromiumModule.headless
-        })
-      }
-    } catch (sparticuzErr) {
-      console.warn('[PDF Generation] Sparticuz chromium launch failed:', sparticuzErr.message)
-    }
-  }
-
-  if (!browser) {
-    const launchOptions = {
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-gpu',
-        '--disable-dev-shm-usage',
-        '--single-process',
-        '--no-zygote'
-      ]
-    }
-    const exePath = getSystemBrowserPath()
-    if (exePath) {
-      launchOptions.executablePath = exePath
-    }
-    browser = await puppeteer.launch(launchOptions)
-  }
-
   try {
-    const page = await browser.newPage()
-    await page.setContent(html, { waitUntil: 'networkidle0' })
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '0', right: '0', bottom: '0', left: '0' }
-    })
-    return pdfBuffer
-  } finally {
-    if (browser) await browser.close()
+    const catalogMap = await getProductHsnMap().catch(() => ({}))
+    const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap, type })
+
+    let browser = null
+    const isLinux = process.platform === 'linux'
+
+    if (isLinux && chromiumModule && puppeteerCoreModule) {
+      try {
+        const executablePath = await chromiumModule.executablePath()
+        if (executablePath) {
+          browser = await puppeteerCoreModule.launch({
+            args: chromiumModule.args,
+            defaultViewport: chromiumModule.defaultViewport,
+            executablePath,
+            headless: chromiumModule.headless
+          })
+        }
+      } catch (sparticuzErr) {
+        console.warn('[PDF Generation] Sparticuz chromium launch failed:', sparticuzErr.message)
+      }
+    }
+
+    if (!browser) {
+      const launchOptions = {
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-gpu',
+          '--disable-dev-shm-usage',
+          '--single-process',
+          '--no-zygote'
+        ]
+      }
+      const exePath = getSystemBrowserPath()
+      if (exePath) {
+        launchOptions.executablePath = exePath
+      }
+      browser = await puppeteer.launch(launchOptions)
+    }
+
+    try {
+      const page = await browser.newPage()
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 })
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '0', right: '0', bottom: '0', left: '0' }
+      })
+      return Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer)
+    } finally {
+      if (browser) await browser.close()
+    }
+  } catch (err) {
+    console.warn('[Puppeteer PDF Warning] Falling back to PDFKit generator:', err.message)
+    const fallbackBuf = await generatePdfKitFallback({ quote, bill, billItems, shop, type })
+    return fallbackBuf
   }
 }
 

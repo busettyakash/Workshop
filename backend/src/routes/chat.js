@@ -83,14 +83,15 @@ const tools = [
     type: 'function',
     function: {
       name: 'create_person',
-      description: 'Creates a new person/contact (Lead, Customer, or Partner) in the database people table. Use this when the user asks to add or create a new contact, customer, lead, or supplier/partner.',
+      description: 'Creates a new person/contact (Lead, Prospect, Customer, Partner, Vendor, or Other) in the database people table. Use this when the user asks to add or create a new contact, customer, lead, vendor, supplier, or partner.',
       parameters: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Name of the contact' },
           email: { type: 'string', description: 'Email address of the contact' },
           phone: { type: 'string', description: 'Phone number of the contact' },
-          persona: { type: 'string', enum: ['Lead', 'Customer', 'Partner'], description: 'Role of the contact, defaults to "Lead"' },
+          company: { type: 'string', description: 'Company or business name associated with this contact' },
+          persona: { type: 'string', enum: ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other'], description: 'Role or persona of the contact (Lead, Prospect, Customer, Partner, Vendor, Other). When the user asks to add a vendor or supplier, persona MUST be "Vendor". Defaults to "Lead"' },
           notes: { type: 'string', description: 'Any extra notes about this contact' }
         },
         required: ['name']
@@ -198,7 +199,7 @@ You have access to tools to:
 Database tables available for SELECT queries:
 - products: id, name, sku, hsn_code, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, bag_weight, unit, status, description, user_id, created_at, updated_at
 - import_stock: id, name, sku, category, price, stock, loose_kg, bag_weight, unit, status, description, buying_price, price_covers, user_id, created_at, updated_at
-- people: id, name, email, phone, persona, status, notes, user_id, created_at, updated_at (stores customers, leads, partners)
+- people: id, name, email, phone, company, persona, status, notes, user_id, created_at, updated_at (stores customers, leads, prospects, partners, vendors)
 - bills: id, bill_number, customer_id, amount, discount, tax_rate, status (paid/unpaid/cancelled), due_date, notes, order_number, paid_at, user_id, created_at, updated_at
 - bill_items: id, bill_id, product_id, name, qty, price, discount, unit, hsn_code, user_id, created_at (each row is one line item in a bill)
 - quotes: id, quote_number, customer_name, customer_phone, customer_email, total_amount, tax_amount, status, issue_date, valid_until, notes, line_items, user_id, created_at, updated_at
@@ -433,15 +434,28 @@ Always run database queries to get real-time accurate information when asked abo
                 toolResult = { success: true, note: rows[0] }
               }
             } else if (toolName === 'create_person') {
-              const { name, email = '', phone = '', persona = 'Lead', notes = '' } = args
+              const { name, email = '', phone = '', company = '', persona = 'Lead', notes = '' } = args
               if (!name) {
                 toolResult = { error: 'name is required' }
               } else {
+                const validPersonas = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
+                const matchedPersona = validPersonas.find(p => p.toLowerCase() === String(persona).toLowerCase()) || persona || 'Lead'
+                const compVal = company && company.trim() ? company.trim() : null
+
                 const { rows } = await query(
-                  `INSERT INTO people (name, email, phone, persona, notes, user_id, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING *`,
-                  [name.trim(), email.trim(), phone.trim(), persona, notes, userId]
+                  `INSERT INTO people (name, email, phone, company, company_name, persona, notes, user_id, created_at, updated_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING *`,
+                  [name.trim(), email.trim(), phone.trim(), compVal, compVal, matchedPersona, notes, userId]
                 )
+
+                // Invalidate people cache if any
+                try {
+                  const pKeys = await redis.keys(`people:${userId}:*`).catch(() => [])
+                  for (const key of pKeys) {
+                    await redis.del(key).catch(() => {})
+                  }
+                } catch { }
+
                 toolResult = { success: true, person: rows[0] }
               }
             } else {

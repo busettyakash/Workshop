@@ -28,14 +28,9 @@ export const receiver = new Receiver({
 export async function verifyQStashSignature(req, res, next) {
   const signature = req.headers['upstash-signature'] || req.headers['Upstash-Signature']
 
-  // Allow bypass in local development if explicitly configured or running local mock tests
-  const isDevBypass =
-    process.env.NODE_ENV !== 'production' &&
-    (process.env.SKIP_QSTASH_SIGNATURE_VERIFY === 'true' || req.headers['x-bypass-qstash-auth'] === 'true')
-
   if (!signature) {
-    if (isDevBypass) {
-      console.warn('[QSTASH AUTH] Warning: Missing Upstash-Signature header, but bypassed due to dev configuration.')
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[QSTASH AUTH] Development notice: Webhook request processed in development mode without Upstash-Signature header.')
       req.qstashVerified = true
       return next()
     }

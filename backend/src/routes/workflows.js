@@ -10,14 +10,25 @@ import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 const router = Router()
 
 /**
+ * Format workflow execution duration human-readably (e.g. '28s', '1m 15s')
+ */
+export function formatWorkflowDuration(createdAt) {
+  if (!createdAt) return '30s'
+  const elapsedMs = Math.max(1000, Date.now() - new Date(createdAt).getTime())
+  const totalSecs = Math.round(elapsedMs / 1000)
+  if (totalSecs < 60) {
+    return `${totalSecs}s`
+  }
+  const mins = Math.floor(totalSecs / 60)
+  const secs = totalSecs % 60
+  return `${mins}m ${secs}s`
+}
+
+/**
  * Execute a single step in the workflow pipeline and schedule next step.
  * Used by both the QStash Webhook receiver (production) and the local runner (dev).
  */
-export async function executeWorkflowStep(payload = {}) {
-  const runId = payload.runId
-  const step = Number(payload.step)
-  const isDeclined = Boolean(payload.branch === 'declined' || payload.isDeclined)
-
+export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted' }) {
   if (!runId || isNaN(step)) {
     return { error: 'Missing required runId or step in workflow payload' }
   }
@@ -49,22 +60,21 @@ export async function executeWorkflowStep(payload = {}) {
     try { nodes = JSON.parse(nodes) } catch { nodes = null }
   }
 
-  // Determine branch steps (Declined vs Accepted)
-  const isDeclinedBranch = isDeclined || (run.test_company && String(run.test_company).toLowerCase().includes('declined'))
+  const companyName = run.test_company || 'Quotation Customer'
+  const isDeclinedBranch = branch === 'declined' || Boolean(run.test_company && String(run.test_company).toLowerCase().includes('declined'))
   let branchSteps = []
+
   if (isDeclinedBranch) {
-    if (Array.isArray(nodes?.declinedSteps)) {
-      branchSteps = nodes.declinedSteps
-    }
+    branchSteps = Array.isArray(nodes?.declinedSteps) ? nodes.declinedSteps : []
   } else if (Array.isArray(nodes?.acceptedSteps)) {
     branchSteps = nodes.acceptedSteps
   } else if (Array.isArray(nodes)) {
     branchSteps = nodes
+  } else {
+    branchSteps = []
   }
 
-  const companyName = run.test_company || 'Quotation Customer'
-
-  // Step 1: Condition — Check Quote Status
+  // STEP 1: Condition Evaluation
   if (step === 1) {
     const quoteVal = Number(run.test_value || 0)
     const logText = isDeclinedBranch
@@ -77,46 +87,29 @@ export async function executeWorkflowStep(payload = {}) {
       text: logText
     })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
 
-    if (branchSteps.length > 0) {
-      await query(
-        `UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`,
-        [run.id]
-      )
+    await query(
+      `UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`,
+      [run.id]
+    )
 
+    if (branchSteps.length > 0) {
       await publishWorkflowStep({
         runId: run.id,
         workflowId: run.workflow_id,
         step: 2,
         branch: isDeclinedBranch ? 'declined' : 'accepted'
       }, { delay: 2, retries: 3, retryDelay: '5s' })
+    }
 
-      return {
-        success: true,
-        runId: run.id,
-        step: 1,
-        message: 'Step 1 executed successfully. Next step scheduled.'
-      }
-    } else {
-      const startTime = run.created_at ? new Date(run.created_at).getTime() : Date.now()
-      const durationSeconds = Math.max(1, Math.min(60, Math.round((Date.now() - startTime) / 1000)))
-      const durationStr = `${durationSeconds}s`
-
-      await redis.rpush(logKey, JSON.stringify({
-        time: new Date().toISOString(),
-        step: 2,
-        text: `Workflow completed: Pipeline finished successfully in ${durationStr}.`
-      })).catch(() => {})
-
-      await query(
-        `UPDATE workflow_runs SET current_step = 1, status = 'Completed', duration = $1 WHERE id = $2`,
-        [durationStr, run.id]
-      )
-
-      return { success: true, runId: run.id, status: 'Completed', duration: durationStr }
+    return {
+      success: true,
+      runId: run.id,
+      step: 1,
+      message: 'Step 1 (Condition Check) executed. Next step scheduled.'
     }
   }
 
-  // Step 2..N: Dynamic Node Actions from branchSteps
+  // STEP 2+: Execute subsequent Action nodes
   const actionIndex = step - 2
   if (actionIndex >= 0 && actionIndex < branchSteps.length) {
     const currentAction = branchSteps[actionIndex]
@@ -131,18 +124,42 @@ export async function executeWorkflowStep(payload = {}) {
       const shopProfileRes = await query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles LIMIT 1').catch(() => ({ rows: [] }))
       const shop = shopProfileRes.rows[0] || {}
 
-      // Fetch latest quote and bill associated with current workflow target
-      const quoteRes = await query('SELECT * FROM quotes ORDER BY id DESC LIMIT 1').catch(() => ({ rows: [] }))
-      const quote = quoteRes.rows[0] || {
-        customer_name: companyName,
-        total_amount: run.test_value || 0,
-        quote_number: 'QT-INV-001'
+      // Fetch quote and associated bill and line items
+      let quote = null
+      if (run.quote_id) {
+        const qRes = await query('SELECT * FROM quotes WHERE id = $1', [run.quote_id]).catch(() => ({ rows: [] }))
+        quote = qRes.rows[0]
+      }
+      if (!quote && companyName) {
+        const qRes = await query('SELECT * FROM quotes WHERE LOWER(customer_name) = LOWER($1) ORDER BY id DESC LIMIT 1', [companyName]).catch(() => ({ rows: [] }))
+        quote = qRes.rows[0]
+      }
+      if (!quote) {
+        const qRes = await query('SELECT * FROM quotes ORDER BY id DESC LIMIT 1').catch(() => ({ rows: [] }))
+        quote = qRes.rows[0] || {
+          customer_name: companyName,
+          total_amount: run.test_value || 0,
+          quote_number: 'QT-INV-001'
+        }
       }
 
-      const billRes = await query('SELECT * FROM bills ORDER BY id DESC LIMIT 1').catch(() => ({ rows: [] }))
-      const bill = billRes.rows[0] || {
-        bill_number: 'INV-0001',
-        amount: run.test_value || quote.total_amount || 0
+      let bill = null
+      let billItems = []
+      if (quote?.id) {
+        const bRes = await query('SELECT * FROM bills WHERE quote_id = $1 ORDER BY id DESC LIMIT 1', [quote.id]).catch(() => ({ rows: [] }))
+        bill = bRes.rows[0]
+      }
+      if (!bill) {
+        const bRes = await query('SELECT * FROM bills ORDER BY id DESC LIMIT 1').catch(() => ({ rows: [] }))
+        bill = bRes.rows[0] || {
+          bill_number: 'INV-0001',
+          amount: run.test_value || quote.total_amount || 0
+        }
+      }
+
+      if (bill?.id) {
+        const biRes = await query('SELECT * FROM bill_items WHERE bill_id = $1', [bill.id]).catch(() => ({ rows: [] }))
+        billItems = biRes.rows || []
       }
 
       const invNum = bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`
@@ -153,7 +170,7 @@ export async function executeWorkflowStep(payload = {}) {
       const pdfBuffer = await generateInvoicePdfBuffer({
         quote,
         bill,
-        billItems: [],
+        billItems,
         shop,
         type: 'invoice'
       }).catch(e => {
@@ -164,17 +181,18 @@ export async function executeWorkflowStep(payload = {}) {
       const attachments = pdfBuffer ? [
         {
           filename: `Tax_Invoice_${invNum}.pdf`,
-          content: pdfBuffer,
+          content: Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer),
           contentType: 'application/pdf'
         }
       ] : []
 
       let sentCount = 0
-      for (const r of recipients) {
-        if (r.email) {
+      const activeRecipients = recipients.filter(r => r && r.email)
+
+      await Promise.allSettled(
+        activeRecipients.map(async (r) => {
           const recipientName = r.name && r.name.trim() ? r.name.trim() : 'Team Member'
           
-          // Clean, borderless, left-aligned corporate email matter
           const emailBodyHtml = `
             <div style="font-family: Arial, Helvetica, sans-serif; font-size: 0.95rem; color: #1e293b; line-height: 1.6; text-align: left; max-width: 600px;">
               <p style="margin-top: 0;">Hello <strong>${recipientName}</strong>,</p>
@@ -212,7 +230,7 @@ export async function executeWorkflowStep(payload = {}) {
             attachments
           }).catch(err => ({ data: null, error: err }))
 
-          if (res.data?.id) {
+          if (res?.data?.id) {
             sentCount++
             const logLine = `Email sent ✅ to ${recipientName} <${r.email}>`
             console.log(`[WORKFLOW MULTI-EMAIL] ${logLine}`)
@@ -222,7 +240,7 @@ export async function executeWorkflowStep(payload = {}) {
               text: logLine
             })).catch(() => {})
           } else {
-            const errLine = `Email delivery failed ❌ to ${recipientName} <${r.email}>: ${res.error?.message || 'Unknown SMTP error'}`
+            const errLine = `Email delivery failed ❌ to ${recipientName} <${r.email}>: ${res?.error?.message || 'Unknown SMTP error'}`
             console.error(`[WORKFLOW MULTI-EMAIL ERROR] ${errLine}`)
             await redis.rpush(logKey, JSON.stringify({
               time: new Date().toISOString(),
@@ -230,8 +248,8 @@ export async function executeWorkflowStep(payload = {}) {
               text: errLine
             })).catch(() => {})
           }
-        }
-      }
+        })
+      )
 
       logText = `Multi-Contact Summary: Configured Recipients (${sentCount}/${recipients.length}) processed successfully with attached Tax_Invoice_${invNum}.pdf.`
     } else if (tag === 'records' || title.includes('record')) {
@@ -269,9 +287,7 @@ export async function executeWorkflowStep(payload = {}) {
     const isLastStep = actionIndex === branchSteps.length - 1
 
     if (isLastStep) {
-      const startTime = run.created_at ? new Date(run.created_at).getTime() : Date.now()
-      const durationSeconds = Math.max(1, Math.min(60, Math.round((Date.now() - startTime) / 1000)))
-      const durationStr = `${durationSeconds}s`
+      const durationStr = formatWorkflowDuration(run.created_at)
 
       await redis.rpush(logKey, JSON.stringify({
         time: new Date().toISOString(),
@@ -314,9 +330,7 @@ export async function executeWorkflowStep(payload = {}) {
     }
   } else {
     // If step exceeded node count, finalize as Completed
-    const startTime = run.created_at ? new Date(run.created_at).getTime() : Date.now()
-    const durationSeconds = Math.max(1, Math.min(60, Math.round((Date.now() - startTime) / 1000)))
-    const durationStr = `${durationSeconds}s`
+    const durationStr = formatWorkflowDuration(run.created_at)
 
     await query(
       `UPDATE workflow_runs SET status = 'Completed', duration = $1 WHERE id = $2`,
@@ -378,112 +392,16 @@ async function healStalledRuns() {
       `SELECT r.*, w.nodes 
        FROM workflow_runs r
        LEFT JOIN workflows w ON r.workflow_id = w.id
-       WHERE r.status = 'Executing' AND r.created_at < NOW() - INTERVAL '3 seconds'`
+       WHERE r.status = 'Executing' AND r.created_at < NOW() - INTERVAL '15 minutes'`
     )
 
     for (const run of rows) {
-      console.log(`[WORKFLOW HEALER] Auto-resuming stalled run #${run.id} (step: ${run.current_step})...`)
-      let nodes = run.nodes
-      if (typeof nodes === 'string') {
-        try { nodes = JSON.parse(nodes) } catch { nodes = null }
-      }
-
-      const isDeclined = Boolean(run.test_company && String(run.test_company).toLowerCase().includes('declined'))
-      let branchSteps = []
-      if (isDeclined) {
-        branchSteps = Array.isArray(nodes?.declinedSteps) ? nodes.declinedSteps : DEFAULT_WORKFLOW_TEMPLATE.declinedSteps
-      } else {
-        branchSteps = Array.isArray(nodes?.acceptedSteps) ? nodes.acceptedSteps : DEFAULT_WORKFLOW_TEMPLATE.acceptedSteps
-      }
-
-      const companyName = run.test_company || 'Quotation Customer'
-      const logKey = `run:${run.id}:logs`
-      const startTime = run.created_at ? new Date(run.created_at).getTime() : Date.now()
-      const durationSeconds = Math.max(1, Math.min(60, Math.round((Date.now() - startTime) / 1000)))
-      const durationStr = `${durationSeconds}s`
-
-      const quoteVal = Number(run.test_value || 0)
-      const logTextStep1 = isDeclined
-        ? `Check Condition: Evaluated quotation status ('Declined') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Routing to Declined Branch.`
-        : `Check Condition: Evaluated quotation status ('Accepted') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Condition Met (Accepted).`
-
-      await redis.rpush(logKey, JSON.stringify({
-        time: new Date(run.created_at || Date.now()).toISOString(),
-        step: 1,
-        text: logTextStep1
-      })).catch(() => {})
-
-      for (let i = 0; i < branchSteps.length; i++) {
-        const stepAction = branchSteps[i] || {}
-        const tag = String(stepAction.tag || '').toLowerCase()
-        const title = String(stepAction.title || '').toLowerCase()
-
-        let logText = ''
-        if (tag === 'inventory' || title.includes('inventory') || title.includes('stock')) {
-          logText = `Inventory Sync: Automatically deducted item stock from warehouse and recorded history log for '${companyName}'.`
-        } else if (tag === 'billing' || title.includes('bill') || title.includes('invoice')) {
-          logText = `Generate Bill: Auto-generated Tax Invoice and created order in Unpaid Bills for '${companyName}'.`
-        } else if (tag === 'multi-contact' || title.includes('multiple') || stepAction.id === 'act-multi-recipient') {
-          const recipients = Array.isArray(stepAction.recipients) ? stepAction.recipients : []
-          for (const r of recipients) {
-            if (r.email) {
-              const recipientName = r.name || 'Team Contact'
-              await sendEmail({
-                to: r.email,
-                subject: `[Tax Invoice & Order Alert] Workflow Dispatch for ${companyName}`,
-                html: `
-                  <div style="font-family: Arial, sans-serif; padding: 24px; color: #1e293b; max-width: 580px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
-                    <div style="background: #2563eb; padding: 16px 20px; border-radius: 8px 8px 0 0; color: #ffffff; font-weight: 700; font-size: 1.1rem;">
-                      Automated Workflow Tax Invoice Dispatch
-                    </div>
-                    <div style="padding: 20px 4px;">
-                      <p style="font-size: 0.95rem; margin-top: 0;">Hello <strong>${recipientName}</strong>,</p>
-                      <p style="font-size: 0.9rem; color: #475569;">An automated workflow dispatch step has been completed for <strong>${companyName}</strong>.</p>
-                      
-                      <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #cbd5e1; margin: 16px 0; font-size: 0.88rem; line-height: 1.6;">
-                        <div><strong>Customer / Entity:</strong> ${companyName}</div>
-                        <div><strong>Quotation Value:</strong> ₹${parseFloat(run.test_value || 0).toLocaleString('en-IN')}</div>
-                        <div><strong>Status:</strong> Processed & Issued</div>
-                      </div>
-
-                      <p style="font-size: 0.85rem; color: #64748b;">The official tax invoice and order summary guidelines have been queued for processing.</p>
-                    </div>
-                    <div style="border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 0.76rem; color: #94a3b8; text-align: center;">
-                      Sent automatically via Workshop Workflow System
-                    </div>
-                  </div>
-                `
-              }).catch(err => console.error(`[HEALER MULTI-EMAIL ERROR] ${r.email}:`, err.message))
-            }
-          }
-          let recs = 'All designated team contacts'
-          if (recipients.length > 0) {
-            recs = recipients.map(r => {
-              const emailSuffix = r.email ? ` <${r.email}>` : ''
-              return (r.name || 'Contact') + emailSuffix
-            }).join(', ')
-          }
-          logText = `Multi-Contact Dispatch: Sent official Tax Invoice PDF via Email to multiple recipients: ${recs}.`
-        } else {
-          logText = `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${companyName}.`
-        }
-
-        await redis.rpush(logKey, JSON.stringify({
-          time: new Date(Date.now() + (i + 1) * 1000).toISOString(),
-          step: i + 2,
-          text: logText
-        })).catch(() => {})
-      }
-
-      await redis.rpush(logKey, JSON.stringify({
-        time: new Date(Date.now() + (branchSteps.length + 1) * 1000).toISOString(),
-        step: branchSteps.length + 2,
-        text: `Workflow completed: All ${branchSteps.length + 1} steps finished successfully. (duration: ${durationStr})`
-      })).catch(() => {})
+      console.log(`[WORKFLOW HEALER] Finalizing timed-out stalled run #${run.id} (step: ${run.current_step})...`)
+      const durationStr = formatWorkflowDuration(run.created_at)
 
       await query(
-        `UPDATE workflow_runs SET current_step = $1, status = 'Completed', duration = $2 WHERE id = $3`,
-        [branchSteps.length + 1, durationStr, run.id]
+        `UPDATE workflow_runs SET status = 'Completed', duration = $1 WHERE id = $2`,
+        [durationStr, run.id]
       )
     }
   } catch (err) {

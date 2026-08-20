@@ -349,7 +349,7 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
           workflowId: run.workflow_id,
           step: step + 1,
           branch: isDeclinedBranch ? 'declined' : 'accepted'
-        }).catch(e => console.error(`[Step ${step + 1} Auto-Advance Error]`, e.message))
+        }).catch(e => console.error('[Step %s Auto-Advance Error]', step + 1, e.message))
       }, 500)
 
       return {

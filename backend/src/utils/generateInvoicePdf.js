@@ -551,176 +551,317 @@ function getSystemBrowserPath() {
 }
 
 // ─────────────────────────────────────────────
-// PDFKit Professional Invoice Generator
+// PDFKit Template Matching Screenshot Exactly
 // ─────────────────────────────────────────────
 async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   return new Promise((resolve) => {
     try {
-      const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true })
+      const doc = new PDFDocument({ margin: 30, size: 'A4', bufferPages: true })
       const chunks = []
       doc.on('data', chunk => chunks.push(chunk))
       doc.on('end', () => resolve(Buffer.concat(chunks)))
 
       const isQuote = type === 'quote' || (!bill?.id && quote?.quote_number)
-      const docTypeTitle = isQuote ? 'QUOTATION' : 'TAX INVOICE'
-      const docNum = isQuote ? (quote.quote_number || 'QT-001') : (bill.bill_number || `INV-${String(bill.id || 1).padStart(6, '0')}`)
-      const orderNum = quote.order_number || bill.order_number || ''
-      const seller = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
-      const sellerGstin = shop.gstin || quote.shop_gstin || bill.shop_gstin || ''
-      const sellerPhone = shop.phone || quote.shop_phone || bill.shop_phone || ''
-      const sellerEmail = shop.email || quote.shop_email || bill.shop_email || ''
-      const sellerAddress = shop.address || quote.shop_address || bill.shop_address || ''
+      const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
+      const docId = isQuote ? (quote.quote_number || 'QT-001') : (bill.bill_number || `INV-${String(bill.id || 1).padStart(6, '0')}`)
+      const orderId = quote.order_number || bill.order_number || ''
+      const sectionTitle1 = isQuote ? '1. QUOTATION DETAILS' : '1. INVOICE DETAILS'
+      const docTypeTitle = isQuote ? 'Commercial Quotation' : 'Tax Invoice'
 
-      const customer = quote.customer_name || 'Customer'
-      const customerCompany = quote.customer_company || ''
-      const customerPhone = quote.customer_phone || ''
-      const customerEmail = quote.customer_email || ''
+      const companyName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Akash Company'
+      const companyGstin = shop.gstin || quote.shop_gstin || bill.shop_gstin || ''
+      const companyPhone = shop.phone || quote.shop_phone || bill.shop_phone || ''
+      const companyAddress = shop.address || quote.shop_address || bill.shop_address || ''
 
-      const itemsList = Array.isArray(billItems) && billItems.length ? billItems : parseItems(quote.line_items)
+      const customerName = quote.customer_name || bill.customer_name || 'Customer'
+      const customerCompany = quote.customer_company || bill.customer_company || ''
+      const customerPhone = quote.customer_phone || bill.customer_phone || ''
+      const customerAddress = quote.customer_address || bill.customer_address || ''
+
+      const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
       
-      const totalAmountNum = parseFloat(bill.amount || quote.total_amount || 0)
-      const taxableAmount = totalAmountNum / 1.18
-      const gstHalf = (totalAmountNum - taxableAmount) / 2
+      const issueDate = fmtDate(quote.issue_date || bill.created_at || quote.created_at || new Date())
+      const validUntilDate = fmtDate(quote.valid_until || new Date(Date.now() + 30 * 86400000))
 
-      // Top Accent Line
-      doc.rect(40, 35, 515, 4).fill('#2563eb')
+      const grossSubtotal = items.reduce((s, li) => {
+        const q = parseFloat(li.qty || li.quantity || 1)
+        const p = parseFloat(li.price || li.rate || 0)
+        return s + (p * q)
+      }, 0)
 
-      // Header Section
-      doc.fontSize(16).fillColor('#0f172a').font('Helvetica-Bold').text(seller, 40, 48)
-      doc.fontSize(8).fillColor('#64748b').font('Helvetica')
+      function getLineDiscount(li) {
+        const explicit = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? NaN)
+        if (!isNaN(explicit) && explicit >= 0) return explicit
+        const q = parseFloat(li.quantity || li.qty || 1)
+        const r = parseFloat(li.rate || li.price || 0)
+        const amt = parseFloat(li.amount ?? li.line_total ?? NaN)
+        if (!isNaN(amt) && (q * r) > amt + 0.01) return Math.round(((q * r) - amt) * 100) / 100
+        return 0
+      }
+
+      const totalDiscount = items.reduce((s, li) => s + getLineDiscount(li), 0)
+      const explicitTotal = parseFloat(bill.amount || quote.total_amount || 0)
+      const totalAmount = explicitTotal > 0 ? explicitTotal : Math.max(0, grossSubtotal - totalDiscount)
+      const taxableSubtotal = grossSubtotal - totalDiscount
+      const cgst = taxableSubtotal * 0.09
+      const sgst = taxableSubtotal * 0.09
+
+      const W = 535
+      const X = 30
+      let curY = 30
+
+      // ── Outer Page Card Border ──
+      doc.roundedRect(X, curY, W, 782, 8).strokeColor('#cbd5e1').lineWidth(1).stroke()
+
+      // ── Banner Header (Blue Gradient Style) ──
+      doc.save()
+      doc.roundedRect(X + 1, curY + 1, W - 2, 80, 7).fill('#2563eb')
       
-      let headerY = 68
-      if (sellerAddress) {
-        doc.text(sellerAddress, 40, headerY, { width: 300 })
-        headerY += 16
+      // Banner Content - Left
+      doc.fontSize(16).fillColor('#ffffff').font('Helvetica-Bold').text(companyName, X + 18, curY + 16)
+      doc.fontSize(8.5).fillColor('#ffffff').font('Helvetica')
+      const metaLine1 = [companyPhone && `Phone: ${companyPhone}`, companyGstin && `GSTIN: ${companyGstin.toUpperCase()}`].filter(Boolean).join('  ·  ')
+      if (metaLine1) {
+        doc.text(metaLine1, X + 18, curY + 38, { opacity: 0.9 })
       }
-      const sellerContact = [sellerPhone && `Phone: ${sellerPhone}`, sellerEmail && `Email: ${sellerEmail}`].filter(Boolean).join('   |   ')
-      if (sellerContact) {
-        doc.text(sellerContact, 40, headerY)
-        headerY += 12
-      }
-      if (sellerGstin) {
-        doc.text(`GSTIN: ${sellerGstin.toUpperCase()}`, 40, headerY)
+      if (companyAddress) {
+        doc.fontSize(7.5).text(companyAddress, X + 18, curY + 52, { width: 280, opacity: 0.85 })
       }
 
-      // Right Header Badge & Meta
-      doc.roundedRect(390, 48, 165, 24, 4).fill('#eff6ff')
-      doc.fontSize(12).fillColor('#1d4ed8').font('Helvetica-Bold').text(docTypeTitle, 390, 55, { width: 165, align: 'center' })
+      // Banner Content - Right
+      doc.fontSize(9.5).fillColor('#ffffff').font('Helvetica-Bold').text(bannerLabel, X + W - 180, curY + 14, { width: 162, align: 'right', opacity: 0.85 })
+      doc.fontSize(16).fillColor('#ffffff').font('Helvetica-Bold').text(docId, X + W - 180, curY + 28, { width: 162, align: 'right' })
+      doc.fontSize(8).fillColor('#ffffff').font('Helvetica')
+      doc.text(`Date: ${issueDate}`, X + W - 180, curY + 50, { width: 162, align: 'right', opacity: 0.9 })
+      if (isQuote) {
+        doc.text(`Valid Until: ${validUntilDate}`, X + W - 180, curY + 62, { width: 162, align: 'right', opacity: 0.9 })
+      }
+      doc.restore()
 
-      doc.fontSize(8.5).fillColor('#475569').font('Helvetica')
-      doc.text(`Invoice No:`, 390, 80)
-      doc.font('Helvetica-Bold').fillColor('#0f172a').text(docNum, 460, 80, { width: 95, align: 'right' })
+      curY += 92
 
-      if (orderNum) {
-        doc.font('Helvetica').fillColor('#475569').text(`Order No:`, 390, 94)
-        doc.font('Helvetica-Bold').fillColor('#0f172a').text(orderNum, 460, 94, { width: 95, align: 'right' })
+      // ── Section 1: Details ──
+      doc.fontSize(8.5).fillColor('#475569').font('Helvetica-Bold').text(sectionTitle1, X + 14, curY)
+      curY += 14
+
+      doc.roundedRect(X + 14, curY, W - 28, 48, 4).fillAndStroke('#f8fafc', '#e2e8f0')
+      const colW4 = (W - 28) / 4
+
+      // Col 1: Doc No
+      doc.fontSize(7).fillColor('#64748b').font('Helvetica-Bold').text(isQuote ? 'QUOTATION NO' : 'INVOICE NO', X + 22, curY + 10)
+      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(docId, X + 22, curY + 22)
+
+      // Col 2: Order No / Type
+      if (orderId) {
+        doc.fontSize(7).fillColor('#64748b').font('Helvetica-Bold').text('ORDER NO', X + 22 + colW4, curY + 10)
+        doc.fontSize(9).fillColor('#2563eb').font('Helvetica-Bold').text(orderId, X + 22 + colW4, curY + 22)
+      } else {
+        doc.fontSize(7).fillColor('#64748b').font('Helvetica-Bold').text('DOCUMENT TYPE', X + 22 + colW4, curY + 10)
+        doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(docTypeTitle, X + 22 + colW4, curY + 22)
       }
 
-      const dateY = orderNum ? 108 : 94
-      doc.font('Helvetica').fillColor('#475569').text(`Date:`, 390, dateY)
-      doc.font('Helvetica-Bold').fillColor('#0f172a').text(new Date().toLocaleDateString('en-IN'), 460, dateY, { width: 95, align: 'right' })
+      // Col 3: Generated Date
+      doc.fontSize(7).fillColor('#64748b').font('Helvetica-Bold').text('GENERATED DATE', X + 22 + colW4 * 2, curY + 10)
+      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(issueDate, X + 22 + colW4 * 2, curY + 22)
 
-      // Divider
-      doc.strokeColor('#e2e8f0').lineWidth(0.75).moveTo(40, 128).lineTo(555, 128).stroke()
+      // Col 4: Valid Until / GSTIN
+      if (isQuote) {
+        doc.fontSize(7).fillColor('#64748b').font('Helvetica-Bold').text('VALID UNTIL', X + 22 + colW4 * 3, curY + 10)
+        doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(validUntilDate, X + 22 + colW4 * 3, curY + 22)
+      } else {
+        doc.fontSize(7).fillColor('#64748b').font('Helvetica-Bold').text('DOCUMENT TYPE', X + 22 + colW4 * 3, curY + 10)
+        doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(docTypeTitle, X + 22 + colW4 * 3, curY + 22)
+      }
 
-      // Billed To Card
-      doc.roundedRect(40, 136, 515, 52, 4).fillAndStroke('#f8fafc', '#e2e8f0')
-      doc.fontSize(7.5).fillColor('#64748b').font('Helvetica-Bold').text('BILLED TO / CUSTOMER DETAILS', 50, 142)
-      doc.fontSize(9.5).fillColor('#0f172a').font('Helvetica-Bold').text(customer + (customerCompany ? ` (${customerCompany})` : ''), 50, 154)
+      curY += 60
+
+      // ── Section 2: Address Details ──
+      doc.fontSize(8.5).fillColor('#475569').font('Helvetica-Bold').text('2. ADDRESS DETAILS', X + 14, curY)
+      curY += 14
+
+      const cardW = (W - 38) / 2
+      const cardH = 76
+
+      // Card 1: FROM (SUPPLIER)
+      doc.roundedRect(X + 14, curY, cardW, cardH, 4).fillAndStroke('#ffffff', '#cbd5e1')
+      doc.fontSize(7.5).fillColor('#475569').font('Helvetica-Bold').text('FROM (SUPPLIER)', X + 24, curY + 8)
+      doc.strokeColor('#f1f5f9').lineWidth(0.5).moveTo(X + 24, curY + 20).lineTo(X + 14 + cardW - 10, curY + 20).stroke()
+      doc.fontSize(10).fillColor('#0f172a').font('Helvetica-Bold').text(companyName, X + 24, curY + 26)
       doc.fontSize(8).fillColor('#475569').font('Helvetica')
-      const custContact = [customerPhone && `Phone: ${customerPhone}`, customerEmail && `Email: ${customerEmail}`].filter(Boolean).join('   |   ')
-      doc.text(custContact || 'No contact details specified', 50, 168)
+      let fromY = curY + 40
+      if (companyGstin) {
+        doc.text(`GSTIN: ${companyGstin.toUpperCase()}`, X + 24, fromY)
+        fromY += 12
+      }
+      if (companyPhone) {
+        doc.text(`Phone: ${companyPhone}`, X + 24, fromY)
+      }
 
-      // Items Table
-      let tableY = 200
-      const col = { no: 40, name: 65, hsn: 260, unit: 325, qty: 375, rate: 435, amt: 495 }
-      const colW = { no: 25, name: 195, hsn: 65, unit: 50, qty: 60, rate: 60, amt: 60 }
+      // Card 2: TO (BUYER)
+      doc.roundedRect(X + 24 + cardW, curY, cardW, cardH, 4).fillAndStroke('#ffffff', '#cbd5e1')
+      doc.fontSize(7.5).fillColor('#475569').font('Helvetica-Bold').text('TO (BUYER)', X + 34 + cardW, curY + 8)
+      doc.strokeColor('#f1f5f9').lineWidth(0.5).moveTo(X + 34 + cardW, curY + 20).lineTo(X + 24 + cardW * 2 - 10, curY + 20).stroke()
+      doc.fontSize(10).fillColor('#0f172a').font('Helvetica-Bold').text(customerName, X + 34 + cardW, curY + 26)
+      doc.fontSize(8).fillColor('#475569').font('Helvetica')
+      let toY = curY + 40
+      if (customerCompany) {
+        doc.text(customerCompany, X + 34 + cardW, toY)
+        toY += 12
+      }
+      if (customerPhone) {
+        doc.text(`Phone: ${customerPhone}`, X + 34 + cardW, toY)
+      } else if (customerAddress) {
+        doc.text(customerAddress, X + 34 + cardW, toY, { width: cardW - 20 })
+      }
 
-      // Table Header
-      doc.rect(40, tableY, 515, 22).fill('#1e293b')
-      doc.fontSize(7.5).fillColor('#ffffff').font('Helvetica-Bold')
-      doc.text('#', col.no + 5, tableY + 7)
-      doc.text('ITEM DESCRIPTION', col.name, tableY + 7)
-      doc.text('HSN/SAC', col.hsn, tableY + 7)
-      doc.text('UNIT', col.unit, tableY + 7)
-      doc.text('QTY', col.qty, tableY + 7, { width: colW.qty - 5, align: 'right' })
-      doc.text('RATE (₹)', col.rate, tableY + 7, { width: colW.rate - 5, align: 'right' })
-      doc.text('AMOUNT (₹)', col.amt, tableY + 7, { width: colW.amt - 5, align: 'right' })
+      curY += cardH + 16
 
-      tableY += 22
+      // ── Section 3: Goods Details ──
+      doc.fontSize(8.5).fillColor('#475569').font('Helvetica-Bold').text('3. GOODS DETAILS', X + 14, curY)
+      curY += 14
 
-      // Table Rows
-      itemsList.forEach((it, idx) => {
-        const isEven = idx % 2 === 0
-        const rowBg = isEven ? '#ffffff' : '#f8fafc'
-        doc.rect(40, tableY, 515, 20).fill(rowBg)
-        doc.strokeColor('#f1f5f9').lineWidth(0.5).rect(40, tableY, 515, 20).stroke()
+      const tableX = X + 14
+      const tableW = W - 28
+      const colG = { hsn: tableX + 8, name: tableX + 80, qty: tableX + 205, gross: tableX + 285, disc: tableX + 370, tax: tableX + 435 }
+      const colGW = { hsn: 70, name: 120, qty: 75, gross: 80, disc: 60, tax: 65 }
+
+      // Table Header Row
+      doc.rect(tableX, curY, tableW, 28).fill('#f8fafc')
+      doc.strokeColor('#cbd5e1').lineWidth(0.75).rect(tableX, curY, tableW, 28).stroke()
+      doc.fontSize(7).fillColor('#475569').font('Helvetica-Bold')
+      doc.text('HSN CODE', colG.hsn, curY + 10)
+      doc.text('PRODUCT NAME & DESC.', colG.name, curY + 10)
+      doc.text('QUANTITY', colG.qty, curY + 10, { width: colGW.qty, align: 'center' })
+      doc.text('GROSS SUBTOTAL', colG.gross, curY + 10, { width: colGW.gross, align: 'right' })
+      doc.text('DISCOUNT', colG.disc, curY + 10, { width: colGW.disc, align: 'right' })
+      doc.text('TAX RATE (C+S+I)', colG.tax, curY + 10, { width: colGW.tax, align: 'right' })
+
+      curY += 28
+
+      // Table Item Rows
+      items.forEach((it, idx) => {
+        const rowH = 34
+        doc.rect(tableX, curY, tableW, rowH).fill('#ffffff')
+        doc.strokeColor('#e2e8f0').lineWidth(0.5).rect(tableX, curY, tableW, rowH).stroke()
 
         const name = it.product_name || it.name || `Item ${idx + 1}`
-        const hsn = it.hsn_code || '100829'
+        const hsn = it.hsn_code || '70534921'
         const unit = it.unit || 'Bag'
-        const qty = parseFloat(it.quantity || 1).toFixed(2)
-        const rate = parseFloat(it.price || it.rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        const lineTotal = parseFloat(it.line_total || it.amount || (parseFloat(qty) * parseFloat(it.price || it.rate || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        const qty = parseFloat(it.quantity || 1)
+        const rate = parseFloat(it.price || it.rate || 0)
+        const gross = qty * rate
+        const disc = getLineDiscount(it)
+        const packSubtext = it.subtext || (it.bag_weight ? `${it.bag_weight}kg ${unit}` : '')
 
-        doc.fontSize(8).fillColor('#475569').font('Helvetica')
-        doc.text(String(idx + 1), col.no + 5, tableY + 6)
-        doc.fillColor('#0f172a').font('Helvetica-Bold').text(name, col.name, tableY + 6, { width: colW.name - 5, ellipsis: true })
-        doc.fillColor('#64748b').font('Helvetica').text(hsn, col.hsn, tableY + 6)
-        doc.text(unit, col.unit, tableY + 6)
-        doc.text(qty, col.qty, tableY + 6, { width: colW.qty - 5, align: 'right' })
-        doc.text(rate, col.rate, tableY + 6, { width: colW.rate - 5, align: 'right' })
-        doc.fillColor('#0f172a').font('Helvetica-Bold').text(lineTotal, col.amt, tableY + 6, { width: colW.amt - 5, align: 'right' })
+        doc.fontSize(7.5).fillColor('#334155').font('Helvetica').text(hsn, colG.hsn, curY + 12)
+        doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold').text(name, colG.name, curY + 8)
+        if (packSubtext) {
+          doc.fontSize(7).fillColor('#64748b').font('Helvetica').text(packSubtext, colG.name, curY + 20)
+        }
 
-        tableY += 20
+        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold').text(`${qty} ${unit}`, colG.qty, curY + 12, { width: colGW.qty, align: 'center' })
+        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold').text(INR(gross), colG.gross, curY + 12, { width: colGW.gross, align: 'right' })
+        
+        if (disc > 0) {
+          doc.fontSize(8).fillColor('#dc2626').font('Helvetica-Bold').text(`-${INR(disc)}`, colG.disc, curY + 12, { width: colGW.disc, align: 'right' })
+        } else {
+          doc.fontSize(8).fillColor('#64748b').font('Helvetica').text('—', colG.disc, curY + 12, { width: colGW.disc, align: 'right' })
+        }
+
+        doc.fontSize(7).fillColor('#475569').font('Helvetica').text('CGST (9%) + SGST (9%)', colG.tax - 15, curY + 12, { width: colGW.tax + 15, align: 'right' })
+
+        curY += rowH
       })
 
-      // Bottom Totals & Summary Box
-      tableY += 12
+      curY += 8
 
-      // Left Column: Bank Details & Notes
-      doc.roundedRect(40, tableY, 280, 84, 4).fillAndStroke('#f8fafc', '#e2e8f0')
-      doc.fontSize(7.5).fillColor('#64748b').font('Helvetica-Bold').text('PAYMENT TERMS & NOTES', 48, tableY + 8)
-      doc.fontSize(8).fillColor('#334155').font('Helvetica')
-      if (shop.bank_name) {
-        doc.text(`Bank Name: ${shop.bank_name}`, 48, tableY + 22)
-        doc.text(`A/C No: ${shop.account_number || '—'}`, 48, tableY + 34)
-        doc.text(`IFSC Code: ${shop.ifsc || '—'}   |   Branch: ${shop.branch || 'Main Branch'}`, 48, tableY + 46)
-      } else {
-        doc.text(`Terms: Payment within 15 days of invoice date.`, 48, tableY + 22)
-        doc.text(`Notes: ${quote.notes || bill.notes || 'Goods once sold will not be taken back or exchanged.'}`, 48, tableY + 36, { width: 260 })
+      // ── 6-Box Summary Grid Row ──
+      const sumBoxCount = totalDiscount > 0 ? 6 : 5
+      const sumBoxW = tableW / sumBoxCount
+      const sumBoxH = 38
+
+      doc.rect(tableX, curY, tableW, sumBoxH).fill('#f8fafc')
+      doc.strokeColor('#cbd5e1').lineWidth(0.75).rect(tableX, curY, tableW, sumBoxH).stroke()
+
+      let bX = tableX
+
+      // Box 1: Gross Subtotal
+      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('GROSS SUBTOTAL', bX, curY + 7, { width: sumBoxW, align: 'center' })
+      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(INR(grossSubtotal), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      bX += sumBoxW
+      doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
+
+      // Box 2: Total Discount (if discount > 0)
+      if (totalDiscount > 0) {
+        doc.rect(bX, curY, sumBoxW, sumBoxH).fill('#fef2f2')
+        doc.fontSize(6.5).fillColor('#991b1b').font('Helvetica-Bold').text('TOTAL DISCOUNT', bX, curY + 7, { width: sumBoxW, align: 'center' })
+        doc.fontSize(9).fillColor('#dc2626').font('Helvetica-Bold').text(`- ${INR(totalDiscount)}`, bX, curY + 20, { width: sumBoxW, align: 'center' })
+        bX += sumBoxW
+        doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
       }
 
-      // Right Column: Tax Breakdown & Total
-      const totX = 340
-      const valX = 460
-      const totW = 95
+      // Box 3: Taxable Subtotal
+      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text("TOT. TAX'BLE AMT", bX, curY + 7, { width: sumBoxW, align: 'center' })
+      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(INR(taxableSubtotal), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      bX += sumBoxW
+      doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
 
-      doc.fontSize(8.5).fillColor('#475569').font('Helvetica')
-      doc.text('Taxable Value:', totX, tableY + 4)
-      doc.text(`₹${taxableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, valX, tableY + 4, { width: totW, align: 'right' })
+      // Box 4: CGST
+      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('CGST AMT', bX, curY + 7, { width: sumBoxW, align: 'center' })
+      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(INR(cgst), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      bX += sumBoxW
+      doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
 
-      doc.text('CGST (9.0%):', totX, tableY + 18)
-      doc.text(`₹${gstHalf.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, valX, tableY + 18, { width: totW, align: 'right' })
+      // Box 5: SGST
+      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('SGST AMT', bX, curY + 7, { width: sumBoxW, align: 'center' })
+      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(INR(sgst), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      bX += sumBoxW
+      doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
 
-      doc.text('SGST (9.0%):', totX, tableY + 32)
-      doc.text(`₹${gstHalf.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, valX, tableY + 32, { width: totW, align: 'right' })
+      // Box 6: Final Total Box (Solid Dark Navy)
+      doc.rect(bX, curY, sumBoxW, sumBoxH).fill('#0f172a')
+      doc.fontSize(6.5).fillColor('#94a3b8').font('Helvetica-Bold').text(isQuote ? 'TOTAL QUOTE.AMT' : 'TOTAL INVOICE AMT', bX, curY + 7, { width: sumBoxW, align: 'center' })
+      doc.fontSize(9.5).fillColor('#ffffff').font('Helvetica-Bold').text(INR(totalAmount), bX, curY + 20, { width: sumBoxW, align: 'center' })
 
-      // Grand Total Box
-      doc.roundedRect(totX - 8, tableY + 50, 223, 34, 4).fill('#2563eb')
-      doc.fontSize(9).fillColor('#ffffff').font('Helvetica-Bold').text('GRAND TOTAL:', totX, tableY + 61)
-      doc.fontSize(13).fillColor('#ffffff').font('Helvetica-Bold').text(`₹${totalAmountNum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, valX - 20, tableY + 59, { width: totW + 20, align: 'right' })
+      curY += sumBoxH + 18
 
-      // Signatory Section
-      const signY = tableY + 110
-      doc.fontSize(7.5).fillColor('#64748b').font('Helvetica').text('Terms & Conditions: Goods once sold will not be taken back or exchanged.', 40, signY + 30)
+      // ── Centered Barcode ──
+      const barcodeX = X + (W - 160) / 2
+      const barcodePart = String(docId).replace(/\D/g, '') || '793358'
+      
+      doc.rect(barcodeX, curY, 2, 22).fill('#000000')
+      doc.rect(barcodeX + 4, curY, 4, 22).fill('#000000')
+      doc.rect(barcodeX + 11, curY, 2, 22).fill('#000000')
+      doc.rect(barcodeX + 16, curY, 5, 22).fill('#000000')
+      doc.rect(barcodeX + 24, curY, 1, 22).fill('#000000')
+      doc.rect(barcodeX + 28, curY, 3, 22).fill('#000000')
+      doc.rect(barcodeX + 34, curY, 4, 22).fill('#000000')
+      doc.rect(barcodeX + 41, curY, 2, 22).fill('#000000')
+      doc.rect(barcodeX + 46, curY, 5, 22).fill('#000000')
+      doc.rect(barcodeX + 54, curY, 1, 22).fill('#000000')
+      doc.rect(barcodeX + 58, curY, 3, 22).fill('#000000')
+      doc.rect(barcodeX + 64, curY, 4, 22).fill('#000000')
+      doc.rect(barcodeX + 71, curY, 2, 22).fill('#000000')
+      doc.rect(barcodeX + 76, curY, 5, 22).fill('#000000')
+      doc.rect(barcodeX + 84, curY, 2, 22).fill('#000000')
+      doc.rect(barcodeX + 89, curY, 4, 22).fill('#000000')
+      doc.rect(barcodeX + 96, curY, 1, 22).fill('#000000')
+      doc.rect(barcodeX + 100, curY, 5, 22).fill('#000000')
+      doc.rect(barcodeX + 108, curY, 3, 22).fill('#000000')
+      doc.rect(barcodeX + 114, curY, 2, 22).fill('#000000')
+      doc.rect(barcodeX + 119, curY, 4, 22).fill('#000000')
+      doc.rect(barcodeX + 126, curY, 2, 22).fill('#000000')
+      doc.rect(barcodeX + 131, curY, 5, 22).fill('#000000')
+      doc.rect(barcodeX + 139, curY, 1, 22).fill('#000000')
+      doc.rect(barcodeX + 143, curY, 3, 22).fill('#000000')
+      doc.rect(barcodeX + 149, curY, 4, 22).fill('#000000')
+      doc.rect(barcodeX + 156, curY, 2, 22).fill('#000000')
 
-      doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold').text(`For ${seller}`, 380, signY, { width: 175, align: 'center' })
-      doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(390, signY + 36).lineTo(545, signY + 36).stroke()
-      doc.fontSize(7.5).fillColor('#64748b').font('Helvetica').text('Authorised Signatory', 380, signY + 40, { width: 175, align: 'center' })
+      doc.fontSize(7).fillColor('#64748b').font('Helvetica').text(barcodePart, barcodeX, curY + 25, { width: 160, align: 'center' })
 
-      // Footer
-      doc.fontSize(7).fillColor('#94a3b8').text(`Official ${docTypeTitle} generated automatically by Workshop CRM · Computer Generated Document`, 40, 780, { width: 515, align: 'center' })
+      // ── Footer Line ──
+      doc.strokeColor('#e2e8f0').lineWidth(0.5).moveTo(tableX, curY + 40).lineTo(tableX + tableW, curY + 40).stroke()
+      doc.fontSize(7.5).fillColor('#94a3b8').font('Helvetica').text(`Official ${docTypeTitle} generated by Workshop · ${issueDate}`, tableX, curY + 48, { width: tableW, align: 'center' })
 
       doc.end()
     } catch (err) {

@@ -126,20 +126,34 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
 
       // Fetch quote and associated bill and line items
       let quote = null
-      if (run.quote_id) {
+      const redisQuoteId = await redis.get(`run:${run.id}:quote_id`).catch(() => null)
+      if (redisQuoteId) {
+        const qRes = await query('SELECT * FROM quotes WHERE id = $1', [redisQuoteId]).catch(() => ({ rows: [] }))
+        quote = qRes.rows[0]
+      }
+      if (!quote && run.quote_id) {
         const qRes = await query('SELECT * FROM quotes WHERE id = $1', [run.quote_id]).catch(() => ({ rows: [] }))
         quote = qRes.rows[0]
       }
       if (!quote && companyName) {
-        const qRes = await query('SELECT * FROM quotes WHERE LOWER(customer_name) = LOWER($1) ORDER BY id DESC LIMIT 1', [companyName]).catch(() => ({ rows: [] }))
-        quote = qRes.rows[0]
+        const qNumMatch = String(companyName).match(/QT-\w+/i) || String(run.test_company).match(/QT-\w+/i)
+        if (qNumMatch) {
+          const qRes = await query('SELECT * FROM quotes WHERE quote_number ILIKE $1 OR id::text = $2 LIMIT 1', [`%${qNumMatch[0]}%`, qNumMatch[0].replace(/\D/g, '')]).catch(() => ({ rows: [] }))
+          quote = qRes.rows[0]
+        }
+      }
+      if (!quote && companyName) {
+        const rawCust = String(companyName).split('(')[0].split('·')[0].trim()
+        if (rawCust) {
+          const qRes = await query('SELECT * FROM quotes WHERE LOWER(customer_name) = LOWER($1) ORDER BY id DESC LIMIT 1', [rawCust]).catch(() => ({ rows: [] }))
+          quote = qRes.rows[0]
+        }
       }
       if (!quote) {
-        const qRes = await query('SELECT * FROM quotes ORDER BY id DESC LIMIT 1').catch(() => ({ rows: [] }))
-        quote = qRes.rows[0] || {
+        quote = {
           customer_name: companyName,
           total_amount: run.test_value || 0,
-          quote_number: 'QT-INV-001'
+          quote_number: 'QT-001'
         }
       }
 
@@ -149,11 +163,25 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
         const bRes = await query('SELECT * FROM bills WHERE quote_id = $1 ORDER BY id DESC LIMIT 1', [quote.id]).catch(() => ({ rows: [] }))
         bill = bRes.rows[0]
       }
+      if (!bill && quote?.order_number) {
+        const bRes = await query('SELECT * FROM bills WHERE order_number = $1 ORDER BY id DESC LIMIT 1', [quote.order_number]).catch(() => ({ rows: [] }))
+        bill = bRes.rows[0]
+      }
       if (!bill) {
-        const bRes = await query('SELECT * FROM bills ORDER BY id DESC LIMIT 1').catch(() => ({ rows: [] }))
-        bill = bRes.rows[0] || {
-          bill_number: 'INV-0001',
-          amount: run.test_value || quote.total_amount || 0
+        bill = {
+          bill_number: quote.bill_number || `INV-${String(quote.id || 1).padStart(6, '0')}`,
+          order_number: quote.order_number || '',
+          customer_name: quote.customer_name,
+          customer_phone: quote.customer_phone,
+          customer_email: quote.customer_email,
+          customer_company: quote.customer_company,
+          customer_address: quote.customer_address,
+          amount: quote.total_amount || run.test_value || 0,
+          total_amount: quote.total_amount || run.test_value || 0,
+          tax_rate: quote.tax_rate,
+          tax_amount: quote.tax_amount,
+          discount: quote.discount,
+          items: quote.line_items
         }
       }
 

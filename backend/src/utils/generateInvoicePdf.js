@@ -359,39 +359,34 @@ function getExplicitLineDiscount(li) {
 <head>
   <meta charset="UTF-8"/>
   <title>${docId}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     @page { margin: 0; size: A4; }
-    * { margin:0; padding:0; box-sizing:border-box; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#fff; color:#0f172a; padding:20px; }
-    .page { max-width:800px; margin:0 auto; border:1px solid #cbd5e1; border-radius:12px; overflow:hidden; }
-    .banner { background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 60%,#3d68f5 100%); padding:36px 44px 32px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; color:#fff; }
-    .banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; background:rgba(255,255,255,0.12); border-radius:50%; }
-    .banner::after  { content:''; position:absolute; bottom:-60px; right:60px; width:130px; height:130px; background:rgba(255,255,255,0.08); border-radius:50%; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff; color: #1e293b; font-size: 12px; line-height: 1.4; }
-    .page { padding: 32px; max-width: 800px; margin: 0 auto; }
-    .banner { background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: #fff; padding: 24px 28px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: flex-start; }
-    .co-name { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; }
-    .co-meta { font-size: 11px; opacity: 0.9; line-height: 1.5; }
-    .br { text-align: right; }
-    .inv-lbl { font-size: 12px; font-weight: 800; letter-spacing: 0.1em; opacity: 0.8; margin-bottom: 2px; }
-    .inv-num { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
-    .inv-meta { font-size: 11px; opacity: 0.85; margin-top: 6px; }
-    .body { border: 1px solid #cbd5e1; border-top: none; border-radius: 0 0 8px 8px; padding: 24px 28px; }
-    .sec { font-size: 11px; font-weight: 800; color: #475569; letter-spacing: 0.05em; margin-bottom: 12px; }
-    .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; color-adjust:exact!important; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:#ffffff; color:#0f172a; padding:20px; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+    .page { max-width:800px; margin:0 auto; border:1px solid #cbd5e1; border-radius:12px; overflow:hidden; background:#ffffff; }
+    .banner { background:#1e3a8a!important; background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 60%,#3d68f5 100%)!important; padding:36px 44px 32px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; color:#ffffff!important; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+    .banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; background:rgba(255,255,255,0.12)!important; border-radius:50%; pointer-events:none; -webkit-print-color-adjust:exact!important; display:block!important; }
+    .banner::after  { content:''; position:absolute; bottom:-60px; right:60px; width:130px; height:130px; background:rgba(255,255,255,0.08)!important; border-radius:50%; pointer-events:none; -webkit-print-color-adjust:exact!important; display:block!important; }
+    .bl { position:relative; z-index:1; }
+    .br { text-align:right; position:relative; z-index:1; }
+    .co-name { font-size:24px; font-weight:800; color:#ffffff!important; margin-bottom:6px; letter-spacing:-0.03em; }
+    .co-meta { font-size:12.5px; color:rgba(255,255,255,0.85)!important; line-height:1.6; }
+    .inv-lbl { font-size:11px; font-weight:800; color:rgba(255,255,255,0.75)!important; letter-spacing:0.18em; text-transform:uppercase; margin-bottom:6px; }
+    .inv-num { font-size:30px; font-weight:900; color:#ffffff!important; line-height:1.1; margin-bottom:8px; }
+    .inv-meta { font-size:12px; color:rgba(255,255,255,0.9)!important; line-height:1.7; }
+    .body { padding:28px 40px; }
+    .sec { font-size:12px; font-weight:800; color:#334155; text-transform:uppercase; letter-spacing:0.05em; margin:20px 0 10px; border-bottom:1px solid #e2e8f0; padding-bottom:4px; }
+    .meta-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; background:#f8fafc!important; border:1px solid #cbd5e1; border-radius:6px; padding:12px 16px; font-size:12px; margin-bottom:16px; -webkit-print-color-adjust:exact!important; }
     .meta-lbl { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; display:block; margin-bottom:2px; }
     .meta-val { font-weight:700; color:#0f172a; }
     .addr-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
-    .addr-card { border:1px solid #cbd5e1; border-radius:6px; padding:14px; background:#fff; }
+    .addr-card { border:1px solid #cbd5e1; border-radius:6px; padding:14px; background:#ffffff; }
     .addr-hdr  { font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; border-bottom:1px solid #f1f5f9; padding-bottom:6px; margin-bottom:8px; }
     .addr-name { font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px; }
     .addr-txt  { font-size:12px; color:#475569; line-height:1.6; }
     table { width:100%; border-collapse:collapse; margin-bottom:16px; border:1px solid #cbd5e1; }
-    th { background:#f8fafc; padding:10px 12px; font-size:11px; font-weight:800; color:#475569; border:1px solid #cbd5e1; text-align:left; }
+    th { background:#f8fafc!important; padding:8px 10px; font-size:10px; font-weight:800; color:#475569; border:1px solid #cbd5e1; text-align:left; -webkit-print-color-adjust:exact!important; }
+    td { padding:7px 10px; font-size:11px; border:1px solid #cbd5e1; color:#0f172a; }
     .bc-wrap { text-align:center; margin:20px 0 10px; }
     .footer { border-top:1px solid #e2e8f0; padding-top:14px; text-align:center; font-size:11px; color:#94a3b8; }
   </style>
@@ -741,8 +736,8 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
 
       const tableX = X + 14
       const tableW = W - 28
-      const colG = { hsn: tableX + 8, name: tableX + 80, qty: tableX + 205, gross: tableX + 285, disc: tableX + 370, tax: tableX + 435 }
-      const colGW = { hsn: 70, name: 120, qty: 75, gross: 80, disc: 60, tax: 65 }
+      const colG = { hsn: tableX + 8, name: tableX + 72, qty: tableX + 205, gross: tableX + 270, disc: tableX + 348, tax: tableX + 418 }
+      const colGW = { hsn: 60, name: 130, qty: 60, gross: 75, disc: 66, tax: 84 }
 
       // Table Header Row
       doc.rect(tableX, curY, tableW, 28).fill('#f8fafc')
@@ -787,7 +782,7 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
           doc.fontSize(8).fillColor('#64748b').font('Helvetica').text('—', colG.disc, curY + 12, { width: colGW.disc, align: 'right' })
         }
 
-        doc.fontSize(7).fillColor('#475569').font('Helvetica').text(`CGST (${halfRate}%) + SGST (${halfRate}%)`, colG.tax - 15, curY + 12, { width: colGW.tax + 15, align: 'right' })
+        doc.fontSize(7).fillColor('#475569').font('Helvetica').text(`CGST (${halfRate}%) + SGST (${halfRate}%)`, colG.tax, curY + 12, { width: colGW.tax, align: 'right' })
 
         curY += rowH
       })
@@ -938,7 +933,7 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
 
     try {
       const page = await browser.newPage()
-      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 })
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 20000 })
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,

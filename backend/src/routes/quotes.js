@@ -99,6 +99,9 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
 
       const run = runRes.rows[0]
       if (run) {
+        await redis.set(`run:${run.id}:quote_id`, String(quote.id)).catch(() => {})
+        await redis.expire(`run:${run.id}:quote_id`, 86400).catch(() => {})
+
         const logKey = `run:${run.id}:logs`
         await redis.rpush(logKey, JSON.stringify({
           time: new Date().toISOString(),

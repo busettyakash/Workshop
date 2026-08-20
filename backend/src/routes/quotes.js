@@ -46,15 +46,15 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
   try {
     let effectiveUserId = userId || quote?.user_id || '00000000-0000-0000-0000-000000000000'
     const quoteId = quote?.id || quote?.quote_number || 'new'
-    // Debounce / Deduplication Lock: Prevent duplicate runner if triggered within 30 seconds for the same quote
-    const dedupKey = `workflow:dedup:quote:${effectiveUserId}:${quoteId}`
+    // Debounce / Deduplication Lock: Prevent duplicate runner if triggered within 10 seconds for the same quote action
+    const dedupKey = `workflow:dedup:quote:${effectiveUserId}:${quoteId}:${actionName}`
     const alreadyTriggered = await redis.get(dedupKey).catch(() => null)
     if (alreadyTriggered) {
       console.log(`[Quote Workflow] ⏸️ Duplicate workflow runner prevented for quote #${quoteId} (Event: ${actionName}). Already dispatched.`)
       return
     }
-    // Set 30s cooldown lock to prevent duplicate runners
-    await redis.set(dedupKey, '1', { ex: 30 }).catch(() => {})
+    // Set 10s cooldown lock to prevent duplicate runners
+    await redis.set(dedupKey, '1', { ex: 10 }).catch(() => {})
 
     // 1. Fetch only active LIVE workflows
     const wfRes = await pool.query(

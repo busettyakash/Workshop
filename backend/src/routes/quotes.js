@@ -745,7 +745,7 @@ router.get('/respond', emailLimiter, async (req, res) => {
         if (isEmailEnabled) {
           await sendOrderConfirmationEmailToCustomer(quote, bill, createdItems.length > 0 ? createdItems : items, generatedOrderNum).catch(e => console.error('[Order Email Send Error]', e.message))
         }
-        triggerWorkflowForQuote(quote.user_id || 'default-user', quote, 'Accepted').catch(e => console.error('[Workflow Trigger Error]', e.message))
+        await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted').catch(e => console.error('[Workflow Trigger Error]', e.message))
 
         const emailNoticeText = isEmailEnabled
           ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
@@ -772,7 +772,7 @@ router.get('/respond', emailLimiter, async (req, res) => {
       if (isEmailEnabled) {
         await sendQuoteDeclinedEmailToCustomer(quote).catch(e => console.error('[Declined Email Send Error]', e.message))
       }
-      triggerWorkflowForQuote(quote.user_id || 'default-user', quote, 'Declined').catch(e => console.error('[Workflow Trigger Error]', e.message))
+      await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined').catch(e => console.error('[Workflow Trigger Error]', e.message))
 
       const emailNoticeText = isEmailEnabled
         ? ` A confirmation and follow-up has been sent to your email (<strong>${quote.customer_email || 'your email'}</strong>).`
@@ -905,9 +905,11 @@ router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
     await decreaseProductStockForQuote(items, userId, quote.quote_number || quote.id)
 
     // Send invoice email to customer
-    // Note: workflow trigger is already handled by PUT /quotes/:id (called before this endpoint)
-    const updatedQuote = { ...quote, status: 'Accepted' }
+    const updatedQuote = { ...quote, status: 'Accepted', order_number: orderNum }
     await sendInvoiceEmailToCustomer(updatedQuote, bill, createdItems.length > 0 ? createdItems : items)
+
+    // Trigger workflow automation for quote acceptance
+    await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
 
     res.json({ message: 'Converted to bill successfully and invoice sent to customer', bill })
   } catch (err) {
@@ -1073,10 +1075,6 @@ router.put('/:id', apiLimiter, async (req, res) => {
     const userId = getUserId(req)
     const { id } = req.params
 
-    // Fetch the current (old) status before update — so we only trigger workflow on status CHANGE to Accepted
-    const prevRes = await pool.query('SELECT status FROM quotes WHERE id = $1', [id]).catch(() => ({ rows: [] }))
-    const prevStatus = prevRes.rows[0]?.status || null
-
     const {
       quote_number,
       shop_name,
@@ -1180,8 +1178,8 @@ router.put('/:id', apiLimiter, async (req, res) => {
       await sendOrderConfirmationEmailToCustomer(updatedQuote, bill, itemsToDeduct, orderNum).catch(e => console.error('[PUT Quote Order Confirmation Email Error]', e.message))
     }
 
-    // Trigger workflow ONLY when status is TRANSITIONING to Accepted (not if it was already Accepted)
-    if (updatedQuote.status === 'Accepted' && prevStatus !== 'Accepted') {
+    // Trigger workflow when quote is accepted
+    if (updatedQuote.status === 'Accepted') {
       await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
     }
 

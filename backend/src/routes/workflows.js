@@ -3,7 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 import redis from '../lib/redis.js'
-import { verifyQStashSignature, publishWorkflowStep, setLocalStepRunner } from '../lib/qstash.js'
+import { verifyQStashSignature, setLocalStepRunner } from '../lib/qstash.js'
 import { sendEmail } from '../lib/smtp.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 
@@ -93,12 +93,14 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
     )
 
     if (branchSteps.length > 0) {
-      await publishWorkflowStep({
-        runId: run.id,
-        workflowId: run.workflow_id,
-        step: 2,
-        branch: isDeclinedBranch ? 'declined' : 'accepted'
-      }, { delay: 2, retries: 3, retryDelay: '5s' })
+      setTimeout(() => {
+        executeWorkflowStep({
+          runId: run.id,
+          workflowId: run.workflow_id,
+          step: 2,
+          branch: isDeclinedBranch ? 'declined' : 'accepted'
+        }).catch(e => console.error('[Step 2 Auto-Advance Error]', e.message))
+      }, 500)
     }
 
     return {
@@ -159,12 +161,11 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
 
       let bill = null
       let billItems = []
-      if (quote?.id) {
-        const bRes = await query('SELECT * FROM bills WHERE quote_id = $1 ORDER BY id DESC LIMIT 1', [quote.id]).catch(() => ({ rows: [] }))
-        bill = bRes.rows[0]
-      }
-      if (!bill && quote?.order_number) {
-        const bRes = await query('SELECT * FROM bills WHERE order_number = $1 ORDER BY id DESC LIMIT 1', [quote.order_number]).catch(() => ({ rows: [] }))
+      if (quote?.quote_number || quote?.order_number) {
+        const bRes = await query(
+          'SELECT * FROM bills WHERE notes ILIKE $1 OR (order_number IS NOT NULL AND order_number = $2) ORDER BY id DESC LIMIT 1',
+          [`%${quote.quote_number || ''}%`, quote.order_number || '']
+        ).catch(() => ({ rows: [] }))
         bill = bRes.rows[0]
       }
       if (!bill) {
@@ -342,12 +343,14 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
         [step, run.id]
       )
 
-      await publishWorkflowStep({
-        runId: run.id,
-        workflowId: run.workflow_id,
-        step: step + 1,
-        branch: isDeclinedBranch ? 'declined' : 'accepted'
-      }, { delay: 2, retries: 3, retryDelay: '5s' })
+      setTimeout(() => {
+        executeWorkflowStep({
+          runId: run.id,
+          workflowId: run.workflow_id,
+          step: step + 1,
+          branch: isDeclinedBranch ? 'declined' : 'accepted'
+        }).catch(e => console.error(`[Step ${step + 1} Auto-Advance Error]`, e.message))
+      }, 500)
 
       return {
         success: true,
@@ -967,23 +970,16 @@ router.post('/:id/runs', async (req, res) => {
     await redis.rpush(logKey, JSON.stringify(initialLog)).catch(err => console.error('[REDIS ERROR] rpush:', err))
     await redis.expire(logKey, 3600).catch(() => {})
 
-    // Publish Step 1 to QStash
-    try {
-      await publishWorkflowStep({
+    // Execute Step 1 immediately in background
+    setTimeout(() => {
+      executeWorkflowStep({
         runId: run.id,
         workflowId: req.params.id,
         step: 1,
         test_company: run.test_company,
         test_value: run.test_value
-      }, {
-        delay: 1,
-        retries: 3,
-        retryDelay: '5s'
-      })
-      console.log(`[QSTASH] Successfully scheduled Step 1 callback for run #${run.id}`)
-    } catch (qsErr) {
-      console.warn(`[QSTASH] Notice during scheduling for run #${run.id}:`, qsErr.message)
-    }
+      }).catch(e => console.error('[Step 1 Execution Error]', e.message))
+    }, 100)
 
     res.status(201).json(run)
   } catch (err) {

@@ -8,7 +8,7 @@ import { logStockHistory } from './products.js'
 import redis from '../lib/redis.js'
 
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
-import { publishWorkflowStep } from '../lib/qstash.js'
+import { executeWorkflowStep } from './workflows.js'
 
 const router = express.Router()
 
@@ -113,16 +113,17 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
         // Invalidate workflows list cache
         await redis.del(`workflows:list:${effectiveUserId}`).catch(() => {})
 
-        // Asynchronously publish to QStash with branch indicator
-        await publishWorkflowStep({
-          runId: run.id,
-          workflowId: wfId,
-          step: 1,
-          test_company: companyLabel,
-          test_value: totalVal,
-          branch: isDeclined ? 'declined' : 'accepted',
-          isDeclined
-        }, { delay: 1, retries: 3, retryDelay: '5s' }).catch(e => console.warn('[QStash Workflow Publish Notice]', e.message))
+        // Immediately advance Step 1 in background without network lag
+        setTimeout(() => {
+          executeWorkflowStep({
+            runId: run.id,
+            workflowId: wfId,
+            step: 1,
+            test_company: companyLabel,
+            test_value: totalVal,
+            branch: isDeclined ? 'declined' : 'accepted'
+          }).catch(e => console.error('[Step 1 Instant Execution Error]', e.message))
+        }, 100)
 
         console.log(`[Quote Workflow Triggered] ✅ Run #${run.id} started for LIVE workflow #${wfId} (${actionName}, branch: ${isDeclined ? 'declined' : 'accepted'})`)
       }

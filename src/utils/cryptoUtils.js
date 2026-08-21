@@ -1,38 +1,34 @@
 /**
- * Cryptographically secure random helpers for browsers & client code
+ * Cryptographically secure random helpers using Web Crypto API
  */
 
-export function getRandomInt(min, max) {
+function getCryptoRandomBytes(length) {
+  const bytes = new Uint8Array(length)
   if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
-    const array = new Uint32Array(1)
-    window.crypto.getRandomValues(array)
-    return min + (array[0] % (max - min))
+    window.crypto.getRandomValues(bytes)
+  } else if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes)
   }
-  return Math.floor(Math.random() * (max - min)) + min
+  return bytes
+}
+
+export function getRandomInt(min, max) {
+  const bytes = getCryptoRandomBytes(4)
+  const view = new DataView(bytes.buffer)
+  const uint32 = view.getUint32(0, true)
+  return min + (uint32 % (max - min))
 }
 
 export function getRandomString(length = 8) {
-  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
-    const bytes = new Uint8Array(length)
-    window.crypto.getRandomValues(bytes)
-    return Array.from(bytes, b => (b % 36).toString(36)).join('')
-  }
-  return Math.random().toString(36).slice(2, 2 + length)
+  const bytes = getCryptoRandomBytes(length)
+  return Array.from(bytes, b => (b % 36).toString(36)).join('')
 }
 
 export function getRandomCode(length = 8, chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') {
-  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
-    const bytes = new Uint8Array(length)
-    window.crypto.getRandomValues(bytes)
-    let result = ''
-    for (let i = 0; i < length; i++) {
-      result += chars.charAt(bytes[i] % chars.length)
-    }
-    return result
-  }
+  const bytes = getCryptoRandomBytes(length)
   let result = ''
   for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
+    result += chars.charAt(bytes[i] % chars.length)
   }
   return result
 }

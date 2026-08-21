@@ -1,16 +1,17 @@
 name: Reusable Checks
 
 on:
+  push:
+    branches:
+      - main
+      - new-features
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_call:
     inputs:
       checkout-ref:
         required: false
         type: string
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened]
 
 permissions:
   pull-requests: read

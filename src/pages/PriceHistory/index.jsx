@@ -887,8 +887,11 @@ export default function PriceHistory() {
                                 </td>
                                 <td>
                                   <div
+                                    role="button"
+                                    tabIndex={0}
                                     style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
                                     onClick={() => setSelectedPricing(row)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedPricing(row) }}
                                     title="Click to view detailed price & stock history"
                                   >
                                     <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>

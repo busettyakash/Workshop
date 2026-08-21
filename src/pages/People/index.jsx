@@ -251,8 +251,11 @@ export default function People() {
                               </div>
                               <span 
                                 className="ws-table-primary-text" 
+                                role="button"
+                                tabIndex={0}
                                 style={{ cursor: 'pointer', fontWeight: 600 }}
                                 onClick={() => navigate(`/people/edit/${row.id}`)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/people/edit/${row.id}`) }}
                               >
                                 {row.name}
                               </span>

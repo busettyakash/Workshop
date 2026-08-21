@@ -175,8 +175,8 @@ function PricingModal({ product, onClose }) {
   if (!product) return null
 
   return (
-    <div className="ws-modal-backdrop" onClick={onClose}>
-      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title" style={{ margin: 0 }}>Pricing & Price History</h3>

@@ -450,6 +450,8 @@ export default function Dashboard() {
                 {sessions.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                     <div 
+                      role="button"
+                      tabIndex={0}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -465,6 +467,7 @@ export default function Dashboard() {
                         maxWidth: '100%'
                       }}
                       onClick={() => navigate(`/dashboard?session=${sessions[0].id}`)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/dashboard?session=${sessions[0].id}`) }}
                       onMouseEnter={e => {
                         e.currentTarget.style.borderColor = '#cbd5e1'
                         e.currentTarget.style.background = '#f1f5f9'

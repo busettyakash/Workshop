@@ -451,6 +451,7 @@ export default function UomManager() {
             }}
             onMouseDown={e => e.stopPropagation()}
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.stopPropagation()}
           >
             {/* Modal Header */}
             <div style={{

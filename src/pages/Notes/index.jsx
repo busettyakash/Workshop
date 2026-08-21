@@ -266,7 +266,10 @@ export default function Notes() {
                 filtered.map(note => (
                   <div
                     key={note.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleSelect(note)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelect(note) }}
                     style={{
                       padding: '10px 14px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer',
                       background: selected?.id === note.id ? '#eff6ff' : '#fff',

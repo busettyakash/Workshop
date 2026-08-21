@@ -95,8 +95,8 @@ function PricingModal({ product, onClose }) {
   if (!product) return null
 
   return (
-    <div className="ws-modal-backdrop" onClick={onClose}>
-      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title" style={{ margin: 0 }}>Pricing & Price History</h3>
@@ -494,7 +494,14 @@ export default function ImportStock() {
                               <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
                                 {getSingleLetter(row.name)}
                               </div>
-                              <span className="ws-table-primary-text" onClick={() => navigate(`/import-stock/edit/${row.id}`)} style={{ fontWeight: 535, fontSize: '0.89rem', color: '#1e293b' }}>
+                              <span
+                                className="ws-table-primary-text"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => navigate(`/import-stock/edit/${row.id}`)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/import-stock/edit/${row.id}`) }}
+                                style={{ fontWeight: 535, fontSize: '0.89rem', color: '#1e293b', cursor: 'pointer' }}
+                              >
                                 {row.name}
                               </span>
                             </div>

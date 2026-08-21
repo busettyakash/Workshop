@@ -310,7 +310,10 @@ export default function Emails() {
                 emails.map(email => (
                   <div
                     key={email.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleSelect(email)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelect(email) }}
                     style={{
                       padding: '10px 14px', cursor: 'pointer',
                       background: selected?.id === email.id ? '#f0f4ff' : (!email.is_read ? '#f8faff' : 'transparent'),

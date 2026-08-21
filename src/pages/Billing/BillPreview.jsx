@@ -285,8 +285,8 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   }
 
   return (
-    <div className="bp-overlay" onClick={onClose}>
-      <div className="bp-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="bp-overlay" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="bp-modal" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
 
         {/* Top Controls Bar */}
         <div className="bp-toolbar">

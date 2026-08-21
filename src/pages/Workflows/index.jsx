@@ -435,6 +435,8 @@ export default function Workflows() {
                               </td>
                               <td style={{ textAlign: 'center' }}>
                                 <span
+                                  role="button"
+                                  tabIndex={0}
                                   style={{
                                     cursor: 'pointer',
                                     background: (wf.runs_count > 0) ? '#eff6ff' : '#f1f5f9',
@@ -449,6 +451,12 @@ export default function Workflows() {
                                     e.stopPropagation()
                                     openWorkflow(wf, 'runs')
                                   }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.stopPropagation()
+                                      openWorkflow(wf, 'runs')
+                                    }
+                                  }}
                                   title="Click to view execution runs"
                                 >
                                   {wf.runs_count || 0}
@@ -456,6 +464,8 @@ export default function Workflows() {
                               </td>
                               <td>
                                 <span
+                                  role="button"
+                                  tabIndex={0}
                                   className={`ws-wfl-badge ws-wfl-badge--${badge.cls}`}
                                   style={{ cursor: 'pointer', userSelect: 'none' }}
                                   onClick={async (e) => {
@@ -472,6 +482,7 @@ export default function Workflows() {
                                       dispatch(addToast({ message: 'Failed to update live status', type: 'error' }))
                                     }
                                   }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.currentTarget.click() }}
                                   title={`Click to switch to ${wf.is_live ? 'Draft (OFF)' : 'Live (ON)'}`}
                                 >
                                   {badge.label}
@@ -552,10 +563,13 @@ export default function Workflows() {
                                         return (
                                           <div
                                             key={runItem.id}
+                                            role="button"
+                                            tabIndex={0}
                                             onClick={(e) => {
                                               e.stopPropagation()
                                               openWorkflow(wf, 'runs', runItem)
                                             }}
+                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openWorkflow(wf, 'runs', runItem) } }}
                                             style={{
                                               display: 'flex',
                                               alignItems: 'center',
@@ -1520,12 +1534,15 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
         background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(3px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
       }}
       onClick={onClose}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
       <div
         style={{
@@ -1535,6 +1552,7 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
           display: 'flex', flexDirection: 'column', overflow: 'hidden'
         }}
         onClick={e => e.stopPropagation()}
+        onKeyDown={e => e.stopPropagation()}
       >
         {/* Modal Header */}
         <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1609,7 +1627,10 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
             filtered.map(action => (
               <div
                 key={action.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectAction(action)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectAction(action) }}
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
                   background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: 10,
@@ -1875,7 +1896,10 @@ function WorkflowVisualGraph({
       {/* ── ROW 2: SWITCH / CONDITION NODE (Centered, Compact) ── */}
       <div style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: 42, zIndex: 2, position: 'relative' }}>
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => onSelectNode('switch')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectNode('switch') }}
           style={{
             width: 275,
             height: 64,
@@ -1923,7 +1947,10 @@ function WorkflowVisualGraph({
           {acceptedSteps.map((step, idx) => (
             <React.Fragment key={step.id}>
               <div
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectNode(step.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectNode(step.id) }}
                 style={{
                   width: 250,
                   minHeight: 64,
@@ -2032,7 +2059,10 @@ function WorkflowVisualGraph({
           {declinedSteps.map((step, idx) => (
             <React.Fragment key={step.id}>
               <div
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectNode(step.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectNode(step.id) }}
                 style={{
                   width: 250,
                   minHeight: 64,

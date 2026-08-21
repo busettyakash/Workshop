@@ -203,10 +203,19 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
             filtered.map(p => (
               <div
                 key={p.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   onSelect(p.id)
                   setOpen(false)
                   setQuery('')
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    onSelect(p.id)
+                    setOpen(false)
+                    setQuery('')
+                  }
                 }}
                 style={{
                   padding: '6px 8px', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem',

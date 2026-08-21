@@ -359,7 +359,10 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
           {/* ── Stepper Navigation Bar (Increased box sizes by 2%) ── */}
           <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto 16px', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 10 }}>
             <div
+              role="button"
+              tabIndex={0}
               onClick={() => setStep(1)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setStep(1) }}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
                 background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
@@ -374,7 +377,10 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
             <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
             <div
+              role="button"
+              tabIndex={0}
               onClick={() => { if (validateStep1()) setStep(2) }}
+              onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && validateStep1()) setStep(2) }}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
                 background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
@@ -389,7 +395,10 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
             <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
             <div
+              role="button"
+              tabIndex={0}
               onClick={() => { if (validateStep1() && validateStep2()) setStep(3) }}
+              onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && validateStep1() && validateStep2()) setStep(3) }}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
                 background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`

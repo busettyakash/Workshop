@@ -440,7 +440,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                       const pc = parseFloat(product.price_covers || 0)
                       const uomShort = bulkUnit?.short || product.unit || 'unit'
 
-                      const currDetails = getItemPriceDetails(row.new_price, bw, pc, basePriceVal)
+                      const currDetails = getItemPriceDetails(row.new_price, bw, pc)
 
                       let oldRaw = row.old_price !== null && row.old_price !== undefined ? row.old_price : null
                       if ((oldRaw === null || oldRaw === row.new_price) && idx < history.length - 1) {
@@ -449,7 +449,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                           oldRaw = nextOldItem.new_price
                         }
                       }
-                      const prevDetails = getItemPriceDetails(oldRaw, bw, pc, basePriceVal)
+                      const prevDetails = getItemPriceDetails(oldRaw, bw, pc)
 
                       const diff100 = (currDetails && prevDetails) ? (currDetails.price100 - prevDetails.price100) : 0
                       const diffPack = (currDetails && prevDetails) ? (currDetails.packPrice - prevDetails.packPrice) : 0

@@ -40,7 +40,7 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
   )
 
   if (!runRes.rows.length) {
-    console.warn(`[WORKFLOW EXECUTION] Workflow run #${runId} not found in database. Skipping step.`)
+    console.warn('[WORKFLOW EXECUTION] Workflow run not found in database. Skipping step.')
     return { status: 'ignored', reason: 'Run not found' }
   }
 
@@ -49,7 +49,7 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
 
   // If run was cancelled by user, stop progressing
   if (run.status === 'Cancelled') {
-    console.log(`[WORKFLOW EXECUTION] Run #${runId} was cancelled. Halting workflow progression.`)
+    console.log('[WORKFLOW EXECUTION] Run was cancelled. Halting workflow progression.')
     return { status: 'halted', reason: 'Run was cancelled' }
   }
 
@@ -385,13 +385,7 @@ router.post('/qstash-callback', apiLimiter, verifyQStashSignature, async (req, r
   const runId = payload.runId
   const step = Number(payload.step)
 
-  console.log('[QSTASH WEBHOOK] Received callback for run #%s, step %d', runId, step, {
-    signatureVerified: Boolean(req.qstashVerified),
-    headers: {
-      messageId: req.headers['upstash-message-id'] || req.headers['Upstash-Message-Id'],
-      retried: req.headers['upstash-retried'] || req.headers['Upstash-Retried'] || 0
-    }
-  })
+  console.log('[QSTASH WEBHOOK] Received callback for execution step')
 
   try {
     const result = await executeWorkflowStep(payload)
@@ -667,7 +661,7 @@ router.put('/:id', async (req, res) => {
     }
     await redis.del(`workflows:list:${req.workspaceId}`).catch(() => {})
 
-    console.log(`[WORKFLOW UPDATED] Workflow #${req.params.id} updated. is_live: ${updated.is_live}`)
+    console.log('[WORKFLOW UPDATED] Workflow configuration updated')
     res.json(updated)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -692,7 +686,7 @@ router.patch('/:id/toggle-star', async (req, res) => {
 
     await redis.del(`workflows:list:${req.workspaceId}`).catch(() => {})
 
-    console.log(`[WORKFLOW STAR TOGGLE] Workflow #${req.params.id} star toggled to: ${nextStarred}`)
+    console.log('[WORKFLOW STAR TOGGLE] Workflow star status toggled')
     res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })

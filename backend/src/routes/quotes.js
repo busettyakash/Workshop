@@ -67,11 +67,11 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
     ).catch(e => { console.error('[Quote Workflow Fetch Error]', e.message); return { rows: [] } })
 
     if (wfRes.rows.length === 0) {
-      console.log(`[Quote Workflow] ⏸️ Skipping automation for quote ${quote?.quote_number || quote?.id || ''}: No LIVE workflow found for user ${effectiveUserId}`)
+      console.log('[Quote Workflow] ⏸️ Skipping automation: No LIVE workflow found')
       return
     }
     if (!wfRes.rows[0].is_live) {
-      console.log(`[Quote Workflow] ⏸️ Skipping automation for quote ${quote?.quote_number || quote?.id || ''}: Workflow "${wfRes.rows[0].name}" is in Draft mode`)
+      console.log('[Quote Workflow] ⏸️ Skipping automation: Workflow is in Draft mode')
       return
     }
 

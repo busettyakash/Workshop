@@ -320,9 +320,9 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   const userId = req.workspaceId
   const { name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state, note, add_stock_qty, supplier_total_cost } = req.body
-  console.log(`${LOG_PREFIX} POST / — userId: ${userId}, name: ${name}, price: ${price}`)
+  console.log('%s POST / — creating stock item', LOG_PREFIX)
   if (!name || !price) {
-    console.warn(`${LOG_PREFIX} POST / — VALIDATION FAILED: name=${name}, price=${price}`)
+    console.warn('%s POST / — VALIDATION FAILED: missing required fields', LOG_PREFIX)
     return res.status(400).json({ error: 'name and price are required' })
   }
   try {

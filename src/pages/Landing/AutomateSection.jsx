@@ -133,9 +133,9 @@ export default function AutomateSection() {
               strokeLinecap="round"
             />
 
-            {/* Cable (Accepted Branch): Originates directly from Switch bottom (x: 330, y: 172) to Step 1 Top Center (x: 148, y: 256) */}
+            {/* Cable (Accepted Branch): Smooth S-curve passing through Accepted badge (x: 239, y: 214) to Step 1 Top Center (x: 148, y: 256) */}
             <path
-              d="M 330 172 C 330 216, 148 214, 148 256"
+              d="M 330 172 C 330 214, 148 214, 148 256"
               stroke="#10b981"
               strokeWidth="2.2"
               fill="none"
@@ -143,9 +143,9 @@ export default function AutomateSection() {
               markerEnd="url(#landing-green-arrow)"
             />
 
-            {/* Cable (Right Branch): Originates directly from Switch bottom (x: 330, y: 172) to Log Record Top Center (x: 512, y: 256) */}
+            {/* Cable (Right Branch): Smooth S-curve passing through Declined badge (x: 421, y: 214) to Log Record Top Center (x: 512, y: 256) */}
             <path
-              d="M 330 172 C 330 216, 512 214, 512 256"
+              d="M 330 172 C 330 214, 512 214, 512 256"
               stroke="#94a3b8"
               strokeWidth="2.2"
               fill="none"
@@ -294,10 +294,10 @@ export default function AutomateSection() {
           </div>
 
           {/* ── ROW 3: BRANCH CONTENT (Left = 3 Connected Steps, Right = Log Record) ── */}
-          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '0 25px', marginTop: 84, zIndex: 2, position: 'relative' }}>
+          <div style={{ width: '100%', boxSizing: 'border-box', display: 'flex', justifyContent: 'space-between', padding: '0 25px', marginTop: 84, zIndex: 2, position: 'relative' }}>
             
             {/* ── LEFT COLUMN: 3 SEQUENTIAL STEPS WITH SOLID CONTIGUOUS WIRING ── */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 240 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 246 }}>
               
               {/* STEP 1: Inventory Stock Deduction */}
               <div

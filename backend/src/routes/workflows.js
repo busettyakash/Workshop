@@ -254,7 +254,7 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
 
           const res = await sendEmail({
             to: r.email,
-            subject: `Multi-Contact Invoice Dispatch for ${companyName}`,
+            subject: `Tax Invoice & Bill Copy for ${companyName}`,
             html: emailBodyHtml,
             attachments
           }).catch(err => ({ data: null, error: err }))

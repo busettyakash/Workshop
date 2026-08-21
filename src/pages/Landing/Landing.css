@@ -2050,7 +2050,7 @@
 /* ══ BUILD FAST ══ */
 .ws-build-profile {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: 1px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -2113,21 +2113,22 @@
 .ws-build-details {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ws-build-detail-label {
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-text-tertiary);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .ws-build-detail-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 95px 1fr;
   font-size: 0.78rem;
   color: var(--color-text-primary);
+  align-items: baseline;
   gap: 8px;
 }
 

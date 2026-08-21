@@ -1768,9 +1768,9 @@ function WorkflowVisualGraph({
           strokeLinecap="round"
         />
 
-        {/* Cable (Accepted Branch): From Split (x: 340, y: 188) to Step 1 Top Center (x: 150, y: 220) */}
+        {/* Cable (Accepted Branch): Smooth S-curve to Step 1 Top Center (x: 150, y: 220) */}
         <path
-          d="M 340 188 C 340 210, 150 200, 150 220"
+          d="M 340 188 C 340 204, 150 204, 150 220"
           stroke="#10b981"
           strokeWidth="2.2"
           fill="none"
@@ -1778,9 +1778,9 @@ function WorkflowVisualGraph({
           markerEnd="url(#wf-green-arrow)"
         />
 
-        {/* Cable (Right Branch): From Split (x: 340, y: 188) to Log Record Top Center (x: 530, y: 220) */}
+        {/* Cable (Right Branch): Smooth S-curve to Log Record Top Center (x: 530, y: 220) */}
         <path
-          d="M 340 188 C 340 210, 530 200, 530 220"
+          d="M 340 188 C 340 204, 530 204, 530 220"
           stroke="#94a3b8"
           strokeWidth="2.2"
           fill="none"

@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { ArrowLeft, Loader2, Edit3, Trash2, Copy, Check, FileText, X } from 'lucide-react'
+import { ArrowLeft, Loader2, Edit3, Trash2, Copy, Check, FileText, X, Wallet, CheckCircle2 } from 'lucide-react'
 import api from '../../api/client'
 import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
@@ -315,55 +315,157 @@ export default function ImportStockNote() {
                     </div>
 
                     {/* Record Supplier Payment Card */}
-                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, marginTop: 14 }}>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: 10 }}>
-                        Record Supplier Payment
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div style={{
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 10,
+                      padding: '16px 18px',
+                      marginTop: 14,
+                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 14
+                    }}>
+                      {/* Header with Title & Status Badge */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                         <div>
-                          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: '#475569', marginBottom: 4 }}>
-                            Amount Paid (₹)
-                          </label>
-                           <input
-                            type="text"
-                            value={formatNumberWithCommas(paidAmt)}
-                            onChange={e => {
-                              const cleanValue = e.target.value.replace(/[^0-9.]/g, '')
-                              const parts = cleanValue.split('.')
-                              const finalValue = parts[0] + (parts.length > 1 ? '.' + parts[1] : '')
-                              setPaidAmt(finalValue)
-                            }}
-                            placeholder="Paid Amount"
-                            style={{ width: '100%', boxSizing: 'border-box', height: 32, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: '0.8rem', color: '#1e293b' }}
-                          />
+                          <div style={{ fontSize: '0.86rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
+                            Record Supplier Payment
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
+                            Log payments made against this supplier batch
+                          </div>
                         </div>
+
+                        {/* Balance Due Status Pill */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {remainingBalance > 0 ? (
+                            <div style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 5,
+                              padding: '3px 9px', borderRadius: 20,
+                              background: '#fff7ed', border: '1px solid #fed7aa',
+                              color: '#c2410c', fontSize: '0.74rem', fontWeight: 600
+                            }}>
+                              <span>Due: ₹{remainingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          ) : (
+                            <div style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              padding: '3px 9px', borderRadius: 20,
+                              background: '#f0fdf4', border: '1px solid #bbf7d0',
+                              color: '#15803d', fontSize: '0.74rem', fontWeight: 600
+                            }}>
+                              <CheckCircle2 size={13} />
+                              <span>Paid in Full</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Input Grid Form */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'flex-end' }}>
+                        {/* Amount Field */}
                         <div>
                           <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: '#475569', marginBottom: 4 }}>
-                            Payment Mode
+                            Amount Paid (₹) *
+                          </label>
+                          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <span style={{ position: 'absolute', left: 10, fontSize: '0.82rem', fontWeight: 600, color: '#64748b', pointerEvents: 'none' }}>₹</span>
+                            <input
+                              type="text"
+                              value={formatNumberWithCommas(paidAmt)}
+                              onChange={e => {
+                                const cleanValue = e.target.value.replace(/[^0-9.]/g, '')
+                                const parts = cleanValue.split('.')
+                                const finalValue = parts[0] + (parts.length > 1 ? '.' + parts[1] : '')
+                                setPaidAmt(finalValue)
+                              }}
+                              placeholder="0.00"
+                              style={{
+                                width: '100%', boxSizing: 'border-box',
+                                height: 36, padding: '0 10px 0 24px',
+                                border: '1.5px solid #cbd5e1', borderRadius: 7,
+                                fontSize: '0.84rem', fontWeight: 600, color: '#0f172a',
+                                outline: 'none', background: '#ffffff',
+                                transition: 'border-color 0.15s, box-shadow 0.15s'
+                              }}
+                              onFocus={e => {
+                                e.target.style.borderColor = '#2563eb'
+                                e.target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.12)'
+                              }}
+                              onBlur={e => {
+                                e.target.style.borderColor = '#cbd5e1'
+                                e.target.style.boxShadow = 'none'
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Payment Mode Field */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                            Payment Mode *
                           </label>
                           <select
                             value={payMode}
                             onChange={e => setPayMode(e.target.value)}
-                            style={{ width: '100%', boxSizing: 'border-box', height: 32, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: '0.8rem', color: '#1e293b', background: '#fff' }}
+                            style={{
+                              width: '100%', boxSizing: 'border-box',
+                              height: 36, padding: '0 10px',
+                              border: '1.5px solid #cbd5e1', borderRadius: 7,
+                              fontSize: '0.82rem', fontWeight: 500, color: payMode ? '#0f172a' : '#64748b',
+                              background: '#ffffff', outline: 'none',
+                              cursor: 'pointer',
+                              transition: 'border-color 0.15s, box-shadow 0.15s'
+                            }}
+                            onFocus={e => {
+                              e.target.style.borderColor = '#2563eb'
+                              e.target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.12)'
+                            }}
+                            onBlur={e => {
+                              e.target.style.borderColor = '#cbd5e1'
+                              e.target.style.boxShadow = 'none'
+                            }}
                           >
-                            <option value="">-- Select Mode --</option>
+                            <option value="">-- Select Payment Mode --</option>
                             <option value="Cash">Cash</option>
-                            <option value="PhonePe">PhonePe</option>
-                            <option value="GPay">GPay / UPI</option>
-                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="PhonePe">PhonePe / UPI</option>
+                            <option value="GPay">Google Pay (GPay)</option>
+                            <option value="Bank Transfer">Bank Transfer / NEFT / RTGS</option>
+                            <option value="Cheque">Cheque</option>
                           </select>
                         </div>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                        <button
-                          onClick={handleSavePayment}
-                          disabled={saving}
-                          className="attio-btn attio-btn-primary"
-                          style={{ height: 28, fontSize: '0.75rem', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: saving ? 'not-allowed' : 'pointer' }}
-                        >
-                          {saving ? <Loader2 size={12} className="ws-chat-loader-spin" /> : <Check size={12} />}
-                          Save Payment Details
-                        </button>
+
+                        {/* Submit Button */}
+                        <div>
+                          <button
+                            type="button"
+                            onClick={handleSavePayment}
+                            disabled={saving}
+                            style={{
+                              height: 36,
+                              padding: '0 16px',
+                              borderRadius: 7,
+                              background: '#2563eb',
+                              color: '#ffffff',
+                              border: 'none',
+                              fontSize: '0.80rem',
+                              fontWeight: 600,
+                              cursor: saving ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)',
+                              whiteSpace: 'nowrap',
+                              transition: 'background 0.15s, transform 0.1s'
+                            }}
+                            onMouseEnter={e => { if (!saving) e.currentTarget.style.background = '#1d4ed8' }}
+                            onMouseLeave={e => { if (!saving) e.currentTarget.style.background = '#2563eb' }}
+                          >
+                            {saving ? <Loader2 size={14} className="ws-chat-loader-spin" /> : <Check size={14} />}
+                            <span>Save Payment</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -381,25 +483,124 @@ export default function ImportStockNote() {
 
                     {/* Payment History timeline log */}
                     {payments.length > 0 && (
-                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14, marginTop: 14 }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: 8 }}>
-                          Payment History / Logs
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {payments.map(p => (
-                            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '8px 12px', fontSize: '0.78rem', color: '#334155' }}>
-                              <div>
-                                <strong>{new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong>: Paid <strong>₹{parseFloat(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> via <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '1px 6px', borderRadius: 4, fontWeight: 500 }}>{p.payment_mode}</span>
-                              </div>
-                              <button
-                                onClick={() => handleDeletePaymentClick(p.id)}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
-                                title="Delete payment log"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                      <div style={{
+                        borderTop: '1px solid #e2e8f0',
+                        paddingTop: 16,
+                        marginTop: 16
+                      }}>
+                        {/* Section Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0f172a' }}>
+                              Payment History & Records
                             </div>
-                          ))}
+                            <span style={{
+                              fontSize: '0.70rem',
+                              fontWeight: 600,
+                              background: '#f1f5f9',
+                              color: '#475569',
+                              padding: '2px 8px',
+                              borderRadius: 12
+                            }}>
+                              {payments.length} {payments.length === 1 ? 'transaction' : 'transactions'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#15803d' }}>
+                            Total Settled: ₹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                        </div>
+
+                        {/* Transactions Table */}
+                        <div style={{
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 8,
+                          overflow: 'hidden',
+                          background: '#ffffff'
+                        }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.80rem' }}>
+                            <thead>
+                              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                <th style={{ padding: '8px 14px', fontWeight: 600 }}>Date</th>
+                                <th style={{ padding: '8px 14px', fontWeight: 600 }}>Payment Mode</th>
+                                <th style={{ padding: '8px 14px', fontWeight: 600, textAlign: 'right' }}>Amount Paid</th>
+                                <th style={{ padding: '8px 14px', fontWeight: 600, textAlign: 'center', width: 44 }}>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {payments.map((p, pIdx) => {
+                                const modeStyle = (() => {
+                                  const m = String(p.payment_mode || '').toLowerCase()
+                                  if (m.includes('cash')) return { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0' }
+                                  if (m.includes('phonepe') || m.includes('gpay') || m.includes('upi')) return { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' }
+                                  if (m.includes('bank') || m.includes('transfer') || m.includes('neft') || m.includes('rtgs')) return { bg: '#f0fdfa', text: '#0d9488', border: '#99f6e4' }
+                                  return { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' }
+                                })()
+
+                                return (
+                                  <tr
+                                    key={p.id}
+                                    style={{
+                                      borderBottom: pIdx < payments.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                      transition: 'background 0.1s'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                                    onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
+                                  >
+                                    <td style={{ padding: '10px 14px', color: '#334155', fontWeight: 500 }}>
+                                      {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    </td>
+                                    <td style={{ padding: '10px 14px' }}>
+                                      <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '2px 8px',
+                                        borderRadius: 6,
+                                        fontSize: '0.74rem',
+                                        fontWeight: 600,
+                                        background: modeStyle.bg,
+                                        color: modeStyle.text,
+                                        border: `1px solid ${modeStyle.border}`
+                                      }}>
+                                        {p.payment_mode || 'Cash'}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#166534', fontSize: '0.86rem' }}>
+                                      ₹{parseFloat(p.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeletePaymentClick(p.id)}
+                                        style={{
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: '#94a3b8',
+                                          cursor: 'pointer',
+                                          padding: '4px 6px',
+                                          borderRadius: 4,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          transition: 'all 0.15s'
+                                        }}
+                                        onMouseEnter={e => {
+                                          e.currentTarget.style.color = '#ef4444'
+                                          e.currentTarget.style.background = '#fee2e2'
+                                        }}
+                                        onMouseLeave={e => {
+                                          e.currentTarget.style.color = '#94a3b8'
+                                          e.currentTarget.style.background = 'transparent'
+                                        }}
+                                        title="Delete payment entry"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     )}

@@ -522,8 +522,11 @@ export default function Sidebar() {
           {workspaceDropdownOpen && (
             <>
               <div 
+                role="button"
+                tabIndex={0}
                 style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'transparent' }}
                 onClick={() => setWorkspaceDropdownOpen(false)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setWorkspaceDropdownOpen(false) }}
               />
               <div
                 className="ws-sb-ws-dropdown"
@@ -1067,10 +1070,19 @@ export default function Sidebar() {
                   return (
                     <div
                       key={chat.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => {
                         setShowAllChatsPanel(false)
                         handleNav('Home')
                         navigate(`/dashboard?session=${chat.id}`)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          setShowAllChatsPanel(false)
+                          handleNav('Home')
+                          navigate(`/dashboard?session=${chat.id}`)
+                        }
                       }}
                       style={{
                         display: 'flex',
@@ -1101,6 +1113,8 @@ export default function Sidebar() {
       {/* Invite Teammate Modal */}
       {inviteModalOpen && (
         <div
+          role="button"
+          tabIndex={0}
           style={{
             position: 'fixed',
             inset: 0,
@@ -1117,6 +1131,7 @@ export default function Sidebar() {
             overflowY: 'auto'
           }}
           onClick={() => setInviteModalOpen(false)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setInviteModalOpen(false) }}
         >
           <div
             style={{
@@ -1131,6 +1146,7 @@ export default function Sidebar() {
               border: '1px solid #e2e8f0'
             }}
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.stopPropagation()}
           >
             {/* Header */}
             <div style={{
@@ -1238,9 +1254,17 @@ export default function Sidebar() {
                     }}>
                       {/* Member */}
                       <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           setInviteRole('Member')
                           setRoleDropdownOpen(false)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            setInviteRole('Member')
+                            setRoleDropdownOpen(false)
+                          }
                         }}
                         style={{
                           display: 'flex',
@@ -1265,9 +1289,17 @@ export default function Sidebar() {
 
                       {/* Admin */}
                       <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           setInviteRole('Admin')
                           setRoleDropdownOpen(false)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            setInviteRole('Admin')
+                            setRoleDropdownOpen(false)
+                          }
                         }}
                         style={{
                           display: 'flex',
@@ -1342,6 +1374,8 @@ export default function Sidebar() {
       {/* Quick Actions Search Modal */}
       {searchModalOpen && (
         <div
+          role="button"
+          tabIndex={0}
           style={{
             position: 'fixed',
             inset: 0,
@@ -1354,6 +1388,7 @@ export default function Sidebar() {
             paddingTop: '10vh'
           }}
           onClick={() => setSearchModalOpen(false)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setSearchModalOpen(false) }}
         >
           <div
             style={{
@@ -1368,6 +1403,7 @@ export default function Sidebar() {
               border: '1px solid #e2e8f0'
             }}
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.stopPropagation()}
           >
             {/* Input Header */}
             <div style={{
@@ -1439,7 +1475,10 @@ export default function Sidebar() {
                   return (
                     <div
                       key={item.label}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => handleExecuteSearchItem(item)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleExecuteSearchItem(item) }}
                       onMouseEnter={() => setSelectedIndex(idx)}
                       style={{
                         display: 'flex',

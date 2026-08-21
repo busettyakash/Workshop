@@ -1840,7 +1840,10 @@ function WorkflowVisualGraph({
       {/* ── ROW 1: TRIGGER NODE (Centered, No text wrap) ── */}
       <div style={{ width: '100%', display: 'flex', justifyContent: 'center', zIndex: 2, position: 'relative' }}>
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => onSelectNode('trigger')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectNode('trigger') }}
           style={{
             width: 275,
             height: 64,

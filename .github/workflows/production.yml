@@ -11,6 +11,7 @@ jobs:
     uses: ./.github/workflows/checks.yml
     with:
       checkout-ref: main
+    secrets: inherit
 
   deploy-production:
     needs: checks

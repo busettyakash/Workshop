@@ -17,6 +17,7 @@ jobs:
     uses: ./.github/workflows/checks.yml
     with:
       checkout-ref: ${{ inputs.branch }}
+    secrets: inherit
 
   deploy-preview:
     needs: checks

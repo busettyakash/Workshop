@@ -1071,7 +1071,7 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
               </button>
             </div>
 
-            {/* Step Progress Checklist — Dynamically generated from active workflow nodes */}
+            {/* Step Progress Checklist — Dynamically generated from actual executed run logs or workflow nodes */}
             <div style={{ padding: '10px 14px', background: '#131e33', borderBottom: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {(() => {
                 const isDeclinedRun = Boolean(selectedRun?.test_company && String(selectedRun.test_company).toLowerCase().includes('declined'))
@@ -1085,42 +1085,52 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                   ? (Array.isArray(rawNodes?.declinedSteps) ? rawNodes.declinedSteps : DEFAULT_DECLINED_STEPS)
                   : (Array.isArray(rawNodes?.acceptedSteps) ? rawNodes.acceptedSteps : (Array.isArray(rawNodes) ? rawNodes : DEFAULT_ACCEPTED_STEPS))
 
-                const stepsList = []
-                const seenKeys = new Set()
-                for (const st of (rawStepsList || [])) {
-                  if (!st) continue
-                  const key = st.id || st.title || st.tag
-                  if (!seenKeys.has(key)) {
-                    seenKeys.add(key)
-                    stepsList.push(st)
-                  }
-                }
-
-                // For historic completed runs that finished with fewer steps before new steps were added,
-                // accurately display only the steps that actually ran for that historical run.
-                const maxExecutedStep = Number(selectedRun?.current_step || 0)
-                let effectiveStepsList = stepsList
-                if (selectedRun?.status === 'Completed' && maxExecutedStep > 1 && (maxExecutedStep - 1) < stepsList.length) {
-                  effectiveStepsList = stepsList.slice(0, maxExecutedStep - 1)
-                }
+                const knownActions = isDeclinedRun ? DEFAULT_DECLINED_STEPS : DEFAULT_ACCEPTED_STEPS
+                const maxStepLogged = (Array.isArray(logs) && logs.length > 0)
+                  ? Math.max(...logs.map(l => Number(l.step || 0)).filter(s => s >= 1 && s <= 10), 0)
+                  : 0
+                const maxExecutedStep = Math.max(Number(selectedRun?.current_step || 0), maxStepLogged)
 
                 const checklist = [
                   { step: 1, name: isDeclinedRun ? 'Step 1: Check Condition (Quote Status == Declined)' : 'Step 1: Check Condition (Quote Status == Accepted)' }
                 ]
 
-                effectiveStepsList.forEach((st, idx) => {
-                  const title = st.title || st.name || 'Action'
-                  const isLast = idx === effectiveStepsList.length - 1
-                  const stepNum = idx + 2
+                // Determine total steps for this run:
+                // If the run executed more steps historically than the current canvas has (e.g. 5 steps in past vs 3 now),
+                // include all steps up to maxExecutedStep!
+                const totalActions = Math.max(rawStepsList.length, maxExecutedStep > 1 ? maxExecutedStep - 1 : 0)
 
+                for (let i = 0; i < totalActions; i++) {
+                  const stepNum = i + 2
+                  let actionTitle = rawStepsList[i]?.title || rawStepsList[i]?.name
+
+                  if (!actionTitle && Array.isArray(logs)) {
+                    const stepLog = logs.find(l => Number(l.step) === stepNum)
+                    if (stepLog?.text) {
+                      if (stepLog.text.startsWith('Inventory Sync:')) actionTitle = 'Inventory Deduction'
+                      else if (stepLog.text.startsWith('Generate Bill:')) actionTitle = 'Auto-generate Bill'
+                      else if (stepLog.text.startsWith('Send Email:')) actionTitle = 'Send Invoice Email'
+                      else if (stepLog.text.startsWith('Multi-Contact Summary:') || stepLog.text.includes('Email sent')) actionTitle = 'Send Invoice to Multiple Contacts'
+                      else {
+                        const colonIdx = stepLog.text.indexOf(':')
+                        if (colonIdx > 0 && colonIdx < 30) actionTitle = stepLog.text.slice(0, colonIdx).trim()
+                      }
+                    }
+                  }
+
+                  if (!actionTitle) {
+                    actionTitle = knownActions[i]?.title || `Action ${i + 1}`
+                  }
+
+                  const isLast = i === totalActions - 1
                   checklist.push({
                     step: stepNum,
-                    name: `Step ${stepNum}: ${title}${isLast ? ' (Workflow Ended)' : ''}`
+                    name: `Step ${stepNum}: ${actionTitle}${isLast ? ' (Workflow Ended)' : ''}`
                   })
-                })
+                }
 
                 return checklist.map(st => {
-                  const isPassed = (Number(selectedRun?.current_step || 0) >= st.step) || selectedRun?.status === 'Completed'
+                  const isPassed = (Number(selectedRun?.current_step || 0) >= st.step) || selectedRun?.status === 'Completed' || (Array.isArray(logs) && logs.some(l => Number(l.step) === st.step))
                   const isCurrent = Number(selectedRun?.current_step || 0) === st.step - 1 && selectedRun?.status === 'Executing'
 
                   return (
@@ -1275,6 +1285,16 @@ const DEFAULT_ACCEPTED_STEPS = [
     themeColor: '#c026d3',
     tagBg: '#fdf4ff',
     tagColor: '#c026d3'
+  },
+  {
+    id: 'act-multi-recipient',
+    title: 'Send Invoice to Multiple Contacts',
+    tag: 'Multi-Contact',
+    desc: 'Emails official Tax Invoice PDF to team & stakeholders',
+    iconType: 'users',
+    themeColor: '#7c3aed',
+    tagBg: '#f5f3ff',
+    tagColor: '#7c3aed'
   }
 ]
 

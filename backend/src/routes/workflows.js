@@ -713,7 +713,7 @@ router.patch('/:id/toggle-live', async (req, res) => {
     await redis.set(`workflow:${req.params.id}:is_live`, nextLive ? '1' : '0').catch(() => {})
     await redis.del(`workflows:list:${req.workspaceId}`).catch(() => {})
 
-    console.log(`[WORKFLOW LIVE TOGGLE] Workflow #${req.params.id} live status toggled to: ${nextLive ? 'LIVE (Active)' : 'OFF (Draft/Paused)'}`)
+    console.log('[WORKFLOW LIVE TOGGLE] Workflow live status toggled')
     res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })

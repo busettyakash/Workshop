@@ -244,7 +244,7 @@ router.get('/', async (req, res) => {
 /* GET /api/import-stock/:id */
 router.get('/:id', async (req, res) => {
   const userId = req.workspaceId
-  console.log(`${LOG_PREFIX} GET /${req.params.id} — userId: ${userId}`)
+  console.log('%s GET /:id', LOG_PREFIX)
   try {
 
     const { rows } = await query(
@@ -280,10 +280,10 @@ router.get('/:id', async (req, res) => {
       [req.params.id, userId]
     )
     if (!rows.length) {
-      console.warn(`${LOG_PREFIX} GET /${req.params.id} — NOT FOUND`)
+      console.warn('%s GET /:id — NOT FOUND', LOG_PREFIX)
       return res.status(404).json({ error: 'Import stock not found' })
     }
-    console.log(`${LOG_PREFIX} GET /${req.params.id} — found`)
+    console.log('%s GET /:id — found', LOG_PREFIX)
     
     const payments = await query(
       `SELECT id, amount, payment_mode, created_at 

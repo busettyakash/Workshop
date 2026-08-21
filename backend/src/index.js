@@ -1,10 +1,11 @@
 import 'dotenv/config'
-import dns from 'dns'
+import dns from 'node:dns'
 const isDevelopment = process.env.NODE_ENV === 'development' && !process.env.VERCEL
 
 if (isDevelopment) {
   try {
-    dns.setServers(['8.8.8.8', '8.8.4.4'])
+    const defaultDns = (process.env.CUSTOM_DNS_SERVERS || '8.8.8.8,8.8.4.4').split(',')
+    dns.setServers(defaultDns)
   } catch (e) {
     console.warn('[DNS] Failed to set custom DNS servers:', e.message)
   }
@@ -70,7 +71,7 @@ if (!process.env.VERCEL) {
   })
 }
 
-import zlib from 'zlib'
+import zlib from 'node:zlib'
 
 /* ── Middleware ── */
 app.use(cors({

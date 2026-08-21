@@ -109,10 +109,11 @@ export async function publishWorkflowStep(payload, options = {}) {
     backendBaseUrl = 'http://localhost:5000'
   }
 
+  const cleanBaseUrl = backendBaseUrl.endsWith('/') ? backendBaseUrl.slice(0, -1) : backendBaseUrl
   const targetUrl =
     options.url ||
     process.env.QSTASH_WEBHOOK_URL ||
-    `${backendBaseUrl.replace(/\/+$/, '')}/api/workflows/qstash-callback`
+    `${cleanBaseUrl}/api/workflows/qstash-callback`
 
   const delaySeconds = options.delay !== undefined ? options.delay : 1
   const retriesCount = options.retries !== undefined ? options.retries : 3

@@ -1,10 +1,11 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-import dns from 'dns'
+import dns from 'node:dns'
 import pg from 'pg'
 
 try {
-  dns.setServers(['8.8.8.8', '8.8.4.4'])
+  const defaultDns = (process.env.CUSTOM_DNS_SERVERS || '8.8.8.8,8.8.4.4').split(',')
+  dns.setServers(defaultDns)
 } catch {}
 
 const originalLookup = dns.lookup

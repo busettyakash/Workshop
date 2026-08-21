@@ -181,6 +181,6 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
     return { synced, error: err.message }
   }
 
-  console.log(`[IMAP] Synced ${synced} new Workshop emails for user ${ownerUserId}`)
+  console.log('[IMAP] Synced %d new Workshop emails', synced)
   return { synced }
 }

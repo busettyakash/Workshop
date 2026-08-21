@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'

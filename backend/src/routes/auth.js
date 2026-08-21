@@ -7,7 +7,7 @@ import resend from '../lib/resend.js'
 import { sendEmail } from '../lib/smtp.js'
 import { getOtpTemplate, getPasswordResetOtpTemplate } from '../utils/emailTemplates.js'
 import jwt from 'jsonwebtoken'
-import { createHash, randomInt } from 'crypto'
+import { createHash, randomInt } from 'node:crypto'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 
@@ -309,7 +309,7 @@ router.post('/send-otp', async (req, res) => {
       return res.status(409).json({ message: 'An account with this email already exists. Please log in instead.' })
     }
 
-    console.log('[OTP] Request for email: %s', email)
+    console.log('[OTP] Request initiated')
     const otpResult = await issueOtp(email, 'OTP')
     res.status(otpResult.status).json(otpResult.body)
   } catch (err) {
@@ -374,7 +374,7 @@ router.post('/reset-password', async (req, res) => {
       [newPassword, email]
     )
 
-    console.log('[RESET PASSWORD] Password updated successfully for %s', email)
+    console.log('[RESET PASSWORD] Password updated successfully')
     res.json({ message: 'Password reset successfully. You can now log in with your new password.' })
   } catch (err) {
     console.error('[RESET PASSWORD] Error:', err.message)
@@ -397,7 +397,7 @@ router.post('/verify-otp', async (req, res) => {
       storedOtp = getMemoryValue(getOtpKey(email))
     }
 
-    console.log('[OTP VERIFY] Attempt for %s: input=%s, stored=%s', email, otp, storedOtp)
+    console.log('[OTP VERIFY] Processing OTP verification attempt')
 
     if (String(storedOtp) === otp) {
       await redis.del(`otp:${email}`).catch(() => { })

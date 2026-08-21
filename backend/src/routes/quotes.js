@@ -1,5 +1,5 @@
 import express from 'express'
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import pool from '../lib/db.js'
 import { sendEmail } from '../lib/smtp.js'
 import { apiLimiter, emailLimiter } from '../middleware/rateLimit.js'

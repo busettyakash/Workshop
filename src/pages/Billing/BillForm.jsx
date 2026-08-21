@@ -7,6 +7,7 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import { ArrowLeft, Loader2, Plus, Trash2, Search, UserPlus, AlertCircle, X, ChevronDown, PackagePlus, ArrowRight, Check } from 'lucide-react'
 import api from '../../api/client'
 import { getBulkUnitDetails, ALL_UOM_OPTIONS, formatStockDisplay, formatStockDisplayFromBase } from '../../utils/unitHelpers'
+import { getRandomCode, getRandomInt } from '../../utils/cryptoUtils'
 import '../Dashboard/Dashboard.css'
 
 const S = {
@@ -89,9 +90,7 @@ function QuickAddProductModal({ onClose, onSaved }) {
   }, [])
 
   const generateSKU = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    let rand = ''
-    for (let i = 0; i < 8; i++) rand += chars.charAt(Math.floor(Math.random() * chars.length))
+    const rand = getRandomCode(8)
     setForm(prev => ({ ...prev, sku: `SKU-${rand}` }))
   }
 
@@ -272,7 +271,7 @@ export default function BillForm() {
   const [step, setStep] = useState(1) // 1: Cart & Products, 2: Checkout Details & Summary
 
   const [form, setForm] = useState({
-    bill_number: `INV-${Math.floor(10000 + Math.random() * 90000)}`,
+    bill_number: `INV-${getRandomInt(10000, 100000)}`,
     customer_id: createdPersonId || '',
     status: 'unpaid',
     due_date: '',

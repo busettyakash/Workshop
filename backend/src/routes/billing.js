@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import crypto from 'crypto'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
@@ -291,7 +292,7 @@ router.post('/', async (req, res) => {
   const parsedCustomerId = Number.isInteger(Number(customer_id)) && Number(customer_id) > 0 ? parseInt(customer_id, 10) : null
 
   // Use custom invoice number if passed, else generate unique 5-digit number
-  let billNumber = (customBillNum && customBillNum.trim()) ? customBillNum.trim() : `INV-${Math.floor(10000 + Math.random() * 90000)}`
+  let billNumber = (customBillNum && customBillNum.trim()) ? customBillNum.trim() : `INV-${crypto.randomInt(10000, 100000)}`
   try {
     let isUnique = false
     let attempts = 0
@@ -300,7 +301,7 @@ router.post('/', async (req, res) => {
       if (!check.rows.length) {
         isUnique = true
       } else {
-        billNumber = `INV-${Math.floor(10000 + Math.random() * 90000)}`
+        billNumber = `INV-${crypto.randomInt(10000, 100000)}`
         attempts++
       }
     }

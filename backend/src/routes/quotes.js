@@ -1,4 +1,5 @@
 import express from 'express'
+import crypto from 'crypto'
 import pool from '../lib/db.js'
 import { sendEmail } from '../lib/smtp.js'
 import { apiLimiter, emailLimiter } from '../middleware/rateLimit.js'
@@ -618,7 +619,7 @@ router.get('/respond', emailLimiter, async (req, res) => {
       `)
     }
 
-    const generatedOrderNum = (quote.order_number && quote.order_number !== 'null') ? quote.order_number : `ORD-${Math.floor(10000 + Math.random() * 90000)}`
+    const generatedOrderNum = (quote.order_number && quote.order_number !== 'null') ? quote.order_number : `ORD-${crypto.randomInt(10000, 100000)}`
 
     // order_number column ensured at startup in initSchema()
     await pool.query(
@@ -680,7 +681,7 @@ router.get('/respond', emailLimiter, async (req, res) => {
 
         const catalogMap = await getProductHsnMap()
         const enrichedItems = enrichItemsWithCache(items, catalogMap)
-        const autoBillNum = `INV-${Math.floor(100000 + Math.random() * 900000)}`
+        const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
 
         const lineSum = enrichedItems.reduce((acc, it) => acc + (parseFloat(it.quantity || 1) * parseFloat(it.rate || it.price || 0)), 0)
         const quoteTotal = parseFloat(quote.total_amount || 0)
@@ -1129,7 +1130,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
     const updatedQuote = result.rows[0]
 
     if (updatedQuote.status === 'Accepted') {
-      const orderNum = updatedQuote.order_number || `ORD-${Math.floor(10000 + Math.random() * 90000)}`
+      const orderNum = updatedQuote.order_number || `ORD-${crypto.randomInt(10000, 100000)}`
       // order_number column ensured at startup
       await pool.query(
         "UPDATE quotes SET order_number = $1, updated_at = NOW() WHERE id = $2",
@@ -1157,7 +1158,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
       if (existingBillRes.rows.length > 0) {
         bill = existingBillRes.rows[0]
       } else {
-        const autoBillNum = `INV-${Math.floor(100000 + Math.random() * 900000)}`
+        const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
         const quoteTotal = parseFloat(updatedQuote.total_amount || 0)
         const newBillRes = await pool.query(
           `INSERT INTO bills (bill_number, order_number, items, amount, status, due_date, notes, user_id, created_at)
@@ -1214,7 +1215,7 @@ router.patch('/:id/status', apiLimiter, async (req, res) => {
 
     if (status === 'Accepted') {
       if (!orderNum || orderNum === 'null') {
-        orderNum = `ORD-${Math.floor(10000 + Math.random() * 90000)}`
+        orderNum = `ORD-${crypto.randomInt(10000, 100000)}`
       }
       let itemsToDeduct = []
       if (Array.isArray(quote.line_items)) {

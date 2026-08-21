@@ -6,6 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Info, Check, User, Package, DollarSign, FileText, ArrowRight } from 'lucide-react'
 import api from '../../api/client'
+import { getRandomCode, getRandomInt } from '../../utils/cryptoUtils'
 import '../Dashboard/Dashboard.css'
 
 const S = {
@@ -160,12 +161,7 @@ export default function ImportStockForm() {
   }
 
   const generateSKU = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    let rand = ''
-    for (let i = 0; i < 8; i++) {
-      rand += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return `SKU-${rand}`
+    return `SKU-${getRandomCode(8)}`
   }
 
   const handleGenerateMainSKU = () => {
@@ -530,7 +526,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                         <button
                           type="button"
                           onClick={() => {
-                            const code = String(Math.floor(10000000 + Math.random() * 90000000))
+                            const code = String(getRandomInt(10000000, 100000000))
                             setForm(prev => ({ ...prev, hsn_code: code, sku: code }))
                           }}
                           style={{ background: 'none', border: 'none', color: '#3d68f5', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}

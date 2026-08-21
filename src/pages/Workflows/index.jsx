@@ -17,6 +17,7 @@ import '../Products/Products.css'
 import './Workflows.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import { useAuth } from '../../hooks/useAuth'
+import { getRandomString } from '../../utils/cryptoUtils'
 
 /* ─── Trigger data ─── */
 const TRIGGER_CATEGORIES = [
@@ -1383,7 +1384,7 @@ function MultiRecipientConfig({ step, onUpdateRecipients }) {
     if (!name.trim() && !email.trim() && !phone.trim()) return
 
     const newRecipient = {
-      id: `rec-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `rec-${Date.now()}-${getRandomString(4)}`,
       name: name.trim() || 'Contact',
       email: email.trim(),
       phone: phone.trim()

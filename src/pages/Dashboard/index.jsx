@@ -11,6 +11,7 @@ import {
   Home, HelpCircle, ChevronLeft, ChevronRight, MoreHorizontal, MoreVertical, Compass, Paperclip,
   FileText, Mail, StickyNote, Inbox, Sparkles, TrendingUp, Package, UserPlus, GraduationCap, Mic
 } from 'lucide-react'
+import { getRandomString } from '../../utils/cryptoUtils'
 import './Dashboard.css'
 
 export default function Dashboard() {
@@ -29,7 +30,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false)
   const [sessionLoading, setSessionLoading] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState(null)
-  const [conversationId, setConversationId] = useState(() => `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
+  const [conversationId, setConversationId] = useState(() => `conv_${Date.now()}_${getRandomString(6)}`)
   const [chatTitle, setChatTitle] = useState('Untitled chat')
   const [sessions, setSessions] = useState([])
   const [showHistory, setShowHistory] = useState(false)
@@ -92,7 +93,7 @@ export default function Dashboard() {
       // Clean slate for Home view
       setMessages([])
       setCurrentSessionId(null)
-      setConversationId(`conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
+      setConversationId(`conv_${Date.now()}_${getRandomString(6)}`)
       setChatTitle('Untitled chat')
     }
   }, [location.search])
@@ -185,7 +186,7 @@ export default function Dashboard() {
   }
 
   const handleNewChat = () => {
-    const freshConvId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const freshConvId = `conv_${Date.now()}_${getRandomString(6)}`
     setMessages([])
     setInputText('')
     setCurrentSessionId(null)
@@ -205,7 +206,7 @@ export default function Dashboard() {
     if (!text || isLoading) return
 
     const isNew = Boolean(customOpts.isNewChat)
-    const activeConvId = customOpts.conversationId || (isNew ? `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` : conversationId)
+    const activeConvId = customOpts.conversationId || (isNew ? `conv_${Date.now()}_${getRandomString(6)}` : conversationId)
     const baseMessages = isNew ? [] : (customOpts.messages !== undefined ? customOpts.messages : messages)
 
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -259,7 +260,7 @@ export default function Dashboard() {
     if (!text) return
     setHomeInputText('')
 
-    const freshConvId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const freshConvId = `conv_${Date.now()}_${getRandomString(6)}`
     navigate('/dashboard?chat=true')
     sendMessage(text, { isNewChat: true, conversationId: freshConvId, messages: [] })
   }

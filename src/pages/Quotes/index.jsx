@@ -56,7 +56,10 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
       <div
+        role="button"
+        tabIndex={0}
         onClick={() => setOpen(prev => !prev)}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setOpen(prev => !prev)}
         style={{
           width: '100%', height: 32, padding: '0 8px', borderRadius: 5,
           border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.78rem',
@@ -94,11 +97,14 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
             filtered.map(p => (
               <div
                 key={p.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   onSelect(p.id)
                   setOpen(false)
                   setQuery('')
                 }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onSelect(p.id); setOpen(false); setQuery('') } }}
                 style={{
                   padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: '0.78rem',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center'
@@ -143,7 +149,10 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
       {selectedProd && !open ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <div
+            role="button"
+            tabIndex={0}
             onClick={() => setOpen(true)}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setOpen(true)}
             style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
             title="Click to change product"
           >
@@ -157,7 +166,10 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
         </div>
       ) : (
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => setOpen(prev => !prev)}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setOpen(prev => !prev)}
           style={{
             width: '100%', height: 28, padding: '0 8px', borderRadius: 5,
             border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.75rem',
@@ -615,7 +627,10 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
       {/* Stepper Navigation Bar (Increased box sizes by 2%) */}
       <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 10 }}>
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => setStep(1)}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setStep(1)}
           style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
@@ -630,7 +645,10 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
         <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => setStep(2)}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setStep(2)}
           style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
@@ -645,7 +663,10 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
         <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => setStep(3)}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setStep(3)}
           style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
             background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`

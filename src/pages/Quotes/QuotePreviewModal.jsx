@@ -31,8 +31,8 @@ export default function QuotePreviewModal({ quote, onClose, onEdit, onStatusChan
   const items = parseItems(quote?.line_items)
 
   return (
-    <div className="ws-modal-backdrop" onClick={onClose}>
-      <div className="ws-modal-card" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => (e.key === 'Enter' || e.key === 'Escape') && onClose()}>
+      <div className="ws-modal-card" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title">Quotation {quote?.quote_number || `#${quote?.id}`}</h3>

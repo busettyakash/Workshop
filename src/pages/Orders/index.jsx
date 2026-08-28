@@ -7,7 +7,8 @@ import api from '../../api/client'
 import TablePagination from '../../components/ui/TablePagination'
 import { ArrowUpDown, Eye, Loader2, Search } from 'lucide-react'
 import { getAvatarColor, getSingleLetter } from '../../utils/tableHelpers'
-import QuotePreviewModal from '../Quotes/QuotePreviewModal'
+import { useNavigate } from 'react-router'
+import { usePermissions, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import '../Dashboard/Dashboard.css'
 import '../Products/Products.css'
 
@@ -30,7 +31,10 @@ function formatDate(value) {
 
 export default function Orders() {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  const { canRead } = usePermissions('orders')
 
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -65,8 +69,12 @@ export default function Orders() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Orders'))
-  }, [dispatch])
+  }, [dispatch, canRead])
 
   useEffect(() => {
     const timer = setTimeout(fetchOrders, 250)

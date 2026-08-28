@@ -6,6 +6,7 @@ import { ExpandSidebarIcon } from '../icons/SidebarIcons'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { toggleSidebar, selectActiveNav, selectSidebarOpen, setSidebarTriggerHovered, toggleConfigure } from '../../redux/slices/uiSlice'
 import { useAuth } from '../../hooks/useAuth'
+import { isOwnerOrAdmin, canCreateModule, NAV_MODULE_MAP, usePermissions } from '../../utils/permissionUtils'
 import './Topbar.css'
 
 let topbarLeaveTimer = null
@@ -16,7 +17,10 @@ export default function Topbar() {
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const { initials, shopName } = useAuth()
 
+  const activeModule = NAV_MODULE_MAP[activeNav] || activeNav?.toLowerCase()
+  const { canCreate: canCreateInCurrentModule, role } = usePermissions(activeModule)
   const isHome = activeNav === 'Home'
+  const isOwnerAdmin = isOwnerOrAdmin(role)
 
   const handleMouseEnterZone = () => {
     if (topbarLeaveTimer) clearTimeout(topbarLeaveTimer)
@@ -88,17 +92,21 @@ export default function Topbar() {
               <ArrowUpDown size={13} />
               Sort
             </button>
-            <button className="ws-topbar-action-btn">
-              <Plus size={13} />
-              New
-            </button>
-            <button 
-              className="ws-topbar-action-btn ws-topbar-invite-btn"
-              onClick={() => window.dispatchEvent(new CustomEvent('ws-open-invite'))}
-            >
-              <Plus size={13} style={{ color: 'var(--color-blue)' }} />
-              Invite
-            </button>
+            {canCreateInCurrentModule && (
+              <button className="ws-topbar-action-btn">
+                <Plus size={13} />
+                New
+              </button>
+            )}
+            {isOwnerAdmin && (
+              <button 
+                className="ws-topbar-action-btn ws-topbar-invite-btn"
+                onClick={() => window.dispatchEvent(new CustomEvent('ws-open-invite'))}
+              >
+                <Plus size={13} style={{ color: 'var(--color-blue)' }} />
+                Invite
+              </button>
+            )}
             <div className="ws-topbar-avatar" title={shopName}>
               {initials}
             </div>

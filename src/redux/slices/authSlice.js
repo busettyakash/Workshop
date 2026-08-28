@@ -17,8 +17,14 @@ export const loginThunk = createAsyncThunk(
       }
       sessionStorage.setItem('ws_token', data.token)
       sessionStorage.setItem('ws_user', JSON.stringify(userObj))
-      sessionStorage.setItem('ws_active_workspace_id', data.user.id)
-      sessionStorage.setItem('ws_active_workspace_name', data.user.shopName)
+      sessionStorage.setItem('ws_active_workspace_id', data.activeWorkspaceId || data.user.id)
+      sessionStorage.setItem('ws_active_workspace_name', data.activeWorkspaceName || data.user.shopName)
+      sessionStorage.setItem('ws_active_role', data.activeRole || 'Owner')
+      if (data.activePermissions) {
+        sessionStorage.setItem('ws_active_permissions', JSON.stringify(data.activePermissions))
+      } else {
+        sessionStorage.removeItem('ws_active_permissions')
+      }
       return { ...data, successMessage: 'Welcome back! Login successful.' }
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || 'Invalid email or password.')
@@ -51,6 +57,14 @@ export const registerThunk = createAsyncThunk(
         sessionStorage.setItem('ws_active_workspace_name', data.user.shopName)
       }
 
+      // Set role & permissions so PrivateRoute and Sidebar read correct values immediately
+      sessionStorage.setItem('ws_active_role', data.activeRole || 'Owner')
+      if (data.activePermissions) {
+        sessionStorage.setItem('ws_active_permissions', JSON.stringify(data.activePermissions))
+      } else {
+        sessionStorage.removeItem('ws_active_permissions')
+      }
+
       return { ...data, successMessage: 'Workspace created successfully! Welcome.' }
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || 'Registration failed. Please try again.')
@@ -60,12 +74,16 @@ export const registerThunk = createAsyncThunk(
 
 // ── Initial State ─────────────────────────────────────────
 const getStoredUser = () => {
-  try { return JSON.parse(sessionStorage.getItem('ws_user') || 'null') } catch { return null }
+  try { 
+    return typeof sessionStorage !== 'undefined' ? JSON.parse(sessionStorage.getItem('ws_user') || 'null') : null 
+  } catch { 
+    return null 
+  }
 }
 
 const initialState = {
   user:    getStoredUser(),
-  token:   sessionStorage.getItem('ws_token') || null,
+  token:   typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('ws_token') || null) : null,
   status:  'idle',   // 'idle' | 'loading' | 'succeeded' | 'failed'
   error:   null,
   emailStep: 'email', // 'email' | 'checking' | 'password'

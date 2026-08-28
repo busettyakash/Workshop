@@ -10,10 +10,15 @@ import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 import BillPreview from '../Billing/BillPreview'
+import { useNavigate } from 'react-router'
+import { hasModulePermission, canDeleteModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 export default function PaidBills() {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  const { canRead, canDelete } = usePermissions('paid')
   
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)
@@ -62,9 +67,13 @@ export default function PaidBills() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Paid'))
     fetchPaidBills(page)
-  }, [dispatch, page, search, sort])
+  }, [dispatch, page, search, sort, canRead])
 
   const fetchPaidBills = async (currentPage = page) => {
     setLoading(true)
@@ -274,14 +283,16 @@ export default function PaidBills() {
                               >
                                 <Eye size={12} /> View
                               </button>
-                              <button 
-                                className="ws-chat-history-delete-btn" 
-                                style={{ padding: 6 }} 
-                                onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: 'INV-' + String(bill.id).padStart(3, '0') })}
-                                title="Delete Bill Record"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              {canDelete && (
+                                <button 
+                                  className="ws-chat-history-delete-btn" 
+                                  style={{ padding: 6 }} 
+                                  onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: 'INV-' + String(bill.id).padStart(3, '0') })}
+                                  title="Delete Bill Record"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

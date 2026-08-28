@@ -13,6 +13,7 @@ import '../Dashboard/Dashboard.css'
 import './Products.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
+import { hasModulePermission, canDeleteModule, canCreateModule, canEditModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 const formatIndianDateOnly = (raw) => {
   if (!raw) return ''
@@ -287,12 +288,13 @@ function PricingModal({ product, onClose }) {
   )
 }
 
-// ProductFormModal has been moved to a separate page component
-
 export default function Products() {
   const dispatch  = useAppDispatch()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const navigate = useNavigate()
+
+  const { canRead, canCreate, canEdit, canDelete, hasModulePermission: checkModPerm } = usePermissions('products')
+  const canAccessImportStock = checkModPerm ? checkModPerm('import_stock') : hasModulePermission('import_stock')
   
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -341,9 +343,13 @@ export default function Products() {
   }
 
   useEffect(() => { 
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Products')) 
     fetchProducts(page)
-  }, [dispatch, page, search, sort, filterCategory, filterStatus])
+  }, [dispatch, page, search, sort, filterCategory, filterStatus, canRead])
 
 
 
@@ -444,9 +450,11 @@ export default function Products() {
                   <Filter size={13} /> Filter
                 </button>
 
-                <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock')}>
-                  Return to Import Stock
-                </button>
+                {canAccessImportStock && (
+                  <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock')}>
+                    Return to Import Stock
+                  </button>
+                )}
               </div>
             </div>
 
@@ -670,19 +678,21 @@ export default function Products() {
                                 >
                                   <Eye size={12} /> View
                                 </button>
-                                <button 
-                                  onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
-                                  style={{
-                                    background: 'none', border: 'none', color: '#9ca3af',
-                                    cursor: 'pointer', padding: 4, borderRadius: 4,
-                                    transition: 'color 0.15s'
-                                  }}
-                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                                  onMouseLeave={(e) => e.currentTarget.style.color = '#9ca3af'}
-                                  title="Delete Product"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
+                                {canDelete && (
+                                  <button 
+                                    onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
+                                    style={{
+                                      background: 'none', border: 'none', color: '#9ca3af',
+                                      cursor: 'pointer', padding: 4, borderRadius: 4,
+                                      transition: 'color 0.15s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                    onMouseLeave={(e) => e.currentTarget.style.color = '#9ca3af'}
+                                    title="Delete Product"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

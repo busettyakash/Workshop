@@ -10,12 +10,17 @@ import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/table
 import { useNavigate, useLocation } from 'react-router'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
+import { hasModulePermission, canEditModule, canDeleteModule, canCreateModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 export default function People() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const location = useLocation()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  // Live granular module permissions
+  const { canRead, canEdit, canDelete, canCreate } = usePermissions('people')
+
   const [people, setPeople] = useState([])
   const [loading, setLoading] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' })
@@ -64,9 +69,13 @@ export default function People() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('People'))
     fetchPeople(page)
-  }, [dispatch, page, search, sort, filterPersona, filterStatus, location.key])
+  }, [dispatch, page, search, sort, filterPersona, filterStatus, location.key, canRead])
 
   const fetchPeople = async (currentPage = page) => {
     setLoading(true)
@@ -149,9 +158,11 @@ export default function People() {
                   <Filter size={13} /> Filter
                 </button>
 
-                <button className="attio-btn attio-btn-primary" onClick={() => navigate('/people/add')}>
-                  <Plus size={13} style={{ marginRight: '4px' }} /> New Person
-                </button>
+                {canCreate && (
+                  <button className="attio-btn attio-btn-primary" onClick={() => navigate('/people/add')}>
+                    <Plus size={13} style={{ marginRight: '4px' }} /> New Person
+                  </button>
+                )}
               </div>
             </div>
 
@@ -226,7 +237,9 @@ export default function People() {
                       <th>PHONE</th>
                       <th>PERSONA</th>
                       <th>STATUS</th>
-                      <th style={{ width: 80, textAlign: 'right' }}>ACTIONS</th>
+                      {(canEdit || canDelete) && (
+                        <th style={{ width: 80, textAlign: 'right' }}>ACTIONS</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -249,16 +262,25 @@ export default function People() {
                               <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
                                 {getSingleLetter(row.name)}
                               </div>
-                              <span 
-                                className="ws-table-primary-text" 
-                                role="button"
-                                tabIndex={0}
-                                style={{ cursor: 'pointer', fontWeight: 600 }}
-                                onClick={() => navigate(`/people/edit/${row.id}`)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/people/edit/${row.id}`) }}
-                              >
-                                {row.name}
-                              </span>
+                              {canEdit ? (
+                                <span 
+                                  className="ws-table-primary-text" 
+                                  role="button"
+                                  tabIndex={0}
+                                  style={{ cursor: 'pointer', fontWeight: 600 }}
+                                  onClick={() => navigate(`/people/edit/${row.id}`)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/people/edit/${row.id}`) }}
+                                >
+                                  {row.name}
+                                </span>
+                              ) : (
+                                <span 
+                                  className="ws-table-primary-text" 
+                                  style={{ fontWeight: 600, color: '#1e293b' }}
+                                >
+                                  {row.name}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td>
@@ -283,26 +305,32 @@ export default function People() {
                               {row.status}
                             </span>
                           </td>
-                          <td>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                              <button
-                                className="ws-chat-history-delete-btn"
-                                style={{ padding: 6 }}
-                                onClick={() => navigate(`/people/edit/${row.id}`)}
-                                title="Edit Person"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              <button
-                                className="ws-chat-history-delete-btn"
-                                style={{ padding: 6 }}
-                                onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
-                                title="Delete"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
+                          {(canEdit || canDelete) && (
+                            <td>
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                                {canEdit && (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ padding: 6 }}
+                                    onClick={() => navigate(`/people/edit/${row.id}`)}
+                                    title="Edit Person"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                )}
+                                {canDelete && (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ padding: 6 }}
+                                    onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
+                                    title="Delete"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { FileText, Plus, Search, Trash2, Edit3, Loader2, StickyNote, Paperclip, X } from 'lucide-react'
 import api from '../../api/client'
+import { hasModulePermission, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import '../Dashboard/Dashboard.css'
 
 function timeAgo(dateStr) {
@@ -20,7 +22,18 @@ function timeAgo(dateStr) {
 
 export default function Notes() {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  // Redirect if user lacks notes permission
+  useEffect(() => {
+    if (!hasModulePermission('notes')) {
+      const target = getFirstAccessibleRoute()
+      if (target && target !== '/notes') {
+        navigate(target, { replace: true })
+      }
+    }
+  }, [navigate])
 
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -45,7 +58,9 @@ export default function Notes() {
 
   useEffect(() => {
     dispatch(setActiveNav('Notes'))
-    fetchNotes()
+    if (hasModulePermission('notes')) {
+      fetchNotes()
+    }
   }, [dispatch])
 
   const fetchNotes = async (q = '') => {

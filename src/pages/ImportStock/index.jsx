@@ -11,6 +11,7 @@ import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
+import { hasModulePermission, canDeleteModule, canCreateModule, canEditModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 const formatIndianDateOnly = (raw) => {
   if (!raw) return ''
@@ -213,6 +214,8 @@ export default function ImportStock() {
   const navigate = useNavigate()
   const location = useLocation()
 
+  const { canRead, canCreate, canEdit, canDelete } = usePermissions('import_stock')
+
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState([])
@@ -246,9 +249,13 @@ export default function ImportStock() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Import Stock'))
     fetchProducts(page)
-  }, [dispatch, page, search, sort, filterStatus, location.key])
+  }, [dispatch, page, search, sort, filterStatus, location.key, canRead])
 
   const fetchProducts = async (currentPage = page) => {
     setLoading(true)
@@ -371,12 +378,16 @@ export default function ImportStock() {
                   <Filter size={13} /> Filter
                 </button>
 
-                <button className="attio-btn">
-                  <Upload size={13} style={{ marginRight: '4px' }} /> Import CSV
-                </button>
-                <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock/add')}>
-                  <Plus size={13} style={{ marginRight: '4px' }} /> Add Stock
-                </button>
+                {canCreate && (
+                  <>
+                    <button className="attio-btn">
+                      <Upload size={13} style={{ marginRight: '4px' }} /> Import CSV
+                    </button>
+                    <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock/add')}>
+                      <Plus size={13} style={{ marginRight: '4px' }} /> Add Stock
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -671,50 +682,56 @@ export default function ImportStock() {
                               >
                                 <FileText size={12} /> Note
                               </button>
-                              {row.status === 'added' ? (
+                              {canEdit && (
+                                row.status === 'added' ? (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ color: '#8b5cf6', padding: 6, fontWeight: 500, background: '#ede9fe', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+                                    disabled
+                                    title="Product is already added"
+                                  >
+                                    <Check size={13} /> Added
+                                  </button>
+                                ) : row.status !== 'active' ? (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ color: '#9ca3af', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'not-allowed', opacity: 0.6 }}
+                                    disabled
+                                    title="Only active items can be added to products"
+                                  >
+                                    <Plus size={13} /> Add to Products
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ color: '#4b5563', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}
+                                    onClick={() => handleAddToProducts(row.id, row.name)}
+                                    title="Add to Live Products"
+                                  >
+                                    <Plus size={13} /> Add to Products
+                                  </button>
+                                )
+                              )}
+                              {canEdit && (
                                 <button
                                   className="ws-chat-history-delete-btn"
-                                  style={{ color: '#8b5cf6', padding: 6, fontWeight: 500, background: '#ede9fe', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
-                                  disabled
-                                  title="Product is already added"
+                                  style={{ color: '#4b5563', padding: 6 }}
+                                  onClick={() => navigate(`/import-stock/edit/${row.id}`)}
+                                  title="Edit Product"
                                 >
-                                  <Check size={13} /> Added
-                                </button>
-                              ) : row.status !== 'active' ? (
-                                <button
-                                  className="ws-chat-history-delete-btn"
-                                  style={{ color: '#9ca3af', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'not-allowed', opacity: 0.6 }}
-                                  disabled
-                                  title="Only active items can be added to products"
-                                >
-                                  <Plus size={13} /> Add to Products
-                                </button>
-                              ) : (
-                                <button
-                                  className="ws-chat-history-delete-btn"
-                                  style={{ color: '#4b5563', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}
-                                  onClick={() => handleAddToProducts(row.id, row.name)}
-                                  title="Add to Live Products"
-                                >
-                                  <Plus size={13} /> Add to Products
+                                  <Edit2 size={13} />
                                 </button>
                               )}
-                              <button
-                                className="ws-chat-history-delete-btn"
-                                style={{ color: '#4b5563', padding: 6 }}
-                                onClick={() => navigate(`/import-stock/edit/${row.id}`)}
-                                title="Edit Product"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              <button
-                                className="ws-chat-history-delete-btn"
-                                style={{ padding: 6 }}
-                                onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
-                                title="Delete Product"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              {canDelete && (
+                                <button
+                                  className="ws-chat-history-delete-btn"
+                                  style={{ padding: 6 }}
+                                  onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
+                                  title="Delete Product"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

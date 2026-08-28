@@ -9,6 +9,7 @@ import {
   Building2, Users, Radio, CreditCard, DollarSign, Code, Headphones, ArrowRightLeft, Grid, Info, Scale, Plus, Edit2, Trash2, Save, HelpCircle
 } from 'lucide-react'
 import UomManager from '../../components/settings/UomManager'
+import MembersManager from '../../components/settings/MembersManager'
 import '../Dashboard/Dashboard.css'
 
 export default function WorkspaceSettings() {
@@ -275,7 +276,7 @@ export default function WorkspaceSettings() {
         </div>
 
           {/* Main Content Area */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: activeSection === 'uom' ? '20px 24px' : '32px 48px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: (activeSection === 'uom' || activeSection === 'members') ? '20px 24px' : '32px 48px' }}>
             {activeSection === 'general' && (
               <div style={{ maxWidth: 640 }}>
                 <h1 style={{ fontSize: '1.55rem', fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>General Workspace Settings</h1>
@@ -344,6 +345,10 @@ export default function WorkspaceSettings() {
 
             {activeSection === 'uom' && (
               <UomManager />
+            )}
+
+            {activeSection === 'members' && (
+              <MembersManager />
             )}
           </div>
         </div>

@@ -7,6 +7,7 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import { ArrowLeft, Loader2, Info, Check, User, Package, DollarSign, FileText, ArrowRight } from 'lucide-react'
 import api from '../../api/client'
 import { getRandomCode, getRandomInt } from '../../utils/cryptoUtils'
+import { usePermissions, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import '../Dashboard/Dashboard.css'
 
 const S = {
@@ -54,6 +55,8 @@ export default function ImportStockForm() {
   const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
 
+  const { canRead, canCreate, canEdit } = usePermissions('import_stock')
+
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
@@ -87,6 +90,10 @@ export default function ImportStockForm() {
   const [uomOptions, setUomOptions] = useState([])
 
   useEffect(() => {
+    if (!canRead || (id && !canEdit) || (!id && !canCreate)) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Import Stock'))
     if (id) fetchItem()
 

@@ -170,9 +170,9 @@ export default function UomManager() {
                   onClick={() => setSelectedCat(cat)}
                   className="attio-btn"
                   style={{
-                    background: isSelected ? '#0f172a' : '#ffffff',
-                    color: isSelected ? '#ffffff' : '#475569',
-                    borderColor: isSelected ? '#0f172a' : '#cbd5e1',
+                    background: isSelected ? '#eff6ff' : '#ffffff',
+                    color: isSelected ? '#2563eb' : '#475569',
+                    borderColor: isSelected ? '#bfdbfe' : '#e2e8f0',
                     fontWeight: isSelected ? 600 : 500,
                     fontSize: '0.78rem',
                     padding: '4px 10px',
@@ -184,8 +184,8 @@ export default function UomManager() {
                     fontSize: '0.68rem',
                     padding: '1px 5px',
                     borderRadius: 10,
-                    background: isSelected ? 'rgba(255,255,255,0.25)' : '#f1f5f9',
-                    color: isSelected ? '#ffffff' : '#64748b',
+                    background: isSelected ? '#dbeafe' : '#f1f5f9',
+                    color: isSelected ? '#1d4ed8' : '#64748b',
                     fontWeight: 700
                   }}>
                     {count}

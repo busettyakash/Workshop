@@ -12,6 +12,7 @@ import {
   FileText, Mail, StickyNote, Inbox, Sparkles, TrendingUp, Package, UserPlus, GraduationCap, Mic
 } from 'lucide-react'
 import { getRandomString } from '../../utils/cryptoUtils'
+import { hasModulePermission, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import './Dashboard.css'
 
 export default function Dashboard() {
@@ -22,6 +23,28 @@ export default function Dashboard() {
   const { user } = useAuth()
 
   const [view, setView] = useState('home')
+
+  // ── Permission state ──
+  const canAccessDashboard = hasModulePermission('dashboard')
+  const canAccessNotes = hasModulePermission('notes')
+  const canAccessEmails = hasModulePermission('emails')
+  const canAccessChats = hasModulePermission('chats')
+
+  // ── If user does not have permission for Dashboard, redirect to first allowed route ──
+  useEffect(() => {
+    if (!hasModulePermission('dashboard')) {
+      const searchParams = new URLSearchParams(location.search)
+      const isChatMode = searchParams.get('chat') || searchParams.get('session')
+      // If user has chat permission and is in chat mode, allow chat view
+      if (isChatMode && hasModulePermission('chats')) {
+        return
+      }
+      const targetRoute = getFirstAccessibleRoute()
+      if (targetRoute && targetRoute !== '/dashboard') {
+        navigate(targetRoute, { replace: true })
+      }
+    }
+  }, [navigate, location.search])
 
   // ── Chat State ──
   const [messages, setMessages] = useState([])
@@ -66,9 +89,19 @@ export default function Dashboard() {
   // Fetch recent sessions + home data on mount
   useEffect(() => {
     dispatch(setActiveNav('Home'))
-    fetchSessions()
-    fetchRecentNotes()
-    fetchRecentEmails()
+    if (hasModulePermission('chats')) {
+      fetchSessions()
+    }
+    if (hasModulePermission('notes')) {
+      fetchRecentNotes()
+    } else {
+      setNotesLoading(false)
+    }
+    if (hasModulePermission('emails')) {
+      fetchRecentEmails()
+    } else {
+      setEmailsLoading(false)
+    }
   }, [dispatch])
 
   const processedPromptRef = useRef(null)
@@ -516,91 +549,95 @@ export default function Dashboard() {
 
 
                 {/* ── Notes Section ── */}
-                <section style={{ display: 'flex', flexDirection: 'column', width: '100%', marginBottom: 36 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                    <h2 style={{ fontSize: '0.92rem', fontWeight: 600, color: '#4b5563', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
-                      Notes
-                      {!notesLoading && <span style={{ fontSize: '0.75rem', fontWeight: 550, color: '#9ca3af', marginLeft: 6 }}>{totalNotesCount}</span>}
-                    </h2>
-                    <Link to="/notes" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', textDecoration: 'none' }}>View all</Link>
-                  </div>
+                {canAccessNotes && (
+                  <section style={{ display: 'flex', flexDirection: 'column', width: '100%', marginBottom: 36 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                      <h2 style={{ fontSize: '0.92rem', fontWeight: 600, color: '#4b5563', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                        Notes
+                        {!notesLoading && <span style={{ fontSize: '0.75rem', fontWeight: 550, color: '#9ca3af', marginLeft: 6 }}>{totalNotesCount}</span>}
+                      </h2>
+                      <Link to="/notes" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', textDecoration: 'none' }}>View all</Link>
+                    </div>
 
-                  {notesLoading ? (
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
-                      <Loader2 size={18} className="ws-chat-loader-spin" style={{ color: '#d1d5db' }} />
-                    </div>
-                  ) : recentNotes.length === 0 ? (
-                    <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
-                      <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No notes yet</p>
-                      <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Capture ideas, meeting notes and more</p>
-                      <Link to="/notes" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#2563eb', color: '#fff', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none' }}>
-                        <Plus size={13} /> New note
-                      </Link>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {recentNotes.map(note => (
-                        <Link key={note.id} to="/notes" style={{ textDecoration: 'none', display: 'block' }}>
-                          <div style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, transition: 'border-color 0.1s, box-shadow 0.1s' }}
-                            onMouseEnter={e => { e.currentTarget.style.borderColor = '#3d68f5'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(61,104,245,0.06)' }}
-                            onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.boxShadow = 'none' }}
-                          >
-                            <div style={{ fontSize: '0.845rem', fontWeight: 600, color: '#111827', marginBottom: 3 }}>{note.title}</div>
-                            {note.body && <div style={{ fontSize: '0.78rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note.body}</div>}
-                          </div>
+                    {notesLoading ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
+                        <Loader2 size={18} className="ws-chat-loader-spin" style={{ color: '#d1d5db' }} />
+                      </div>
+                    ) : recentNotes.length === 0 ? (
+                      <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
+                        <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No notes yet</p>
+                        <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Capture ideas, meeting notes and more</p>
+                        <Link to="/notes" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#2563eb', color: '#fff', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none' }}>
+                          <Plus size={13} /> New note
                         </Link>
-                      ))}
-                    </div>
-                  )}
-                </section>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {recentNotes.map(note => (
+                          <Link key={note.id} to="/notes" style={{ textDecoration: 'none', display: 'block' }}>
+                            <div style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, transition: 'border-color 0.1s, box-shadow 0.1s' }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = '#3d68f5'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(61,104,245,0.06)' }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.boxShadow = 'none' }}
+                            >
+                              <div style={{ fontSize: '0.845rem', fontWeight: 600, color: '#111827', marginBottom: 3 }}>{note.title}</div>
+                              {note.body && <div style={{ fontSize: '0.78rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note.body}</div>}
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
 
                 {/* ── Emails Section ── */}
-                <section style={{ display: 'flex', flexDirection: 'column', width: '100%', marginBottom: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                    <h2 style={{ fontSize: '0.92rem', fontWeight: 600, color: '#4b5563', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
-                      Emails
-                      {!emailsLoading && <span style={{ fontSize: '0.75rem', fontWeight: 550, color: '#9ca3af', marginLeft: 6 }}>{totalEmailsCount}</span>}
-                    </h2>
-                    <Link to="/emails" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', textDecoration: 'none' }}>View all</Link>
-                  </div>
+                {canAccessEmails && (
+                  <section style={{ display: 'flex', flexDirection: 'column', width: '100%', marginBottom: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                      <h2 style={{ fontSize: '0.92rem', fontWeight: 600, color: '#4b5563', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                        Emails
+                        {!emailsLoading && <span style={{ fontSize: '0.75rem', fontWeight: 550, color: '#9ca3af', marginLeft: 6 }}>{totalEmailsCount}</span>}
+                      </h2>
+                      <Link to="/emails" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', textDecoration: 'none' }}>View all</Link>
+                    </div>
 
-                  {emailsLoading ? (
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
-                      <Loader2 size={18} className="ws-chat-loader-spin" style={{ color: '#d1d5db' }} />
-                    </div>
-                  ) : recentEmails.length === 0 ? (
-                    <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
-                      <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No emails yet</p>
-                      <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Compose your first email or wait for replies</p>
-                      <Link to="/emails?compose=true" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 16px', background: '#2563eb', color: '#fff', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none', transition: 'background 0.15s' }}>
-                        <Plus size={13} /> Compose
-                      </Link>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {recentEmails.map(email => (
-                        <Link key={email.id} to="/emails" style={{ textDecoration: 'none', display: 'block' }}>
-                          <div style={{ padding: '12px 16px', background: email.is_read ? '#fff' : '#f8faff', border: `1px solid ${email.is_read ? '#e5e7eb' : '#c7d7fd'}`, borderRadius: 10, display: 'flex', gap: 12, alignItems: 'flex-start', transition: 'border-color 0.1s, box-shadow 0.1s' }}
-                            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 0 0 3px rgba(61,104,245,0.06)' }}
-                            onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
-                          >
-                            {!email.is_read && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3d68f5', flexShrink: 0, marginTop: 5 }} />}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                                <span style={{ fontSize: '0.84rem', fontWeight: email.is_read ? 500 : 700, color: '#111827' }}>{email.from_name || email.from_email}</span>
-                                <span style={{ fontSize: '0.72rem', color: '#9ca3af', flexShrink: 0, marginLeft: 10 }}>
-                                  {new Date(email.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: '0.8rem', color: '#374151', fontWeight: email.is_read ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
-                              {email.preview && <div style={{ fontSize: '0.76rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>{email.preview}</div>}
-                            </div>
-                          </div>
+                    {emailsLoading ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
+                        <Loader2 size={18} className="ws-chat-loader-spin" style={{ color: '#d1d5db' }} />
+                      </div>
+                    ) : recentEmails.length === 0 ? (
+                      <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
+                        <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No emails yet</p>
+                        <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Compose your first email or wait for replies</p>
+                        <Link to="/emails?compose=true" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 16px', background: '#2563eb', color: '#fff', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none', transition: 'background 0.15s' }}>
+                          <Plus size={13} /> Compose
                         </Link>
-                      ))}
-                    </div>
-                  )}
-                </section>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {recentEmails.map(email => (
+                          <Link key={email.id} to="/emails" style={{ textDecoration: 'none', display: 'block' }}>
+                            <div style={{ padding: '12px 16px', background: email.is_read ? '#fff' : '#f8faff', border: `1px solid ${email.is_read ? '#e5e7eb' : '#c7d7fd'}`, borderRadius: 10, display: 'flex', gap: 12, alignItems: 'flex-start', transition: 'border-color 0.1s, box-shadow 0.1s' }}
+                              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 0 0 3px rgba(61,104,245,0.06)' }}
+                              onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
+                            >
+                              {!email.is_read && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3d68f5', flexShrink: 0, marginTop: 5 }} />}
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                  <span style={{ fontSize: '0.84rem', fontWeight: email.is_read ? 500 : 700, color: '#111827' }}>{email.from_name || email.from_email}</span>
+                                  <span style={{ fontSize: '0.72rem', color: '#9ca3af', flexShrink: 0, marginLeft: 10 }}>
+                                    {new Date(email.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#374151', fontWeight: email.is_read ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
+                                {email.preview && <div style={{ fontSize: '0.76rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>{email.preview}</div>}
+                              </div>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
 
               </div>
             </main>

@@ -10,10 +10,15 @@ import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 import BillPreview from '../Billing/BillPreview'
+import { useNavigate } from 'react-router'
+import { hasModulePermission, canDeleteModule, canEditModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 export default function UnpaidBills() {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  const { canRead, canDelete, canEdit } = usePermissions('unpaid')
 
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)
@@ -75,9 +80,13 @@ export default function UnpaidBills() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Unpaid'))
     fetchUnpaidBills(page)
-  }, [dispatch, page, search, sort])
+  }, [dispatch, page, search, sort, canRead])
 
   const handleMarkPaid = async (id) => {
     try {
@@ -284,22 +293,26 @@ export default function UnpaidBills() {
                                 >
                                   <Eye size={12} /> View
                                 </button>
-                                <button
-                                  className="ws-chat-history-delete-btn"
-                                  style={{ color: '#10b981', padding: 6, backgroundColor: '#ecfdf5' }}
-                                  onClick={() => handleMarkPaid(bill.id)}
-                                  title="Mark as Paid"
-                                >
-                                  <Check size={13} />
-                                </button>
-                                <button
-                                  className="ws-chat-history-delete-btn"
-                                  style={{ padding: 6 }}
-                                  onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: 'INV-' + String(bill.id).padStart(3, '0') })}
-                                  title="Delete Bill Record"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                {canEdit && (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ color: '#10b981', padding: 6, backgroundColor: '#ecfdf5' }}
+                                    onClick={() => handleMarkPaid(bill.id)}
+                                    title="Mark as Paid"
+                                  >
+                                    <Check size={13} />
+                                  </button>
+                                )}
+                                {canDelete && (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ padding: 6 }}
+                                    onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: 'INV-' + String(bill.id).padStart(3, '0') })}
+                                    title="Delete Bill Record"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

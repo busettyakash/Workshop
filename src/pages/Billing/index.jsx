@@ -15,6 +15,7 @@ import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 import BillPreview from './BillPreview'
 import { useNavigate } from 'react-router'
+import { hasModulePermission, canCreateModule, canEditModule, canDeleteModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 const STATUS_MAP = {
   paid: { bg: '#dcfce7', text: '#166534', label: 'Paid' },
@@ -31,7 +32,9 @@ function TemplateManagerModal({ onClose }) {
   const [uploading, setUploading] = useState(false)
   const [templateName, setTemplateName] = useState('')
 
-  useEffect(() => { fetchTemplates() }, [])
+  useEffect(() => {
+    fetchTemplates()
+  }, [])
 
   const fetchTemplates = async () => {
     setLoading(true)
@@ -46,13 +49,13 @@ function TemplateManagerModal({ onClose }) {
   }
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0]
+    const file = e.target.files?.[0]
     if (!file) return
-    if (!file.name.endsWith('.html') && !file.name.endsWith('.htm')) {
-      dispatch(addToast({ message: 'Only HTML files are supported', type: 'warning' }))
+    if (!file.name.endsWith('.html') && !file.name.endsWith('.htm') && !file.name.endsWith('.hbs')) {
+      dispatch(addToast({ message: 'Only HTML or HBS files are supported', type: 'warning' }))
       return
     }
-    const name = templateName.trim() || file.name.replace(/\.(html|htm)$/, '')
+    const name = templateName.trim() || file.name.replace(/\.(html|htm|hbs)$/, '')
     setUploading(true)
     try {
       const html = await file.text()
@@ -64,7 +67,7 @@ function TemplateManagerModal({ onClose }) {
       dispatch(addToast({ message: 'Failed to upload template', type: 'error' }))
     } finally {
       setUploading(false)
-      e.target.value = ''
+      if (fileRef.current) fileRef.current.value = ''
     }
   }
 
@@ -112,7 +115,7 @@ function TemplateManagerModal({ onClose }) {
               onChange={e => setTemplateName(e.target.value)}
               style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem', fontFamily: 'inherit', outline: 'none', marginBottom: 10, boxSizing: 'border-box' }}
             />
-            <input ref={fileRef} type="file" accept=".html,.htm" onChange={handleFileUpload} style={{ display: 'none' }} />
+            <input ref={fileRef} type="file" accept=".html,.htm,.hbs" onChange={handleFileUpload} style={{ display: 'none' }} />
             <button
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
@@ -188,6 +191,8 @@ export default function Billing() {
   const dispatch = useAppDispatch()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const navigate = useNavigate()
+
+  const { canRead, canCreate, canEdit, canDelete } = usePermissions('billing')
 
   const [bills, setBills] = useState([])
   const [summary, setSummary] = useState({ revenue: 0, count: 0, pending: 0, paid: 0 })
@@ -307,6 +312,10 @@ export default function Billing() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Billing'))
     fetchData(page)
     // Load shop info from sessionStorage
@@ -314,7 +323,7 @@ export default function Billing() {
       const u = JSON.parse(sessionStorage.getItem('ws_user') || '{}')
       setShopInfo({ shopName: u.shopName || '', gstin: u.gstin || '', phone: u.phone || '', address: u.address || '' })
     } catch { }
-  }, [dispatch, page, search, sort, filterStatus, filterMonth, filterYear, filterDate])
+  }, [dispatch, page, search, sort, filterStatus, filterMonth, filterYear, filterDate, canRead])
 
   useEffect(() => {
     if (showDailyBreakdown) fetchDailyStats()
@@ -563,9 +572,11 @@ export default function Billing() {
                   <BarChart2 size={13} /> Daily
                 </button>
 
-                <button className="attio-btn attio-btn-primary" onClick={() => navigate('/billing/new')}>
-                  <Plus size={13} style={{ marginRight: '4px' }} /> New Bill
-                </button>
+                {canCreate && (
+                  <button className="attio-btn attio-btn-primary" onClick={() => navigate('/billing/new')}>
+                    <Plus size={13} style={{ marginRight: '4px' }} /> New Bill
+                  </button>
+                )}
               </div>
             </div>
 
@@ -891,7 +902,7 @@ export default function Billing() {
                                   <Eye size={13} />
                                 </button>
                                 {/* Mark Paid */}
-                                {bill.status === 'unpaid' && (
+                                {canEdit && bill.status === 'unpaid' && (
                                   <button
                                     className="ws-chat-history-delete-btn"
                                     style={{ color: '#10b981', padding: 6, backgroundColor: '#ecfdf5' }}
@@ -902,14 +913,16 @@ export default function Billing() {
                                   </button>
                                 )}
                                 {/* Delete */}
-                                <button
-                                  className="ws-chat-history-delete-btn"
-                                  style={{ padding: 6 }}
-                                  onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: bill.bill_number || `INV-${String(bill.id).padStart(5, '0')}` })}
-                                  title="Delete Bill"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                {canDelete && (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ padding: 6 }}
+                                    onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: bill.bill_number || `INV-${String(bill.id).padStart(5, '0')}` })}
+                                    title="Delete Bill"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

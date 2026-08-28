@@ -9,12 +9,15 @@ import api from '../../api/client'
 import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import { usePermissions, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 
 export default function ImportStockNote() {
   const { id } = useParams()
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  const { canRead, canEdit, canDelete } = usePermissions('import_stock')
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -45,9 +48,13 @@ export default function ImportStockNote() {
 
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Import Stock'))
     fetchItem()
-  }, [id, dispatch])
+  }, [id, dispatch, canRead])
 
   const fetchItem = async () => {
     setLoading(true)

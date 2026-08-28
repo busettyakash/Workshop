@@ -181,6 +181,22 @@ app.use((err, _req, res, _next) => {
 
 
 
+import pool from './lib/db.js'
+
+// ── Ensure schema health on startup ──
+pool.query(`
+  CREATE TABLE IF NOT EXISTS workspace_members (
+    id SERIAL PRIMARY KEY,
+    workspace_owner_id TEXT NOT NULL,
+    member_email TEXT NOT NULL,
+    role TEXT DEFAULT 'Member',
+    permissions JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE (workspace_owner_id, member_email)
+  );
+  ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
+`).catch(err => console.warn('[DB Schema Init]', err.message))
+
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)

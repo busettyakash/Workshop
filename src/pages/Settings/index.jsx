@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import api from '../../api/client'
 import UomManager from '../../components/settings/UomManager'
+import MembersManager from '../../components/settings/MembersManager'
+import { usePermissions, isOwnerOrAdmin } from '../../utils/permissionUtils'
 import '../Dashboard/Dashboard.css'
 
 function getSanitizedImageUrl(url) {
@@ -29,10 +31,14 @@ export default function Settings() {
   const dispatch = useAppDispatch()
   const { user, shopName } = useAuth()
 
-  const VALID_SECTIONS = ['profile', 'general', 'uom', 'members', 'billing']
+  const { role } = usePermissions()
+  const isOwnerAdmin = isOwnerOrAdmin(role)
+
+  const VALID_SECTIONS = isOwnerAdmin ? ['profile', 'general', 'uom', 'members', 'billing'] : ['profile']
 
   // Determine initial active section based on URL or pathname or localStorage
   const [activeSection, setActiveSection] = useState(() => {
+    if (!isOwnerAdmin) return 'profile'
     if (location.pathname === '/workspace-settings') return 'general'
     if (location.pathname === '/account-settings') return 'profile'
     const searchParams = new URLSearchParams(location.search)
@@ -48,6 +54,15 @@ export default function Settings() {
   }, [dispatch])
 
   useEffect(() => {
+    if (!isOwnerAdmin) {
+      if (activeSection !== 'profile') {
+        setActiveSection('profile')
+      }
+      if (location.pathname === '/workspace-settings' || (location.pathname === '/settings' && location.search)) {
+        navigate('/account-settings', { replace: true })
+      }
+      return
+    }
     if (location.pathname === '/workspace-settings') {
       setActiveSection('general')
     } else if (location.pathname === '/account-settings') {
@@ -61,9 +76,14 @@ export default function Settings() {
         setActiveSection('profile')
       }
     }
-  }, [location.pathname, location.search])
+  }, [location.pathname, location.search, isOwnerAdmin])
 
   const selectSection = (key) => {
+    if (!isOwnerAdmin) {
+      setActiveSection('profile')
+      navigate('/account-settings', { replace: true })
+      return
+    }
     const validKey = VALID_SECTIONS.includes(key) ? key : 'profile'
     setActiveSection(validKey)
     localStorage.setItem('ws_active_settings_tab', validKey)
@@ -154,12 +174,12 @@ export default function Settings() {
     { key: 'profile', label: 'Profile', icon: User }
   ]
 
-  const workspaceMenuItems = [
+  const workspaceMenuItems = isOwnerAdmin ? [
     { key: 'general', label: 'General', icon: LayoutGrid },
     { key: 'uom', label: 'Unit of Measure (UOM)', icon: Scale },
     { key: 'members', label: 'Members & Teams', icon: Users },
     { key: 'billing', label: 'Billing', icon: DollarSign }
-  ]
+  ] : []
 
   const filteredPersonal = personalMenuItems.filter(item =>
     item.label.toLowerCase().includes(settingsSearch.toLowerCase().trim())
@@ -387,7 +407,7 @@ export default function Settings() {
           boxSizing: 'border-box'
         }}>
           <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0f172a' }}>
-            {activeSection === 'profile' ? 'Profile' : 
+            {!isOwnerAdmin || activeSection === 'profile' ? 'Profile' : 
              activeSection === 'general' ? 'General' :
              activeSection === 'uom' ? 'Unit of Measure (UOM)' :
              activeSection === 'members' ? 'Members & Teams' :
@@ -565,9 +585,9 @@ export default function Settings() {
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: activeSection === 'uom' ? 'stretch' : 'center',
+          alignItems: (activeSection === 'uom' || activeSection === 'members') ? 'stretch' : 'center',
           justifyContent: 'flex-start',
-          padding: activeSection === 'uom' ? '20px 24px' : '36px 24px 20px',
+          padding: (activeSection === 'uom' || activeSection === 'members') ? '20px 24px' : '36px 24px 20px',
           overflowY: 'auto',
           background: '#ffffff'
         }}>
@@ -843,7 +863,7 @@ export default function Settings() {
           )}
 
           {/* GENERAL WORKSPACE SECTION */}
-          {activeSection === 'general' && (
+          {isOwnerAdmin && activeSection === 'general' && (
             <div style={{ width: '100%', maxWidth: 720 }}>
               
               {/* Header Title & Subtitle */}
@@ -1018,12 +1038,17 @@ export default function Settings() {
           )}
 
           {/* UOM SECTION */}
-          {activeSection === 'uom' && (
+          {isOwnerAdmin && activeSection === 'uom' && (
             <UomManager />
           )}
 
+          {/* MEMBERS & TEAMS SECTION */}
+          {isOwnerAdmin && activeSection === 'members' && (
+            <MembersManager />
+          )}
+
           {/* BILLING SECTION */}
-          {activeSection === 'billing' && (
+          {isOwnerAdmin && activeSection === 'billing' && (
             <div style={{ width: '100%', maxWidth: 720 }}>
               <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #f1f5f9' }}>
                 <h1 style={{ fontSize: '1.45rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.02em' }}>

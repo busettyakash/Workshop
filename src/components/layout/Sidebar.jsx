@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router'
 import {
   Home, Bell, BarChart3, Settings,
-  Package, BookOpen, Receipt, CheckCircle, CheckCircle2, XCircle,
+  Package, BookOpen, Receipt, CheckCircle, CheckCircle2, XCircle, Check,
   Users, UserCheck, GitBranch, Building2,
   Search, ChevronDown, ChevronRight, LogOut, UserPlus, Zap, Menu, X, Plus,
   Briefcase, User, CheckSquare, FileText, Mail, Phone, Send, Folder, LayoutGrid, Play, Star,
@@ -20,6 +20,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { ROUTES } from '../../constants'
 import api from '../../api/client'
 import { authApi } from '../../services/authApi'
+import { isOwnerOrAdmin } from '../../utils/permissionUtils'
 import './Sidebar.css'
 
 let sidebarLeaveTimer = null
@@ -70,6 +71,26 @@ const ALL_NAV_ITEMS = {
   'Unpaid': { icon: 'Unpaid', path: ROUTES.UNPAID },
   'Import Stock': { icon: 'ImportStock', path: ROUTES.IMPORT_STOCK },
   'Settings': { icon: 'Settings', path: '/settings' },
+}
+
+const NAV_MODULE_MAP = {
+  'Home': 'dashboard',
+  'Notes': 'notes',
+  'Emails': 'emails',
+  'Reports': 'reports',
+  'Workflows': 'workflows',
+  'Automations': 'workflows',
+  'Products': 'products',
+  'People': 'people',
+  'Product History': 'price_history',
+  'Price History': 'price_history',
+  'Quotes': 'quotes',
+  'Orders': 'orders',
+  'Import Stock': 'import_stock',
+  'Billing': 'billing',
+  'Paid': 'paid',
+  'Unpaid': 'unpaid',
+  'Chats': 'chats'
 }
 
 const MAIN_NAV = [
@@ -148,7 +169,39 @@ export default function Sidebar() {
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const sidebarTriggerHovered = useAppSelector(selectSidebarTriggerHovered)
   const sidebarContentHovered = useAppSelector(selectSidebarContentHovered)
-  const { shopName } = useAuth()
+  const { shopName, user } = useAuth()
+
+  const [activeRole, setActiveRole] = useState(() => {
+    return sessionStorage.getItem('ws_active_role') || 'Owner'
+  })
+  const [activePermissions, setActivePermissions] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem('ws_active_permissions')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
+  })
+
+  const isOwnerAdmin = isOwnerOrAdmin(activeRole)
+
+  const canAccessNav = (label) => {
+    if (activeRole === 'Admin' || activeRole === 'Owner') {
+      return true
+    }
+    if (!activePermissions || typeof activePermissions !== 'object') {
+      return false
+    }
+    const mod = NAV_MODULE_MAP[label]
+    if (!mod) return true
+    const perm = activePermissions[mod]
+    return perm?.read === true
+  }
+
+  const filteredMainNav = MAIN_NAV.filter(item => canAccessNav(item.label))
+  const filteredRecordsNav = RECORDS_NAV.filter(item => canAccessNav(item.label))
+  const filteredInvoicesNav = INVOICES_NAV.filter(item => canAccessNav(item.label))
+  const showAutomations = canAccessNav('Workflows')
 
   const isHoverPeek = !sidebarOpen && (sidebarTriggerHovered || sidebarContentHovered)
   const isVisible = sidebarOpen || isHoverPeek
@@ -241,7 +294,8 @@ export default function Sidebar() {
       handleNav(item.label)
       navigate(item.path)
     } else if (item.action === 'invite') {
-      setInviteModalOpen(true)
+      navigate('/settings?tab=members&invite=true')
+      window.dispatchEvent(new CustomEvent('ws-open-invite'))
     } else if (item.action === 'logout') {
       handleLogout()
     }
@@ -411,28 +465,78 @@ export default function Sidebar() {
         })
         .catch(() => { })
 
-      authApi.getWorkspaces()
-        .then(data => {
-          setWorkspaces(data || [])
-          const activeId = sessionStorage.getItem('ws_active_workspace_id')
-          const isValid = data?.some(w => String(w.id) === String(activeId))
-          if (!activeId || !isValid) {
-            const owner = data?.find(w => w.isOwner)
-            if (owner) {
-              sessionStorage.setItem('ws_active_workspace_id', owner.id)
-              sessionStorage.setItem('ws_active_workspace_name', owner.shopName)
-              setActiveWorkspaceId(owner.id)
-              setActiveWorkspaceName(owner.shopName)
-            }
-          } else {
-            const current = data?.find(w => String(w.id) === String(activeId))
+      const syncWorkspaces = () => {
+        authApi.getWorkspaces()
+          .then(data => {
+            setWorkspaces(data || [])
+
+            const activeId = sessionStorage.getItem('ws_active_workspace_id')
+            const isValid = data?.some(w => String(w.id) === String(activeId))
+            const current = isValid
+              ? data.find(w => String(w.id) === String(activeId))
+              : data?.[0]
+
             if (current) {
-              sessionStorage.setItem('ws_active_workspace_name', current.shopName)
+              setActiveWorkspaceId(current.id)
               setActiveWorkspaceName(current.shopName)
+              sessionStorage.setItem('ws_active_workspace_id', current.id)
+              sessionStorage.setItem('ws_active_workspace_name', current.shopName)
+
+              const role = current.isOwner ? 'Owner' : (current.role || 'Member')
+              const perms = current.isOwner ? null : (current.permissions || {})
+              const prevRole = sessionStorage.getItem('ws_active_role')
+              const prevPerms = sessionStorage.getItem('ws_active_permissions')
+
+              const permsChanged = JSON.stringify(perms || {}) !== (prevPerms || '{}')
+              const roleChanged = role !== prevRole
+
+              if (roleChanged || permsChanged) {
+                setActiveRole(role)
+                setActivePermissions(perms)
+                sessionStorage.setItem('ws_active_role', role)
+                if (perms) {
+                  sessionStorage.setItem('ws_active_permissions', JSON.stringify(perms))
+                } else {
+                  sessionStorage.removeItem('ws_active_permissions')
+                }
+                // Dispatch live update so all components update immediately without refresh
+                window.dispatchEvent(new CustomEvent('ws_permissions_updated', { detail: { role, perms } }))
+              }
             }
-          }
-        })
-        .catch(() => { })
+          })
+          .catch(() => { })
+      }
+
+      // Initial run
+      syncWorkspaces()
+
+      // 1. Listen for storage events (e.g. Admin saved permissions in another tab)
+      const handleStorage = (e) => {
+        if (e.key === 'ws_permissions_sync_signal') {
+          syncWorkspaces()
+        }
+      }
+      window.addEventListener('storage', handleStorage)
+
+      // 2. Listen for tab focus and visibility change
+      const handleFocus = () => syncWorkspaces()
+      window.addEventListener('focus', handleFocus)
+      const handleVisibility = () => {
+        if (!document.hidden) syncWorkspaces()
+      }
+      document.addEventListener('visibilitychange', handleVisibility)
+
+      // 3. Periodic fallback sync (only when tab is actively visible, every 30s)
+      const intervalId = setInterval(() => {
+        if (!document.hidden) syncWorkspaces()
+      }, 30000)
+
+      return () => {
+        window.removeEventListener('storage', handleStorage)
+        window.removeEventListener('focus', handleFocus)
+        document.removeEventListener('visibilitychange', handleVisibility)
+        clearInterval(intervalId)
+      }
     }
   }, [])
 
@@ -556,8 +660,12 @@ export default function Sidebar() {
                     onClick={() => {
                       sessionStorage.setItem('ws_active_workspace_id', w.id)
                       sessionStorage.setItem('ws_active_workspace_name', w.shopName)
+                      sessionStorage.setItem('ws_active_role', w.role || (w.isOwner ? 'Owner' : 'Member'))
+                      sessionStorage.setItem('ws_active_permissions', JSON.stringify(w.permissions || {}))
                       setActiveWorkspaceId(w.id)
                       setActiveWorkspaceName(w.shopName)
+                      setActiveRole(w.role || (w.isOwner ? 'Owner' : 'Member'))
+                      setActivePermissions(w.permissions || {})
                       setWorkspaceDropdownOpen(false)
                       window.location.reload()
                     }}
@@ -606,37 +714,42 @@ export default function Sidebar() {
               })}
 
               {/* New Workspace button */}
-              <button
-                onClick={() => {
-                  setWorkspaceDropdownOpen(false)
-                  navigate('/settings')
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  border: 'none',
-                  borderRadius: '6px',
-                  background: 'transparent',
-                  color: '#344054',
-                  cursor: 'pointer',
-                  fontSize: '0.78rem',
-                  fontWeight: 500,
-                  textAlign: 'left',
-                  fontFamily: 'inherit'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <Plus size={14} style={{ color: '#64748b' }} />
-                <span>New workspace</span>
-              </button>
+              {/* Create new workspace (Owner/Admin only) */}
+              {isOwnerAdmin && (
+                <>
+                  <button
+                    onClick={() => {
+                      setWorkspaceDropdownOpen(false)
+                      navigate('/settings')
+                    }}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 8px',
+                      border: 'none',
+                      borderRadius: '6px',
+                      background: 'transparent',
+                      color: '#344054',
+                      cursor: 'pointer',
+                      fontSize: '0.78rem',
+                      fontWeight: 500,
+                      textAlign: 'left',
+                      fontFamily: 'inherit'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <Plus size={14} style={{ color: '#64748b' }} />
+                    <span>New workspace</span>
+                  </button>
 
-              <div style={{ height: '1px', background: '#f1f5f9', margin: '3px 0' }} />
+                  <div style={{ height: '1px', background: '#f1f5f9', margin: '3px 0' }} />
+                </>
+              )}
 
-              {/* Account Settings */}
+              {/* Account Settings (Everyone) */}
               <button
                 onClick={() => {
                   setWorkspaceDropdownOpen(false)
@@ -665,65 +778,73 @@ export default function Sidebar() {
                 <span>Account settings</span>
               </button>
 
-              {/* Workspace Settings */}
-              <button
-                onClick={() => {
-                  setWorkspaceDropdownOpen(false)
-                  navigate('/workspace-settings')
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  border: 'none',
-                  borderRadius: '6px',
-                  background: 'transparent',
-                  color: '#344054',
-                  cursor: 'pointer',
-                  fontSize: '0.78rem',
-                  fontWeight: 500,
-                  textAlign: 'left',
-                  fontFamily: 'inherit'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <Settings size={14} style={{ color: '#64748b' }} />
-                <span>Workspace settings</span>
-              </button>
+              {/* Workspace Settings & Invite (Owner/Admin only) */}
+              {isOwnerAdmin && (
+                <>
+                  <div style={{ height: '1px', background: '#f1f5f9', margin: '3px 0' }} />
 
-              <div style={{ height: '1px', background: '#f1f5f9', margin: '3px 0' }} />
+                  {/* Workspace Settings */}
+                  <button
+                    onClick={() => {
+                      setWorkspaceDropdownOpen(false)
+                      navigate('/workspace-settings')
+                    }}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 8px',
+                      border: 'none',
+                      borderRadius: '6px',
+                      background: 'transparent',
+                      color: '#344054',
+                      cursor: 'pointer',
+                      fontSize: '0.78rem',
+                      fontWeight: 500,
+                      textAlign: 'left',
+                      fontFamily: 'inherit'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <Settings size={14} style={{ color: '#64748b' }} />
+                    <span>Workspace settings</span>
+                  </button>
 
-              {/* Invite Team Members */}
-              <button
-                onClick={() => {
-                  setWorkspaceDropdownOpen(false)
-                  setInviteModalOpen(true)
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  border: 'none',
-                  borderRadius: '6px',
-                  background: 'transparent',
-                  color: '#344054',
-                  cursor: 'pointer',
-                  fontSize: '0.78rem',
-                  fontWeight: 500,
-                  textAlign: 'left',
-                  fontFamily: 'inherit'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <UserPlus size={14} style={{ color: '#64748b' }} />
-                <span>Invite team members</span>
-              </button>
+                  <div style={{ height: '1px', background: '#f1f5f9', margin: '3px 0' }} />
+
+                  {/* Invite Team Members */}
+                  <button
+                    onClick={() => {
+                      setWorkspaceDropdownOpen(false)
+                      navigate('/settings?tab=members&invite=true')
+                      window.dispatchEvent(new CustomEvent('ws-open-invite'))
+                    }}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 8px',
+                      border: 'none',
+                      borderRadius: '6px',
+                      background: 'transparent',
+                      color: '#344054',
+                      cursor: 'pointer',
+                      fontSize: '0.78rem',
+                      fontWeight: 500,
+                      textAlign: 'left',
+                      fontFamily: 'inherit'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <UserPlus size={14} style={{ color: '#64748b' }} />
+                    <span>Invite team members</span>
+                  </button>
+                </>
+              )}
 
               <div style={{ height: '1px', background: '#f1f5f9', margin: '3px 0' }} />
 
@@ -773,7 +894,7 @@ export default function Sidebar() {
         <nav className="ws-sb-nav">
           {/* Main List */}
           <div className="ws-sb-nav-list">
-            {MAIN_NAV.map(item => (
+            {filteredMainNav.map(item => (
               <NavItem
                 key={item.label}
                 item={item}
@@ -785,41 +906,43 @@ export default function Sidebar() {
             ))}
 
             {/* Collapsible Automations Item */}
-            <div className="ws-sb-collapsible-item">
-              <div className={`ws-sb-nav-item-wrapper ${activeNav === 'Workflows' ? 'active' : ''}`}>
-                <button
-                  className="ws-sb-nav-item-btn"
-                  onClick={toggleAutomations}
-                >
-                  {ICON_MAP.Automations}
-                  <span>Automations</span>
-                </button>
-                <button
-                  className={`ws-sb-arrow-btn ${automationsOpen ? 'rotated' : ''}`}
-                  onClick={toggleAutomations}
-                  aria-label="Toggle sublist"
-                >
-                  <ChevronRight size={12} className="ws-sb-arrow" />
-                </button>
-              </div>
-
-              {automationsOpen && (
-                <div className="ws-sb-sublist">
-                  <Link to="/workflows" style={{ textDecoration: 'none' }} onClick={() => handleNav('Workflows')}>
-                    <div className={`ws-sb-subitem ${activeNav === 'Workflows' ? 'active' : ''}`}>
-                      {ICON_MAP.Workflows}
-                      <span>Workflows</span>
-                      <button
-                        className={`ws-sb-star-btn ${favorites.includes('Workflows') ? 'favorited' : ''}`}
-                        onClick={(e) => toggleFavorite('Workflows', e)}
-                      >
-                        <Star size={10} fill={favorites.includes('Workflows') ? "#eab308" : "none"} stroke={favorites.includes('Workflows') ? "#eab308" : "currentColor"} />
-                      </button>
-                    </div>
-                  </Link>
+            {showAutomations && (
+              <div className="ws-sb-collapsible-item">
+                <div className={`ws-sb-nav-item-wrapper ${activeNav === 'Workflows' ? 'active' : ''}`}>
+                  <button
+                    className="ws-sb-nav-item-btn"
+                    onClick={toggleAutomations}
+                  >
+                    {ICON_MAP.Automations}
+                    <span>Automations</span>
+                  </button>
+                  <button
+                    className={`ws-sb-arrow-btn ${automationsOpen ? 'rotated' : ''}`}
+                    onClick={toggleAutomations}
+                    aria-label="Toggle sublist"
+                  >
+                    <ChevronRight size={12} className="ws-sb-arrow" />
+                  </button>
                 </div>
-              )}
-            </div>
+
+                {automationsOpen && (
+                  <div className="ws-sb-sublist">
+                    <Link to="/workflows" style={{ textDecoration: 'none' }} onClick={() => handleNav('Workflows')}>
+                      <div className={`ws-sb-subitem ${activeNav === 'Workflows' ? 'active' : ''}`}>
+                        {ICON_MAP.Workflows}
+                        <span>Workflows</span>
+                        <button
+                          className={`ws-sb-star-btn ${favorites.includes('Workflows') ? 'favorited' : ''}`}
+                          onClick={(e) => toggleFavorite('Workflows', e)}
+                        >
+                          <Star size={10} fill={favorites.includes('Workflows') ? "#eab308" : "none"} stroke={favorites.includes('Workflows') ? "#eab308" : "currentColor"} />
+                        </button>
+                      </div>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Favorites Collapsible Section */}
@@ -837,7 +960,7 @@ export default function Sidebar() {
                 {favorites.length === 0 ? (
                   <div className="ws-sb-empty-note">No favorites added yet</div>
                 ) : (
-                  favorites.map(favLabel => {
+                  favorites.filter(favLabel => canAccessNav(favLabel)).map(favLabel => {
                     const details = ALL_NAV_ITEMS[favLabel]
                     if (!details) return null
                     return (
@@ -861,146 +984,160 @@ export default function Sidebar() {
           </div>
 
           {/* Collapsible Records Item */}
-          <div className="ws-sb-collapsible-item">
-            <div className="ws-sb-nav-item-wrapper">
-              <button
-                className="ws-sb-nav-item-btn"
-                onClick={toggleRecords}
-              >
-                {ICON_MAP.Folder}
-                <span>Records</span>
-              </button>
-              <button
-                className={`ws-sb-arrow-btn ${recordsOpen ? 'rotated' : ''}`}
-                onClick={toggleRecords}
-                aria-label="Toggle sublist"
-              >
-                <ChevronRight size={12} className="ws-sb-arrow" />
-              </button>
-            </div>
-
-            {recordsOpen && (
-              <div className="ws-sb-sublist">
-                {RECORDS_NAV.map(item => (
-                  <Link to={item.path} key={item.label} style={{ textDecoration: 'none' }} onClick={() => handleNav(item.label)}>
-                    <div className={`ws-sb-subitem ${activeNav === item.label ? 'active' : ''}`}>
-                      {ICON_MAP[item.icon]}
-                      <span>{item.label}</span>
-                      <button
-                        className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
-                        onClick={(e) => toggleFavorite(item.label, e)}
-                      >
-                        <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
-                      </button>
-                    </div>
-                  </Link>
-                ))}
+          {filteredRecordsNav.length > 0 && (
+            <div className="ws-sb-collapsible-item">
+              <div className="ws-sb-nav-item-wrapper">
+                <button
+                  className="ws-sb-nav-item-btn"
+                  onClick={toggleRecords}
+                >
+                  {ICON_MAP.Folder}
+                  <span>Records</span>
+                </button>
+                <button
+                  className={`ws-sb-arrow-btn ${recordsOpen ? 'rotated' : ''}`}
+                  onClick={toggleRecords}
+                  aria-label="Toggle sublist"
+                >
+                  <ChevronRight size={12} className="ws-sb-arrow" />
+                </button>
               </div>
-            )}
-          </div>
+
+              {recordsOpen && (
+                <div className="ws-sb-sublist">
+                  {filteredRecordsNav.map(item => (
+                    <Link to={item.path} key={item.label} style={{ textDecoration: 'none' }} onClick={() => handleNav(item.label)}>
+                      <div className={`ws-sb-subitem ${activeNav === item.label ? 'active' : ''}`}>
+                        {ICON_MAP[item.icon]}
+                        <span>{item.label}</span>
+                        <button
+                          className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
+                          onClick={(e) => toggleFavorite(item.label, e)}
+                        >
+                          <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
+                        </button>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Collapsible Billing Item */}
-          <div className="ws-sb-collapsible-item">
-            <div className="ws-sb-nav-item-wrapper">
-              <button
-                className="ws-sb-nav-item-btn"
-                onClick={toggleBilling}
-              >
-                {ICON_MAP.Billing}
-                <span>Billing</span>
-              </button>
-              <button
-                className={`ws-sb-arrow-btn ${billingOpen ? 'rotated' : ''}`}
-                onClick={toggleBilling}
-                aria-label="Toggle sublist"
-              >
-                <ChevronRight size={12} className="ws-sb-arrow" />
-              </button>
-            </div>
-
-            {billingOpen && (
-              <div className="ws-sb-sublist">
-                {INVOICES_NAV.map(item => (
-                  <Link to={item.path} key={item.label} style={{ textDecoration: 'none' }} onClick={() => handleNav(item.label)}>
-                    <div className={`ws-sb-subitem ${activeNav === item.label ? 'active' : ''}`}>
-                      {ICON_MAP[item.icon]}
-                      <span>{item.label}</span>
-                      <button
-                        className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
-                        onClick={(e) => toggleFavorite(item.label, e)}
-                      >
-                        <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
-                      </button>
-                    </div>
-                  </Link>
-                ))}
+          {filteredInvoicesNav.length > 0 && (
+            <div className="ws-sb-collapsible-item">
+              <div className="ws-sb-nav-item-wrapper">
+                <button
+                  className="ws-sb-nav-item-btn"
+                  onClick={toggleBilling}
+                >
+                  {ICON_MAP.Billing}
+                  <span>Billing</span>
+                </button>
+                <button
+                  className={`ws-sb-arrow-btn ${billingOpen ? 'rotated' : ''}`}
+                  onClick={toggleBilling}
+                  aria-label="Toggle sublist"
+                >
+                  <ChevronRight size={12} className="ws-sb-arrow" />
+                </button>
               </div>
-            )}
-          </div>
+
+              {billingOpen && (
+                <div className="ws-sb-sublist">
+                  {filteredInvoicesNav.map(item => (
+                    <Link to={item.path} key={item.label} style={{ textDecoration: 'none' }} onClick={() => handleNav(item.label)}>
+                      <div className={`ws-sb-subitem ${activeNav === item.label ? 'active' : ''}`}>
+                        {ICON_MAP[item.icon]}
+                        <span>{item.label}</span>
+                        <button
+                          className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
+                          onClick={(e) => toggleFavorite(item.label, e)}
+                        >
+                          <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
+                        </button>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Collapsible Chats Section */}
-          <div className="ws-sb-section">
-            <button
-              className="ws-sb-section-header"
-              onClick={toggleChats}
-            >
-              <ChevronRight size={12} className={`ws-sb-arrow ${chatsOpen ? 'rotated' : ''}`} />
-              <span>Chats</span>
-            </button>
+          {canAccessNav('Chats') && (
+            <div className="ws-sb-section">
+              <button
+                className="ws-sb-section-header"
+                onClick={toggleChats}
+              >
+                <ChevronRight size={12} className={`ws-sb-arrow ${chatsOpen ? 'rotated' : ''}`} />
+                <span>Chats</span>
+              </button>
 
-            {chatsOpen && (
-              <div className="ws-sb-section-body">
-                {chats.length === 0 ? (
-                  <div className="ws-sb-empty-note">No recent chats</div>
-                ) : (
-                  <>
-                    {chats.slice(0, 5).map(chat => {
-                      const isActive = activeSessionId && (String(activeSessionId) === String(chat.id) || String(activeSessionId) === String(chat.conversation_id))
-                      return (
-                        <Link
-                          to={`/dashboard?session=${chat.id}`}
-                          key={chat.id}
-                          style={{ textDecoration: 'none' }}
-                          onClick={() => handleNav('Home')}
-                        >
-                          <div className={`ws-sb-subitem ${isActive ? 'active' : ''}`}>
-                            <MessageSquare size={13} style={{ flexShrink: 0, color: '#6b7280' }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {chat.title || 'Untitled chat'}
-                            </span>
-                          </div>
-                        </Link>
-                      )
-                    })}
+              {chatsOpen && (
+                <div className="ws-sb-section-body">
+                  {chats.length === 0 ? (
+                    <div className="ws-sb-empty-note">No recent chats</div>
+                  ) : (
+                    <>
+                      {chats.slice(0, 5).map(chat => {
+                        const isActive = activeSessionId && (String(activeSessionId) === String(chat.id) || String(activeSessionId) === String(chat.conversation_id))
+                        return (
+                          <Link
+                            to={`/dashboard?session=${chat.id}`}
+                            key={chat.id}
+                            style={{ textDecoration: 'none' }}
+                            onClick={() => handleNav('Home')}
+                          >
+                            <div className={`ws-sb-subitem ${isActive ? 'active' : ''}`}>
+                              <MessageSquare size={13} style={{ flexShrink: 0, color: '#6b7280' }} />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {chat.title || 'Untitled chat'}
+                              </span>
+                            </div>
+                          </Link>
+                        )
+                      })}
 
-                    <button
-                      type="button"
-                      className="ws-sb-subitem"
-                      onClick={() => {
-                        dispatch(toggleAllChatsPanel())
-                      }}
-                      style={{ background: 'none', border: 'none', width: '100%', cursor: 'pointer', color: '#6b7280', fontSize: '0.8rem' }}
-                    >
-                      <MoreHorizontal size={13} style={{ flexShrink: 0 }} />
-                      <span>All chats</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+                      <button
+                        type="button"
+                        className="ws-sb-subitem"
+                        onClick={() => {
+                          dispatch(toggleAllChatsPanel())
+                        }}
+                        style={{ background: 'none', border: 'none', width: '100%', cursor: 'pointer', color: '#6b7280', fontSize: '0.8rem' }}
+                      >
+                        <MoreHorizontal size={13} style={{ flexShrink: 0 }} />
+                        <span>All chats</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
         </nav>
 
         {/* Bottom */}
-        <div className="ws-sb-bottom">
-          <div className="ws-sb-footer-actions">
-            <button className="ws-sb-invite-btn" onClick={() => setInviteModalOpen(true)}>
-              <UserPlus size={14} />
-              Invite teammates
-            </button>
+        {isOwnerOrAdmin(activeRole) && (
+          <div className="ws-sb-bottom">
+            <div className="ws-sb-footer-actions">
+              <button
+                className="ws-sb-invite-btn"
+                onClick={() => {
+                  navigate('/settings?tab=members&invite=true')
+                  window.dispatchEvent(new CustomEvent('ws-open-invite'))
+                }}
+              >
+                <UserPlus size={14} />
+                Invite teammates
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </aside>
 
       {/* All Chats Side Drawer*/}
@@ -1277,14 +1414,11 @@ export default function Sidebar() {
                           transition: 'background 0.15s'
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
-                          <span style={{ fontWeight: 600, color: '#0f172a' }}>Member</span>
-                          <span style={{ color: '#cbd5e1' }}>•</span>
-                          <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 500 }}>can edit</span>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>Member</span>
+                          <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Can access designated workspace modules</span>
                         </div>
-                        {inviteRole === 'Member' && (
-                          <CheckCircle2 size={15} fill="#2563eb" color="#ffffff" />
-                        )}
+                        {inviteRole === 'Member' && <Check size={16} color="#6366f1" />}
                       </div>
 
                       {/* Admin */}
@@ -1312,14 +1446,11 @@ export default function Sidebar() {
                           transition: 'background 0.15s'
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
-                          <span style={{ fontWeight: 600, color: '#0f172a' }}>Admin</span>
-                          <span style={{ color: '#cbd5e1' }}>•</span>
-                          <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 500 }}>full access</span>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>Admin</span>
+                          <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Full access to settings and all modules</span>
                         </div>
-                        {inviteRole === 'Admin' && (
-                          <CheckCircle2 size={15} fill="#2563eb" color="#ffffff" />
-                        )}
+                        {inviteRole === 'Admin' && <Check size={16} color="#6366f1" />}
                       </div>
                     </div>
                   )}

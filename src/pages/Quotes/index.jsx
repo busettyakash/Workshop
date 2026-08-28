@@ -14,6 +14,7 @@ import TablePagination from '../../components/ui/TablePagination'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import BillPreview from '../Billing/BillPreview'
 import QuotePreviewModal from './QuotePreviewModal'
+import { usePermissions, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 
 function useCloseOnOutsideClick(containerRef, setOpen) {
   useEffect(() => {
@@ -1194,7 +1195,10 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
 export default function Quotes() {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  const { canRead, canCreate, canEdit, canDelete } = usePermissions('quotes')
 
   const [quotes, setQuotes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1244,17 +1248,31 @@ export default function Quotes() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Quotes'))
     dispatch(setSidebarOpen(true))
     fetchQuotes(page)
 
-    // Real-time auto polling so quote acceptance/rejection from customer emails or other tabs updates automatically without full page reload
+    // Poll for quote acceptance/rejection from customer emails (only when tab is visible)
     const pollTimer = setInterval(() => {
-      fetchQuotes(page, true)
-    }, 3500)
+      if (!document.hidden) {
+        fetchQuotes(page, true)
+      }
+    }, 15000)
 
-    return () => clearInterval(pollTimer)
-  }, [dispatch, page, search, filterStatus])
+    const handleFocus = () => {
+      if (!document.hidden) fetchQuotes(page, true)
+    }
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      clearInterval(pollTimer)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [dispatch, page, search, filterStatus, canRead])
 
   const handleUpdateStatus = async (quoteId, newStatus) => {
     // Optimistic UI state update
@@ -1351,12 +1369,14 @@ export default function Quotes() {
                       <Filter size={13} /> Filter
                     </button>
 
-                    <button
-                      className="attio-btn attio-btn-primary"
-                      onClick={() => setIsFormOpen(true)}
-                    >
-                      <Plus size={14} /> Create Quote
-                    </button>
+                    {canCreate && (
+                      <button
+                        className="attio-btn attio-btn-primary"
+                        onClick={() => setIsFormOpen(true)}
+                      >
+                        <Plus size={14} /> Create Quote
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1524,7 +1544,7 @@ export default function Quotes() {
                                     >
                                       <Eye size={12} /> View
                                     </button>
-                                    {row.status !== 'Accepted' && (
+                                    {canEdit && row.status !== 'Accepted' && (
                                       <button
                                         className="ws-table-btn ws-table-btn--secondary"
                                         style={{ padding: '3px 8px', gap: 4, display: 'inline-flex', alignItems: 'center' }}
@@ -1534,14 +1554,16 @@ export default function Quotes() {
                                         <Edit2 size={12} /> Edit
                                       </button>
                                     )}
-                                    <button
-                                      className="ws-table-btn ws-table-btn--danger"
-                                      style={{ padding: '3px 8px', color: '#dc2626' }}
-                                      onClick={() => setConfirmDelete({ isOpen: true, id: row.id, number: row.quote_number })}
-                                      title="Delete Quote"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
+                                    {canDelete && (
+                                      <button
+                                        className="ws-table-btn ws-table-btn--danger"
+                                        style={{ padding: '3px 8px', color: '#dc2626' }}
+                                        onClick={() => setConfirmDelete({ isOpen: true, id: row.id, number: row.quote_number })}
+                                        title="Delete Quote"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>

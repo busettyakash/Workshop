@@ -6,6 +6,7 @@ import AuthLayout from '../../components/layout/AuthLayout'
 import { useAppDispatch } from '../../redux/hooks'
 import { loginThunk } from '../../redux/slices/authSlice'
 import { addToast } from '../../redux/slices/uiSlice'
+import { getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import './Auth.css'
 
 export default function Login() {
@@ -29,7 +30,10 @@ export default function Login() {
       const resultAction = await dispatch(loginThunk({ email, password }))
       if (loginThunk.fulfilled.match(resultAction)) {
         dispatch(addToast({ message: 'Welcome back! Login successful.', type: 'success' }))
-        navigate('/dashboard')
+        const role = resultAction.payload?.activeRole
+        const perms = resultAction.payload?.activePermissions
+        const targetRoute = getFirstAccessibleRoute(perms, role)
+        navigate(targetRoute)
       } else {
         showError(resultAction.payload || 'Invalid email or password. Please try again.')
       }

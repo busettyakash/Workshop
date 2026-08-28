@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
-import { useLocation } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { Mail, Send, Trash2, Plus, Search, Paperclip, Loader2, X, RefreshCw } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../hooks/useAuth'
+import { hasModulePermission, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import '../Dashboard/Dashboard.css'
 
 function getInitials(name = '') {
@@ -36,9 +37,20 @@ function formatDate(dateStr) {
 
 export default function Emails() {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const { user } = useAuth()
   const location = useLocation()
+
+  // Redirect if user lacks emails permission
+  useEffect(() => {
+    if (!hasModulePermission('emails')) {
+      const target = getFirstAccessibleRoute()
+      if (target && target !== '/emails') {
+        navigate(target, { replace: true })
+      }
+    }
+  }, [navigate])
 
   const [emails, setEmails] = useState([])
   const [loading, setLoading] = useState(true)

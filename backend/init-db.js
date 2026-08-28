@@ -240,6 +240,8 @@ async function createTables() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+
+      ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
     `);
     console.log('All database tables created successfully!');
 
@@ -296,12 +298,25 @@ async function createTables() {
       console.log('ℹ️ Session timeout notice:', tErr.message);
     }
 
-    // ── Create missing foreign-key indexes for performance optimization ──
+    // ── Create missing foreign-key and search indexes for performance optimization ──
     const indexQueries = [
       "CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items(bill_id)",
       "CREATE INDEX IF NOT EXISTS idx_bill_items_product_id ON bill_items(product_id)",
       "CREATE INDEX IF NOT EXISTS idx_bills_customer_id ON bills(customer_id)",
-      "CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON workflow_runs(workflow_id)"
+      "CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON workflow_runs(workflow_id)",
+      "CREATE INDEX IF NOT EXISTS idx_shop_profiles_email ON shop_profiles(LOWER(email))",
+      "CREATE INDEX IF NOT EXISTS idx_shop_profiles_user_id ON shop_profiles(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_workspace_members_member_email ON workspace_members(LOWER(member_email))",
+      "CREATE INDEX IF NOT EXISTS idx_workspace_members_owner_id ON workspace_members(workspace_owner_id)",
+      "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_bills_user_id ON bills(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_bills_status ON bills(status)",
+      "CREATE INDEX IF NOT EXISTS idx_quotes_user_id ON quotes(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status)",
+      "CREATE INDEX IF NOT EXISTS idx_people_user_id ON people(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_customers_user_id ON customers(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_import_stock_user_id ON import_stock(user_id)"
     ];
 
     console.log('Creating missing foreign-key indexes...');

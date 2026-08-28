@@ -7,6 +7,7 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import { ArrowLeft, Loader2, Info } from 'lucide-react'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
+import { canEditModule } from '../../utils/permissionUtils'
 
 const PERSONA_OPTIONS = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
 const STATUS_OPTIONS  = ['active', 'inactive']
@@ -58,6 +59,8 @@ export default function PersonForm() {
   const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
 
+  const canEdit = canEditModule('people')
+
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState({})
@@ -68,9 +71,14 @@ export default function PersonForm() {
   })
 
   useEffect(() => {
+    if (!canEdit) {
+      dispatch(addToast({ message: 'You do not have permission to create or edit people', type: 'error' }))
+      navigate('/people', { replace: true })
+      return
+    }
     dispatch(setActiveNav('People'))
     if (id) fetchPerson()
-  }, [id, dispatch])
+  }, [id, dispatch, canEdit])
 
   const fetchPerson = async () => {
     try {

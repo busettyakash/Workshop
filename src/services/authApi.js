@@ -27,6 +27,9 @@ export const authApi = {
       referralSource:  data.referralSource,
       usageType:       data.usageType,
       inviteEmail:     data.inviteEmail,
+      isInvite:        data.isInvite,
+      inviteFrom:      data.inviteFrom,
+      workspace:       data.workspace,
     })
     return res.data
   },
@@ -66,8 +69,8 @@ export const authApi = {
     return res.data
   },
 
-  invite: async ({ email, role }) => {
-    const res = await apiClient.post('/auth/invite', { email, role })
+  invite: async ({ email, role, permissions }) => {
+    const res = await apiClient.post('/auth/invite', { email, role, permissions })
     return res.data
   },
 
@@ -78,6 +81,16 @@ export const authApi = {
 
   getMembers: async () => {
     const res = await apiClient.get('/auth/members')
+    return res.data
+  },
+
+  updateMemberPermissions: async (memberId, { role, permissions }) => {
+    const res = await apiClient.put(`/auth/members/${memberId}/permissions`, { role, permissions })
+    return res.data
+  },
+
+  deleteMember: async (memberId) => {
+    const res = await apiClient.delete(`/auth/members/${memberId}`)
     return res.data
   },
 }

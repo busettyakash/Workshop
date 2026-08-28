@@ -21,6 +21,7 @@ import { apiLimiter, authLimiter }   from '../middleware/rateLimit.js'
 
 const OTP_TTL_SECONDS       = 300
 const OTP_COOLDOWN_SECONDS  = 60
+const OTP_SEND_LOCK_SECONDS = 30
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret'
 
 // ─────────────────────────────────────────────

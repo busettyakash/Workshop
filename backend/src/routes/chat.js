@@ -344,7 +344,7 @@ Always run database queries to get real-time accurate information when asked abo
                   try {
                     const { rows } = await query(cleanSql)
                     toolResult = { success: true, rows }
-                  } catch (origErr) {
+                  } catch (_origErr) {
                     toolResult = { error: sqlErr.message }
                   }
                 }

@@ -1,7 +1,3 @@
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-}
-
 import dns from 'node:dns'
 import pg from 'pg'
 
@@ -50,7 +46,7 @@ const getPoolMax = () => {
 const createPool = () => new Pool({
   connectionString: dbUrl,
   application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
-  ssl: { rejectUnauthorized: false },
+  ssl: true,
   max: getPoolMax(),
   min: 1,
   idleTimeoutMillis: 30000,

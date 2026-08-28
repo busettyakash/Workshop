@@ -210,7 +210,7 @@ router.post('/sync', async (req, res) => {
     const result = await syncGmailInbox(userId, { limit: 50 }).catch(err => ({ synced: 0, error: err.message }))
     await clearEmailsCache(userId).catch(() => {})
     res.json({ message: 'Inbox sync completed', synced: result.synced || 0, error: result.error || null })
-  } catch (err) {
+  } catch (_err) {
     res.json({ message: 'Inbox sync completed', synced: 0, error: null })
   }
 })

@@ -370,7 +370,7 @@ const sendQuoteDeclinedEmailToCustomer = async (quote) => {
   }
 }
 
-const sendInvoiceEmailToCustomer = async (quote, bill, billItems, orderNumber = null) => {
+const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber = null) => {
   if (!quote?.customer_email) return
 
   // Check if "Send Invoice Email" node is enabled in active workflow

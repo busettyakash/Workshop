@@ -9,6 +9,7 @@ import { ArrowUpDown, Eye, Loader2, Search } from 'lucide-react'
 import { getAvatarColor, getSingleLetter } from '../../utils/tableHelpers'
 import { useNavigate } from 'react-router'
 import { usePermissions, getFirstAccessibleRoute } from '../../utils/permissionUtils'
+import QuotePreviewModal from '../Quotes/QuotePreviewModal'
 import '../Dashboard/Dashboard.css'
 import '../Products/Products.css'
 

@@ -311,7 +311,7 @@ router.get('/:id', async (req, res) => {
     }
     res.json(responsePayload)
   } catch (err) {
-    console.error('%s GET /%s — ERROR: %s', LOG_PREFIX, req.params.id, err.message)
+    console.error('%s GET /:id — ERROR: %s', LOG_PREFIX, err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -355,7 +355,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const userId = req.workspaceId
   const { name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state, note, add_stock_qty, supplier_total_cost } = req.body
-  console.log(`${LOG_PREFIX} PUT /${req.params.id} — userId: ${userId}, name: ${name}`)
+  console.log('%s PUT /:id', LOG_PREFIX)
   try {
     const oldImport = await query('SELECT sku, name, stock, updated_price, updated_price_date FROM import_stock WHERE id = $1 AND user_id = $2', [req.params.id, userId]);
     const oldRec = oldImport.rows[0]
@@ -470,11 +470,11 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    console.log(`${LOG_PREFIX} PUT /${req.params.id} — SUCCESS`)
+    console.log('%s PUT /:id — SUCCESS', LOG_PREFIX)
     await clearImportStockCache(userId)
     res.json(rows[0])
   } catch (err) {
-    console.error('%s PUT /%s — ERROR: %s', LOG_PREFIX, req.params.id, err.message)
+    console.error('%s PUT /:id — ERROR: %s', LOG_PREFIX, err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -563,7 +563,7 @@ router.delete('/:id/payments/:paymentId', async (req, res) => {
 router.post('/bulk-add-to-products', async (req, res) => {
   const userId = req.workspaceId
   const { ids } = req.body
-  console.log('%s POST /bulk-add-to-products — userId: %s, ids:', LOG_PREFIX, userId, ids)
+  console.log('%s POST /bulk-add-to-products', LOG_PREFIX)
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
     console.warn(`${LOG_PREFIX} POST /bulk-add-to-products — VALIDATION FAILED: invalid ids`)
     return res.status(400).json({ error: 'ids array is required' })
@@ -714,10 +714,10 @@ router.post('/:id/add-to-products', async (req, res) => {
     )
 
     await clearImportStockCache(userId)
-    console.log(`${LOG_PREFIX} POST /${req.params.id}/add-to-products — SUCCESS`)
+    console.log('%s POST /:id/add-to-products — SUCCESS', LOG_PREFIX)
     res.json(rows[0])
   } catch (err) {
-    console.error('%s POST /%s/add-to-products — ERROR: %s', LOG_PREFIX, req.params.id, err.message)
+    console.error('%s POST /:id/add-to-products — ERROR: %s', LOG_PREFIX, err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -725,15 +725,15 @@ router.post('/:id/add-to-products', async (req, res) => {
 /* DELETE /api/import-stock/:id */
 router.delete('/:id', async (req, res) => {
   const userId = req.workspaceId
-  console.log(`${LOG_PREFIX} DELETE /${req.params.id} — userId: ${userId}`)
+  console.log('%s DELETE /:id', LOG_PREFIX)
   try {
     await query('DELETE FROM import_stock WHERE id = $1 AND user_id = $2', [req.params.id, userId])
     await query('DELETE FROM import_stock_payments WHERE import_stock_id = $1 AND user_id = $2', [req.params.id, userId]).catch(() => {})
     await clearImportStockCache(userId)
-    console.log(`${LOG_PREFIX} DELETE /${req.params.id} — SUCCESS`)
+    console.log('%s DELETE /:id — SUCCESS', LOG_PREFIX)
     res.json({ message: 'Import stock deleted' })
   } catch (err) {
-    console.error('%s DELETE /%s — ERROR: %s', LOG_PREFIX, req.params.id, err.message)
+    console.error('%s DELETE /:id — ERROR: %s', LOG_PREFIX, err.message)
     res.status(500).json({ error: err.message })
   }
 })

@@ -351,7 +351,7 @@ const sendQuoteDeclinedEmailToCustomer = async (quote) => {
   if (sendRes?.error) {
     console.error('[Declined Email Failed]', sendRes.error.message)
   } else {
-    console.log(`[Declined Email Sent] ✅ Sent quotation decline follow-up email to ${quote.customer_email}`)
+    console.log('[Declined Email Sent] ✅ Sent quotation decline follow-up email')
     
     // Save email log into emails table
     await pool.query(
@@ -511,7 +511,7 @@ const sendOrderConfirmationEmailToCustomer = async (quote, bill, billItems, orde
   if (sendRes?.error) {
     console.error('[Order Confirmation Email Failed]', sendRes.error.message)
   } else {
-    console.log(`[Order Confirmation Email Sent] ✅ Sent to ${quote.customer_email} with invoice ${invNum}`)
+    console.log('[Order Confirmation Email Sent] ✅ Sent order confirmation email')
   }
 
   // Save email log

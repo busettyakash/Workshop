@@ -1211,7 +1211,7 @@ router.delete('/members/:id', apiLimiter, requireAuth, async (req, res) => {
       await redis.del(`user_id_map:${targetEmail}`).catch(() => {})
     }
 
-    console.log(`[DATABASE] Member ${memberId} permanently deleted from workspace and Authentication`)
+    console.log('[DATABASE] Member permanently deleted from workspace and Authentication')
     res.json({ message: 'Member permanently deleted from workspace and Authentication' })
   } catch (err) {
     console.error('[MEMBER DELETE DATABASE ERROR]', err.message)

@@ -13,7 +13,7 @@ import {
 import jwt            from 'jsonwebtoken'
 import { createHash, randomInt } from 'node:crypto'
 import { requireAuth }  from '../middleware/auth.js'
-import { apiLimiter }   from '../middleware/rateLimit.js'
+import { apiLimiter, authLimiter }   from '../middleware/rateLimit.js'
 
 // ─────────────────────────────────────────────
 //  Constants
@@ -21,8 +21,7 @@ import { apiLimiter }   from '../middleware/rateLimit.js'
 
 const OTP_TTL_SECONDS       = 300
 const OTP_COOLDOWN_SECONDS  = 60
-const OTP_SEND_LOCK_SECONDS = 30
-const JWT_SECRET = process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production'
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret'
 
 // ─────────────────────────────────────────────
 //  In-memory fallback (used when Redis is down)
@@ -66,6 +65,7 @@ async function ensureWorkspaceTable() {
 }
 
 let ensureWorkspaceTablePromise
+router.use(authLimiter)
 router.use(async (_req, _res, next) => {
   try {
     ensureWorkspaceTablePromise ||= ensureWorkspaceTable().catch(err => {
@@ -97,7 +97,7 @@ function generateOtp() {
 
 /** Derive a deterministic UUID-like local user ID from an email address */
 function getLocalUserId(email = '') {
-  const hash = createHash('md5').update(normalizeEmail(email)).digest('hex')
+  const hash = createHash('sha256').update(normalizeEmail(email)).digest('hex')
   return [
     hash.slice(0, 8),
     hash.slice(8, 12),
@@ -468,7 +468,7 @@ async function notifyInvitedUser({ inviteeEmail, senderName, role }) {
 // ─────────────────────────────────────────────
 
 /* POST /api/auth/check-email — Check if email is already registered (used by login UI) */
-router.post('/check-email', async (req, res) => {
+router.post('/check-email', authLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   if (!email) return res.status(400).json({ message: 'Email is required' })
 
@@ -488,7 +488,7 @@ router.post('/check-email', async (req, res) => {
 })
 
 /* POST /api/auth/send-otp — Signup flow: email must NOT exist, then send OTP */
-router.post('/send-otp', async (req, res) => {
+router.post('/send-otp', authLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   if (!email) return res.status(400).json({ message: 'Email is required' })
 
@@ -512,7 +512,7 @@ router.post('/send-otp', async (req, res) => {
 })
 
 /* POST /api/auth/send-reset-otp — Forgot-password flow: email must exist, then send OTP */
-router.post('/send-reset-otp', async (req, res) => {
+router.post('/send-reset-otp', authLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   if (!email) return res.status(400).json({ message: 'Email is required' })
 
@@ -535,7 +535,7 @@ router.post('/send-reset-otp', async (req, res) => {
 })
 
 /* POST /api/auth/reset-password — Verify OTP and persist a new password */
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', authLimiter, async (req, res) => {
   const email       = normalizeEmail(req.body?.email)
   const otp         = normalizeOtp(req.body?.otp)
   const { newPassword } = req.body
@@ -565,7 +565,7 @@ router.post('/reset-password', async (req, res) => {
 })
 
 /* POST /api/auth/verify-otp — Verify a signup OTP without consuming it (consumed on register) */
-router.post('/verify-otp', async (req, res) => {
+router.post('/verify-otp', authLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   const otp   = normalizeOtp(req.body?.otp)
   if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' })
@@ -586,7 +586,7 @@ router.post('/verify-otp', async (req, res) => {
 })
 
 /* POST /api/auth/register — Create a new account (owner or invited member) */
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   const {
     password, shopName, phone, mobileNumber, gstin, workspaceHandle,
@@ -740,7 +740,7 @@ router.post('/register', async (req, res) => {
 })
 
 /* POST /api/auth/login — Authenticate and return a session token */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   const email    = normalizeEmail(req.body?.email)
   const { password } = req.body
   if (!email || !password) return res.status(400).json({ message: 'email and password required' })
@@ -810,7 +810,7 @@ router.post('/login', async (req, res) => {
 })
 
 /* POST /api/auth/logout */
-router.post('/logout', async (req, res) => {
+router.post('/logout', authLimiter, async (req, res) => {
   try {
     await insforge.auth.signOut()
     res.json({ message: 'Logged out successfully' })
@@ -820,7 +820,7 @@ router.post('/logout', async (req, res) => {
 })
 
 /* GET /api/auth/me — Return current user profile from token */
-router.get('/me', async (req, res) => {
+router.get('/me', authLimiter, async (req, res) => {
   const auth = req.headers.authorization
   if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
   const token = auth.slice(7)

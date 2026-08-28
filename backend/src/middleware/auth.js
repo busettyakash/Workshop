@@ -8,8 +8,7 @@ import { getCached, setCached } from '../lib/fastCache.js'
 //  Constants
 // ─────────────────────────────────────────────
 
-const LOCAL_JWT_SECRET =
-  process.env.JWT_SECRET || 'workshop_super_secret_jwt_key_change_in_production'
+const LOCAL_JWT_SECRET = process.env.JWT_SECRET || 'dev_secret'
 
 const MOCK_DEV_USER = {
   id: '00000000-0000-0000-0000-000000000001',

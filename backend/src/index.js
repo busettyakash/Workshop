@@ -46,7 +46,6 @@ import chatRoutes from './routes/chat.js'
 import importStockRoutes from './routes/importStock.js'
 import peopleRoutes from './routes/people.js'
 import billTemplateRoutes from './routes/billTemplates.js'
-import recordRoutes from './routes/records.js'
 import notesRoutes from './routes/notes.js'
 import emailsRoutes from './routes/emails.js'
 import uomRoutes from './routes/uoms.js'
@@ -160,7 +159,6 @@ app.use('/api/chat', chatRoutes)
 app.use('/api/import-stock', importStockRoutes)
 app.use('/api/people', peopleRoutes)
 app.use('/api/bill-templates', billTemplateRoutes)
-app.use('/api/records', recordRoutes)
 app.use('/api/notes', notesRoutes)
 app.use('/api/emails', emailsRoutes)
 app.use('/api/uoms', uomRoutes)

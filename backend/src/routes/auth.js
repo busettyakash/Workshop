@@ -226,20 +226,20 @@ async function trySendResend({ to, subject, html, logPrefix }) {
   try {
     const { data, error } = await resend.emails.send({ from, to, subject, html })
     if (error) {
-      console.error('[%s Resend Warning] Could not deliver to %s:', logPrefix, to, error.message || error)
+      console.error('[%s Resend Warning] Could not deliver:', logPrefix, error.message || error)
       return null
     }
-    console.log('[%s Resend Success] Email sent to %s - ID:', logPrefix, to, data?.id)
+    console.log('[%s Resend Success] Email sent - ID:', logPrefix, data?.id)
     return { success: true, data }
   } catch (err) {
-    console.error('[%s Resend Exception] Could not send to %s:', logPrefix, to, err.message)
+    console.error('[%s Resend Exception] Could not send:', logPrefix, err.message)
     return null
   }
 }
 
-function logOtpDevFallback(email, otp) {
+function logOtpDevFallback(_email, otp) {
   console.log('==================================================')
-  console.log(`🔑 [OTP DEV/SANDBOX FALLBACK] Verification code for ${email}: ${otp}`)
+  console.log(`🔑 [OTP DEV/SANDBOX FALLBACK] Verification code: ${otp}`)
   console.log('==================================================')
 }
 
@@ -262,7 +262,7 @@ async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
     const smtpRes = await trySendSmtp({ to: email, subject, html })
     if (smtpRes) {
-      console.log('[%s SMTP Success] OTP email delivered to %s via SMTP', logPrefix, email)
+      console.log('[%s SMTP Success] OTP email delivered via SMTP', logPrefix)
       return smtpRes
     }
     console.warn('[%s SMTP Warning] Could not deliver via SMTP, attempting Resend', logPrefix)
@@ -276,7 +276,7 @@ async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
   if (!process.env.SMTP_HOST) {
     const smtpRes = await trySendSmtp({ to: email, subject, html })
     if (smtpRes) {
-      console.log('[%s SMTP Success] OTP email delivered to %s via SMTP', logPrefix, email)
+      console.log('[%s SMTP Success] OTP email delivered via SMTP', logPrefix)
       return smtpRes
     }
   }
@@ -317,7 +317,7 @@ async function issueOtp(email, logPrefix = 'OTP') {
       return { status: 502, body: { message: 'Failed to send OTP email. Please try again.' } }
     }
 
-    console.log('[%s] OTP email accepted for %s', logPrefix, email)
+    console.log('[%s] OTP email accepted', logPrefix)
     await setOtpCooldown(email)
 
     const body = { message: 'OTP sent to your email' }
@@ -410,7 +410,7 @@ async function resolveLoginWorkspace(email, userId, shopName) {
 async function dispatchInviteEmail({ to, subject, html }) {
   const smtpRes = await sendEmail({ to, subject, html }).catch(err => ({ error: err }))
   if (smtpRes && !smtpRes.error) {
-    console.log(`[Invite Email] Delivered via SMTP to ${to}`)
+    console.log('[Invite Email] Delivered via SMTP')
     return
   }
   console.warn(`[Invite Email] SMTP warning (${smtpRes?.error?.message}), trying Resend...`)
@@ -421,7 +421,7 @@ async function dispatchInviteEmail({ to, subject, html }) {
     html,
   }).then(({ error }) => {
     if (error) console.error('[Invite Email] Resend fallback error:', error.message || error)
-    else        console.log(`[Invite Email] Delivered via Resend to ${to}`)
+    else        console.log('[Invite Email] Delivered via Resend')
   }).catch(err => {
     console.error('[Invite Email] Resend fallback exception:', err.message)
   })
@@ -435,7 +435,7 @@ async function notifyInvitedUser({ inviteeEmail, senderName, role }) {
       [inviteeEmail]
     )
     if (rows.length === 0) {
-      console.log(`[Invite] User B (${inviteeEmail}) not yet registered — skipping in-app notification`)
+      console.log('[Invite] Invitee user not yet registered — skipping in-app notification')
       return
     }
 
@@ -458,7 +458,7 @@ async function notifyInvitedUser({ inviteeEmail, senderName, role }) {
       // Ignore realtime publish errors — user may be offline
     }
 
-    console.log(`[Invite] In-app notification created for user B (${inviteeEmail})`)
+    console.log('[Invite] In-app notification created for invited user')
   } catch (err) {
     console.error('[Invite] Failed to create in-app notification:', err.message)
   }
@@ -704,7 +704,7 @@ router.post('/register', authLimiter, async (req, res) => {
       if (rows.length > 0) {
         defaultWorkspaceId   = rows[0].workspace_owner_id
         defaultWorkspaceName = rows[0].shop_name || `${rows[0].owner_email}'s Workshop`
-        console.log(`[Register] User ${email} has pending invite → defaulting to workspace ${defaultWorkspaceId} (${defaultWorkspaceName})`)
+        console.log('[Register] User has pending invite → defaulting to workspace')
       }
     } catch (err) {
       console.error('[Register] Error checking pending invites:', err.message)
@@ -1198,7 +1198,7 @@ router.delete('/members/:id', apiLimiter, requireAuth, async (req, res) => {
           'DELETE FROM auth.users WHERE LOWER(email) = LOWER($1)',
           [targetEmail]
         )
-        console.log(`[AUTH CLEANUP] Deleted user ${targetEmail} from auth.users (${authCount} rows)`)
+        console.log(`[AUTH CLEANUP] Deleted user from auth.users (${authCount} rows)`)
       } catch (err) {
         console.error('[AUTH CLEANUP ERROR]', err.message)
       }
@@ -1211,7 +1211,7 @@ router.delete('/members/:id', apiLimiter, requireAuth, async (req, res) => {
       await redis.del(`user_id_map:${targetEmail}`).catch(() => {})
     }
 
-    console.log(`[DATABASE] Member ${memberId} (${targetEmail}) permanently deleted from workspace and Authentication`)
+    console.log(`[DATABASE] Member ${memberId} permanently deleted from workspace and Authentication`)
     res.json({ message: 'Member permanently deleted from workspace and Authentication' })
   } catch (err) {
     console.error('[MEMBER DELETE DATABASE ERROR]', err.message)
@@ -1259,10 +1259,10 @@ router.post('/update-password', apiLimiter, requireAuth, async (req, res) => {
     // Sync to InsForge auth if available
     await insforge.auth.updateUser({ password: newPassword }).catch(() => {})
 
-    console.log('[UPDATE PASSWORD] Password updated successfully for %s', email)
+    console.log('[UPDATE PASSWORD] Password updated successfully')
     res.json({ message: 'Password updated successfully!' })
   } catch (err) {
-    console.error('[UPDATE PASSWORD] Error updating password for %s:', email, err.message)
+    console.error('[UPDATE PASSWORD] Error updating password:', err.message)
     res.status(500).json({ message: 'Failed to update password. Please try again.' })
   }
 })

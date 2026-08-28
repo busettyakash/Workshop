@@ -37,14 +37,21 @@ const tools = [
   {
     type: 'function',
     function: {
-      name: 'query_database_readonly',
-      description: 'Executes a read-only SQL SELECT query on the database to query information about products, import stock, customers/people, bills/invoices, deals. Strictly only SELECT queries are permitted.',
+      name: 'query_business_data',
+      description: 'Queries business data such as products, bills, quotes, people/contacts, import stock, notes, deals, or analytics summaries. Use this to retrieve information about inventory, invoices, quotations, contacts, or sales performance.',
       parameters: {
         type: 'object',
         properties: {
-          sql: { type: 'string', description: 'The SQL SELECT query to run.' }
+          dataset: {
+            type: 'string',
+            enum: ['products', 'bills', 'quotes', 'people', 'import_stock', 'notes', 'deals', 'top_products', 'revenue_summary', 'quotes_summary'],
+            description: 'The dataset to query'
+          },
+          search: { type: 'string', description: 'Optional keyword to search across names, SKUs, or titles' },
+          status: { type: 'string', description: 'Optional status filter (e.g. active, paid, unpaid, pending, accepted)' },
+          limit: { type: 'number', description: 'Maximum number of items to retrieve (default 20, max 50)' }
         },
-        required: ['sql']
+        required: ['dataset']
       }
     }
   },
@@ -210,24 +217,12 @@ Database tables available for SELECT queries:
 - product_stock_history: id, product_id, user_id, change_type, qty_change, stock_before, stock_after, source, source_ref, notes, created_at
 - product_price_history: id, product_id, user_id, old_price, new_price, effective_date, notes, created_at
 
-Useful billing & quotes analytics queries:
-- Today's quotes: SELECT * FROM quotes WHERE user_id = '...' AND created_at::date = CURRENT_DATE
-- Bills per day: SELECT created_at::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = '...' GROUP BY day ORDER BY day DESC
-- Today's bills: SELECT * FROM bills WHERE user_id = '...' AND created_at::date = CURRENT_DATE
-- Top products sold: SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = '...' GROUP BY bi.name ORDER BY total_qty DESC LIMIT 10
-- Revenue by customer: SELECT COALESCE(p.name, 'General Customer') AS customer, SUM(b.amount) AS total FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = '...' GROUP BY customer ORDER BY total DESC
-
 CRITICAL DISPLAY & FORMATTING RULES:
 - When presenting product tables, bills, stock, or business data in markdown tables or lists, NEVER include internal technical database columns like "id", "ID", "user_id", or numerical primary keys.
 - Present clean, business-friendly columns such as: Name, SKU, Category, Price (₹), Stock, Status, Unit, Description.
 - Format all currency and prices with the Rupee symbol (₹).
 
-CRITICAL SECURITY RULE: You MUST always filter every table in your query by \`user_id = '${userId}'\`. 
-For example: \`SELECT * FROM products WHERE user_id = '${userId}'\`. 
-If you join tables, filter both or use aliases: \`SELECT * FROM bills b JOIN people p ON b.customer_id = p.id WHERE b.user_id = '${userId}' AND p.user_id = '${userId}'\`.
-Your query will FAIL if it does not contain the filter \`user_id = '${userId}'\` on every table queried!
-
-Always run database queries to get real-time accurate information when asked about specific business data (e.g. products, bills, quotes, people/customers) instead of using placeholders or dump data.`
+Always call query_business_data to get real-time accurate information when asked about business data (e.g. products, bills, quotes, people/customers, or sales summaries) instead of using placeholders or dump data.`
     }
 
     let apiMessages = [systemPrompt, ...messages.map(m => ({ role: m.role, content: m.content }))]
@@ -310,44 +305,158 @@ Always run database queries to get real-time accurate information when asked abo
                 await redis.del(`import_stock:${userId}`).catch(() => {})
                 toolResult = { success: true, product: rows[0] }
               }
-            } else if (toolName === 'query_database_readonly') {
-              const { sql } = args
-              const cleanSql = (sql || '').trim()
-              let postgresSql = cleanSql.replace(/\bcurdate\(\)/gi, 'CURRENT_DATE')
-              const lowerSql = postgresSql.toLowerCase()
-              const lowerUid = userId.toLowerCase()
+            } else if (toolName === 'query_business_data') {
+              const { dataset, search, status, limit: rawLimit } = args || {}
+              const limit = Math.min(Math.max(parseInt(rawLimit, 10) || 20, 1), 50)
+              const searchPattern = search ? `%${search.trim()}%` : null
 
-              if (!/^select\b/i.test(postgresSql)) {
-                toolResult = { error: 'Only SELECT queries are allowed for read-only database query.' }
-              } else if (/\b(insert|update|delete|drop|alter|create|truncate|replace|grant|revoke)\b/i.test(postgresSql)) {
-                toolResult = { error: 'Mutation SQL commands are forbidden.' }
-              } else {
-                // Ensure user_id filter is present on query to prevent cross-tenant access or tool rejection
-                if (!lowerSql.includes(lowerUid)) {
-                  if (/\bwhere\b/i.test(postgresSql)) {
-                    postgresSql = postgresSql.replace(/\bwhere\b/i, `WHERE user_id = '${userId}' AND `)
-                  } else if (/\bgroup\s+by\b/i.test(postgresSql)) {
-                    postgresSql = postgresSql.replace(/\bgroup\s+by\b/i, `WHERE user_id = '${userId}' GROUP BY `)
-                  } else if (/\border\s+by\b/i.test(postgresSql)) {
-                    postgresSql = postgresSql.replace(/\border\s+by\b/i, `WHERE user_id = '${userId}' ORDER BY `)
-                  } else if (/\blimit\b/i.test(postgresSql)) {
-                    postgresSql = postgresSql.replace(/\blimit\b/i, `WHERE user_id = '${userId}' LIMIT `)
-                  } else {
-                    postgresSql += ` WHERE user_id = '${userId}'`
+              try {
+                switch (dataset) {
+                  case 'products': {
+                    let res
+                    if (searchPattern && status) {
+                      res = await query(
+                        'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 AND (name ILIKE $3 OR sku ILIKE $3) ORDER BY id DESC LIMIT $4',
+                        [userId, status, searchPattern, limit]
+                      )
+                    } else if (searchPattern) {
+                      res = await query(
+                        'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3',
+                        [userId, searchPattern, limit]
+                      )
+                    } else if (status) {
+                      res = await query(
+                        'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3',
+                        [userId, status, limit]
+                      )
+                    } else {
+                      res = await query(
+                        'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+                        [userId, limit]
+                      )
+                    }
+                    toolResult = { success: true, count: res.rows.length, data: res.rows }
+                    break
                   }
-                }
 
-                try {
-                  const { rows } = await query(postgresSql)
-                  toolResult = { success: true, rows }
-                } catch (sqlErr) {
-                  try {
-                    const { rows } = await query(cleanSql)
-                    toolResult = { success: true, rows }
-                  } catch (_origErr) {
-                    toolResult = { error: sqlErr.message }
+                  case 'import_stock': {
+                    let res
+                    if (searchPattern) {
+                      res = await query(
+                        'SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3',
+                        [userId, searchPattern, limit]
+                      )
+                    } else {
+                      res = await query(
+                        'SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+                        [userId, limit]
+                      )
+                    }
+                    toolResult = { success: true, count: res.rows.length, data: res.rows }
+                    break
                   }
+
+                  case 'bills': {
+                    let res
+                    if (status) {
+                      res = await query(
+                        'SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 AND b.status = $2 ORDER BY b.id DESC LIMIT $3',
+                        [userId, status, limit]
+                      )
+                    } else {
+                      res = await query(
+                        'SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 ORDER BY b.id DESC LIMIT $2',
+                        [userId, limit]
+                      )
+                    }
+                    toolResult = { success: true, count: res.rows.length, data: res.rows }
+                    break
+                  }
+
+                  case 'quotes': {
+                    let res
+                    if (status) {
+                      res = await query(
+                        'SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3',
+                        [userId, status, limit]
+                      )
+                    } else {
+                      res = await query(
+                        'SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+                        [userId, limit]
+                      )
+                    }
+                    toolResult = { success: true, count: res.rows.length, data: res.rows }
+                    break
+                  }
+
+                  case 'people': {
+                    let res
+                    if (searchPattern) {
+                      res = await query(
+                        'SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 AND (name ILIKE $2 OR email ILIKE $2 OR company ILIKE $2) ORDER BY id DESC LIMIT $3',
+                        [userId, searchPattern, limit]
+                      )
+                    } else {
+                      res = await query(
+                        'SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+                        [userId, limit]
+                      )
+                    }
+                    toolResult = { success: true, count: res.rows.length, data: res.rows }
+                    break
+                  }
+
+                  case 'notes': {
+                    const res = await query(
+                      'SELECT title, content, created_at FROM notes WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+                      [userId, limit]
+                    )
+                    toolResult = { success: true, count: res.rows.length, data: res.rows }
+                    break
+                  }
+
+                  case 'deals': {
+                    const res = await query(
+                      'SELECT title, value, stage, owner, close_date, status FROM deals WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+                      [userId, limit]
+                    )
+                    toolResult = { success: true, count: res.rows.length, data: res.rows }
+                    break
+                  }
+
+                  case 'revenue_summary': {
+                    const res = await query(
+                      'SELECT created_at::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = $1 GROUP BY day ORDER BY day DESC LIMIT $2',
+                      [userId, limit]
+                    )
+                    toolResult = { success: true, data: res.rows }
+                    break
+                  }
+
+                  case 'top_products': {
+                    const res = await query(
+                      'SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = $1 GROUP BY bi.name ORDER BY total_qty DESC LIMIT $2',
+                      [userId, limit]
+                    )
+                    toolResult = { success: true, data: res.rows }
+                    break
+                  }
+
+                  case 'quotes_summary': {
+                    const res = await query(
+                      'SELECT status, COUNT(*) AS count, SUM(total_amount) AS total_value FROM quotes WHERE user_id = $1 GROUP BY status',
+                      [userId]
+                    )
+                    toolResult = { success: true, data: res.rows }
+                    break
+                  }
+
+                  default:
+                    toolResult = { error: `Unsupported dataset: ${dataset}` }
                 }
+              } catch (queryErr) {
+                toolResult = { error: queryErr.message }
               }
             } else if (toolName === 'send_email') {
               const { to, subject, body } = args

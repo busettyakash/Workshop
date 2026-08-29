@@ -427,7 +427,7 @@ Always call query_business_data to get real-time accurate information when asked
 
                   case 'revenue_summary': {
                     const res = await query(
-                      'SELECT created_at::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = $1 GROUP BY day ORDER BY day DESC LIMIT $2',
+                      `SELECT (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = $1 GROUP BY day ORDER BY day DESC LIMIT $2`,
                       [userId, limit]
                     )
                     toolResult = { success: true, data: res.rows }

@@ -45,8 +45,9 @@ export const ORDERED_NAV_ITEMS = [
  * Check if the active role is Owner or Admin.
  */
 export function isOwnerOrAdmin(role) {
-  const currentRole = role || (typeof window !== 'undefined' ? sessionStorage.getItem('ws_active_role') : null) || 'Owner'
-  return currentRole === 'Owner' || currentRole === 'Admin'
+  const rawRole = role || (typeof window !== 'undefined' ? sessionStorage.getItem('ws_active_role') : null) || 'Owner'
+  const currentRole = String(rawRole).trim().toLowerCase()
+  return currentRole === 'owner' || currentRole === 'admin'
 }
 
 /**
@@ -170,6 +171,25 @@ export function usePermissions(moduleName) {
 
   useEffect(() => {
     const handleUpdate = (e) => {
+      // If the event was dispatched for a specific memberEmail,
+      // verify it actually belongs to the current logged-in user!
+      if (e.detail?.memberEmail) {
+        let currentEmail = ''
+        try {
+          const userStr = sessionStorage.getItem('ws_user')
+          if (userStr) {
+            const parsedUser = JSON.parse(userStr)
+            currentEmail = (parsedUser?.email || '').toLowerCase().trim()
+          }
+        } catch { }
+
+        const targetEmail = (e.detail.memberEmail || '').toLowerCase().trim()
+        // If an Admin/Owner just updated someone else's permissions, ignore in this tab!
+        if (currentEmail && targetEmail && currentEmail !== targetEmail) {
+          return
+        }
+      }
+
       const newRole = e.detail?.role || (typeof window !== 'undefined' ? (sessionStorage.getItem('ws_active_role') || 'Owner') : 'Owner')
       let newPerms = e.detail?.perms
       if (!newPerms && typeof window !== 'undefined') {

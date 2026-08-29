@@ -154,8 +154,8 @@ router.get('/', async (req, res) => {
             ELSE i.updated_price
           END AS updated_price,
           CASE 
-            WHEN i.status = 'added' AND p.updated_price IS NOT NULL THEN COALESCE(GREATEST(p.updated_price_date, p.updated_at::date), p.updated_price_date, i.updated_price_date, i.updated_at::date)
-            WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, i.updated_at::date), i.updated_price_date, i.updated_at::date)
+            WHEN i.status = 'added' AND p.updated_price IS NOT NULL THEN COALESCE(GREATEST(p.updated_price_date, (p.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), p.updated_price_date, i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
+            WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
             ELSE COALESCE(p.updated_price_date, i.updated_price_date)
           END AS updated_price_date
          FROM import_stock i
@@ -197,8 +197,8 @@ router.get('/', async (req, res) => {
           ELSE i.updated_price
         END AS updated_price,
         CASE 
-          WHEN i.status = 'added' AND p.updated_price IS NOT NULL THEN COALESCE(GREATEST(p.updated_price_date, p.updated_at::date), p.updated_price_date, i.updated_price_date, i.updated_at::date)
-          WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, i.updated_at::date), i.updated_price_date, i.updated_at::date)
+          WHEN i.status = 'added' AND p.updated_price IS NOT NULL THEN COALESCE(GREATEST(p.updated_price_date, (p.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), p.updated_price_date, i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
+          WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
           ELSE COALESCE(p.updated_price_date, i.updated_price_date)
         END AS updated_price_date
        FROM import_stock i
@@ -256,8 +256,8 @@ router.get('/:id', async (req, res) => {
         CASE WHEN i.status = 'added' THEN COALESCE(p.price_covers, i.price_covers) ELSE i.price_covers END AS price_covers,
         CASE WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price) ELSE i.updated_price END AS updated_price,
         CASE 
-          WHEN i.status = 'added' AND p.updated_price IS NOT NULL THEN COALESCE(GREATEST(p.updated_price_date, p.updated_at::date), p.updated_price_date, i.updated_price_date, i.updated_at::date)
-          WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, i.updated_at::date), i.updated_price_date, i.updated_at::date)
+          WHEN i.status = 'added' AND p.updated_price IS NOT NULL THEN COALESCE(GREATEST(p.updated_price_date, (p.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), p.updated_price_date, i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
+          WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
           ELSE COALESCE(p.updated_price_date, i.updated_price_date)
         END AS updated_price_date,
         i.stock AS stock,

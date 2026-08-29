@@ -24,7 +24,7 @@ const formatIndianDateOnly = (raw) => {
     }
     const d = new Date(str)
     if (isNaN(d.getTime())) return String(raw)
-    return d.toLocaleDateString('en-IN', {
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata',
       day: '2-digit',
       month: 'short',
       year: 'numeric'
@@ -194,13 +194,13 @@ function PricingModal({ product, onClose }) {
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
               <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-                ₹{basePriceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{basePriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
               <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
-                ₹{activeBagPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{activeBagPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -244,7 +244,7 @@ function PricingModal({ product, onClose }) {
                     <div key={item.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newBagP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newBagP.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           {bagWeight > 1 && (
                             <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                               ({bagWeight} {bulkUnit?.short || product?.unit || 'kgs'} price)
@@ -252,7 +252,7 @@ function PricingModal({ product, onClose }) {
                           )}
                           {diff !== 0 && (
                             <span style={{ fontSize: '0.7rem', fontWeight: 600, color: isUp ? '#16a34a' : '#dc2626', background: isUp ? '#dcfce7' : '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
-                              {isUp ? `+₹${diff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              {isUp ? `+₹${diff.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             </span>
                           )}
                         </div>
@@ -268,7 +268,7 @@ function PricingModal({ product, onClose }) {
                         )}
                         {oldBagP !== null && (
                           <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                            Prev: ₹{oldBagP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            Prev: ₹{oldBagP.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         )}
                       </div>
@@ -586,7 +586,7 @@ export default function Products() {
                                   return (
                                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                                       <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        ₹{priceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ₹{priceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </span>
                                       <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                                         {subtext}
@@ -614,7 +614,7 @@ export default function Products() {
                                   return (
                                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                                       <span style={{ fontWeight: 600, color: '#2563eb' }}>
-                                        ₹{updatedPriceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ₹{updatedPriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </span>
                                       <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                                         {subtext}

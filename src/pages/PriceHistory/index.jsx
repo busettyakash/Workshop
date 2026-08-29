@@ -22,11 +22,22 @@ const formatINR = (val) => {
   })
 }
 
+const parseUtcDate = (raw) => {
+  if (!raw) return null
+  if (raw instanceof Date) return raw
+  let s = String(raw).trim()
+  if (!s.endsWith('Z') && !/[+-]\d{2}(:?\d{2})?$/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+    s = s.replace(' ', 'T') + 'Z'
+  }
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? new Date(raw) : d
+}
+
 const formatIndianDateTime = (raw) => {
   if (!raw) return 'N/A'
   try {
-    const d = new Date(raw)
-    if (isNaN(d.getTime())) return String(raw)
+    const d = parseUtcDate(raw)
+    if (!d || isNaN(d.getTime())) return String(raw)
     return d.toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata',
       day: '2-digit',
@@ -45,8 +56,8 @@ const formatIndianDateTime = (raw) => {
 const formatIndianDateOnly = (raw) => {
   if (!raw) return 'N/A'
   try {
-    const d = new Date(raw)
-    if (isNaN(d.getTime())) return String(raw)
+    const d = parseUtcDate(raw)
+    if (!d || isNaN(d.getTime())) return String(raw)
     return d.toLocaleDateString('en-IN', {
       timeZone: 'Asia/Kolkata',
       day: '2-digit',

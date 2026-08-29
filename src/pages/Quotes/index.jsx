@@ -418,8 +418,8 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     let subtext = ''
     if (bulkUnit) {
       subtext = bagWeight > 1
-        ? `${bulkUnit.name || 'Pack'}: ₹${prices.perPackPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
-        : `${bulkUnit.name || 'Unit'}: ₹${prices.perUnitRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${bulkUnit.short}`
+        ? `${bulkUnit.name || 'Pack'}: ₹${prices.perPackPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
+        : `${bulkUnit.name || 'Unit'}: ₹${prices.perUnitRate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${bulkUnit.short}`
     }
 
     setLineItems(prev => prev.map((item, i) => {
@@ -871,7 +871,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                 const isExceeded = maxStock !== null && maxStock >= 0 && (parseFloat(item.quantity) || 0) > maxStock
 
                 const baseSubtext = item.subtext || (selectedProd && bulkUnit && bw > 1
-                  ? `${bulkUnit.name || 'Bag'}: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
+                  ? `${bulkUnit.name || 'Bag'}: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
                   : '')
 
                 const stockSubtext = selectedProd ? `Available Stock: ${formatStockDisplay(selectedProd.stock, selectedProd.bag_weight, selectedProd.unit, selectedProd.loose_kg)}` : ''
@@ -920,7 +920,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                           type="text"
                           readOnly
                           disabled
-                          value={item.rate ? `₹${(parseFloat(item.rate) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
+                          value={item.rate ? `₹${(parseFloat(item.rate) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
                           style={{
                             width: 85, height: 26, padding: '0 4px', borderRadius: 4,
                             border: '1px solid #cbd5e1', fontSize: '0.75rem', fontWeight: 700,
@@ -935,7 +935,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                     <td style={{ padding: '6px 8px', verticalAlign: 'middle', textAlign: 'right' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
                         <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
-                          ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                         </span>
                         <button
                           type="button"
@@ -1006,7 +1006,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               <div style={{ textAlign: 'right' }}>
                 <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600 }}>Total Quotation Amount</span>
                 <p style={{ margin: '1px 0 0', fontWeight: 800, color: '#15803d', fontSize: '1.1rem' }}>
-                  ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                 </p>
                 <p style={{ margin: '1px 0 0', fontSize: '0.72rem', color: '#64748b' }}>Quote #{formData.quote_number} • Valid till {formData.valid_until}</p>
               </div>
@@ -1036,12 +1036,12 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               </div>
 
               <div style={{ textAlign: 'right', fontSize: '0.78rem' }}>
-                <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
                 <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
-                <span style={{ color: gstRate > 0 ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST ({gstRate}%): ₹{(parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                <span style={{ color: gstRate > 0 ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST ({gstRate}%): ₹{(parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
                 <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
                 <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.82rem' }}>
-                  Final Total: ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  Final Total: ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
@@ -1076,7 +1076,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                       </div>
 
                       <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.82rem', minWidth: 80, textAlign: 'right' }}>
-                        ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>

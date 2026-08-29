@@ -487,31 +487,41 @@
 }
 
 /* ── Attio Sidebar Folder & Sublist Styles ── */
+.ws-sb-collapsible-item {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1px;
+}
+
 .ws-sb-sublist,
 .ws-sb-folder-body {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-left: 20px;
-  padding-left: 8px;
+  margin-left: 10px;
+  padding-left: 6px;
   border-left: 1px solid var(--color-border);
-  margin-top: 2px;
-  margin-bottom: 4px;
+  margin-top: 1px;
+  margin-bottom: 2px;
 }
 
 .ws-sb-subitem {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: auto;
-  padding: 5px 8px;
+  gap: 7px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  height: 26px;
+  min-height: 26px;
   border-radius: var(--radius-md);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   color: var(--color-gray-800);
   font-weight: 400;
   transition: all var(--transition-base);
   text-decoration: none;
   text-align: left;
+  white-space: nowrap;
 }
 
 .ws-sb-subitem:hover {
@@ -519,8 +529,18 @@
   color: var(--color-text-primary);
 }
 
+.ws-sb-subitem span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
 .ws-sb-subitem svg {
   color: var(--color-gray-400);
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
 }
 
 .ws-sb-subitem:hover svg {
@@ -665,6 +685,22 @@
   color: var(--color-text-primary);
 }
 
+.ws-sb-nav-item-btn svg,
+.ws-sb-subitem svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: #475569;
+  transition: color var(--transition-base);
+}
+
+.ws-sb-nav-item-wrapper:hover .ws-sb-nav-item-btn svg,
+.ws-sb-nav-item-wrapper.active .ws-sb-nav-item-btn svg,
+.ws-sb-subitem:hover svg,
+.ws-sb-subitem.active svg {
+  color: #0f172a;
+}
+
 /* Star Button */
 .ws-sb-star-btn {
   background: transparent;
@@ -719,26 +755,6 @@
 }
 
 /* Active Sub-item styles */
-.ws-sb-subitem {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: auto;
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
-  font-size: 0.83rem;
-  color: var(--color-gray-800);
-  font-weight: 400;
-  transition: all var(--transition-base);
-  text-decoration: none;
-  text-align: left;
-  padding-right: 6px;
-}
-
-.ws-sb-subitem span {
-  flex: 1;
-}
-
 .ws-sb-subitem.active {
   background: var(--color-surface-active);
   color: var(--color-text-primary);

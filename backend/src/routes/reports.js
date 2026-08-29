@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 
+const TZ = `'UTC' AT TIME ZONE 'Asia/Kolkata'`
+
 const router = Router()
 router.use(requireAuth)
 router.get('/sales', async (req, res) => {
@@ -11,12 +13,12 @@ router.get('/sales', async (req, res) => {
   const end   = to   || new Date().toISOString()
   try {
     const { rows } = await query(
-      `SELECT DATE(created_at) AS date,
+      `SELECT (created_at AT TIME ZONE ${TZ})::date AS date,
               COUNT(*) AS order_count,
               COALESCE(SUM(amount),0) AS total_revenue
        FROM bills
        WHERE status='paid' AND user_id = $1 AND created_at BETWEEN $2 AND $3
-       GROUP BY DATE(created_at) ORDER BY date ASC`,
+       GROUP BY (created_at AT TIME ZONE ${TZ})::date ORDER BY date ASC`,
       [userId, start, end]
     )
     res.json(rows)
@@ -30,7 +32,7 @@ router.get('/dashboard', async (req, res) => {
   const userId = req.workspaceId
   try {
     const [sales, products, customers, unpaid] = await Promise.all([
-      query(`SELECT COALESCE(SUM(amount),0) AS today FROM bills WHERE status='paid' AND user_id = $1 AND DATE(created_at)=CURRENT_DATE`, [userId]),
+      query(`SELECT COALESCE(SUM(amount),0) AS today FROM bills WHERE status='paid' AND user_id = $1 AND (created_at AT TIME ZONE ${TZ})::date = (NOW() AT TIME ZONE ${TZ})::date`, [userId]),
       query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE stock < 5) AS low_stock FROM products WHERE user_id = $1`, [userId]),
       query(`SELECT COUNT(*) AS total FROM people WHERE user_id = $1`, [userId]),
       query(`SELECT COUNT(*) AS count, COALESCE(SUM(amount),0) AS amount FROM bills WHERE status='unpaid' AND user_id = $1`, [userId]),
@@ -129,18 +131,18 @@ router.get('/business-metrics', async (req, res) => {
     const maxDateRes = await query("SELECT COALESCE(MAX(created_at), NOW()) AS max_date FROM bills WHERE user_id = $1", [userId])
     const maxDate = maxDateRes.rows[0].max_date
 
-    // 2. Build date condition based on dayFilter
+    // 2. Build date condition based on dayFilter — all in IST
     let dateCondition = "AND b.created_at BETWEEN '2024-07-01' AND '2024-09-30 23:59:59'"
     if (dayFilter === 'Last 7 days') {
-      dateCondition = `AND b.created_at >= CAST('${maxDate.toISOString()}' AS TIMESTAMP) - INTERVAL '7 days'`
+      dateCondition = `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '7 days'`
     } else if (dayFilter === 'Last 30 days') {
-      dateCondition = `AND b.created_at >= CAST('${maxDate.toISOString()}' AS TIMESTAMP) - INTERVAL '30 days'`
+      dateCondition = `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '30 days'`
     } else if (dayFilter === 'Last 3 months') {
-      dateCondition = `AND b.created_at >= CAST('${maxDate.toISOString()}' AS TIMESTAMP) - INTERVAL '90 days'`
+      dateCondition = `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '90 days'`
     } else if (dayFilter === 'Last 6 months') {
-      dateCondition = `AND b.created_at >= CAST('${maxDate.toISOString()}' AS TIMESTAMP) - INTERVAL '180 days'`
+      dateCondition = `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '180 days'`
     } else if (dayFilter === 'This year') {
-      dateCondition = `AND EXTRACT(YEAR FROM b.created_at) = EXTRACT(YEAR FROM CAST('${maxDate.toISOString()}' AS TIMESTAMP))`
+      dateCondition = `AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = EXTRACT(YEAR FROM (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}))`
     }
 
     // 3. Build customer condition
@@ -164,11 +166,11 @@ router.get('/business-metrics', async (req, res) => {
     const monthNums = months.map(m => m.num).join(',')
     const yearNums = Array.from(new Set(months.map(m => m.year))).join(',')
 
-    // 4. Query Bar Chart Data grouped by Product Category
+    // 4. Query Bar Chart Data grouped by Product Category — IST months
     const barQuery = `
       SELECT 
-        EXTRACT(MONTH FROM b.created_at) AS month_num,
-        EXTRACT(YEAR FROM b.created_at) AS year_num,
+        EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) AS month_num,
+        EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) AS year_num,
         p.category,
         COALESCE(SUM(bi.quantity * bi.price), 0) AS category_revenue
       FROM bills b
@@ -176,9 +178,9 @@ router.get('/business-metrics', async (req, res) => {
       JOIN products p ON bi.product_id = p.id
       LEFT JOIN people c ON b.customer_id = c.id
       WHERE b.status = 'paid' AND b.user_id = $1 ${dateCondition} ${customerCondition}
-        AND EXTRACT(MONTH FROM b.created_at) IN (${monthNums})
-        AND EXTRACT(YEAR FROM b.created_at) IN (${yearNums})
-      GROUP BY EXTRACT(MONTH FROM b.created_at), EXTRACT(YEAR FROM b.created_at), p.category
+        AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) IN (${monthNums})
+        AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) IN (${yearNums})
+      GROUP BY EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})), EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})), p.category
     `
     const barParams = [userId]
     if (customerFilter !== 'All Customers') {
@@ -257,7 +259,7 @@ router.get('/business-metrics', async (req, res) => {
       })
     }
 
-    // 6. Query Tooltip Data (month stats, top product category, etc.)
+    // 6. Query Tooltip Data (month stats, top product category, etc.) — IST months
     const tooltipData = []
 
     for (let i = 0; i < months.length; i++) {
@@ -269,8 +271,8 @@ router.get('/business-metrics', async (req, res) => {
         JOIN bills b ON bi.bill_id = b.id
         LEFT JOIN people c ON b.customer_id = c.id
         WHERE b.status = 'paid' AND b.user_id = $1
-          AND EXTRACT(MONTH FROM b.created_at) = ${m.num}
-          AND EXTRACT(YEAR FROM b.created_at) = ${m.year}
+          AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) = ${m.num}
+          AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = ${m.year}
           ${customerCondition}
         GROUP BY p.category
         ORDER BY cat_revenue DESC
@@ -288,8 +290,8 @@ router.get('/business-metrics', async (req, res) => {
         FROM bills b
         LEFT JOIN people c ON b.customer_id = c.id
         WHERE b.status = 'paid' AND b.user_id = $1
-          AND EXTRACT(MONTH FROM b.created_at) = ${m.num}
-          AND EXTRACT(YEAR FROM b.created_at) = ${m.year}
+          AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) = ${m.num}
+          AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = ${m.year}
           ${customerCondition}
       `
       const monthlyRevParams = [userId]
@@ -308,8 +310,8 @@ router.get('/business-metrics', async (req, res) => {
           FROM bills b
           LEFT JOIN people c ON b.customer_id = c.id
           WHERE b.status = 'paid' AND b.user_id = $1
-            AND EXTRACT(MONTH FROM b.created_at) = ${prevM.num}
-            AND EXTRACT(YEAR FROM b.created_at) = ${prevM.year}
+            AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) = ${prevM.num}
+            AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = ${prevM.year}
             ${customerCondition}
         `
         const prevMonthParams = [userId]

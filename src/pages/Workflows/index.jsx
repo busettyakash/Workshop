@@ -189,7 +189,7 @@ export default function Workflows() {
 
   const fmtDate = (d) => {
     if (!d) return '—'
-    try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }
+    try { return new Date(d).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', year: 'numeric' }) }
     catch { return '—' }
   }
 
@@ -513,7 +513,7 @@ export default function Workflows() {
                                 {wf.is_live ? fmtDate(wf.updated_at) : '—'}
                               </td>
                               <td style={{ color: '#64748b', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                                {wf.last_run_at ? new Date(wf.last_run_at).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : (wf.runs_count > 0 ? 'Active' : '—')}
+                                {wf.last_run_at ? new Date(wf.last_run_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : (wf.runs_count > 0 ? 'Active' : '—')}
                               </td>
                               <td style={{ textAlign: 'center' }}>
                                 <button
@@ -555,7 +555,7 @@ export default function Workflows() {
                                       {recentRuns.slice(0, 5).map((runItem) => {
                                         const isComplete = runItem?.status === 'Completed'
                                         const isExec = runItem?.status === 'Executing'
-                                        const runDate = runItem?.created_at ? new Date(runItem.created_at).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+                                        const runDate = runItem?.created_at ? new Date(runItem.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
                                         const rawDur = String(runItem?.duration || '')
                                         const durNum = parseInt(rawDur, 10)
                                         const displayDuration = isExec ? 'Running' : (rawDur && !isNaN(durNum) && durNum > 600 ? '6s' : (rawDur || '—'))
@@ -977,10 +977,10 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                         <td style={{ color: '#475569', whiteSpace: 'nowrap', fontSize: '0.74rem' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                             <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                              {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                              {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                             </span>
                             <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                              {r.created_at ? new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
+                              {r.created_at ? new Date(r.created_at).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
                             </span>
                           </div>
                         </td>
@@ -1178,7 +1178,7 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                 </div>
               ) : (
                 logs.map((l, i) => {
-                  const logTime = l?.time ? new Date(l.time).toLocaleTimeString() : '00:00:00'
+                  const logTime = l?.time ? new Date(l.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '00:00:00'
                   const logContent = typeof l === 'string' ? l : (typeof l?.text === 'string' ? l.text : JSON.stringify(l?.text || l || ''))
                   const isErr = logContent.includes('Error') || logContent.includes('Failed')
                   const isDone = logContent.includes('completed') || logContent.includes('Completed') || logContent.includes('Complete') || logContent.includes('Passed')

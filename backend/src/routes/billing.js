@@ -62,23 +62,23 @@ function buildBillingWhere(queryObj, userId, includeStatus = true) {
 
   if (date) {
     params.push(date)
-    conditions.push(`b.created_at::date = $${params.length}::date`)
+    conditions.push(`(b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = $${params.length}::date`)
   } else {
     if (year) {
       params.push(parseInt(year, 10))
-      conditions.push(`EXTRACT(YEAR FROM b.created_at) = $${params.length}`)
+      conditions.push(`EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) = $${params.length}`)
     }
     if (month) {
       params.push(parseInt(month, 10))
-      conditions.push(`EXTRACT(MONTH FROM b.created_at) = $${params.length}`)
+      conditions.push(`EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) = $${params.length}`)
     }
     if (startDate) {
       params.push(startDate)
-      conditions.push(`b.created_at >= $${params.length}::timestamp`)
+      conditions.push(`(b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= $${params.length}::date`)
     }
     if (endDate) {
       params.push(endDate)
-      conditions.push(`b.created_at <= $${params.length}::timestamp`)
+      conditions.push(`(b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date <= $${params.length}::date`)
     }
   }
 
@@ -207,24 +207,24 @@ router.get('/daily-stats', async (req, res) => {
 
   if (startDate) {
     params.push(startDate)
-    conditions.push(`b.created_at::date >= $${params.length}::date`)
+    conditions.push(`(b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= $${params.length}::date`)
   }
   if (endDate) {
     params.push(endDate)
-    conditions.push(`b.created_at::date <= $${params.length}::date`)
+    conditions.push(`(b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date <= $${params.length}::date`)
   }
   if (!startDate && year) {
     params.push(parseInt(year, 10))
-    conditions.push(`EXTRACT(YEAR FROM b.created_at) = $${params.length}`)
+    conditions.push(`EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) = $${params.length}`)
   }
   if (!startDate && month) {
     params.push(parseInt(month, 10))
-    conditions.push(`EXTRACT(MONTH FROM b.created_at) = $${params.length}`)
+    conditions.push(`EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) = $${params.length}`)
   }
 
   // Default: last 30 days if no date range given
   if (!startDate && !endDate && !month && !year) {
-    conditions.push(`b.created_at::date >= (CURRENT_DATE - INTERVAL '29 days')`)
+    conditions.push(`(b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= (CURRENT_DATE - INTERVAL '29 days')`)
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`
@@ -232,7 +232,7 @@ router.get('/daily-stats', async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT
-         b.created_at::date AS day,
+         (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day,
          COUNT(*) AS total_bills,
          COALESCE(SUM(b.amount), 0) AS total_revenue,
          COUNT(*) FILTER (WHERE b.status = 'paid') AS paid_count,
@@ -241,8 +241,8 @@ router.get('/daily-stats', async (req, res) => {
          COALESCE(SUM(b.amount) FILTER (WHERE b.status = 'unpaid'), 0) AS pending_revenue
        FROM bills b
        ${where}
-       GROUP BY b.created_at::date
-       ORDER BY b.created_at::date DESC`,
+       GROUP BY (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
+       ORDER BY (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date DESC`,
       params
     )
     res.json(rows)

@@ -16,7 +16,7 @@ import '../Products/Products.css'
 const limit = 20
 
 function formatCurrency(value) {
-  return (parseFloat(value || 0)).toLocaleString('en-IN', {
+  return (parseFloat(value || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata',
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 2,
@@ -27,7 +27,7 @@ function formatDate(value) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function Orders() {

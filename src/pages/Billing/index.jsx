@@ -15,7 +15,7 @@ import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 import BillPreview from './BillPreview'
 import { useNavigate } from 'react-router'
-import { hasModulePermission, canCreateModule, canEditModule, canDeleteModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
+import { getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 const STATUS_MAP = {
   paid: { bg: '#dcfce7', text: '#166534', label: 'Paid' },
@@ -151,7 +151,7 @@ function TemplateManagerModal({ onClose }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>{t.name}</div>
                       <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
-                        {new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {new Date(t.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })}
                         {t.is_default && <span style={{ marginLeft: 6, color: '#2563eb', fontWeight: 700 }}>· Default</span>}
                       </div>
                     </div>
@@ -273,7 +273,7 @@ export default function Billing() {
       const [y, m, d] = filterDate.split('-').map(Number)
       const dt = new Date(y, m - 1, d)
       const isToday = filterDate === todayStr
-      return isToday ? 'Today' : dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      return isToday ? 'Today' : dt.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
     } catch {
       return filterDate
     }
@@ -423,7 +423,13 @@ export default function Billing() {
 
   const formatDate = (d) => {
     if (!d) return '—'
-    return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    let s = String(d).trim()
+    if (!s.endsWith('Z') && !/[+-]\d{2}(:?\d{2})?$/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+      s = s.replace(' ', 'T') + 'Z'
+    }
+    const parsed = new Date(s)
+    const validDate = isNaN(parsed.getTime()) ? new Date(d) : parsed
+    return validDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   const hasActiveFilters = filterStatus !== 'all' || filterMonth !== '' || filterYear !== '' || (filterDate !== '' && filterDate !== todayStr)
@@ -681,7 +687,7 @@ export default function Billing() {
                               onMouseLeave={e => e.currentTarget.style.background = isToday ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#fafafa'}
                             >
                               <td style={{ padding: '8px 12px', fontWeight: isToday ? 700 : 500, color: isToday ? '#2563eb' : '#0f172a' }}>
-                                {isToday ? '📅 Today' : new Date(row.day + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', weekday: 'short' })}
+                                {isToday ? '📅 Today' : new Date(row.day + 'T00:00:00').toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', weekday: 'short' })}
                               </td>
                               <td style={{ textAlign: 'center', padding: '8px 12px' }}>
                                 <span style={{ background: '#e0e7ff', color: '#3730a3', borderRadius: 12, padding: '2px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
@@ -736,7 +742,7 @@ export default function Billing() {
                   <select
                     className="attio-select"
                     value={filterMonth}
-                    onChange={(e) => { setFilterMonth(e.target.value); setPage(1); }}
+                    onChange={(e) => { setFilterMonth(e.target.value); setFilterDate(''); setPage(1); }}
                   >
                     <option value="">All Months</option>
                     <option value="1">January</option>
@@ -760,7 +766,7 @@ export default function Billing() {
                   <select
                     className="attio-select"
                     value={filterYear}
-                    onChange={(e) => { setFilterYear(e.target.value); setPage(1); }}
+                    onChange={(e) => { setFilterYear(e.target.value); setFilterDate(''); setPage(1); }}
                   >
                     <option value="">All Years</option>
                     <option value="2026">2026</option>
@@ -769,6 +775,15 @@ export default function Billing() {
                     <option value="2023">2023</option>
                     <option value="2022">2022</option>
                   </select>
+                </div>
+
+                {/* OR divider */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8',
+                    background: '#f1f5f9', border: '1px solid #e2e8f0',
+                    borderRadius: 20, padding: '2px 8px', letterSpacing: 1
+                  }}>OR</span>
                 </div>
 
                 {/* Specific Date Filter */}
@@ -782,16 +797,23 @@ export default function Billing() {
                       padding: '4px 10px',
                       fontSize: '0.8125rem',
                       borderRadius: 6,
-                      border: '1px solid #d1d5db',
-                      background: '#ffffff',
+                      border: `1px solid ${filterDate ? '#3d68f5' : '#d1d5db'}`,
+                      background: filterDate ? '#eff6ff' : '#ffffff',
                       color: '#111827',
                       fontFamily: 'inherit',
                       outline: 'none',
                       cursor: 'pointer'
                     }}
                     value={filterDate}
-                    onChange={(e) => { setFilterDate(e.target.value); setPage(1); }}
+                    onChange={(e) => { setFilterDate(e.target.value); setFilterMonth(''); setFilterYear(''); setPage(1); }}
                   />
+                  {filterDate && (
+                    <button
+                      onClick={() => { setFilterDate(''); setPage(1); }}
+                      title="Clear date filter"
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem', padding: '0 2px', lineHeight: 1 }}
+                    >✕</button>
+                  )}
                 </div>
 
                 {/* Reset Filters */}
@@ -834,6 +856,7 @@ export default function Billing() {
                         <th>QUOTE / ORDER #</th>
                         <th>CUSTOMER</th>
                         <th>TOTAL</th>
+                        <th>INVOICE DATE</th>
                         <th>DUE DATE</th>
                         <th>STATUS</th>
                         <th style={{ textAlign: 'right' }}>ACTIONS</th>
@@ -884,6 +907,7 @@ export default function Billing() {
                               </div>
                             </td>
                             <td className="ws-td-price">{formatCurrency(bill.amount)}</td>
+                            <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.created_at)}</td>
                             <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.due_date)}</td>
                             <td>
                               <span className="ws-pill-topic" style={{ background: colors.bg, color: colors.text, borderColor: colors.border }}>

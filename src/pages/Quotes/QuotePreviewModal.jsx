@@ -13,7 +13,7 @@ function parseItems(value) {
 }
 
 function money(value) {
-  return (parseFloat(value || 0)).toLocaleString('en-IN', {
+  return (parseFloat(value || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata',
     style: 'currency',
     currency: 'INR',
     minimumFractionDigits: 2,
@@ -24,7 +24,7 @@ function dateText(value) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function QuotePreviewModal({ quote, onClose, onEdit, onStatusChange }) {

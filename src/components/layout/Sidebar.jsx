@@ -9,7 +9,28 @@ import {
   MessageSquare, Upload, UserRound, ScrollText, DollarSign, History, ShoppingBag, PanelLeftClose, PanelLeftOpen, MoreHorizontal
 } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
-import { CollapseSidebarIcon } from '../icons/SidebarIcons'
+import {
+  CollapseSidebarIcon,
+  HomeIcon,
+  TasksIcon,
+  NotesIcon,
+  EmailsIcon,
+  CallsIcon,
+  ReportsIcon,
+  SequencesIcon,
+  WorkflowsIcon,
+  FolderIcon,
+  BillingIcon,
+  ProductsIcon,
+  PeopleIcon,
+  PriceHistoryIcon,
+  QuotesIcon,
+  OrdersIcon,
+  PaidIcon,
+  UnpaidIcon,
+  ImportStockIcon,
+  SettingsIcon
+} from '../icons/SidebarIcons'
 import {
   setActiveNav, selectActiveNav, toggleSidebar, selectSidebarOpen,
   selectSidebarTriggerHovered, selectSidebarContentHovered, setSidebarContentHovered, clearSidebarHover, addToast,
@@ -23,34 +44,32 @@ import { authApi } from '../../services/authApi'
 import { isOwnerOrAdmin } from '../../utils/permissionUtils'
 import './Sidebar.css'
 
-let sidebarLeaveTimer = null
-
 const ICON_MAP = {
-  Home: <Home size={14} />,
-  Tasks: <CheckSquare size={14} />,
-  Notes: <FileText size={14} />,
-  Emails: <Mail size={14} />,
-  Calls: <Phone size={14} />,
-  Reports: <BarChart3 size={14} />,
-  Automations: <Play size={14} />,
-  Sequences: <Send size={14} />,
-  Workflows: <GitBranch size={14} />,
-  Folder: <Folder size={14} />,
-  PriceHistory: <History size={14} />,
-  Products: <Package size={14} />,
-  Customers: <Users size={14} />,
-  People: <User size={14} />,
-  Contacts: <User size={14} />,
-  Billing: <Receipt size={14} />,
-  Quotes: <ScrollText size={14} />,
-  Orders: <ShoppingBag size={14} />,
-  Paid: <CheckCircle size={14} />,
-  Unpaid: <XCircle size={14} />,
-  Settings: <Settings size={14} />,
-  Pipeline: <Briefcase size={14} />,
-  ImportStock: <Upload size={14} />,
-  UserPlus: <UserPlus size={14} />,
-  LogOut: <LogOut size={14} />,
+  Home: <HomeIcon size={16} />,
+  Tasks: <TasksIcon size={16} />,
+  Notes: <NotesIcon size={16} />,
+  Emails: <EmailsIcon size={16} />,
+  Calls: <CallsIcon size={16} />,
+  Reports: <ReportsIcon size={16} />,
+  Automations: <WorkflowsIcon size={16} />,
+  Sequences: <SequencesIcon size={16} />,
+  Workflows: <WorkflowsIcon size={16} />,
+  Folder: <FolderIcon size={16} />,
+  PriceHistory: <PriceHistoryIcon size={16} />,
+  Products: <ProductsIcon size={16} />,
+  Customers: <PeopleIcon size={16} />,
+  People: <PeopleIcon size={16} />,
+  Contacts: <PeopleIcon size={16} />,
+  Billing: <BillingIcon size={16} />,
+  Quotes: <QuotesIcon size={16} />,
+  Orders: <OrdersIcon size={16} />,
+  Paid: <PaidIcon size={16} />,
+  Unpaid: <UnpaidIcon size={16} />,
+  Settings: <SettingsIcon size={16} />,
+  Pipeline: <Briefcase size={16} strokeWidth={1.35} />,
+  ImportStock: <ImportStockIcon size={16} />,
+  UserPlus: <UserPlus size={16} strokeWidth={1.35} />,
+  LogOut: <LogOut size={16} strokeWidth={1.35} />,
 }
 
 // All nav items for Favorites lookup
@@ -169,7 +188,7 @@ export default function Sidebar() {
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const sidebarTriggerHovered = useAppSelector(selectSidebarTriggerHovered)
   const sidebarContentHovered = useAppSelector(selectSidebarContentHovered)
-  const { shopName, user } = useAuth()
+  const { shopName } = useAuth()
 
   const [activeRole, setActiveRole] = useState(() => {
     return sessionStorage.getItem('ws_active_role') || 'Owner'
@@ -186,7 +205,7 @@ export default function Sidebar() {
   const isOwnerAdmin = isOwnerOrAdmin(activeRole)
 
   const canAccessNav = (label) => {
-    if (activeRole === 'Admin' || activeRole === 'Owner') {
+    if (isOwnerOrAdmin(activeRole)) {
       return true
     }
     if (!activePermissions || typeof activePermissions !== 'object') {
@@ -390,9 +409,7 @@ export default function Sidebar() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState('Member')
-  const [inviteTeam, setInviteTeam] = useState('')
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false)
-  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false)
   const [inviting, setInviting] = useState(false)
 
   // Reactive workspace state
@@ -568,9 +585,10 @@ export default function Sidebar() {
     navigate(ROUTES.LOGIN)
   }
 
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
+  const [sidebarWidth] = useState(() => {
     const saved = localStorage.getItem('ws_sidebar_width')
-    return saved ? parseInt(saved, 10) : 235
+    const parsed = saved ? parseInt(saved, 10) : 240
+    return Math.max(240, isNaN(parsed) ? 240 : parsed)
   })
 
   useEffect(() => {

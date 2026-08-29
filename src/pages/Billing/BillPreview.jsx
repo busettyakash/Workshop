@@ -3,7 +3,16 @@ import { X, Printer } from 'lucide-react'
 import './BillPreview.css'
 
 const INR = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
+const fmtDate = (d) => {
+  if (!d) return '—'
+  let s = String(d).trim()
+  if (!s.endsWith('Z') && !/[+-]\d{2}(:?\d{2})?$/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+    s = s.replace(' ', 'T') + 'Z'
+  }
+  const parsed = new Date(s)
+  const valid = isNaN(parsed.getTime()) ? new Date(d) : parsed
+  return valid.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric' })
+}
 
 function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQuoteFlow = false) {
   let bw = parseFloat(bagWeight || 1)
@@ -82,7 +91,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   const doc = bill || quote || {}
   const isQuote = type === 'quotation' || (type !== 'invoice' && !bill && Boolean(quote || doc.quote_number)) || Boolean(doc.quote_number || doc.quote_id)
 
-  const [profile, setProfile] = useState({
+  const [profile] = useState({
     shopName: shopName || doc.shop_name || '',
     shopGstin: shopGstin || doc.shop_gstin || '',
     shopPhone: shopPhone || doc.shop_phone || '',
@@ -117,7 +126,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
           })
           setProductsMap(pMap)
         }
-      } catch (_e) { }
+      } catch { }
     }
 
     fetchData()
@@ -397,7 +406,6 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                   {items.length > 0 ? items.map((li, i) => {
                     const qty = parseFloat(li.qty || li.quantity || 1)
                     const price = parseFloat(li.price || li.rate || 0)
-                    const lineTotal = Math.max(0, (price * qty) - parseFloat(li.discount || 0))
                     const pId = li.product_id || li.productId || li.id
                     const prodNameRaw = (typeof li === 'string' && li.trim())
                       ? li

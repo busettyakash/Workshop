@@ -27,12 +27,12 @@ function formatDate(dateStr) {
   const now = new Date()
   const diff = now - d
   if (diff < 86400000 && d.getDate() === now.getDate()) {
-    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+    return d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
   }
   if (diff < 7 * 86400000) {
-    return d.toLocaleDateString('en-IN', { weekday: 'short' })
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short' })
   }
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+  return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })
 }
 
 export default function Emails() {

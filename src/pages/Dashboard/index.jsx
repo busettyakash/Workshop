@@ -625,7 +625,7 @@ export default function Dashboard() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
                                   <span style={{ fontSize: '0.84rem', fontWeight: email.is_read ? 500 : 700, color: '#111827' }}>{email.from_name || email.from_email}</span>
                                   <span style={{ fontSize: '0.72rem', color: '#9ca3af', flexShrink: 0, marginLeft: 10 }}>
-                                    {new Date(email.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                    {new Date(email.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })}
                                   </span>
                                 </div>
                                 <div style={{ fontSize: '0.8rem', color: '#374151', fontWeight: email.is_read ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>

@@ -882,7 +882,7 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                       <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
                         <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Selling Price (My Rate)</div>
                         <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#10b981' }}>
-                          ₹{sell100 > 0 ? sell100.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
+                          ₹{sell100 > 0 ? sell100.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 }) : '0.00'}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
                           ₹{parseFloat(sellRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {uomShort} selling

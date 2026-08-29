@@ -33,6 +33,9 @@ const { Pool, types } = pg
 // Return PostgreSQL DATE columns (OID 1082) as plain YYYY-MM-DD strings without JS Date timezone shifts
 types.setTypeParser(1082, (val) => val)
 
+// Return PostgreSQL TIMESTAMP columns (OID 1114) as UTC ISO strings so JS Date and JSON serialization preserve true UTC
+types.setTypeParser(1114, (val) => (val ? val.replace(' ', 'T') + 'Z' : val))
+
 const dbUrl = process.env.DATABASE_URL
 const isDevelopment = process.env.NODE_ENV !== 'production' && !process.env.VERCEL
 

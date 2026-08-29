@@ -268,7 +268,7 @@ export default function ImportStockNote() {
                           <div>
                             <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: 500 }}>Total Supplier Cost</div>
                             <div style={{ fontSize: '0.98rem', fontWeight: 700, color: '#166534', marginTop: 4 }}>
-                              ₹{calculatedSupplierCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              ₹{calculatedSupplierCost.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                             </div>
                           </div>
                           <div style={{ fontSize: '0.66rem', color: '#15803d', marginTop: 2, fontFamily: 'monospace', wordBreak: 'break-all' }}>
@@ -283,11 +283,11 @@ export default function ImportStockNote() {
                           <div>
                             <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: 500 }}>Remaining Balance</div>
                             <div style={{ fontSize: '0.98rem', fontWeight: 700, color: remainingBalance > 0 ? '#b91c1c' : '#166534', marginTop: 4 }}>
-                              ₹{remainingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              ₹{remainingBalance.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                             </div>
                           </div>
                           <div style={{ fontSize: '0.7rem', color: '#15803d', marginTop: 2 }}>
-                            Total Paid: ₹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            Total Paid: ₹{totalPaid.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                           </div>
                         </div>
                       </div>
@@ -310,13 +310,13 @@ export default function ImportStockNote() {
                       {/* Right: Transition Details */}
                       {addQty !== 0 ? (
                         <div style={{ textAlign: 'right', fontSize: '0.74rem', color: '#1e40af', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                          <div>Initial Batch Qty: <strong>{stockItem?.stock || 0} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{prevStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
+                          <div>Initial Batch Qty: <strong>{stockItem?.stock || 0} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{prevStockCost.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })})</span></div>
                           <div>Added Stock: <strong>+{addQty} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{Math.abs(addStockCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
-                          <div>Total Batch Purchased: <strong>{(parseFloat(stockItem?.stock || 0) + addQty)} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{totalStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
+                          <div>Total Batch Purchased: <strong>{(parseFloat(stockItem?.stock || 0) + addQty)} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{totalStockCost.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })})</span></div>
                         </div>
                       ) : (
                         <div style={{ textAlign: 'right', fontSize: '0.74rem', color: '#1e40af' }}>
-                          Total Batch Cost: <strong>₹{totalStockCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                          Total Batch Cost: <strong>₹{totalStockCost.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</strong>
                         </div>
                       )}
                     </div>
@@ -353,7 +353,7 @@ export default function ImportStockNote() {
                               background: '#fff7ed', border: '1px solid #fed7aa',
                               color: '#c2410c', fontSize: '0.74rem', fontWeight: 600
                             }}>
-                              <span>Due: ₹{remainingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              <span>Due: ₹{remainingBalance.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
                             </div>
                           ) : (
                             <div style={{
@@ -513,7 +513,7 @@ export default function ImportStockNote() {
                             </span>
                           </div>
                           <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#15803d' }}>
-                            Total Settled: ₹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            Total Settled: ₹{totalPaid.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                           </div>
                         </div>
 
@@ -554,7 +554,7 @@ export default function ImportStockNote() {
                                     onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
                                   >
                                     <td style={{ padding: '10px 14px', color: '#334155', fontWeight: 500 }}>
-                                      {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                      {new Date(p.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}
                                     </td>
                                     <td style={{ padding: '10px 14px' }}>
                                       <span style={{

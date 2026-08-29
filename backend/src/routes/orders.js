@@ -102,7 +102,7 @@ router.get('/', async (req, res) => {
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const countRes = await query(`SELECT COUNT(*) FROM (${ordersUnion(where)}) counted_orders`, params)
-    const total = parseInt(countRes.rows[0].count, 10) || 0
+    const total = Number.parseInt(countRes.rows[0].count, 10) || 0
     const totalPages = Math.ceil(total / limit) || 1
 
     params.push(limit, offset)

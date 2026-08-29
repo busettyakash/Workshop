@@ -11,7 +11,7 @@ export const getQuoteDeclinedTemplate = ({ quote = {}, shopName = '', supportEma
   const quoteNumber = quote.quote_number || `QT-${quote.id || '0000'}`
   const customerName = quote.customer_name || 'Valued Customer'
   const company = shopName || quote.shop_name || 'Workshop'
-  const totalAmount = parseFloat(quote.total_amount || 0).toLocaleString('en-IN', {
+  const totalAmount = Number.parseFloat(quote.total_amount || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })

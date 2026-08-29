@@ -65,11 +65,11 @@ function buildBillingWhere(queryObj, userId, includeStatus = true) {
     conditions.push(`(b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = $${params.length}::date`)
   } else {
     if (year) {
-      params.push(parseInt(year, 10))
+      params.push(Number.parseInt(year, 10))
       conditions.push(`EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) = $${params.length}`)
     }
     if (month) {
-      params.push(parseInt(month, 10))
+      params.push(Number.parseInt(month, 10))
       conditions.push(`EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) = $${params.length}`)
     }
     if (startDate) {
@@ -140,7 +140,7 @@ router.get('/', async (req, res) => {
        ${where}`,
       params
     )
-    const total = parseInt(count.rows[0].count, 10) || 0
+    const total = Number.parseInt(count.rows[0].count, 10) || 0
     const totalPages = Math.ceil(total / limit) || 1
 
     const listParams = [...params, limit, offset]
@@ -214,11 +214,11 @@ router.get('/daily-stats', async (req, res) => {
     conditions.push(`(b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date <= $${params.length}::date`)
   }
   if (!startDate && year) {
-    params.push(parseInt(year, 10))
+    params.push(Number.parseInt(year, 10))
     conditions.push(`EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) = $${params.length}`)
   }
   if (!startDate && month) {
-    params.push(parseInt(month, 10))
+    params.push(Number.parseInt(month, 10))
     conditions.push(`EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) = $${params.length}`)
   }
 
@@ -282,14 +282,14 @@ router.post('/', async (req, res) => {
   const { customer_id, bill_number: customBillNum, items, amount, due_date, notes, discount, status } = req.body
 
   const computedAmount = (items || []).reduce((acc, item) => {
-    const qty = parseFloat(item.qty || 1)
-    const price = parseFloat(item.price || 0)
-    const itemDisc = parseFloat(item.discount || 0)
+    const qty = Number.parseFloat(item.qty || 1)
+    const price = Number.parseFloat(item.price || 0)
+    const itemDisc = Number.parseFloat(item.discount || 0)
     return acc + Math.max(0, (qty * price) - itemDisc)
   }, 0)
-  const finalAmount = amount !== undefined ? parseFloat(amount) : Math.max(0, computedAmount - parseFloat(discount || 0))
+  const finalAmount = amount !== undefined ? Number.parseFloat(amount) : Math.max(0, computedAmount - Number.parseFloat(discount || 0))
 
-  const parsedCustomerId = Number.isInteger(Number(customer_id)) && Number(customer_id) > 0 ? parseInt(customer_id, 10) : null
+  const parsedCustomerId = Number.isInteger(Number(customer_id)) && Number(customer_id) > 0 ? Number.parseInt(customer_id, 10) : null
 
   // Use custom invoice number if passed, else generate unique 5-digit number
   let billNumber = (customBillNum && customBillNum.trim()) ? customBillNum.trim() : `INV-${crypto.randomInt(10000, 100000)}`
@@ -325,7 +325,7 @@ router.post('/', async (req, res) => {
           billNumber,
           finalItemsJson,
           finalAmount,
-          parseFloat(discount || 0),
+          Number.parseFloat(discount || 0),
           due_date || null,
           notes || '',
           status || 'unpaid',
@@ -343,7 +343,7 @@ router.post('/', async (req, res) => {
           parsedCustomerId,
           finalItemsJson,
           finalAmount,
-          parseFloat(discount || 0),
+          Number.parseFloat(discount || 0),
           due_date || null,
           notes || '',
           status || 'unpaid',
@@ -356,7 +356,7 @@ router.post('/', async (req, res) => {
     // Deduct stock for items in the bill based on purchased quantity and UOM
     for (const item of (enrichedItems || [])) {
       if (!item) continue
-      const qty = parseFloat(item.qty || item.quantity || 0)
+      const qty = Number.parseFloat(item.qty || item.quantity || 0)
       const prodId = item.product_id || item.id || item.productId
       const itemName = item.name || item.product_name || item.productName || ''
       const itemCode = item.hsn_code || item.hsn || item.sku || ''
@@ -380,7 +380,7 @@ router.post('/', async (req, res) => {
         continue
       }
 
-      const bw = parseFloat(prod.bag_weight || 1)
+      const bw = Number.parseFloat(prod.bag_weight || 1)
       const itemUnitStr = String(item.unit || item.unitLabel || '').trim().toLowerCase()
       const prodUnitStr = String(prod.unit || 'pcs').trim().toLowerCase()
       const containerKeywords = ['bag', 'bags', 'drum', 'drums', 'can', 'cans', 'roll', 'rolls', 'box', 'boxes', 'carton', 'cartons', 'dozen', 'doz', 'pack', 'packs', 'bundle', 'bundles']
@@ -394,8 +394,8 @@ router.post('/', async (req, res) => {
 
       const rawUnit = item.unit || item.unitLabel || (isBaseUnit ? 'kgs' : prod.unit) || 'pcs'
 
-      const currentStock = parseFloat(prod.stock || 0)
-      const currentLoose = parseFloat(prod.loose_kg || 0)
+      const currentStock = Number.parseFloat(prod.stock || 0)
+      const currentLoose = Number.parseFloat(prod.loose_kg || 0)
 
       let totalBaseBefore = (bw > 1) ? ((currentStock * bw) + currentLoose) : currentStock
       let qtyDeductedBase = (isBaseUnit || bw <= 1) ? qty : (qty * bw)

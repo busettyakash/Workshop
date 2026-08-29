@@ -4,7 +4,7 @@ dotenv.config()
 
 const createTransporter = () => nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT) || 587,
+  port: Number.parseInt(process.env.SMTP_PORT) || 587,
   secure: String(process.env.SMTP_PORT) === '465',
   pool: true,
   maxConnections: 5,

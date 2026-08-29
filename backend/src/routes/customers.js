@@ -45,7 +45,7 @@ router.get('/', async (req, res) => {
 
     const where = `WHERE ${conditions.join(' AND ')}`
     const count = await query(`SELECT COUNT(*) FROM customers ${where}`, params)
-    const total = parseInt(count.rows[0].count, 10) || 0
+    const total = Number.parseInt(count.rows[0].count, 10) || 0
     const totalPages = Math.ceil(total / limit) || 1
 
     params.push(limit, offset)

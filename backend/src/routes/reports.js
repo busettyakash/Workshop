@@ -38,12 +38,12 @@ router.get('/dashboard', async (req, res) => {
       query(`SELECT COUNT(*) AS count, COALESCE(SUM(amount),0) AS amount FROM bills WHERE status='unpaid' AND user_id = $1`, [userId]),
     ])
     res.json({
-      today_sales:    parseFloat(sales.rows[0].today),
-      total_products: parseInt(products.rows[0].total),
-      low_stock:      parseInt(products.rows[0].low_stock),
-      total_customers:parseInt(customers.rows[0].total),
-      unpaid_count:   parseInt(unpaid.rows[0].count),
-      unpaid_amount:  parseFloat(unpaid.rows[0].amount),
+      today_sales:    Number.parseFloat(sales.rows[0].today),
+      total_products: Number.parseInt(products.rows[0].total),
+      low_stock:      Number.parseInt(products.rows[0].low_stock),
+      total_customers:Number.parseInt(customers.rows[0].total),
+      unpaid_count:   Number.parseInt(unpaid.rows[0].count),
+      unpaid_amount:  Number.parseFloat(unpaid.rows[0].amount),
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -99,8 +99,8 @@ async function syncBillItems(userId) {
         }
         for (const item of itemsList) {
           const productId = item.product_id || item.id
-          const qty = parseFloat(item.qty || item.quantity || 1)
-          const price = parseFloat(item.price || 0)
+          const qty = Number.parseFloat(item.qty || item.quantity || 1)
+          const price = Number.parseFloat(item.price || 0)
           if (productId) {
             const prodCheck = await query("SELECT id FROM products WHERE id = $1 AND user_id = $2", [productId, userId])
             if (prodCheck.rows.length > 0) {
@@ -201,12 +201,12 @@ router.get('/business-metrics', async (req, res) => {
     })
     
     barRes.rows.forEach(r => {
-      const m = parseInt(r.month_num)
-      const y = parseInt(r.year_num)
+      const m = Number.parseInt(r.month_num)
+      const y = Number.parseInt(r.year_num)
       const key = `${y}-${m}`
       if (barDataMap[key]) {
         const cat = (r.category || 'Others').toLowerCase()
-        const scaledVal = Math.round(parseFloat(r.category_revenue) / 20000.0)
+        const scaledVal = Math.round(Number.parseFloat(r.category_revenue) / 20000.0)
         
         if (cat === 'electronics') barDataMap[key].electronics += scaledVal
         else if (cat === 'apparel') barDataMap[key].apparel += scaledVal
@@ -234,7 +234,7 @@ router.get('/business-metrics', async (req, res) => {
       donutParams.push(customerFilter)
     }
     const donutRes = await query(donutQuery, donutParams)
-    const totalDonutCount = donutRes.rows.reduce((sum, r) => sum + parseInt(r.count), 0)
+    const totalDonutCount = donutRes.rows.reduce((sum, r) => sum + Number.parseInt(r.count), 0)
     
     const colors = {
       'Electronics': '#f43f5e',
@@ -245,7 +245,7 @@ router.get('/business-metrics', async (req, res) => {
     }
 
     const donutData = donutRes.rows.map(r => {
-      const pct = totalDonutCount > 0 ? Math.round((parseInt(r.count) / totalDonutCount) * 100) : 0
+      const pct = totalDonutCount > 0 ? Math.round((Number.parseInt(r.count) / totalDonutCount) * 100) : 0
       return {
         label: r.label,
         pct: pct,
@@ -299,7 +299,7 @@ router.get('/business-metrics', async (req, res) => {
         monthlyRevParams.push(customerFilter)
       }
       const monthlyRevRes = await query(monthlyRevQuery, monthlyRevParams)
-      const revenueINR = parseFloat(monthlyRevRes.rows[0].total)
+      const revenueINR = Number.parseFloat(monthlyRevRes.rows[0].total)
       const revenueUSD = revenueINR / 83.0
 
       let change = '+0%'
@@ -319,7 +319,7 @@ router.get('/business-metrics', async (req, res) => {
           prevMonthParams.push(customerFilter)
         }
         const prevMonthRes = await query(prevMonthQuery, prevMonthParams)
-        const prevRevenue = parseFloat(prevMonthRes.rows[0].total)
+        const prevRevenue = Number.parseFloat(prevMonthRes.rows[0].total)
         if (prevRevenue > 0) {
           const diffPct = ((revenueINR - prevRevenue) / prevRevenue) * 100
           change = (diffPct >= 0 ? '+' : '') + Math.round(diffPct) + '%'

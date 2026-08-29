@@ -29,7 +29,7 @@ export function formatWorkflowDuration(createdAt) {
  * Used by both the QStash Webhook receiver (production) and the local runner (dev).
  */
 export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted' }) {
-  if (!runId || isNaN(step)) {
+  if (!runId || Number.isNaN(step)) {
     return { error: 'Missing required runId or step in workflow payload' }
   }
 
@@ -193,7 +193,7 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
 
       const invNum = bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`
       const sellerName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
-      const totalValFormatted = parseFloat(quote.total_amount || bill.amount || run.test_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      const totalValFormatted = Number.parseFloat(quote.total_amount || bill.amount || run.test_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
       // Generate the official Tax Invoice PDF attachment buffer
       const pdfBuffer = await generateInvoicePdfBuffer({

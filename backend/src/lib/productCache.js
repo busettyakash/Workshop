@@ -27,7 +27,7 @@ export async function getProductHsnMap() {
     const map = {}
     for (const p of rows) {
       const hsn = p.hsn_code || p.sku || `1006${String(p.id || 1000).padStart(4, '0')}`
-      const bw = parseFloat(p.bag_weight || 1)
+      const bw = Number.parseFloat(p.bag_weight || 1)
       const pData = { hsn, name: p.name, unit: p.unit, bag_weight: bw }
       if (p.id) map[String(p.id)] = pData
       if (p.name) {
@@ -97,18 +97,18 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
     }
 
     if (!hsnCode || hsnCode === '—') {
-      const numericId = parseInt(pId, 10) || (idx + 101)
+      const numericId = Number.parseInt(pId, 10) || (idx + 101)
       hsnCode = `1006${String(numericId).padStart(4, '0')}`
     }
 
-    let bagWeight = parseFloat(
+    let bagWeight = Number.parseFloat(
       item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? catProd?.bag_weight ?? 0
     )
 
-    if (isNaN(bagWeight) || bagWeight <= 0) {
+    if (Number.isNaN(bagWeight) || bagWeight <= 0) {
       const weightMatch = name.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
       if (weightMatch && weightMatch[1]) {
-        bagWeight = parseFloat(weightMatch[1])
+        bagWeight = Number.parseFloat(weightMatch[1])
       } else {
         bagWeight = 1
       }

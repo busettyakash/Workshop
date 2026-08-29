@@ -137,8 +137,8 @@ router.post('/', async (req, res) => {
     // ── Handle Deal P2P Chat Bypassing AI ──
     if (conversationId && conversationId.startsWith('deal-')) {
       const dealIdStr = conversationId.split('-')[1]
-      const dealId = parseInt(dealIdStr, 10)
-      if (!isNaN(dealId)) {
+      const dealId = Number.parseInt(dealIdStr, 10)
+      if (!Number.isNaN(dealId)) {
         const dealCheck = await query('SELECT * FROM deals WHERE id = $1 AND (user_id = $2 OR company_shop_id = $2)', [dealId, userId])
         if (dealCheck.rows.length > 0) {
           const deal = dealCheck.rows[0]
@@ -307,7 +307,7 @@ Always call query_business_data to get real-time accurate information when asked
               }
             } else if (toolName === 'query_business_data') {
               const { dataset, search, status, limit: rawLimit } = args || {}
-              const limit = Math.min(Math.max(parseInt(rawLimit, 10) || 20, 1), 50)
+              const limit = Math.min(Math.max(Number.parseInt(rawLimit, 10) || 20, 1), 50)
               const searchPattern = search ? `%${search.trim()}%` : null
 
               try {

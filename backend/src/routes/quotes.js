@@ -87,7 +87,7 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
 
     if (wfId && quote) {
       const custName = quote.customer_name || 'Customer'
-      const totalVal = parseFloat(quote.total_amount || 0)
+      const totalVal = Number.parseFloat(quote.total_amount || 0)
       const quoteNum = quote.quote_number || `QT-${quote.id || 'New'}`
       const isDeclined = actionName === 'Declined'
       const companyLabel = isDeclined ? `${custName} (${quoteNum}) · Declined` : `${custName} (${quoteNum})`
@@ -138,7 +138,7 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
   if (!Array.isArray(items)) return
   for (const item of items) {
     if (!item) continue
-    const qty = parseFloat(item.quantity || item.qty || 0)
+    const qty = Number.parseFloat(item.quantity || item.qty || 0)
     const prodId = item.product_id || item.id || item.productId
     const itemName = item.name || item.product_name || item.productName || ''
     const itemCode = item.hsn_code || item.hsn || item.sku || ''
@@ -159,7 +159,7 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
     const prod = prodRes?.rows?.[0]
     if (!prod) continue
 
-    const bw = parseFloat(prod.bag_weight || 1)
+    const bw = Number.parseFloat(prod.bag_weight || 1)
     const itemUnitStr = String(item.unit || item.unitLabel || '').trim().toLowerCase()
     const prodUnitStr = String(prod.unit || 'pcs').trim().toLowerCase()
     const containerKeywords = ['bag', 'bags', 'drum', 'drums', 'can', 'cans', 'roll', 'rolls', 'box', 'boxes', 'carton', 'cartons', 'dozen', 'doz', 'pack', 'packs', 'bundle', 'bundles']
@@ -173,8 +173,8 @@ const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
 
     const rawUnit = item.unit || item.unitLabel || (isBaseUnit ? 'kgs' : prod.unit) || 'pcs'
 
-    const currentStock = parseFloat(prod.stock || 0)
-    const currentLoose = parseFloat(prod.loose_kg || 0)
+    const currentStock = Number.parseFloat(prod.stock || 0)
+    const currentLoose = Number.parseFloat(prod.loose_kg || 0)
 
     let totalBaseBefore = (bw > 1) ? ((currentStock * bw) + currentLoose) : currentStock
     let qtyDeductedBase = (isBaseUnit || bw <= 1) ? qty : (qty * bw)
@@ -384,7 +384,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
   const shop = shopProfileRes.rows[0] || {}
   const sellerName = shop.shop_name || shop.name || quote.shop_name || bill?.shop_name || 'Workshop'
   const invNum = bill?.bill_number || `INV-${String(bill?.id || 1).padStart(4, '0')}`
-  const totalAmount = parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
+  const totalAmount = Number.parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
   const totalFormatted = totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const catalogMap = await getProductHsnMap()
@@ -469,7 +469,7 @@ const sendOrderConfirmationEmailToCustomer = async (quote, bill, billItems, orde
   const customerName = quote.customer_name || bill?.customer_name || 'Customer'
   const dateObj = new Date()
   const orderDateStr = `${dateObj.getDate()}-${dateObj.toLocaleString('en-US', { month: 'short' })}-${dateObj.getFullYear()}`
-  const totalAmount = parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
+  const totalAmount = Number.parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
 
   const catalogMap = await getProductHsnMap()
   const enrichedBillItems = enrichItemsWithCache(billItems || [], catalogMap)
@@ -534,8 +534,8 @@ const sendOrderConfirmationEmailToCustomer = async (quote, bill, billItems, orde
 router.get('/', apiLimiter, async (req, res) => {
   try {
     const userId = getUserId(req)
-    const page = parseInt(req.query.page, 10) || 1
-    const limit = parseInt(req.query.limit, 10) || 20
+    const page = Number.parseInt(req.query.page, 10) || 1
+    const limit = Number.parseInt(req.query.limit, 10) || 20
     const offset = (page - 1) * limit
     const search = req.query.search || ''
     const status = req.query.status || ''
@@ -567,7 +567,7 @@ router.get('/', apiLimiter, async (req, res) => {
       pool.query(dataQuery, dataParams)
     ])
 
-    const total = parseInt(countRes.rows[0].count, 10)
+    const total = Number.parseInt(countRes.rows[0].count, 10)
 
     res.json({
       data: dataRes.rows,
@@ -637,7 +637,7 @@ router.get('/respond', emailLimiter, async (req, res) => {
         `Re: Quotation #${quote.quote_number} ${action}`,
         `<div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif; padding:16px; color:#1e293b;">
           <h3 style="margin-top:0; color:#0f172a;">Quotation #${quote.quote_number} ${action}</h3>
-          <p>Customer <strong>${quote.customer_name}</strong> has <strong>${action.toLowerCase()}</strong> quotation #${quote.quote_number} for total amount ₹${parseFloat(quote.total_amount || 0).toFixed(2)}.</p>
+          <p>Customer <strong>${quote.customer_name}</strong> has <strong>${action.toLowerCase()}</strong> quotation #${quote.quote_number} for total amount ₹${Number.parseFloat(quote.total_amount || 0).toFixed(2)}.</p>
           ${action === 'Accepted' ? `<p style="color:#16a34a; font-weight:bold;">✅ Order <strong>${generatedOrderNum}</strong> & Invoice generated in Billing.</p>` : ''}
         </div>`,
         `Quotation #${quote.quote_number} was ${action.toLowerCase()} by ${quote.customer_name}`,
@@ -683,8 +683,8 @@ router.get('/respond', emailLimiter, async (req, res) => {
         const enrichedItems = enrichItemsWithCache(items, catalogMap)
         const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
 
-        const lineSum = enrichedItems.reduce((acc, it) => acc + (parseFloat(it.quantity || 1) * parseFloat(it.rate || it.price || 0)), 0)
-        const quoteTotal = parseFloat(quote.total_amount || 0)
+        const lineSum = enrichedItems.reduce((acc, it) => acc + (Number.parseFloat(it.quantity || 1) * Number.parseFloat(it.rate || it.price || 0)), 0)
+        const quoteTotal = Number.parseFloat(quote.total_amount || 0)
         const numericDiscount = lineSum > quoteTotal ? (lineSum - quoteTotal) : 0
 
         const billRes = await pool.query(
@@ -715,9 +715,9 @@ router.get('/respond', emailLimiter, async (req, res) => {
                   bill.id,
                   item.product_id || null,
                   item.name || 'Custom Item',
-                  parseFloat(item.quantity || 1),
-                  parseFloat(item.rate || item.price || 0),
-                  parseFloat(item.amount || item.line_total || 0)
+                  Number.parseFloat(item.quantity || 1),
+                  Number.parseFloat(item.rate || item.price || 0),
+                  Number.parseFloat(item.amount || item.line_total || 0)
                 ]
               ).catch(async () => {
                 return pool.query(
@@ -726,8 +726,8 @@ router.get('/respond', emailLimiter, async (req, res) => {
                   [
                     bill.id,
                     item.product_id || null,
-                    parseFloat(item.quantity || 1),
-                    parseFloat(item.rate || item.price || 0)
+                    Number.parseFloat(item.quantity || 1),
+                    Number.parseFloat(item.rate || item.price || 0)
                   ]
                 ).catch(() => null)
               })
@@ -861,8 +861,8 @@ router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
     }
     if (!Array.isArray(items)) items = []
 
-    const lineSum = items.reduce((acc, it) => acc + (parseFloat(it.quantity || 1) * parseFloat(it.rate || it.price || 0)), 0)
-    const quoteTotal = parseFloat(quote.total_amount || 0)
+    const lineSum = items.reduce((acc, it) => acc + (Number.parseFloat(it.quantity || 1) * Number.parseFloat(it.rate || it.price || 0)), 0)
+    const quoteTotal = Number.parseFloat(quote.total_amount || 0)
     const numericDiscount = lineSum > quoteTotal ? (lineSum - quoteTotal) : 0
 
     const billRes = await pool.query(
@@ -890,9 +890,9 @@ router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
             bill.id,
             item.product_id || null,
             item.name || 'Custom Item',
-            parseFloat(item.quantity || 1),
-            parseFloat(item.rate || 0),
-            parseFloat(item.amount || 0)
+            Number.parseFloat(item.quantity || 1),
+            Number.parseFloat(item.rate || 0),
+            Number.parseFloat(item.amount || 0)
           ]
         )
         if (itemRes.rows[0]) createdItems.push(itemRes.rows[0])
@@ -949,7 +949,7 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
       if (!d) return '—'
       try {
         const dateObj = new Date(d)
-        if (isNaN(dateObj.getTime())) return String(d)
+        if (Number.isNaN(dateObj.getTime())) return String(d)
         return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       } catch {
         return String(d)
@@ -993,7 +993,7 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
         quote.customer_email,
         `Quotation #${quote.quote_number} from Workshop`,
         emailHtml,
-        `Quotation #${quote.quote_number} for ₹${parseFloat(quote.total_amount || 0).toFixed(2)} sent to ${quote.customer_name}`,
+        `Quotation #${quote.quote_number} for ₹${Number.parseFloat(quote.total_amount || 0).toFixed(2)} sent to ${quote.customer_name}`,
         userId
       ]
     ).catch(eErr => console.error('[Quote Email Save Error]', eErr.message))
@@ -1051,7 +1051,7 @@ router.post('/', apiLimiter, async (req, res) => {
       RETURNING *`,
       [
         qNum, finalShopName, customer_company, customer_name, customer_phone, customer_email,
-        parseFloat(total_amount || 0), parseFloat(tax_amount || 0), parseFloat(tax_rate || 0),
+        Number.parseFloat(total_amount || 0), Number.parseFloat(tax_amount || 0), Number.parseFloat(tax_rate || 0),
         status, issue_date, valid_until || null, notes, itemsJson, userId
       ]
     )
@@ -1116,9 +1116,9 @@ router.put('/:id', apiLimiter, async (req, res) => {
       RETURNING *`,
       [
         quote_number, shop_name, customer_company, customer_name, customer_phone, customer_email,
-        total_amount !== undefined ? parseFloat(total_amount) : null,
-        tax_amount !== undefined ? parseFloat(tax_amount) : null,
-        tax_rate !== undefined ? parseFloat(tax_rate) : null,
+        total_amount !== undefined ? Number.parseFloat(total_amount) : null,
+        tax_amount !== undefined ? Number.parseFloat(tax_amount) : null,
+        tax_rate !== undefined ? Number.parseFloat(tax_rate) : null,
         status, issue_date, valid_until, notes, itemsJson, id, userId
       ]
     )
@@ -1159,7 +1159,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
         bill = existingBillRes.rows[0]
       } else {
         const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
-        const quoteTotal = parseFloat(updatedQuote.total_amount || 0)
+        const quoteTotal = Number.parseFloat(updatedQuote.total_amount || 0)
         const newBillRes = await pool.query(
           `INSERT INTO bills (bill_number, order_number, items, amount, status, due_date, notes, user_id, created_at)
            VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NOW()) RETURNING *`,

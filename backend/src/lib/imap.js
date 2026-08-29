@@ -42,7 +42,7 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
   const user = process.env.SMTP_USER
   const pass = process.env.SMTP_PASS
   const host = process.env.IMAP_HOST || 'imap.gmail.com'
-  const port = parseInt(process.env.IMAP_PORT) || 993
+  const port = Number.parseInt(process.env.IMAP_PORT) || 993
 
   if (!user || !pass) {
     console.warn('[IMAP] SMTP_USER / SMTP_PASS not set — skipping sync')

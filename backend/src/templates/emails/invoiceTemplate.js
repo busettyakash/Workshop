@@ -21,8 +21,8 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
 
   const invNum = bill?.bill_number || quote?.quote_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill?.id || 1) * 899999))}`
   const orderNum = bill?.order_number || quote?.order_number || ''
-  const totalAmount = parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
-  const taxAmt = parseFloat(quote?.tax_amount || 0)
+  const totalAmount = Number.parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
+  const taxAmt = Number.parseFloat(quote?.tax_amount || 0)
 
   // FIX: isQuoteFlow was reading an undefined `data` variable, which threw a
   // ReferenceError every time this ran. It should be based on the `quote` param.
@@ -36,10 +36,10 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     try { itemsList = JSON.parse(items) } catch { }
   }
 
-  const totalDiscountVal = parseFloat(bill?.discount || bill?.discount_amount || quote?.discount || 0)
-  const grossSubtotalVal = itemsList.reduce((s, it) => s + (parseFloat(it.price || it.rate || 0) * parseFloat(it.quantity || it.qty || 1)), 0)
+  const totalDiscountVal = Number.parseFloat(bill?.discount || bill?.discount_amount || quote?.discount || 0)
+  const grossSubtotalVal = itemsList.reduce((s, it) => s + (Number.parseFloat(it.price || it.rate || 0) * Number.parseFloat(it.quantity || it.qty || 1)), 0)
   const netTaxableVal = Math.max(1, grossSubtotalVal - totalDiscountVal)
-  const explicitTaxAmtVal = parseFloat(bill?.tax_amount || quote?.tax_amount || 0)
+  const explicitTaxAmtVal = Number.parseFloat(bill?.tax_amount || quote?.tax_amount || 0)
   const inferredTaxVal = (totalAmount > netTaxableVal + 0.01) ? (totalAmount - netTaxableVal) : 0
   const realTaxAmt = explicitTaxAmtVal > 0 ? explicitTaxAmtVal : inferredTaxVal
 
@@ -53,13 +53,13 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   // with `const` further down in the file but referenced inside the rowsHtml
   // map callback above it — a temporal-dead-zone ReferenceError, since the
   // map callback runs immediately when `.map()` is called.
-  const billDisc = !isNaN(parseFloat(bill?.discount)) ? parseFloat(bill.discount) : 0
-  const quoteDisc = !isNaN(parseFloat(quote?.discount)) ? parseFloat(quote.discount) : 0
+  const billDisc = !Number.isNaN(Number.parseFloat(bill?.discount)) ? Number.parseFloat(bill.discount) : 0
+  const quoteDisc = !Number.isNaN(Number.parseFloat(quote?.discount)) ? Number.parseFloat(quote.discount) : 0
   const grossTotal = grossSubtotalVal
   const diffDisc = grossTotal > totalAmount ? (grossTotal - totalAmount) : 0
 
   function resolvePackDisplay(rawUnit, qty, bagWeight, prodName, isQuoteFlow = false) {
-    const bw = parseFloat(bagWeight || 1)
+    const bw = Number.parseFloat(bagWeight || 1)
     let uRaw = String(rawUnit || '').trim()
 
     if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
@@ -113,13 +113,13 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   }
 
   function getExplicitLineDiscount(it) {
-    const explicit = parseFloat(it.discount ?? it.discount_amount ?? it.discountAmount ?? it.disc ?? NaN)
-    if (!isNaN(explicit) && explicit >= 0) return explicit
-    const qty = parseFloat(it.quantity || it.qty || 1)
-    const rate = parseFloat(it.price || it.rate || 0)
+    const explicit = Number.parseFloat(it.discount ?? it.discount_amount ?? it.discountAmount ?? it.disc ?? NaN)
+    if (!Number.isNaN(explicit) && explicit >= 0) return explicit
+    const qty = Number.parseFloat(it.quantity || it.qty || 1)
+    const rate = Number.parseFloat(it.price || it.rate || 0)
     const lineGross = qty * rate
-    const lineAmt = parseFloat(it.amount ?? it.line_total ?? NaN)
-    if (!isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
+    const lineAmt = Number.parseFloat(it.amount ?? it.line_total ?? NaN)
+    if (!Number.isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
       return Math.round((lineGross - lineAmt) * 100) / 100
     }
     return 0
@@ -128,8 +128,8 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const lineDiscountsVal = itemsList.reduce((s, it) => s + getExplicitLineDiscount(it), 0)
 
   const rowsHtml = itemsList.length > 0 ? itemsList.map(item => {
-    const qty = parseFloat(item.quantity || item.qty || 1)
-    const rate = parseFloat(item.price || item.rate || 0)
+    const qty = Number.parseFloat(item.quantity || item.qty || 1)
+    const rate = Number.parseFloat(item.price || item.rate || 0)
     const itemDisc = getExplicitLineDiscount(item)
     const lineTotalGross = rate * qty
     const prodName = item.product_name || item.name || item.productName || 'Product Item'
@@ -138,7 +138,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     const catProd = (item.product_id && catMap[String(item.product_id)])
       || (item.id && catMap[String(item.id)])
       || (prodName && catMap[prodName.toLowerCase().trim()])
-    const bw = parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? catProd?.bag_weight ?? 1)
+    const bw = Number.parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? catProd?.bag_weight ?? 1)
 
     const rawUnit = item.unit || item.unitLabel || ''
     const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw, prodName, isQuoteFlow)

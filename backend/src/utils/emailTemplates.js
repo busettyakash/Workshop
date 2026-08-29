@@ -10,7 +10,7 @@ export { getQuoteDeclinedTemplate } from '../templates/emails/quoteDeclinedTempl
 export { getInviteEmailTemplate } from '../templates/emails/inviteTemplate.js'
 
 export function getOrderConfirmationTemplate({ customerName = 'Customer', orderNumber = '', orderDate = '', totalAmount = 0 } = {}) {
-  const total = parseFloat(totalAmount || 0).toLocaleString('en-IN', {
+  const total = Number.parseFloat(totalAmount || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })

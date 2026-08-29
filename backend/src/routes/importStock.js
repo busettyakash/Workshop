@@ -183,7 +183,7 @@ router.get('/', async (req, res) => {
       `SELECT COUNT(*) FROM import_stock i ${where}`,
       params
     )
-    const total = parseInt(countRes.rows[0].count, 10) || 0
+    const total = Number.parseInt(countRes.rows[0].count, 10) || 0
     const totalPages = Math.ceil(total / limit) || 1
 
     params.push(limit, offset)
@@ -298,8 +298,8 @@ router.get('/:id', async (req, res) => {
       `SELECT stock, loose_kg FROM products WHERE user_id=$1 AND (sku=$2 OR name=$3) LIMIT 1`,
       [userId, rec.sku || 'N/A', rec.name]
     )
-    const liveProductStock = prodRes.rows.length > 0 ? parseFloat(prodRes.rows[0].stock || 0) : null
-    const looseKg = prodRes.rows.length > 0 ? parseFloat(prodRes.rows[0].loose_kg || 0) : 0
+    const liveProductStock = prodRes.rows.length > 0 ? Number.parseFloat(prodRes.rows[0].stock || 0) : null
+    const looseKg = prodRes.rows.length > 0 ? Number.parseFloat(prodRes.rows[0].loose_kg || 0) : 0
 
     const responsePayload = {
       data: {
@@ -331,15 +331,15 @@ router.post('/', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW(), NOW()) RETURNING *`,
       [
         name, sku, category, price,
-        buying_price ? parseFloat(buying_price) : null,
-        price_covers ? parseFloat(price_covers) : null,
-        updated_price ? parseFloat(updated_price) : null,
+        buying_price ? Number.parseFloat(buying_price) : null,
+        price_covers ? Number.parseFloat(price_covers) : null,
+        updated_price ? Number.parseFloat(updated_price) : null,
         updated_price_date || getIndianDateStr(),
-        stock || 0, status || 'pending', unit || 'pcs', description, userId, parseFloat(bag_weight) || 1,
+        stock || 0, status || 'pending', unit || 'pcs', description, userId, Number.parseFloat(bag_weight) || 1,
         buyer_name || null, buyer_phone || null, buyer_city || null, buyer_state || null,
         note || null,
-        add_stock_qty ? parseFloat(add_stock_qty) : null,
-        supplier_total_cost ? parseFloat(supplier_total_cost) : null
+        add_stock_qty ? Number.parseFloat(add_stock_qty) : null,
+        supplier_total_cost ? Number.parseFloat(supplier_total_cost) : null
       ]
     )
     console.log(`${LOG_PREFIX} POST / — SUCCESS, id: ${rows[0]?.id}`)
@@ -369,7 +369,7 @@ router.put('/:id', async (req, res) => {
 
     let finalUpdatedPrice = oldRec?.updated_price
     if (updated_price !== undefined && updated_price !== null && updated_price !== '') {
-      finalUpdatedPrice = parseFloat(updated_price)
+      finalUpdatedPrice = Number.parseFloat(updated_price)
     }
 
     const { rows } = await query(
@@ -377,15 +377,15 @@ router.put('/:id', async (req, res) => {
        WHERE id=$21 AND user_id = $22 RETURNING *`,
       [
         name, sku, category, price,
-        buying_price ? parseFloat(buying_price) : null,
-        price_covers ? parseFloat(price_covers) : null,
+        buying_price ? Number.parseFloat(buying_price) : null,
+        price_covers ? Number.parseFloat(price_covers) : null,
         finalUpdatedPrice,
         finalPriceDate,
-        stock, status || 'pending', unit || 'pcs', description, parseFloat(bag_weight) || 1,
+        stock, status || 'pending', unit || 'pcs', description, Number.parseFloat(bag_weight) || 1,
         buyer_name || null, buyer_phone || null, buyer_city || null, buyer_state || null,
         note || null,
-        add_stock_qty ? parseFloat(add_stock_qty) : null,
-        supplier_total_cost ? parseFloat(supplier_total_cost) : null,
+        add_stock_qty ? Number.parseFloat(add_stock_qty) : null,
+        supplier_total_cost ? Number.parseFloat(supplier_total_cost) : null,
         req.params.id, userId
       ]
     )
@@ -403,14 +403,14 @@ router.put('/:id', async (req, res) => {
       if (existingProduct.rows.length > 0) {
         const prod = existingProduct.rows[0]
         const oldEffective = prod.updated_price !== null && prod.updated_price !== undefined && prod.updated_price !== ''
-          ? parseFloat(prod.updated_price)
-          : parseFloat(prod.price || 0)
+          ? Number.parseFloat(prod.updated_price)
+          : Number.parseFloat(prod.price || 0)
 
-        const currentLiveStock = prod.stock !== undefined && prod.stock !== null ? parseFloat(prod.stock) : 0
-        const explicitAddStock = (add_stock_qty !== undefined && add_stock_qty !== null && add_stock_qty !== '') ? parseFloat(add_stock_qty) : 0
+        const currentLiveStock = prod.stock !== undefined && prod.stock !== null ? Number.parseFloat(prod.stock) : 0
+        const explicitAddStock = (add_stock_qty !== undefined && add_stock_qty !== null && add_stock_qty !== '') ? Number.parseFloat(add_stock_qty) : 0
 
-        const oldBatchStock = parseFloat(oldRec.stock || 0)
-        const newBatchStock = stock !== undefined && stock !== null ? parseFloat(stock) : oldBatchStock
+        const oldBatchStock = Number.parseFloat(oldRec.stock || 0)
+        const newBatchStock = stock !== undefined && stock !== null ? Number.parseFloat(stock) : oldBatchStock
         const batchStockDiff = newBatchStock - oldBatchStock
 
         // If explicit add_stock_qty was entered, use that; otherwise fall back to batchStockDiff
@@ -428,11 +428,11 @@ router.put('/:id', async (req, res) => {
           `UPDATE products SET name=$1, sku=$2, category=$3, price=$4, price_covers=$5, updated_price=$6, updated_price_date=$7, stock=$8, unit=$9, description=$10, bag_weight=$11, updated_at=NOW()
            WHERE id=$12`,
           [
-            name, sku, category, price, price_covers ? parseFloat(price_covers) : null,
+            name, sku, category, price, price_covers ? Number.parseFloat(price_covers) : null,
             finalUpdatedPrice,
             finalPriceDate,
             finalProductStock,
-            unit || 'pcs', description, parseFloat(bag_weight) || 1, prod.id
+            unit || 'pcs', description, Number.parseFloat(bag_weight) || 1, prod.id
           ]
         );
 
@@ -451,7 +451,7 @@ router.put('/:id', async (req, res) => {
 
         const newEffective = finalUpdatedPrice !== null && finalUpdatedPrice !== undefined
           ? finalUpdatedPrice
-          : parseFloat(price)
+          : Number.parseFloat(price)
 
         if (newEffective !== oldEffective) {
           await query(
@@ -488,7 +488,7 @@ router.patch('/:id/supplier-cost', async (req, res) => {
       `UPDATE import_stock SET supplier_total_cost = $1, updated_at = NOW()
        WHERE id = $2 AND user_id = $3
        RETURNING *`,
-      [supplier_total_cost !== undefined && supplier_total_cost !== '' ? parseFloat(supplier_total_cost) : null, req.params.id, userId]
+      [supplier_total_cost !== undefined && supplier_total_cost !== '' ? Number.parseFloat(supplier_total_cost) : null, req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Import stock not found' })
     await clearImportStockCache(userId)
@@ -509,7 +509,7 @@ router.patch('/:id/payment', async (req, res) => {
        WHERE id = $3 AND user_id = $4
        RETURNING *`,
       [
-        paid_amount !== undefined && paid_amount !== '' ? parseFloat(paid_amount) : 0,
+        paid_amount !== undefined && paid_amount !== '' ? Number.parseFloat(paid_amount) : 0,
         payment_mode || null,
         req.params.id,
         userId
@@ -534,7 +534,7 @@ router.post('/:id/payments', async (req, res) => {
     const { rows } = await query(
       `INSERT INTO import_stock_payments (import_stock_id, user_id, amount, payment_mode, created_at)
        VALUES ($1, $2, $3, $4, NOW()) RETURNING *`,
-      [req.params.id, userId, parseFloat(amount), payment_mode]
+      [req.params.id, userId, Number.parseFloat(amount), payment_mode]
     )
     await clearImportStockCache(userId)
     res.status(201).json(rows[0])
@@ -594,7 +594,7 @@ router.post('/bulk-add-to-products', async (req, res) => {
         // Restock existing product and set status to active
         await query(
           `UPDATE products SET stock = stock + $1, loose_kg = COALESCE(loose_kg, 0) + $2, price = $3, price_covers = $4, updated_price = $5, updated_price_date = $6, bag_weight = $7, status = 'active', updated_at = NOW() WHERE id = $8`,
-          [item.stock, parseFloat(item.loose_kg || 0), item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.bag_weight || 1, targetId]
+          [item.stock, Number.parseFloat(item.loose_kg || 0), item.price, item.price_covers ? Number.parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.bag_weight || 1, targetId]
         )
 
         await query(
@@ -607,7 +607,7 @@ router.post('/bulk-add-to-products', async (req, res) => {
         const newProd = await query(
           `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, unit, status, description, user_id, bag_weight, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, NOW(), NOW()) RETURNING id`,
-          [item.name, item.sku, item.category, item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.stock, parseFloat(item.loose_kg || 0), item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
+          [item.name, item.sku, item.category, item.price, item.price_covers ? Number.parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.stock, Number.parseFloat(item.loose_kg || 0), item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
         )
         const targetId = newProd.rows[0].id
         await query(
@@ -672,7 +672,7 @@ router.post('/:id/add-to-products', async (req, res) => {
       // Restock existing product and set status to active
       await query(
         `UPDATE products SET stock = stock + $1, loose_kg = COALESCE(loose_kg, 0) + $2, price = $3, price_covers = $4, updated_price = $5, updated_price_date = $6, bag_weight = $7, status = 'active', updated_at = NOW() WHERE id = $8`,
-        [item.stock, parseFloat(item.loose_kg || 0), item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.bag_weight || 1, targetProductId]
+        [item.stock, Number.parseFloat(item.loose_kg || 0), item.price, item.price_covers ? Number.parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.bag_weight || 1, targetProductId]
       )
     } else {
       isNewProd = true
@@ -680,7 +680,7 @@ router.post('/:id/add-to-products', async (req, res) => {
       const newProdRes = await query(
         `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, unit, status, description, user_id, bag_weight, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, NOW(), NOW()) RETURNING id`,
-        [item.name, item.sku, item.category, item.price, item.price_covers ? parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.stock, parseFloat(item.loose_kg || 0), item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
+        [item.name, item.sku, item.category, item.price, item.price_covers ? Number.parseFloat(item.price_covers) : null, item.updated_price || null, item.updated_price_date || new Date().toISOString().split('T')[0], item.stock, Number.parseFloat(item.loose_kg || 0), item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
       )
       targetProductId = newProdRes.rows[0].id
     }

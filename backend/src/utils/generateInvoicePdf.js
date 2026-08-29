@@ -36,7 +36,7 @@ function fmtDate(d) {
 }
 
 function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQuote = false) {
-  let bw = parseFloat(bagWeight || 1)
+  let bw = Number.parseFloat(bagWeight || 1)
   let pName
   if (typeof prodName === 'string' && prodName.trim()) {
     pName = prodName
@@ -50,7 +50,7 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   if (bw <= 1 && pNameLower) {
     const nameWeightMatch = pNameLower.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
     if (nameWeightMatch && nameWeightMatch[1]) {
-      bw = parseFloat(nameWeightMatch[1])
+      bw = Number.parseFloat(nameWeightMatch[1])
     } else if (pNameLower.includes('soddalu')) {
       bw = 50
     } else if (pNameLower.includes('kurnool') || pNameLower.includes('rice')) {
@@ -166,34 +166,34 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
   const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
 
   const grossSubtotal = items.reduce((s, li) => {
-    const q = parseFloat(li.qty || li.quantity || 1)
-    const p = parseFloat(li.price || li.rate || 0)
+    const q = Number.parseFloat(li.qty || li.quantity || 1)
+    const p = Number.parseFloat(li.price || li.rate || 0)
     return s + (p * q)
   }, 0)
 function getExplicitLineDiscount(li) {
-  const explicit = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
-  if (!isNaN(explicit) && explicit >= 0) return explicit
-  const qty = parseFloat(li.quantity || li.qty || 1)
-  const rate = parseFloat(li.rate || li.price || 0)
+  const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
+  if (!Number.isNaN(explicit) && explicit >= 0) return explicit
+  const qty = Number.parseFloat(li.quantity || li.qty || 1)
+  const rate = Number.parseFloat(li.rate || li.price || 0)
   const lineGross = qty * rate
-  const lineAmt = parseFloat(li.amount ?? li.line_total ?? NaN)
-  if (!isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
+  const lineAmt = Number.parseFloat(li.amount ?? li.line_total ?? NaN)
+  if (!Number.isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
     return Math.round((lineGross - lineAmt) * 100) / 100
   }
   return 0
 }
 
   const lineDiscounts = items.reduce((s, li) => s + getExplicitLineDiscount(li), 0)
-  const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
-  const explicitTotalAmount = parseFloat(doc.amount || doc.total_amount || 0)
+  const explicitDiscount = Number.parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
+  const explicitTotalAmount = Number.parseFloat(doc.amount || doc.total_amount || 0)
 
   const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
-  const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
-  const explicitTaxAmt = hasExplicitTaxAmt ? parseFloat(rawTaxAmt) : 0
+  const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !Number.isNaN(Number.parseFloat(rawTaxAmt))
+  const explicitTaxAmt = hasExplicitTaxAmt ? Number.parseFloat(rawTaxAmt) : 0
 
   const rawTaxRate = doc.tax_rate ?? doc.taxRate ?? quote?.tax_rate ?? bill?.tax_rate
-  const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !isNaN(parseFloat(rawTaxRate)))
-    ? parseFloat(rawTaxRate)
+  const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !Number.isNaN(Number.parseFloat(rawTaxRate)))
+    ? Number.parseFloat(rawTaxRate)
     : null
 
   const tempDiscount = Math.max(explicitDiscount, lineDiscounts)
@@ -217,7 +217,7 @@ function getExplicitLineDiscount(li) {
   const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (taxableSubtotal + taxAmt)
 
   let effectiveTaxRate = 0
-  if (explicitTaxRate !== null && explicitTaxRate !== undefined && !isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
+  if (explicitTaxRate !== null && explicitTaxRate !== undefined && !Number.isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
     effectiveTaxRate = explicitTaxRate
   } else if (taxAmt > 0 && taxableSubtotal > 0) {
     effectiveTaxRate = Math.round((taxAmt / taxableSubtotal) * 100)
@@ -232,8 +232,8 @@ function getExplicitLineDiscount(li) {
 
   // Build table rows
   const rowsHtml = items.length > 0 ? items.map((li, i) => {
-    const qty = parseFloat(li.qty || li.quantity || 1)
-    const price = parseFloat(li.price || li.rate || 0)
+    const qty = Number.parseFloat(li.qty || li.quantity || 1)
+    const price = Number.parseFloat(li.price || li.rate || 0)
     const disc = getExplicitLineDiscount(li)
     const lineTotalGross = price * qty
     let itemDisc = disc
@@ -262,15 +262,15 @@ function getExplicitLineDiscount(li) {
     const rawUnit = li.unit || li.unitLabel || dbProd?.unit || ''
     const dbUnit = dbProd?.unit || ''
 
-    let bagWeight = parseFloat(
+    let bagWeight = Number.parseFloat(
       li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? li.packWeight ??
       dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? dbProd?.packWeight ?? 0
     )
 
-    if (isNaN(bagWeight) || bagWeight <= 0) {
+    if (Number.isNaN(bagWeight) || bagWeight <= 0) {
       const nameMatch = prodName.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
       if (nameMatch && nameMatch[1]) {
-        bagWeight = parseFloat(nameMatch[1])
+        bagWeight = Number.parseFloat(nameMatch[1])
       } else {
         bagWeight = 1
       }
@@ -579,41 +579,41 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
       const validUntilDate = fmtDate(quote.valid_until || new Date(Date.now() + 30 * 86400000))
 
       const grossSubtotal = items.reduce((s, li) => {
-        const q = parseFloat(li.qty || li.quantity || 1)
-        const p = parseFloat(li.price || li.rate || 0)
+        const q = Number.parseFloat(li.qty || li.quantity || 1)
+        const p = Number.parseFloat(li.price || li.rate || 0)
         return s + (p * q)
       }, 0)
 
       function getLineDiscount(li) {
-        const explicit = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? NaN)
-        if (!isNaN(explicit) && explicit >= 0) return explicit
-        const q = parseFloat(li.quantity || li.qty || 1)
-        const r = parseFloat(li.rate || li.price || 0)
-        const amt = parseFloat(li.amount ?? li.line_total ?? NaN)
-        if (!isNaN(amt) && (q * r) > amt + 0.01) return Math.round(((q * r) - amt) * 100) / 100
+        const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? NaN)
+        if (!Number.isNaN(explicit) && explicit >= 0) return explicit
+        const q = Number.parseFloat(li.quantity || li.qty || 1)
+        const r = Number.parseFloat(li.rate || li.price || 0)
+        const amt = Number.parseFloat(li.amount ?? li.line_total ?? NaN)
+        if (!Number.isNaN(amt) && (q * r) > amt + 0.01) return Math.round(((q * r) - amt) * 100) / 100
         return 0
       }
 
       const lineDiscounts = items.reduce((s, li) => s + getLineDiscount(li), 0)
-      const explicitDocDiscount = parseFloat(quote.discount || bill.discount || quote.discount_amount || bill.discount_amount || 0)
+      const explicitDocDiscount = Number.parseFloat(quote.discount || bill.discount || quote.discount_amount || bill.discount_amount || 0)
       const totalDiscount = Math.max(lineDiscounts, explicitDocDiscount)
       const taxableSubtotal = Math.max(0, grossSubtotal - totalDiscount)
 
       const rawTaxRate = quote.tax_rate ?? bill.tax_rate
-      const hasTaxRate = rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !isNaN(parseFloat(rawTaxRate))
-      const explicitTaxRate = hasTaxRate ? parseFloat(rawTaxRate) : 18.00
+      const hasTaxRate = rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !Number.isNaN(Number.parseFloat(rawTaxRate))
+      const explicitTaxRate = hasTaxRate ? Number.parseFloat(rawTaxRate) : 18.00
 
       const rawTaxAmt = quote.tax_amount ?? bill.tax_amount
-      const hasTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
+      const hasTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !Number.isNaN(Number.parseFloat(rawTaxAmt))
       
       let taxAmt = 0
-      if (hasTaxAmt && parseFloat(rawTaxAmt) >= 0) {
-        taxAmt = parseFloat(rawTaxAmt)
+      if (hasTaxAmt && Number.parseFloat(rawTaxAmt) >= 0) {
+        taxAmt = Number.parseFloat(rawTaxAmt)
       } else {
         taxAmt = taxableSubtotal * (explicitTaxRate / 100)
       }
 
-      const explicitTotal = parseFloat(bill.amount || quote.total_amount || 0)
+      const explicitTotal = Number.parseFloat(bill.amount || quote.total_amount || 0)
       const totalAmount = explicitTotal > 0 ? explicitTotal : (taxableSubtotal + taxAmt)
 
       const halfRate = (explicitTaxRate / 2).toFixed(2).replace(/\.00$/, '')
@@ -761,8 +761,8 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
         const name = it.product_name || it.name || `Item ${idx + 1}`
         const hsn = it.hsn_code || '70534921'
         const unit = it.unit || 'Bag'
-        const qty = parseFloat(it.quantity || 1)
-        const rate = parseFloat(it.price || it.rate || 0)
+        const qty = Number.parseFloat(it.quantity || 1)
+        const rate = Number.parseFloat(it.price || it.rate || 0)
         const gross = qty * rate
         const disc = getLineDiscount(it)
         const packSubtext = it.subtext || (it.bag_weight ? `${it.bag_weight}kg ${unit}` : '')

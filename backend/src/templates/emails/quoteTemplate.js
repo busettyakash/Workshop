@@ -8,13 +8,13 @@ function escapeHtml(str) {
 }
 
 function getExplicitLineDiscount(li) {
-  const explicit = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
-  if (!isNaN(explicit) && explicit >= 0) return explicit
-  const qty = parseFloat(li.quantity || li.qty || 1)
-  const rate = parseFloat(li.rate || li.price || 0)
+  const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
+  if (!Number.isNaN(explicit) && explicit >= 0) return explicit
+  const qty = Number.parseFloat(li.quantity || li.qty || 1)
+  const rate = Number.parseFloat(li.rate || li.price || 0)
   const lineGross = qty * rate
-  const lineAmt = parseFloat(li.amount ?? li.line_total ?? NaN)
-  if (!isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
+  const lineAmt = Number.parseFloat(li.amount ?? li.line_total ?? NaN)
+  if (!Number.isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
     return Math.round((lineGross - lineAmt) * 100) / 100
   }
   return 0
@@ -29,20 +29,20 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
   }
 
   const grossSubtotal = items.reduce((s, li) => {
-    const q = parseFloat(li.quantity || li.qty || 1)
-    const p = parseFloat(li.rate || li.price || 0)
+    const q = Number.parseFloat(li.quantity || li.qty || 1)
+    const p = Number.parseFloat(li.rate || li.price || 0)
     return s + (p * q)
   }, 0)
 
   const lineDiscounts = items.reduce((s, li) => s + getExplicitLineDiscount(li), 0)
   const subtotal = Math.max(0, grossSubtotal - lineDiscounts)
-  const totalAmount = parseFloat(quote.total_amount || grossSubtotal || 0)
-  const taxAmt = parseFloat(quote.tax_amount || 0)
+  const totalAmount = Number.parseFloat(quote.total_amount || grossSubtotal || 0)
+  const taxAmt = Number.parseFloat(quote.tax_amount || 0)
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2
 
   const grossTotalWithTax = subtotal + taxAmt
-  const explicitDiscount = parseFloat(quote.discount || quote.discount_amount || 0)
+  const explicitDiscount = Number.parseFloat(quote.discount || quote.discount_amount || 0)
   const diffDiscount = (grossTotalWithTax > 0 && totalAmount > 0 && grossTotalWithTax > totalAmount + 0.01) ? (grossTotalWithTax - totalAmount) : 0
   const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
 
@@ -52,7 +52,7 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
   const customerName = quote.customer_name || ''
 
   function resolvePackDisplay(rawUnit, qty, bagWeight) {
-    const bw = parseFloat(bagWeight || 1)
+    const bw = Number.parseFloat(bagWeight || 1)
     let uRaw = String(rawUnit || '').trim()
 
     if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
@@ -98,11 +98,11 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
   }
 
   const explicitTaxRate = (quote?.tax_rate !== undefined && quote?.tax_rate !== null && quote?.tax_rate !== '')
-    ? parseFloat(quote.tax_rate)
+    ? Number.parseFloat(quote.tax_rate)
     : null
 
   let effectiveTaxRate = 0
-  if (explicitTaxRate !== null && !isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
+  if (explicitTaxRate !== null && !Number.isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
     effectiveTaxRate = explicitTaxRate
   } else if (taxAmt > 0 && subtotal > 0) {
     effectiveTaxRate = Math.round((taxAmt / subtotal) * 100)
@@ -112,8 +112,8 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
 
   // Generate table rows matching PDF layout
   const rowsHtml = items.length > 0 ? items.map(li => {
-    const qty = parseFloat(li.quantity || li.qty || 1)
-    const rate = parseFloat(li.rate || li.price || 0)
+    const qty = Number.parseFloat(li.quantity || li.qty || 1)
+    const rate = Number.parseFloat(li.rate || li.price || 0)
     const disc = getExplicitLineDiscount(li)
     const lineTotalGross = rate * qty
     let itemDisc = disc
@@ -127,7 +127,7 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
     const catProd = (li.product_id && catMap[String(li.product_id)])
       || (li.id && catMap[String(li.id)])
       || (prodName && catMap[prodName.toLowerCase().trim()])
-    const bw = parseFloat(li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? catProd?.bag_weight ?? 1)
+    const bw = Number.parseFloat(li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? catProd?.bag_weight ?? 1)
     const rawUnit = li.unit || li.unitLabel || ''
     const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw)
 

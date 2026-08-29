@@ -22,11 +22,11 @@ export function decodeCursor(cursorStr) {
 }
 
 export function parsePaginationParams(query, defaultLimit = 20, maxLimit = 100) {
-  const pageRaw = parseInt(query.page, 10)
-  const limitRaw = parseInt(query.limit, 10)
+  const pageRaw = Number.parseInt(query.page, 10)
+  const limitRaw = Number.parseInt(query.limit, 10)
 
-  const page = isNaN(pageRaw) || pageRaw < 1 ? 1 : pageRaw
-  const limit = isNaN(limitRaw) || limitRaw < 1 ? defaultLimit : Math.min(limitRaw, maxLimit)
+  const page = Number.isNaN(pageRaw) || pageRaw < 1 ? 1 : pageRaw
+  const limit = Number.isNaN(limitRaw) || limitRaw < 1 ? defaultLimit : Math.min(limitRaw, maxLimit)
   const offset = (page - 1) * limit
   const cursor = query.cursor ? decodeCursor(query.cursor) : null
 

@@ -68,12 +68,12 @@ function getIndianDateStr() {
 }
 
 async function logPriceHistory(productId, userId, oldPrice, newPrice, effectiveDate, notes = 'Price update') {
-  if (!newPrice || isNaN(parseFloat(newPrice))) return
+  if (!newPrice || Number.isNaN(Number.parseFloat(newPrice))) return
   try {
     await query(
       `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [productId, userId, oldPrice ? parseFloat(oldPrice) : null, parseFloat(newPrice), effectiveDate || new Date().toISOString().split('T')[0], notes]
+      [productId, userId, oldPrice ? Number.parseFloat(oldPrice) : null, Number.parseFloat(newPrice), effectiveDate || new Date().toISOString().split('T')[0], notes]
     )
   } catch (e) {
     console.warn('[Products] Price history log error:', e.message)
@@ -149,7 +149,7 @@ router.get('/', async (req, res) => {
       queryParams
     )
 
-    const total = rawRows.length > 0 ? parseInt(rawRows[0]._total_count, 10) : 0
+    const total = rawRows.length > 0 ? Number.parseInt(rawRows[0]._total_count, 10) : 0
     const rows = rawRows.map(r => { const { _total_count, ...rest } = r; return rest })
     const totalPages = Math.ceil(total / limit) || 1
     const hasNextPage = page < totalPages
@@ -209,7 +209,7 @@ router.get('/:id/price-history', async (req, res) => {
         const insertedBase = await query(
           `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
            VALUES ($1, $2, NULL, $3, $4, 'Initial Base Price', $5) RETURNING *`,
-          [prod.id, userId, parseFloat(prod.price), createdTime.split('T')[0], createdTime]
+          [prod.id, userId, Number.parseFloat(prod.price), createdTime.split('T')[0], createdTime]
         )
         if (insertedBase.rows.length) {
           rows.push(insertedBase.rows[0])
@@ -219,9 +219,9 @@ router.get('/:id/price-history', async (req, res) => {
       }
     }
 
-    const updatedPriceNum = prod.updated_price ? parseFloat(prod.updated_price) : null
-    if (updatedPriceNum !== null && !isNaN(updatedPriceNum)) {
-      const hasUpdated = rows.some(r => parseFloat(r.new_price) === updatedPriceNum)
+    const updatedPriceNum = prod.updated_price ? Number.parseFloat(prod.updated_price) : null
+    if (updatedPriceNum !== null && !Number.isNaN(updatedPriceNum)) {
+      const hasUpdated = rows.some(r => Number.parseFloat(r.new_price) === updatedPriceNum)
       if (!hasUpdated) {
         let updatedTime = new Date().toISOString()
         if (prod.updated_at) {
@@ -233,7 +233,7 @@ router.get('/:id/price-history', async (req, res) => {
           const insertedUpd = await query(
             `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
              VALUES ($1, $2, $3, $4, $5, 'Updated Price', $6) RETURNING *`,
-            [prod.id, userId, parseFloat(prod.price), updatedPriceNum, updatedTime.split('T')[0], updatedTime]
+            [prod.id, userId, Number.parseFloat(prod.price), updatedPriceNum, updatedTime.split('T')[0], updatedTime]
           )
           if (insertedUpd.rows.length) {
             rows.unshift(insertedUpd.rows[0])
@@ -292,10 +292,10 @@ router.post('/', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW()) RETURNING *`,
       [
         name, sku || finalHsn, finalHsn, category, price,
-        price_covers ? parseFloat(price_covers) : null,
-        updated_price ? parseFloat(updated_price) : null,
+        price_covers ? Number.parseFloat(price_covers) : null,
+        updated_price ? Number.parseFloat(updated_price) : null,
         updated_price_date || new Date().toISOString().split('T')[0],
-        stock || 0, status || 'active', description, next_restock_time || 'TBD', userId, parseFloat(bag_weight) || 1
+        stock || 0, status || 'active', description, next_restock_time || 'TBD', userId, Number.parseFloat(bag_weight) || 1
       ]
     )
     const newProduct = rows[0]
@@ -316,7 +316,7 @@ router.post('/:id/price-history', async (req, res) => {
   const userId = req.workspaceId
   const productId = req.params.id
   const { old_price, new_price, effective_date, notes } = req.body
-  if (!new_price || isNaN(parseFloat(new_price))) {
+  if (!new_price || Number.isNaN(Number.parseFloat(new_price))) {
     return res.status(400).json({ error: 'Valid new_price is required' })
   }
   try {
@@ -327,8 +327,8 @@ router.post('/:id/price-history', async (req, res) => {
       [
         productId,
         userId,
-        old_price !== null && old_price !== undefined && !isNaN(parseFloat(old_price)) ? parseFloat(old_price) : null,
-        parseFloat(new_price),
+        old_price !== null && old_price !== undefined && !Number.isNaN(Number.parseFloat(old_price)) ? Number.parseFloat(old_price) : null,
+        Number.parseFloat(new_price),
         effDate.split('T')[0],
         notes || 'Price adjustment log',
         effDate
@@ -374,7 +374,7 @@ router.put('/:id', async (req, res) => {
 
     let finalUpdatedPrice = oldProduct?.updated_price
     if (updated_price !== undefined && updated_price !== null && updated_price !== '') {
-      finalUpdatedPrice = parseFloat(updated_price)
+      finalUpdatedPrice = Number.parseFloat(updated_price)
     }
 
     const { rows } = await query(
@@ -396,10 +396,10 @@ router.put('/:id', async (req, res) => {
        WHERE id=$14 AND user_id=$15 RETURNING *`,
       [
         name, sku || finalHsn, finalHsn, category, price,
-        price_covers !== undefined && price_covers !== null && price_covers !== '' ? parseFloat(price_covers) : oldProduct?.price_covers,
+        price_covers !== undefined && price_covers !== null && price_covers !== '' ? Number.parseFloat(price_covers) : oldProduct?.price_covers,
         finalUpdatedPrice,
         finalUpdatedPriceDate,
-        stock, status, description, next_restock_time, bag_weight ? parseFloat(bag_weight) : oldProduct?.bag_weight,
+        stock, status, description, next_restock_time, bag_weight ? Number.parseFloat(bag_weight) : oldProduct?.bag_weight,
         req.params.id, userId
       ]
     )
@@ -407,8 +407,8 @@ router.put('/:id', async (req, res) => {
     const updatedProd = rows[0]
     clearProductHsnCache()
 
-    const oldStockVal = oldProduct?.stock !== undefined && oldProduct?.stock !== null ? parseFloat(oldProduct.stock) : 0
-    const newStockVal = updatedProd?.stock !== undefined && updatedProd?.stock !== null ? parseFloat(updatedProd.stock) : oldStockVal
+    const oldStockVal = oldProduct?.stock !== undefined && oldProduct?.stock !== null ? Number.parseFloat(oldProduct.stock) : 0
+    const newStockVal = updatedProd?.stock !== undefined && updatedProd?.stock !== null ? Number.parseFloat(updatedProd.stock) : oldStockVal
     const stockDiff = newStockVal - oldStockVal
 
     if (stockDiff !== 0) {
@@ -457,13 +457,13 @@ router.patch('/:id/stock', async (req, res) => {
     const { rows: existingRows } = await query('SELECT * FROM products WHERE id = $1 AND user_id = $2', [req.params.id, userId])
     if (!existingRows.length) return res.status(404).json({ error: 'Product not found' })
     const oldProduct = existingRows[0]
-    const oldStock = parseFloat(oldProduct.stock || 0)
+    const oldStock = Number.parseFloat(oldProduct.stock || 0)
 
     let newStock = oldStock
-    if (add_stock !== undefined && !isNaN(parseFloat(add_stock))) {
-      newStock = oldStock + parseFloat(add_stock)
-    } else if (stock !== undefined && !isNaN(parseFloat(stock))) {
-      newStock = parseFloat(stock)
+    if (add_stock !== undefined && !Number.isNaN(Number.parseFloat(add_stock))) {
+      newStock = oldStock + Number.parseFloat(add_stock)
+    } else if (stock !== undefined && !Number.isNaN(Number.parseFloat(stock))) {
+      newStock = Number.parseFloat(stock)
     }
 
     const qtyDiff = newStock - oldStock

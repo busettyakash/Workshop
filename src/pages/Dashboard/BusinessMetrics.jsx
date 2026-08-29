@@ -290,11 +290,21 @@ export default function BusinessMetrics() {
                     <div
                       key={grp.label}
                       className="ws-bm-bar-group"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Metrics for ${grp.label}`}
                       onMouseEnter={() => setHoveredBar(gi)}
                       onMouseLeave={() => { setHoveredBar(null); setHoveredSeriesKey(null) }}
                       onClick={(e) => {
                         e.stopPropagation()
                         setPinnedBar(pinnedBar === gi ? null : gi)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setPinnedBar(pinnedBar === gi ? null : gi)
+                        }
                       }}
                     >
                       {activeSeries.map(s => {
@@ -331,7 +341,10 @@ export default function BusinessMetrics() {
                       {isVisible && (
                         <div 
                           className="ws-bm-tooltip"
+                          role="region"
+                          aria-label={`${grp.label} details`}
                           onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
                           style={{
                             minWidth: 230,
                             zIndex: 100,

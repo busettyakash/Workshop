@@ -20,8 +20,8 @@ async function clearImportStockCache(userId) {
     for (const key of allKeys) {
       await redis.del(key).catch(() => {})
     }
-  } catch (err) {
-    console.warn('%s Failed to clear cache for user %s: %s', LOG_PREFIX, userId, err.message)
+  } catch (_err) {
+    console.warn('%s Failed to clear import stock cache', LOG_PREFIX)
   }
 }
 
@@ -224,7 +224,7 @@ router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
   const { search, status, sort } = req.query
-  console.log(`${LOG_PREFIX} GET / — userId: ${userId}, page: ${page}, limit: ${limit}`)
+  console.log('%s GET /', LOG_PREFIX)
 
   const { params, conditions, orderCol } = buildImportStockFilters(userId, search, status, sort)
   const cacheKey = `import_stock:${userId}:${JSON.stringify({ search, status, sort, page, limit, cursor })}`
@@ -241,7 +241,7 @@ router.get('/', async (req, res) => {
     }
     return await fetchImportStockOffset(res, { conditions, params, limit, offset, page, orderCol, cacheKey })
   } catch (err) {
-    console.error(`${LOG_PREFIX} GET / — ERROR: ${err.message}`)
+    console.error('%s GET / ERROR', LOG_PREFIX)
     return res.status(500).json({ error: err.message })
   }
 })
@@ -316,7 +316,7 @@ router.get('/:id', async (req, res) => {
     }
     res.json(responsePayload)
   } catch (err) {
-    console.error('%s GET /:id — ERROR: %s', LOG_PREFIX, err.message)
+    console.error('%s GET /:id ERROR', LOG_PREFIX)
     res.status(500).json({ error: err.message })
   }
 })
@@ -347,11 +347,11 @@ router.post('/', async (req, res) => {
         supplier_total_cost ? Number.parseFloat(supplier_total_cost) : null
       ]
     )
-    console.log(`${LOG_PREFIX} POST / — SUCCESS, id: ${rows[0]?.id}`)
+    console.log('%s POST / SUCCESS', LOG_PREFIX)
     await clearImportStockCache(userId)
     res.status(201).json(rows[0])
   } catch (err) {
-    console.error(`${LOG_PREFIX} POST / — ERROR:`, err.message)
+    console.error('%s POST / ERROR', LOG_PREFIX)
     res.status(500).json({ error: err.message })
   }
 })
@@ -419,7 +419,7 @@ async function syncProductStockFromImportEdit(userId, oldRec, body, finalUpdated
       `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [prod.id, userId, oldEffective, newEffective, finalPriceDate, 'Import Stock Update']
-    ).catch(e => console.warn('[ImportStock] Price history log error:', e.message))
+    ).catch(() => console.warn('%s Price history log error', LOG_PREFIX))
   }
 }
 
@@ -461,7 +461,7 @@ router.put('/:id', async (req, res) => {
       ]
     )
     if (!rows.length) {
-      console.warn(`${LOG_PREFIX} PUT /${req.params.id} — NOT FOUND`)
+      console.warn('%s PUT /:id NOT FOUND', LOG_PREFIX)
       return res.status(404).json({ error: 'Import stock not found' })
     }
 
@@ -473,7 +473,7 @@ router.put('/:id', async (req, res) => {
     await clearImportStockCache(userId)
     return res.json(rows[0])
   } catch (err) {
-    console.error('%s PUT /:id — ERROR: %s', LOG_PREFIX, err.message)
+    console.error('%s PUT /:id ERROR', LOG_PREFIX)
     return res.status(500).json({ error: err.message })
   }
 })
@@ -647,7 +647,7 @@ router.post('/bulk-add-to-products', async (req, res) => {
     console.log(`${LOG_PREFIX} POST /bulk-add-to-products — SUCCESS, ${importRows.length} products added`)
     return res.json({ message: `${importRows.length} products added successfully`, data: rows })
   } catch (err) {
-    console.error('%s POST /bulk-add-to-products — ERROR: %s', LOG_PREFIX, err.message)
+    console.error('%s POST /bulk-add-to-products ERROR', LOG_PREFIX)
     return res.status(500).json({ error: err.message })
   }
 })
@@ -655,17 +655,17 @@ router.post('/bulk-add-to-products', async (req, res) => {
 /* POST /api/import-stock/:id/add-to-products */
 router.post('/:id/add-to-products', async (req, res) => {
   const userId = req.workspaceId
-  console.log(`${LOG_PREFIX} POST /${req.params.id}/add-to-products — userId: ${userId}`)
+  console.log('%s POST /:id/add-to-products', LOG_PREFIX)
   try {
     const { rows: importRows } = await query('SELECT * FROM import_stock WHERE id = $1 AND user_id = $2', [req.params.id, userId])
     if (!importRows.length) {
-      console.warn(`${LOG_PREFIX} POST /${req.params.id}/add-to-products — NOT FOUND`)
+      console.warn('%s POST /:id/add-to-products NOT FOUND', LOG_PREFIX)
       return res.status(404).json({ error: 'Pending import stock not found' })
     }
     const item = importRows[0]
     
     if (item.status !== 'active') {
-      console.warn(`${LOG_PREFIX} POST /${req.params.id}/add-to-products — Not active status (status: ${item.status})`)
+      console.warn('%s POST /:id/add-to-products Not active status', LOG_PREFIX)
       return res.status(400).json({ error: 'Only stock items with "active" status can be added to products' })
     }
 
@@ -680,7 +680,7 @@ router.post('/:id/add-to-products', async (req, res) => {
     console.log('%s POST /:id/add-to-products — SUCCESS', LOG_PREFIX)
     return res.json(rows[0])
   } catch (err) {
-    console.error('%s POST /:id/add-to-products — ERROR: %s', LOG_PREFIX, err.message)
+    console.error('%s POST /:id/add-to-products ERROR', LOG_PREFIX)
     return res.status(500).json({ error: err.message })
   }
 })
@@ -696,7 +696,7 @@ router.delete('/:id', async (req, res) => {
     console.log('%s DELETE /:id — SUCCESS', LOG_PREFIX)
     res.json({ message: 'Import stock deleted' })
   } catch (err) {
-    console.error('%s DELETE /:id — ERROR: %s', LOG_PREFIX, err.message)
+    console.error('%s DELETE /:id ERROR', LOG_PREFIX)
     res.status(500).json({ error: err.message })
   }
 })

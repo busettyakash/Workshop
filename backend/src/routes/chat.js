@@ -151,8 +151,8 @@ async function handleDealP2PChat(conversationId, userId, lastMsg) {
         event: 'new_notification',
         payload: { title: notifTitle, body: notifBody, link: notifLink }
       }).catch(() => {})
-    } catch (err) {
-      console.error('Failed to notify counterparty:', err.message)
+    } catch (_err) {
+      console.error('Failed to notify counterparty')
     }
   }
 
@@ -186,10 +186,10 @@ async function callOpenRouterWithFallback(apiMessages) {
         return { ok: true, response: resCandidate }
       }
       lastErrText = await resCandidate.text()
-      console.warn(`[OPENROUTER MODEL FAIL] ${modelCandidate} status ${resCandidate.status}: ${lastErrText}`)
+      console.warn('[OPENROUTER MODEL FAIL] model=%s status=%s', modelCandidate, resCandidate.status)
     } catch (fetchErr) {
       lastErrText = fetchErr.message
-      console.warn(`[OPENROUTER FETCH ERROR] ${modelCandidate}: ${fetchErr.message}`)
+      console.warn('[OPENROUTER FETCH ERROR] model=%s', modelCandidate)
     }
   }
 
@@ -377,8 +377,8 @@ async function sendEmailTool(args, userId, reqUser) {
       const recipientKeys = await redis.keys(`emails:${recipientUserId}:*`).catch(() => [])
       for (const key of recipientKeys) { await redis.del(key).catch(() => {}) }
     }
-  } catch (inboxErr) {
-    console.error('[Emails AI Recipient Inbox Error]', inboxErr.message)
+  } catch (_inboxErr) {
+    console.error('[Emails AI Recipient Inbox Error]')
   }
 
   await sendEmail({
@@ -465,7 +465,7 @@ router.post('/', async (req, res) => {
   try {
     const cached = await redis.get(cacheKey)
     if (cached) {
-      console.log('[REDIS] Cache Hit for query:', lastMsg)
+      console.log('[REDIS] Chat cache hit')
       saveSession(userId, conversationId, messages, cached, title).catch(() => {})
       return res.json({ content: cached, cached: true })
     }
@@ -571,7 +571,7 @@ Always call query_business_data to get real-time accurate information when asked
 
     return res.json({ content, cached: false })
   } catch (err) {
-    console.error('[CHAT ERROR]', err.message)
+    console.error('[CHAT ERROR]')
     return res.status(500).json({ error: err.message })
   }
 })
@@ -589,7 +589,7 @@ router.get('/sessions', async (req, res) => {
     )
     res.json(rows)
   } catch (err) {
-    console.error('Sessions list error:', err.message)
+    console.error('Sessions list error')
     res.status(500).json({ error: err.message })
   }
 })
@@ -636,7 +636,7 @@ router.get('/sessions/:id', async (req, res) => {
       updated_at: dealRows[0].updated_at
     })
   } catch (err) {
-    console.error('Session load error:', err.message)
+    console.error('Session load error')
     res.status(500).json({ error: err.message })
   }
 })

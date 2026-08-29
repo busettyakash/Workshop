@@ -22,6 +22,7 @@ import Unpaid  from './pages/Unpaid/index'
 import People   from './pages/People/index'
 import PersonForm from './pages/People/PersonForm'
 import PriceHistory from './pages/PriceHistory/index'
+import ProfitMargin from './pages/ProfitMargin/index'
 import Quotes from './pages/Quotes/index'
 import Orders from './pages/Orders/index'
 import Notes  from './pages/Notes/index'
@@ -72,6 +73,7 @@ export default function App() {
         <Route path="/settings"           element={<PrivateRoute><Settings /></PrivateRoute>} />
         <Route path="/account-settings"   element={<PrivateRoute><Settings /></PrivateRoute>} />
         <Route path="/workspace-settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+        <Route path="/profit-margin"      element={<PrivateRoute><ProfitMargin /></PrivateRoute>} />
         <Route path="/import-stock"          element={<PrivateRoute><ImportStock /></PrivateRoute>} />
         <Route path="/import-stock/add"      element={<PrivateRoute><ImportStockForm /></PrivateRoute>} />
         <Route path="/import-stock/edit/:id" element={<PrivateRoute><ImportStockForm /></PrivateRoute>} />

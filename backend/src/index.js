@@ -51,6 +51,7 @@ import emailsRoutes from './routes/emails.js'
 import uomRoutes from './routes/uoms.js'
 import quotesRoutes from './routes/quotes.js'
 import orderRoutes from './routes/orders.js'
+import profitMarginRoutes from './routes/profitMargin.js'
 
 const app = express()
 app.disable('x-powered-by')
@@ -164,6 +165,8 @@ app.use('/api/emails', emailsRoutes)
 app.use('/api/uoms', uomRoutes)
 app.use('/api/quotes', quotesRoutes)
 app.use('/api/orders', orderRoutes)
+app.use('/api/profit-margin', profitMarginRoutes)
+app.use('/api/reports/profit-margins', profitMarginRoutes)
 
 /* ── 404 Handler ── */
 app.use((_req, res) => {

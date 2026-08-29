@@ -36,22 +36,70 @@ function buildDonutPaths(segments, cx, cy, r, gap = 2) {
   return paths
 }
 
+function formatYAxisLabel(val) {
+  if (val <= 0) return '₹0'
+  if (val >= 100000) {
+    const inLakhs = val / 100000
+    if (Number.isInteger(inLakhs)) {
+      return `₹${inLakhs}L`
+    }
+    return `₹${parseFloat(inLakhs.toFixed(1))}L`
+  }
+  if (val >= 1000) {
+    return `₹${Math.round(val / 1000)}k`
+  }
+  return `₹${Math.round(val)}`
+}
+
+function getScaleTicks(maxVal) {
+  if (maxVal <= 50000) {
+    return [0, 10000, 20000, 30000, 40000, 50000]
+  }
+  if (maxVal <= 100000) {
+    return [0, 10000, 40000, 60000, 80000, 100000]
+  }
+  if (maxVal <= 250000) {
+    return [0, 10000, 40000, 80000, 100000, 150000, 200000, 250000]
+  }
+  const topCeil = Math.max(Math.ceil(maxVal / 100000) * 100000, 500000)
+  const midTop = Math.round((topCeil * 0.5) / 100000) * 100000
+  return [0, 10000, 50000, 100000, 150000, 200000, Math.max(midTop, 300000), topCeil]
+}
+
+function getBarHeightPct(val, ticksAsc) {
+  if (!val || val <= 0) return 0
+  const n = ticksAsc.length - 1
+  if (n <= 0) return 0
+  if (val >= ticksAsc[n]) return 100
+  for (let i = 0; i < n; i++) {
+    if (val <= ticksAsc[i + 1]) {
+      const span = ticksAsc[i + 1] - ticksAsc[i]
+      const frac = span > 0 ? (val - ticksAsc[i]) / span : 0
+      return Math.min(100, Math.max(3, ((i + frac) / n) * 100))
+    }
+  }
+  return 100
+}
+
 const DAY_OPTIONS      = ['Last 7 days', 'Last 30 days', 'Last 3 months', 'Last 6 months', 'This year']
 
 export default function BusinessMetrics() {
-  const [hoveredBar, setHoveredBar]         = useState(null)
-  const [dayFilter, setDayFilter]           = useState('Last 30 days')
-  const [customerFilter, setCustomerFilter] = useState('All Customers')
-  const [showDayDrop, setShowDayDrop]       = useState(false)
-  const [showCustDrop, setShowCustDrop]     = useState(false)
-  const [people, setPeople]                 = useState([])
+  const [hoveredBar, setHoveredBar]             = useState(null)
+  const [hoveredSeriesKey, setHoveredSeriesKey] = useState(null)
+  const [pinnedBar, setPinnedBar]               = useState(null)
+  const [dayFilter, setDayFilter]               = useState('Last 30 days')
+  const [customerFilter, setCustomerFilter]     = useState('All Customers')
+  const [showDayDrop, setShowDayDrop]           = useState(false)
+  const [showCustDrop, setShowCustDrop]         = useState(false)
+  const [people, setPeople]                     = useState([])
 
   // Real-time backend states
+  const [series, setSeries] = useState(BAR_SERIES)
   const [barData, setBarData] = useState([])
   const [donutSegments, setDonutSegments] = useState([])
   const [tooltipData, setTooltipData] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [_error, setError] = useState(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   useEffect(() => {
@@ -63,6 +111,9 @@ export default function BusinessMetrics() {
           params: { dayFilter, customerFilter }
         })
         if (active) {
+          if (res.data.series && res.data.series.length > 0) {
+            setSeries(res.data.series)
+          }
           setBarData(res.data.barData || [])
           setDonutSegments(res.data.donutData || [])
           setTooltipData(res.data.tooltipData || [])
@@ -99,11 +150,20 @@ export default function BusinessMetrics() {
 
   const customerOptions = ['All Customers', ...Array.from(new Set(people.map(p => p.name)))]
 
+  const activeSeries = series && series.length > 0 ? series : BAR_SERIES
+  const maxRawRevenue = Math.max(
+    ...barData.flatMap(grp => activeSeries.map(s => Number(grp[s.key]) || 0)),
+    0
+  )
+  const ticksAsc = getScaleTicks(maxRawRevenue)
+  const ticksDesc = [...ticksAsc].reverse()
+  const yLabels = ticksDesc.map(formatYAxisLabel)
+
   const donutPaths = buildDonutPaths(donutSegments, 90, 90, 75)
   const donutInner = buildDonutPaths(donutSegments, 90, 90, 50)
-  const MAX_H = 120
+  const hasDonutData = donutSegments.length > 0 && donutSegments.some(s => (s.count || 0) > 0 || (s.pct || 0) > 0)
 
-  const closeDrops = () => { setShowDayDrop(false); setShowCustDrop(false) }
+  const closeDrops = () => { setShowDayDrop(false); setShowCustDrop(false); setPinnedBar(null) }
 
   if (loading && barData.length === 0) {
     return (
@@ -197,7 +257,7 @@ export default function BusinessMetrics() {
               </span>
             </div>
             <div className="ws-bm-legend">
-              {BAR_SERIES.map(s => (
+              {activeSeries.map(s => (
                 <div key={s.key} className="ws-bm-legend-item">
                   <span className="ws-bm-legend-dot" style={{ background: s.color }} />
                   {s.label}
@@ -208,59 +268,125 @@ export default function BusinessMetrics() {
 
           <div className="ws-bm-bar-area">
             <div className="ws-bm-yaxis">
-              {['₹2.8L', '₹2.4L', '₹2.0L', '₹1.6L', '₹1.2L', '₹0.8L', '₹0.4L'].map(l => (
-                <span key={l} className="ws-bm-yaxis-label">{l}</span>
+              {yLabels.map((l, i) => (
+                <span key={`${l}-${i}`} className="ws-bm-yaxis-label">{l}</span>
               ))}
             </div>
 
             <div className="ws-bm-bar-chart">
               <div className="ws-bm-gridlines">
-                {[0,1,2,3,4,5,6].map(i => <div key={i} className="ws-bm-gridline" />)}
+                {ticksDesc.map((_, i) => (
+                  <div key={i} className="ws-bm-gridline" />
+                ))}
               </div>
 
               <div className="ws-bm-bar-groups">
                 {barData.map((grp, gi) => {
                   const tip = tooltipData[gi]
+                  const isVisible = hoveredBar === gi || pinnedBar === gi
+                  const monthTotal = activeSeries.reduce((sum, s) => sum + (Number(grp[s.key]) || 0), 0)
+
                   return (
                     <div
                       key={grp.label}
                       className="ws-bm-bar-group"
                       onMouseEnter={() => setHoveredBar(gi)}
-                      onMouseLeave={() => setHoveredBar(null)}
+                      onMouseLeave={() => { setHoveredBar(null); setHoveredSeriesKey(null) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPinnedBar(pinnedBar === gi ? null : gi)
+                      }}
                     >
-                      {BAR_SERIES.map(s => (
-                        <div
-                          key={s.key}
-                          className="ws-bm-bar"
-                          style={{
-                            height: `${(grp[s.key] / MAX_H) * 100}%`,
-                            background: s.color,
-                            opacity: hoveredBar === gi ? 1 : 0.82,
-                          }}
-                        />
-                      ))}
+                      {activeSeries.map(s => {
+                        const val = Number(grp[s.key]) || 0
+                        const heightPct = getBarHeightPct(val, ticksAsc)
+                        const isThisBarHovered = hoveredSeriesKey === s.key
+                        let barOpacity = 0.85
+                        if (hoveredSeriesKey) {
+                          barOpacity = isThisBarHovered ? 1 : 0.4
+                        } else if (isVisible) {
+                          barOpacity = 1
+                        }
 
-                      {hoveredBar === gi && tip && (
-                        <div className="ws-bm-tooltip">
-                          <div className="ws-bm-tooltip-title">
-                            Revenue Contribution
-                            <span className="ws-bm-tooltip-badge">↗ {tip.change}</span>
+                        return (
+                          <div
+                            key={s.key}
+                            className="ws-bm-bar"
+                            onMouseEnter={(e) => {
+                              e.stopPropagation()
+                              setHoveredSeriesKey(s.key)
+                            }}
+                            style={{
+                              height: `${heightPct}%`,
+                              background: s.color,
+                              opacity: barOpacity,
+                              transform: isThisBarHovered ? 'scaleX(1.2)' : 'none',
+                              transition: 'all 0.15s ease'
+                            }}
+                            title={`${s.label}: ₹${val.toLocaleString('en-IN')}`}
+                          />
+                        )
+                      })}
+
+                      {isVisible && (
+                        <div 
+                          className="ws-bm-tooltip"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            minWidth: 230,
+                            zIndex: 100,
+                            left: gi === barData.length - 1 ? 'auto' : '50%',
+                            right: gi === barData.length - 1 ? '0px' : 'auto',
+                            transform: gi === barData.length - 1 ? 'none' : 'translateX(-50%)',
+                            pointerEvents: 'auto'
+                          }}
+                        >
+                          <div className="ws-bm-tooltip-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <span>{grp.label}</span>
+                            <span className="ws-bm-tooltip-badge">
+                              ₹{monthTotal.toLocaleString('en-IN')}
+                            </span>
                           </div>
-                          <div className="ws-bm-tooltip-block">
-                            <div className="ws-bm-tooltip-month">{tip.month}</div>
-                            <div className="ws-bm-tooltip-row">
-                              <span className="ws-bm-tooltip-lbl">Product</span>
-                              <span className="ws-bm-tooltip-val">{tip.product}</span>
-                            </div>
-                            <div className="ws-bm-tooltip-row">
-                              <span className="ws-bm-tooltip-lbl">Revenue (INR)</span>
-                              <span className="ws-bm-tooltip-val ws-bm-tooltip-inr">{tip.inr}</span>
-                            </div>
-                            <div className="ws-bm-tooltip-row">
-                              <span className="ws-bm-tooltip-lbl">Revenue (USD)</span>
-                              <span className="ws-bm-tooltip-val">{tip.usd}</span>
-                            </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 6, borderTop: '1px solid #f1f5f9' }}>
+                            {activeSeries.map(s => {
+                              const val = Number(grp[s.key]) || 0
+                              const pct = monthTotal > 0 ? Math.round((val / monthTotal) * 100) : 0
+                              const isHighlighted = hoveredSeriesKey === s.key
+
+                              return (
+                                <div 
+                                  key={s.key}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    fontSize: '0.75rem',
+                                    padding: '3px 6px',
+                                    borderRadius: 4,
+                                    background: isHighlighted ? '#f1f5f9' : 'transparent',
+                                    fontWeight: isHighlighted ? 700 : 500
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block' }} />
+                                    <span style={{ color: isHighlighted ? '#0f172a' : '#334155' }}>{s.label}</span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ color: '#0f172a', fontWeight: 600 }}>₹{val.toLocaleString('en-IN')}</span>
+                                    <span style={{ color: '#94a3b8', fontSize: '0.70rem', minWidth: 26, textAlign: 'right' }}>{pct}%</span>
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
+
+                          {tip?.product && tip.product !== 'N/A' && (
+                            <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#64748b' }}>
+                              <span>Top: <strong>{tip.product}</strong></span>
+                              <span>USD: <strong>{tip.usd}</strong></span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -290,22 +416,28 @@ export default function BusinessMetrics() {
               {donutSegments.map(s => (
                 <div key={s.label} className="ws-bm-legend-item">
                   <span className="ws-bm-legend-dot" style={{ background: s.color }} />
-                  {s.label}
+                  {s.label} {s.pct > 0 ? `(${s.pct}%)` : ''}
                 </div>
               ))}
             </div>
           </div>
 
           <div className="ws-bm-donut-wrap">
-            <svg viewBox="0 0 180 180" className="ws-bm-donut-svg">
-              {donutPaths.map((p, i) => (
-                <path key={i} d={p.d} fill={p.color} opacity="0.9" />
-              ))}
-              {donutInner.map((p, i) => (
-                <path key={`inner-${i}`} d={p.d} fill={p.color} opacity="0.35" />
-              ))}
-              <circle cx="90" cy="90" r="38" fill="white" />
-            </svg>
+            {hasDonutData ? (
+              <svg viewBox="0 0 180 180" className="ws-bm-donut-svg">
+                {donutPaths.map((p, i) => (
+                  <path key={i} d={p.d} fill={p.color} opacity="0.9" />
+                ))}
+                {donutInner.map((p, i) => (
+                  <path key={`inner-${i}`} d={p.d} fill={p.color} opacity="0.35" />
+                ))}
+                <circle cx="90" cy="90" r="38" fill="white" />
+              </svg>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 180, color: '#94a3b8', fontSize: '0.84rem' }}>
+                <span>No deals recorded for this period</span>
+              </div>
+            )}
           </div>
         </div>
 

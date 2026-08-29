@@ -193,6 +193,28 @@ export default function ImportStockForm() {
   const uomName = currentUomObj?.name || form.unit || 'Unit'
   const isBulkUom = Boolean(currentUomObj?.is_bulk)
 
+  const getUnitSingular = (unit) => {
+    const u = String(unit || '').toLowerCase().trim()
+    if (['ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) return 'liter'
+    if (['kg', 'kgs', 'kilogram', 'kilograms'].includes(u)) return 'kg'
+    if (['box', 'boxes'].includes(u)) return 'box'
+    if (['pcs', 'pc', 'piece', 'pieces'].includes(u)) return 'piece'
+    if (['mtr', 'mtrs', 'meter', 'meters', 'm'].includes(u)) return 'meter'
+    if (['doz', 'dozen'].includes(u)) return 'dozen'
+    return u || 'unit'
+  }
+
+  const getUnitPlural = (unit) => {
+    const u = String(unit || '').toLowerCase().trim()
+    if (['ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) return 'liters'
+    if (['kg', 'kgs', 'kilogram', 'kilograms'].includes(u)) return 'kg'
+    if (['box', 'boxes'].includes(u)) return 'boxes'
+    if (['pcs', 'pc', 'piece', 'pieces'].includes(u)) return 'pieces'
+    if (['mtr', 'mtrs', 'meter', 'meters', 'm'].includes(u)) return 'meters'
+    if (['doz', 'dozen'].includes(u)) return 'dozen'
+    return u ? `${u}s` : 'units'
+  }
+
   const handleChange = (e) => {
     const { name, value } = e.target
     if (name === 'unit') {
@@ -287,9 +309,9 @@ Buyer Price (Supplier): ₹${form.buying_price ? parseFloat(form.buying_price).t
 Updated Market Price: ${form.updated_price ? `₹${parseFloat(form.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
 
 TOTAL INVENTORY STOCK:
-Amount of Bags: ${form.stock} ${unitPlural}
+Total Quantity: ${form.stock} ${unitPlural}
 Pack Size: ${form.bag_weight} ${unitShort} / pack
-Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${unitShort}`
+Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${unitShort}`
 
       const payload = { ...form, note: noteBody }
       let res
@@ -760,14 +782,14 @@ Total Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${un
                             updated_price_date: todayStr
                           }))
                         }}
-                        placeholder={pc > 0 ? `Price for ${pc}kg` : '3300'}
+                        placeholder={pc > 0 ? (pc === 1 ? `Price per ${getUnitSingular(uomShort)}` : `Price for ${pc} ${getUnitPlural(uomShort)}`) : '3300'}
                         style={inp('updated_price_100')}
                         onFocus={() => setFocus('updated_price_100')}
                         onBlur={() => setFocus(null)}
                       />
                       {form.updated_price_100 && parseFloat(form.updated_price_100) > 0 && pc > 0 && (
                         <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, display: 'block' }}>
-                          ₹{(parseFloat(form.updated_price_100) / pc).toFixed(2)} / kg rate
+                          ₹{(parseFloat(form.updated_price_100) / pc).toFixed(2)} / {uomShort} rate
                         </span>
                       )}
                       <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 1, display: 'block' }}>

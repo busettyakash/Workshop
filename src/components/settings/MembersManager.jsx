@@ -32,12 +32,13 @@ import {
   MessageSquare,
   BarChart3,
   Receipt,
-  ShoppingCart
+  ShoppingCart,
+  Percent
 } from 'lucide-react'
 import { useAppDispatch } from '../../redux/hooks'
 import { addToast } from '../../redux/slices/uiSlice'
 import { authApi } from '../../services/authApi'
-import { getCategoryTagStyle, getPillStyle } from '../../utils/tableHelpers'
+import { getPillStyle } from '../../utils/tableHelpers'
 import ConfirmModal from '../ui/ConfirmModal'
 import '../../pages/Dashboard/Dashboard.css'
 import '../../pages/Products/Products.css'
@@ -57,6 +58,7 @@ const MODULE_DEFINITIONS = [
   { id: 'quotes', label: 'Quotations', icon: FileText, desc: 'Draft, issue, customize, and convert official customer quotations' },
   { id: 'orders', label: 'Orders', icon: ShoppingCart, desc: 'Purchase orders, sales delivery challans, and customer fulfillment records' },
   { id: 'import_stock', label: 'Import Stock', icon: Download, desc: 'Bulk inventory CSV imports, batch logs, and supplier payment ledger' },
+  { id: 'profit_margin', label: 'Profit Margin', icon: Percent, desc: 'Procurement vs retail sales margins, per-unit earnings, and stock potential profit' },
 
   // ── Invoices & Finance Section ──
   { id: 'billing', label: 'Billing', icon: CreditCard, desc: 'Official GST tax invoices, invoice generator, and payment ledger' },
@@ -860,7 +862,7 @@ export default function MembersManager() {
                               color: '#2563eb',
                               border: '1px solid #bfdbfe'
                             }}>
-                              Full Access (15/15)
+                              Full Access ({MODULE_DEFINITIONS.length}/{MODULE_DEFINITIONS.length})
                             </span>
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -873,7 +875,7 @@ export default function MembersManager() {
                                 color: '#15803d',
                                 border: '1px solid #bbf7d0'
                               }}>
-                                Read ({accessibleCount}/15)
+                                Read ({accessibleCount}/{MODULE_DEFINITIONS.length})
                               </span>
                               <span style={{
                                 fontSize: '0.72rem',

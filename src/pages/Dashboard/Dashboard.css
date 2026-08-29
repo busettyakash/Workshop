@@ -2137,6 +2137,8 @@
   justify-content: space-between;
   padding-bottom: 22px;
   flex-shrink: 0;
+  min-width: 64px;
+  text-align: right;
 }
 
 .ws-bm-yaxis-label {

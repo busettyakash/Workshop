@@ -232,6 +232,16 @@ export function ImportStockIcon({ size = 16, strokeWidth = 1.35, className = "" 
   )
 }
 
+/** Profit Margin / Percent Trend Up Icon */
+export function ProfitMarginIcon({ size = 16, strokeWidth = 1.35, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M2.5 11.5L6.5 7.5L9.5 10.5L13.5 4.5" />
+      <path d="M10 4.5h3.5v3.5" />
+    </svg>
+  )
+}
+
 /** Settings Gear */
 export function SettingsIcon({ size = 16, strokeWidth = 1.35, className = "" }) {
   return (

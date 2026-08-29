@@ -29,6 +29,7 @@ import {
   PaidIcon,
   UnpaidIcon,
   ImportStockIcon,
+  ProfitMarginIcon,
   SettingsIcon
 } from '../icons/SidebarIcons'
 import {
@@ -68,6 +69,7 @@ const ICON_MAP = {
   Settings: <SettingsIcon size={16} />,
   Pipeline: <Briefcase size={16} strokeWidth={1.35} />,
   ImportStock: <ImportStockIcon size={16} />,
+  ProfitMargin: <ProfitMarginIcon size={16} />,
   UserPlus: <UserPlus size={16} strokeWidth={1.35} />,
   LogOut: <LogOut size={16} strokeWidth={1.35} />,
 }
@@ -89,6 +91,7 @@ const ALL_NAV_ITEMS = {
   'Paid': { icon: 'Paid', path: ROUTES.PAID },
   'Unpaid': { icon: 'Unpaid', path: ROUTES.UNPAID },
   'Import Stock': { icon: 'ImportStock', path: ROUTES.IMPORT_STOCK },
+  'Profit Margin': { icon: 'ProfitMargin', path: '/profit-margin' },
   'Settings': { icon: 'Settings', path: '/settings' },
 }
 
@@ -106,6 +109,7 @@ const NAV_MODULE_MAP = {
   'Quotes': 'quotes',
   'Orders': 'orders',
   'Import Stock': 'import_stock',
+  'Profit Margin': 'profit_margin',
   'Billing': 'billing',
   'Paid': 'paid',
   'Unpaid': 'unpaid',
@@ -126,6 +130,7 @@ const RECORDS_NAV = [
   { label: 'Quotes', icon: 'Quotes', path: '/quotes' },
   { label: 'Orders', icon: 'Orders', path: '/orders' },
   { label: 'Import Stock', icon: 'ImportStock', path: ROUTES.IMPORT_STOCK },
+  { label: 'Profit Margin', icon: 'ProfitMargin', path: '/profit-margin' },
 ]
 
 const INVOICES_NAV = [
@@ -145,6 +150,7 @@ const SEARCH_ITEMS = [
   { label: 'Quotes', path: '/quotes', icon: 'Quotes', category: 'Records', keywords: 'estimates proposal vendor customer' },
   { label: 'Orders', path: '/orders', icon: 'Orders', category: 'Records', keywords: 'sales purchases transactions' },
   { label: 'Import Stock', path: ROUTES.IMPORT_STOCK, icon: 'ImportStock', category: 'Records', keywords: 'upload csv inventory bulk' },
+  { label: 'Profit Margin', path: '/profit-margin', icon: 'ProfitMargin', category: 'Records', keywords: 'profit margin buyer seller rate markup earnings' },
   { label: 'Billing', path: ROUTES.BILLING, icon: 'Billing', category: 'Invoices & Finance', keywords: 'payment invoices money finance' },
   { label: 'Paid Invoices', path: ROUTES.PAID, icon: 'Paid', category: 'Invoices & Finance', keywords: 'completed payment settled' },
   { label: 'Unpaid Invoices', path: ROUTES.UNPAID, icon: 'Unpaid', category: 'Invoices & Finance', keywords: 'pending overdue due bill' },
@@ -242,7 +248,7 @@ export default function Sidebar() {
   })
   const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [recordsOpen, setRecordsOpen] = useState(() => {
-    return ['/products', '/people', '/price-history', '/quotes', '/orders', '/import-stock'].some(path => window.location.pathname.startsWith(path))
+    return ['/products', '/people', '/price-history', '/quotes', '/orders', '/import-stock', '/profit-margin'].some(path => window.location.pathname.startsWith(path))
   })
   const [billingOpen, setBillingOpen] = useState(() => {
     return ['/billing', '/paid', '/unpaid'].some(path => window.location.pathname.startsWith(path))
@@ -372,7 +378,7 @@ export default function Sidebar() {
   const location = useLocation()
 
   useEffect(() => {
-    if (['/products', '/people', '/price-history', '/quotes', '/orders', '/import-stock'].some(path => location.pathname.startsWith(path))) {
+    if (['/products', '/people', '/price-history', '/quotes', '/orders', '/import-stock', '/profit-margin'].some(path => location.pathname.startsWith(path))) {
       setRecordsOpen(true)
     }
     if (['/billing', '/paid', '/unpaid'].some(path => location.pathname.startsWith(path))) {

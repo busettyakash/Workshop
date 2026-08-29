@@ -15,7 +15,6 @@ export default function UomManager() {
   const [uomList, setUomList] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [selectedCat, setSelectedCat] = useState('All')
   
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -107,26 +106,17 @@ export default function UomManager() {
       dispatch(addToast({ message: 'Unit of Measure removed', type: 'success' }))
       setDeleteConfirmId(null)
       fetchUoms()
-    } catch (err) {
+    } catch {
       dispatch(addToast({ message: 'Failed to delete UOM', type: 'error' }))
     }
   }
 
   // Filtered List
-  const categories = ['All', 'Weight', 'Count', 'Volume', 'Package', 'Length']
   const filteredList = uomList.filter(item => {
-    const matchSearch = 
-      (item.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    return (item.name || '').toLowerCase().includes(search.toLowerCase()) ||
       (item.code || '').toLowerCase().includes(search.toLowerCase()) ||
       (item.presets || '').toLowerCase().includes(search.toLowerCase())
-    const matchCat = selectedCat === 'All' || item.category === selectedCat
-    return matchSearch && matchCat
   })
-
-  const countByCategory = (cat) => {
-    if (cat === 'All') return uomList.length
-    return uomList.filter(u => u.category === cat).length
-  }
 
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -156,43 +146,6 @@ export default function UomManager() {
                 <X size={13} />
               </button>
             )}
-          </div>
-
-          {/* Category filter pills */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            {categories.map(cat => {
-              const count = countByCategory(cat)
-              const isSelected = selectedCat === cat
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setSelectedCat(cat)}
-                  className="attio-btn"
-                  style={{
-                    background: isSelected ? '#eff6ff' : '#ffffff',
-                    color: isSelected ? '#2563eb' : '#475569',
-                    borderColor: isSelected ? '#bfdbfe' : '#e2e8f0',
-                    fontWeight: isSelected ? 600 : 500,
-                    fontSize: '0.78rem',
-                    padding: '4px 10px',
-                    gap: 5
-                  }}
-                >
-                  {cat}
-                  <span style={{
-                    fontSize: '0.68rem',
-                    padding: '1px 5px',
-                    borderRadius: 10,
-                    background: isSelected ? '#dbeafe' : '#f1f5f9',
-                    color: isSelected ? '#1d4ed8' : '#64748b',
-                    fontWeight: 700
-                  }}>
-                    {count}
-                  </span>
-                </button>
-              )
-            })}
           </div>
 
           {/* Add UOM button */}

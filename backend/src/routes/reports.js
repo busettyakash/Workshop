@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import redis from '../lib/redis.js'
 
 const TZ = `'UTC' AT TIME ZONE 'Asia/Kolkata'`
 
@@ -53,15 +54,22 @@ router.get('/dashboard', async (req, res) => {
 /* GET /api/reports/top-products */
 router.get('/top-products', async (req, res) => {
   const userId = req.workspaceId
+  const cacheKey = `reports:top-products:${userId}`
   try {
+    const cached = await redis.get(cacheKey).catch(() => null)
+    if (cached) return res.json(cached)
+
     const { rows } = await query(
-      `SELECT p.name, p.category, SUM(bi.quantity) AS units_sold, SUM(bi.quantity * p.price) AS revenue
+      `SELECT p.name, COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category, 
+              COALESCE(NULLIF(TRIM(p.unit), ''), 'units') AS uom,
+              SUM(bi.quantity) AS units_sold, SUM(bi.quantity * bi.price) AS revenue
        FROM bill_items bi JOIN products p ON bi.product_id = p.id
        JOIN bills b ON bi.bill_id = b.id
-       WHERE b.status='paid' AND b.user_id = $1
-       GROUP BY p.id, p.name, p.category ORDER BY revenue DESC LIMIT 10`,
+       WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+       GROUP BY p.id, p.name, p.category, p.unit ORDER BY revenue DESC LIMIT 15`,
       [userId]
     )
+    await redis.set(cacheKey, rows, { ex: 30 }).catch(() => {})
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -71,279 +79,268 @@ router.get('/top-products', async (req, res) => {
 /* GET /api/reports/top-customers */
 router.get('/top-customers', async (req, res) => {
   const userId = req.workspaceId
+  const cacheKey = `reports:top-customers:${userId}`
   try {
+    const cached = await redis.get(cacheKey).catch(() => null)
+    if (cached) return res.json(cached)
+
     const { rows } = await query(
-      `SELECT c.name, c.email, COUNT(b.id) AS orders, COALESCE(SUM(b.amount),0) AS total_spent
-       FROM people c JOIN bills b ON b.customer_id=c.id
-       WHERE b.status='paid' AND b.user_id = $1
-       GROUP BY c.id, c.name, c.email ORDER BY total_spent DESC LIMIT 10`,
+      `SELECT COALESCE(c.name, cust.name) AS name, 
+              MAX(COALESCE(c.email, cust.email, '')) AS email, 
+              COUNT(DISTINCT b.id) AS orders, 
+              COALESCE(SUM(b.amount), 0) AS total_spent
+       FROM bills b
+       LEFT JOIN people c ON b.customer_id = c.id
+       LEFT JOIN customers cust ON b.customer_id = cust.id
+       WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+         AND (c.name IS NOT NULL OR cust.name IS NOT NULL)
+       GROUP BY COALESCE(c.name, cust.name)
+       ORDER BY total_spent DESC LIMIT 15`,
       [userId]
     )
+    await redis.set(cacheKey, rows, { ex: 30 }).catch(() => {})
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-function parseBillItems(itemsRaw) {
-  if (typeof itemsRaw === 'string') {
-    try { return JSON.parse(itemsRaw) } catch { return [] }
+const COLOR_PALETTE = [
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#3b82f6', // blue
+  '#ec4899', // pink
+  '#8b5cf6', // violet
+  '#06b6d4', // cyan
+  '#f97316', // orange
+  '#64748b', // slate
+]
+
+function buildDateCondition(dayFilter, maxDateIso) {
+  if (dayFilter === 'Last 7 days') {
+    return `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '7 days'`
   }
-  return Array.isArray(itemsRaw) ? itemsRaw : []
+  if (dayFilter === 'Last 30 days') {
+    return `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '30 days'`
+  }
+  if (dayFilter === 'Last 3 months') {
+    return `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '90 days'`
+  }
+  if (dayFilter === 'Last 6 months') {
+    return `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '180 days'`
+  }
+  if (dayFilter === 'This year') {
+    return `AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = EXTRACT(YEAR FROM (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}))`
+  }
+  return ''
 }
 
-async function syncSingleBillItems(bill, userId) {
-  const check = await query("SELECT id FROM bill_items WHERE bill_id = $1 LIMIT 1", [bill.id])
-  if (check.rows.length > 0) return
+function buildMonthsWindow(anchorDate) {
+  const d = anchorDate instanceof Date && !Number.isNaN(anchorDate.getTime()) ? anchorDate : new Date()
+  const months = []
+  for (let i = 2; i >= 0; i--) {
+    const pastDate = new Date(d.getFullYear(), d.getMonth() - i, 1)
+    months.push({
+      num: pastDate.getMonth() + 1,
+      year: pastDate.getFullYear(),
+      label: pastDate.toLocaleString('default', { month: 'short' }) + ' ' + pastDate.getFullYear()
+    })
+  }
+  return months
+}
 
-  const itemsList = parseBillItems(bill.items)
-  for (const item of itemsList) {
-    const productId = item.product_id || item.id
-    if (!productId) continue
+async function getDistinctCategories(userId) {
+  const catRes = await query(
+    `SELECT DISTINCT COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category
+     FROM products p
+     WHERE (p.user_id::text = $1::text OR p.user_id = 'default-user' OR $1 = 'default-user')`,
+    [userId]
+  )
+  const cats = catRes.rows.map(r => r.category).filter(Boolean)
+  if (!cats.includes('Others')) cats.push('Others')
 
-    const qty = Number.parseFloat(item.qty || item.quantity || 1)
-    const price = Number.parseFloat(item.price || 0)
+  const categoryColors = {}
+  cats.forEach((cat, idx) => {
+    categoryColors[cat] = COLOR_PALETTE[idx % COLOR_PALETTE.length]
+  })
 
-    const prodCheck = await query("SELECT id FROM products WHERE id = $1 AND user_id = $2", [productId, userId])
-    if (prodCheck.rows.length > 0) {
-      await query(
-        `INSERT INTO bill_items (bill_id, product_id, quantity, price)
-         VALUES ($1, $2, $3, $4)`,
-        [bill.id, productId, qty, price]
+  const series = cats.map(cat => ({
+    key: cat.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+    label: cat,
+    color: categoryColors[cat] || '#64748b'
+  }))
+
+  return { cats, categoryColors, series }
+}
+
+async function queryBarData({ months, series, dateCondition, customerCondition, params }) {
+  const monthNums = months.map(m => m.num).join(',')
+  const yearNums = Array.from(new Set(months.map(m => m.year))).join(',')
+
+  const barQuery = `
+    SELECT 
+      EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) AS month_num,
+      EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) AS year_num,
+      COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category,
+      COALESCE(SUM(bi.quantity * bi.price), 0) AS category_revenue
+    FROM bills b
+    JOIN bill_items bi ON bi.bill_id = b.id
+    LEFT JOIN products p ON bi.product_id = p.id
+    LEFT JOIN people c ON b.customer_id = c.id
+    LEFT JOIN customers cust ON b.customer_id = cust.id
+    WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+      ${dateCondition} ${customerCondition}
+      AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) IN (${monthNums})
+      AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) IN (${yearNums})
+    GROUP BY EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})), EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})), COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
+  `
+  const barRes = await query(barQuery, params)
+
+  const barDataMap = {}
+  months.forEach(m => {
+    const entry = { label: m.label }
+    series.forEach(s => { entry[s.key] = 0 })
+    barDataMap[`${m.year}-${m.num}`] = entry
+  })
+
+  barRes.rows.forEach(r => {
+    const m = Number.parseInt(r.month_num, 10)
+    const y = Number.parseInt(r.year_num, 10)
+    const key = `${y}-${m}`
+    if (barDataMap[key]) {
+      const rawCat = r.category || 'Others'
+      const seriesKey = rawCat.toLowerCase().replace(/[^a-z0-9]/g, '_')
+      const rev = Number.parseFloat(r.category_revenue) || 0
+      if (barDataMap[key][seriesKey] !== undefined) {
+        barDataMap[key][seriesKey] += Math.round(rev)
+      } else {
+        barDataMap[key].others = (barDataMap[key].others || 0) + Math.round(rev)
+      }
+    }
+  })
+
+  return {
+    barData: months.map(m => barDataMap[`${m.year}-${m.num}`]),
+    barRows: barRes.rows
+  }
+}
+
+async function queryDonutData({ dateCondition, customerCondition, params, categoryColors }) {
+  const donutQuery = `
+    SELECT 
+      COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS label,
+      COUNT(DISTINCT b.id) AS count,
+      COALESCE(SUM(bi.quantity * bi.price), 0) AS total_revenue
+    FROM bills b
+    JOIN bill_items bi ON bi.bill_id = b.id
+    LEFT JOIN products p ON bi.product_id = p.id
+    LEFT JOIN people c ON b.customer_id = c.id
+    LEFT JOIN customers cust ON b.customer_id = cust.id
+    WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+      ${dateCondition} ${customerCondition}
+    GROUP BY COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
+    ORDER BY count DESC
+  `
+  const donutRes = await query(donutQuery, params)
+  const totalCount = donutRes.rows.reduce((sum, r) => sum + Number.parseInt(r.count, 10), 0)
+
+  return donutRes.rows.map(r => {
+    const cnt = Number.parseInt(r.count, 10)
+    const pct = totalCount > 0 ? Math.round((cnt / totalCount) * 100) : 0
+    return {
+      label: r.label,
+      count: cnt,
+      revenue: Number.parseFloat(r.total_revenue) || 0,
+      pct,
+      color: categoryColors[r.label] || '#64748b'
+    }
+  })
+}
+
+function computeTooltipData(months, barRows) {
+  const tooltipData = []
+  for (let i = 0; i < months.length; i++) {
+    const m = months[i]
+    const monthRows = barRows.filter(
+      r => Number.parseInt(r.month_num, 10) === m.num && Number.parseInt(r.year_num, 10) === m.year
+    )
+    let topCategory = 'N/A'
+    let maxRev = -1
+    let revenueINR = 0
+
+    monthRows.forEach(r => {
+      const rev = Number.parseFloat(r.category_revenue) || 0
+      revenueINR += rev
+      if (rev > maxRev) {
+        maxRev = rev
+        topCategory = r.category || 'N/A'
+      }
+    })
+
+    const revenueUSD = revenueINR / 83.0
+
+    let change = '+0%'
+    if (i > 0) {
+      const prevM = months[i - 1]
+      const prevMonthRows = barRows.filter(
+        r => Number.parseInt(r.month_num, 10) === prevM.num && Number.parseInt(r.year_num, 10) === prevM.year
       )
+      const prevRevenue = prevMonthRows.reduce(
+        (sum, r) => sum + (Number.parseFloat(r.category_revenue) || 0),
+        0
+      )
+      if (prevRevenue > 0) {
+        const diffPct = ((revenueINR - prevRevenue) / prevRevenue) * 100
+        const sign = diffPct >= 0 ? '+' : ''
+        change = `${sign}${Math.round(diffPct)}%`
+      }
     }
-  }
-}
 
-async function syncBillItems(userId) {
-  try {
-    const { rows: bills } = await query("SELECT id, items FROM bills WHERE user_id = $1", [userId])
-    for (const b of bills) {
-      await syncSingleBillItems(b, userId)
-    }
-  } catch (err) {
-    console.error('[SYNC BILL ITEMS ERROR]', err)
+    tooltipData.push({
+      month: m.label,
+      product: topCategory,
+      inr: '₹' + Math.round(revenueINR).toLocaleString('en-IN'),
+      usd: 'USD ' + Math.round(revenueUSD).toLocaleString('en-US'),
+      change
+    })
   }
+  return tooltipData
 }
 
 /* GET /api/reports/business-metrics — Dynamic metrics for the charts */
 router.get('/business-metrics', async (req, res) => {
   const userId = req.workspaceId
   const { dayFilter = 'Last 30 days', customerFilter = 'All Customers' } = req.query
+  const cacheKey = `reports:bm:${userId}:${dayFilter}:${customerFilter}`
+
   try {
-    // Sync existing bills into bill_items on-the-fly
-    await syncBillItems(userId)
+    const cached = await redis.get(cacheKey).catch(() => null)
+    if (cached) return res.json(cached)
 
-    // 1. Get max date in database to anchor our date filters
-    const maxDateRes = await query("SELECT COALESCE(MAX(created_at), NOW()) AS max_date FROM bills WHERE user_id = $1", [userId])
-    const maxDate = maxDateRes.rows[0].max_date
+    const dateCondition = buildDateCondition(dayFilter, new Date().toISOString())
 
-    // 2. Build date condition based on dayFilter — all in IST
-    let dateCondition = "AND b.created_at BETWEEN '2024-07-01' AND '2024-09-30 23:59:59'"
-    if (dayFilter === 'Last 7 days') {
-      dateCondition = `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '7 days'`
-    } else if (dayFilter === 'Last 30 days') {
-      dateCondition = `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '30 days'`
-    } else if (dayFilter === 'Last 3 months') {
-      dateCondition = `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '90 days'`
-    } else if (dayFilter === 'Last 6 months') {
-      dateCondition = `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '180 days'`
-    } else if (dayFilter === 'This year') {
-      dateCondition = `AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = EXTRACT(YEAR FROM (CAST('${maxDate.toISOString()}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}))`
+    const params = [userId]
+    let customerCondition = ''
+    if (customerFilter && customerFilter !== 'All Customers') {
+      params.push(customerFilter)
+      customerCondition = `AND (c.name = $${params.length} OR c.name ILIKE $${params.length} OR cust.name = $${params.length} OR cust.name ILIKE $${params.length})`
     }
 
-    // 3. Build customer condition
-    let customerCondition = ""
-    if (customerFilter !== 'All Customers') {
-      customerCondition = "AND c.name = $2"
-    }
+    const months = buildMonthsWindow(new Date())
+    const { categoryColors, series } = await getDistinctCategories(userId)
 
-    // Calculate the last 3 months based on maxDate or current date
-    const d = new Date(maxDate)
-    const months = []
-    for (let i = 2; i >= 0; i--) {
-      const pastDate = new Date(d.getFullYear(), d.getMonth() - i, 1)
-      months.push({
-        num: pastDate.getMonth() + 1,
-        year: pastDate.getFullYear(),
-        label: pastDate.toLocaleString('default', { month: 'short' }) + ' ' + pastDate.getFullYear()
-      })
-    }
+    const [{ barData, barRows }, donutData] = await Promise.all([
+      queryBarData({ months, series, dateCondition, customerCondition, params }),
+      queryDonutData({ dateCondition, customerCondition, params, categoryColors })
+    ])
 
-    const monthNums = months.map(m => m.num).join(',')
-    const yearNums = Array.from(new Set(months.map(m => m.year))).join(',')
+    const tooltipData = computeTooltipData(months, barRows)
+    const result = { series, barData, donutData, tooltipData }
 
-    // 4. Query Bar Chart Data grouped by Product Category — IST months
-    const barQuery = `
-      SELECT 
-        EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) AS month_num,
-        EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) AS year_num,
-        p.category,
-        COALESCE(SUM(bi.quantity * bi.price), 0) AS category_revenue
-      FROM bills b
-      JOIN bill_items bi ON bi.bill_id = b.id
-      JOIN products p ON bi.product_id = p.id
-      LEFT JOIN people c ON b.customer_id = c.id
-      WHERE b.status = 'paid' AND b.user_id = $1 ${dateCondition} ${customerCondition}
-        AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) IN (${monthNums})
-        AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) IN (${yearNums})
-      GROUP BY EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})), EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})), p.category
-    `
-    const barParams = [userId]
-    if (customerFilter !== 'All Customers') {
-      barParams.push(customerFilter)
-    }
-    const barRes = await query(barQuery, barParams)
-
-    const barDataMap = {}
-    months.forEach(m => {
-      barDataMap[`${m.year}-${m.num}`] = {
-        label: m.label,
-        electronics: 0,
-        apparel: 0,
-        grocery: 0,
-        appliances: 0,
-        others: 0
-      }
-    })
-    
-    barRes.rows.forEach(r => {
-      const m = Number.parseInt(r.month_num)
-      const y = Number.parseInt(r.year_num)
-      const key = `${y}-${m}`
-      if (barDataMap[key]) {
-        const cat = (r.category || 'Others').toLowerCase()
-        const scaledVal = Math.round(Number.parseFloat(r.category_revenue) / 20000.0)
-        
-        if (cat === 'electronics') barDataMap[key].electronics += scaledVal
-        else if (cat === 'apparel') barDataMap[key].apparel += scaledVal
-        else if (cat === 'grocery') barDataMap[key].grocery += scaledVal
-        else if (cat === 'appliances') barDataMap[key].appliances += scaledVal
-        else barDataMap[key].others += scaledVal
-      }
-    })
-    const barData = months.map(m => barDataMap[`${m.year}-${m.num}`])
-
-    // 5. Query Donut Chart Data (Product Categories)
-    const donutQuery = `
-      SELECT 
-        p.category AS label,
-        COUNT(DISTINCT b.id) AS count
-      FROM bill_items bi
-      JOIN products p ON bi.product_id = p.id
-      JOIN bills b ON bi.bill_id = b.id
-      LEFT JOIN people c ON b.customer_id = c.id
-      WHERE b.status = 'paid' AND b.user_id = $1 ${dateCondition} ${customerCondition}
-      GROUP BY p.category
-    `
-    const donutParams = [userId]
-    if (customerFilter !== 'All Customers') {
-      donutParams.push(customerFilter)
-    }
-    const donutRes = await query(donutQuery, donutParams)
-    const totalDonutCount = donutRes.rows.reduce((sum, r) => sum + Number.parseInt(r.count), 0)
-    
-    const colors = {
-      'Electronics': '#f43f5e',
-      'Apparel': '#38bdf8',
-      'Grocery': '#10b981',
-      'Appliances': '#a78bfa',
-      'Others': '#fb923c'
-    }
-
-    const donutData = donutRes.rows.map(r => {
-      const pct = totalDonutCount > 0 ? Math.round((Number.parseInt(r.count) / totalDonutCount) * 100) : 0
-      return {
-        label: r.label,
-        pct: pct,
-        color: colors[r.label] || '#9ca3af'
-      }
-    })
-
-    if (donutData.length === 0) {
-      Object.keys(colors).forEach(cat => {
-        donutData.push({ label: cat, pct: 0, color: colors[cat] })
-      })
-    }
-
-    // 6. Query Tooltip Data (month stats, top product category, etc.) — IST months
-    const tooltipData = []
-
-    for (let i = 0; i < months.length; i++) {
-      const m = months[i]
-      const topCatQuery = `
-        SELECT p.category, SUM(bi.quantity * bi.price) AS cat_revenue
-        FROM bill_items bi
-        JOIN products p ON bi.product_id = p.id
-        JOIN bills b ON bi.bill_id = b.id
-        LEFT JOIN people c ON b.customer_id = c.id
-        WHERE b.status = 'paid' AND b.user_id = $1
-          AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) = ${m.num}
-          AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = ${m.year}
-          ${customerCondition}
-        GROUP BY p.category
-        ORDER BY cat_revenue DESC
-        LIMIT 1
-      `
-      const topCatParams = [userId]
-      if (customerFilter !== 'All Customers') {
-        topCatParams.push(customerFilter)
-      }
-      const topCatRes = await query(topCatQuery, topCatParams)
-      const topCategory = topCatRes.rows[0]?.category || 'N/A'
-
-      const monthlyRevQuery = `
-        SELECT COALESCE(SUM(amount), 0) AS total
-        FROM bills b
-        LEFT JOIN people c ON b.customer_id = c.id
-        WHERE b.status = 'paid' AND b.user_id = $1
-          AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) = ${m.num}
-          AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = ${m.year}
-          ${customerCondition}
-      `
-      const monthlyRevParams = [userId]
-      if (customerFilter !== 'All Customers') {
-        monthlyRevParams.push(customerFilter)
-      }
-      const monthlyRevRes = await query(monthlyRevQuery, monthlyRevParams)
-      const revenueINR = Number.parseFloat(monthlyRevRes.rows[0].total)
-      const revenueUSD = revenueINR / 83.0
-
-      let change = '+0%'
-      if (i > 0) {
-        const prevM = months[i - 1]
-        const prevMonthQuery = `
-          SELECT COALESCE(SUM(amount), 0) AS total
-          FROM bills b
-          LEFT JOIN people c ON b.customer_id = c.id
-          WHERE b.status = 'paid' AND b.user_id = $1
-            AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) = ${prevM.num}
-            AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = ${prevM.year}
-            ${customerCondition}
-        `
-        const prevMonthParams = [userId]
-        if (customerFilter !== 'All Customers') {
-          prevMonthParams.push(customerFilter)
-        }
-        const prevMonthRes = await query(prevMonthQuery, prevMonthParams)
-        const prevRevenue = Number.parseFloat(prevMonthRes.rows[0].total)
-        if (prevRevenue > 0) {
-          const diffPct = ((revenueINR - prevRevenue) / prevRevenue) * 100
-          change = (diffPct >= 0 ? '+' : '') + Math.round(diffPct) + '%'
-        }
-      }
-
-      tooltipData.push({
-        month: m.label,
-        product: topCategory,
-        inr: '₹' + Math.round(revenueINR).toLocaleString('en-IN'),
-        usd: 'USD ' + Math.round(revenueUSD).toLocaleString('en-US'),
-        change: change
-      })
-    }
-
-    res.json({ barData, donutData, tooltipData })
+    await redis.set(cacheKey, result, { ex: 30 }).catch(() => {})
+    res.json(result)
   } catch (err) {
+    console.error('[BUSINESS METRICS ERROR]', err)
     res.status(500).json({ error: err.message })
   }
 })

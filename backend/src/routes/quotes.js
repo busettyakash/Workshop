@@ -598,21 +598,98 @@ router.get('/', apiLimiter, async (req, res) => {
 })
 
 
+function resolveQuoteStatusLabel(quote, isAcc, isDec) {
+  if (isAcc) return 'Accepted'
+  if (isDec) return 'Declined'
+  return quote.status || 'Processed'
+}
+
 function buildAlreadyRespondedHtml(quote) {
-  const isAcc = quote.status === 'Accepted'
+  const isAcc = String(quote.status || '').toLowerCase() === 'accepted'
+  const isDec = String(quote.status || '').toLowerCase() === 'declined'
+  const statusLabel = resolveQuoteStatusLabel(quote, isAcc, isDec)
+  const statusBadgeBg = isAcc ? '#dcfce7' : '#fee2e2'
+  const statusBadgeColor = isAcc ? '#15803d' : '#b91c1c'
+  const statusBadgeBorder = isAcc ? '#bbf7d0' : '#fecaca'
+
   return `
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
       <head>
-        <title>Already Responded</title>
-        <style>body{font-family:-apple-system,sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;} .card{background:#fff;border-radius:14px;border:1px solid #e2e8f0;padding:32px;max-width:460px;width:100%;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.06);}</style>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Link Inactive · Quotation #${quote.quote_number || ''}</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f8fafc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+          }
+          .card {
+            background: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            padding: 36px 32px;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+          }
+          .icon {
+            font-size: 2.75rem;
+            margin-bottom: 12px;
+          }
+          .badge {
+            display: inline-block;
+            padding: 5px 16px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            background: ${statusBadgeBg};
+            color: ${statusBadgeColor};
+            border: 1px solid ${statusBadgeBorder};
+            margin-bottom: 16px;
+          }
+          h3 {
+            margin: 0 0 8px;
+            color: #0f172a;
+            font-size: 1.25rem;
+            font-weight: 700;
+          }
+          p {
+            color: #64748b;
+            font-size: 0.9rem;
+            line-height: 1.55;
+            margin: 0 0 16px;
+          }
+          .info-box {
+            background: #f1f5f9;
+            border-radius: 10px;
+            padding: 14px 16px;
+            font-size: 0.825rem;
+            color: #475569;
+            line-height: 1.5;
+            border: 1px solid #e2e8f0;
+          }
+        </style>
       </head>
       <body>
         <div class="card">
-          <div style="font-size:2.5rem;margin-bottom:12px;">${isAcc ? '✅' : '❌'}</div>
-          <div style="display:inline-block;padding:5px 14px;border-radius:20px;font-weight:700;font-size:0.85rem;background:${isAcc ? '#dcfce7' : '#fee2e2'};color:${isAcc ? '#15803d' : '#b91c1c'};margin-bottom:14px;">Already ${quote.status}</div>
-          <h3 style="margin:0 0 8px;color:#0f172a;">This quotation has already been ${quote.status.toLowerCase()}.</h3>
-          <p style="color:#64748b;font-size:0.875rem;">Quotation <strong>#${quote.quote_number}</strong> response has already been recorded. No further action is needed.</p>
+          <div class="icon">🔒</div>
+          <div class="badge">Link Inactive · Already ${statusLabel}</div>
+          <h3>This Link Is No Longer Active</h3>
+          <p>
+            Quotation <strong>#${quote.quote_number}</strong> has already been <strong>${statusLabel.toLowerCase()}</strong>. For security and to prevent duplicate orders or conflicting actions, response links can only be used once.
+          </p>
+          <div class="info-box">
+            No further action is required. If you need any revisions, pricing adjustments, or a new quotation, please feel free to reach out to us.
+          </div>
         </div>
       </body>
     </html>
@@ -809,39 +886,51 @@ router.get('/respond', emailLimiter, async (req, res) => {
 
     const quote = quoteRes.rows[0]
 
-    if (quote.status === 'Accepted' || quote.status === 'Declined') {
+    const currentStatus = String(quote.status || '').trim().toLowerCase()
+    if (['accepted', 'declined', 'converted', 'expired'].includes(currentStatus)) {
       return res.send(buildAlreadyRespondedHtml(quote))
     }
 
     const generatedOrderNum = (quote.order_number && quote.order_number !== 'null') ? quote.order_number : `ORD-${crypto.randomInt(10000, 100000)}`
 
-    await pool.query(
-      'UPDATE quotes SET status = $1, order_number = $2, updated_at = NOW() WHERE id = $3',
+    // Atomically claim the quotation only if it has not yet been accepted or declined
+    const updateRes = await pool.query(
+      `UPDATE quotes 
+       SET status = $1, order_number = $2, updated_at = NOW() 
+       WHERE id = $3 AND LOWER(status) NOT IN ('accepted', 'declined', 'converted', 'expired')
+       RETURNING *`,
       [action, generatedOrderNum, id]
     )
+
+    if (updateRes.rows.length === 0) {
+      const latestQuote = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]).catch(() => ({ rows: [quote] }))
+      return res.send(buildAlreadyRespondedHtml(latestQuote.rows[0] || quote))
+    }
+
+    const updatedQuote = updateRes.rows[0]
 
     await pool.query(
       `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, is_read, user_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, 'inbox', false, $6, NOW(), NOW())`,
       [
-        quote.customer_name || 'Customer',
-        quote.customer_email || 'customer@workshop.app',
-        `Re: Quotation #${quote.quote_number} ${action}`,
+        updatedQuote.customer_name || 'Customer',
+        updatedQuote.customer_email || 'customer@workshop.app',
+        `Re: Quotation #${updatedQuote.quote_number} ${action}`,
         `<div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif; padding:16px; color:#1e293b;">
-          <h3 style="margin-top:0; color:#0f172a;">Quotation #${quote.quote_number} ${action}</h3>
-          <p>Customer <strong>${quote.customer_name}</strong> has <strong>${action.toLowerCase()}</strong> quotation #${quote.quote_number} for total amount ₹${Number.parseFloat(quote.total_amount || 0).toFixed(2)}.</p>
+          <h3 style="margin-top:0; color:#0f172a;">Quotation #${updatedQuote.quote_number} ${action}</h3>
+          <p>Customer <strong>${updatedQuote.customer_name}</strong> has <strong>${action.toLowerCase()}</strong> quotation #${updatedQuote.quote_number} for total amount ₹${Number.parseFloat(updatedQuote.total_amount || 0).toFixed(2)}.</p>
           ${action === 'Accepted' ? `<p style="color:#16a34a; font-weight:bold;">✅ Order <strong>${generatedOrderNum}</strong> & Invoice generated in Billing.</p>` : ''}
         </div>`,
-        `Quotation #${quote.quote_number} was ${action.toLowerCase()} by ${quote.customer_name}`,
-        quote.user_id
+        `Quotation #${updatedQuote.quote_number} was ${action.toLowerCase()} by ${updatedQuote.customer_name}`,
+        updatedQuote.user_id
       ]
     ).catch(eErr => console.error('[Quote Response Inbox Record Error]', eErr.message))
 
     const autoBillNotice = action === 'Accepted'
-      ? await handleQuoteAcceptedResponse(quote, generatedOrderNum)
-      : await handleQuoteDeclinedResponse(quote)
+      ? await handleQuoteAcceptedResponse(updatedQuote, generatedOrderNum)
+      : await handleQuoteDeclinedResponse(updatedQuote)
 
-    res.send(buildQuoteResponseRecordedHtml(quote, action, autoBillNotice))
+    res.send(buildQuoteResponseRecordedHtml(updatedQuote, action, autoBillNotice))
   } catch (err) {
     console.error('[Quotes Respond Error]', err)
     res.status(500).send('<h3>Error processing quotation response.</h3>')

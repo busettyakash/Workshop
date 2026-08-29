@@ -176,7 +176,7 @@ export default function BusinessMetrics() {
   }
 
   return (
-    <div className="ws-bm-section" onClick={closeDrops} style={{ opacity: loading ? 0.7 : 1, transition: 'opacity 0.2s' }}>
+    <div className="ws-bm-section" role="presentation" onClick={closeDrops} onKeyDown={(e) => { if (e.key === 'Escape') closeDrops() }} style={{ opacity: loading ? 0.7 : 1, transition: 'opacity 0.2s' }}>
 
       {/* ── Header ── */}
       <div className="ws-bm-header">
@@ -184,7 +184,7 @@ export default function BusinessMetrics() {
           <h2 className="ws-bm-title">Business Metrics</h2>
           <p className="ws-bm-sub">Overview of sales pipeline, revenue growth, product performance, and more.</p>
         </div>
-        <div className="ws-bm-header-right" onClick={e => e.stopPropagation()}>
+        <div className="ws-bm-header-right" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
           {/* Filters */}
           <Filter size={13} style={{ color: '#9ca3af' }} />
 

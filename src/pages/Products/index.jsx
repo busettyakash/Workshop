@@ -80,8 +80,8 @@ function BarcodeModal({ sku, onClose }) {
   }
 
   return (
-    <div className="ws-modal-backdrop" onClick={onClose}>
-      <div className="ws-modal-card" style={{ maxWidth: 360 }} onClick={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card" style={{ maxWidth: 360 }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
           <h3 className="ws-modal-title">Product Barcode</h3>
           <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
@@ -376,13 +376,7 @@ export default function Products() {
     }
   }
 
-  const getCategoryTagClass = (category = '') => {
-    const cat = String(category).toLowerCase()
-    if (cat.includes('food')) return 'attio-tag-food'
-    if (cat.includes('elect')) return 'attio-tag-electronics'
-    if (cat.includes('groc')) return 'attio-tag-grocery'
-    return 'attio-tag-default'
-  }
+
 
   const getStockBadgeClass = (stock, looseKg = 0, bagWeight = 1) => {
     const s = parseFloat(stock || 0)
@@ -532,11 +526,8 @@ export default function Products() {
                     </thead>
                     <tbody>
                       {products.map(row => {
-                        const bulkUnit = getBulkUnitDetails(row.unit)
-                        const bagWeight = parseFloat(row.bag_weight || 1)
                         const restockOpts = ['TBD', 'In 30 mins', 'Tomorrow', 'Next week', 'Next month']
                         const restock = row.next_restock_time || 'TBD'
-                        const updatedDate = row.updated_price_date ? String(row.updated_price_date).split('T')[0] : ''
 
                         return (
                           <tr key={row.id}>
@@ -651,7 +642,7 @@ export default function Products() {
                             </td>
                             <td>
                               {row.sku ? (
-                                <div onClick={() => setSelectedSku(row.sku)}>
+                                <div role="button" tabIndex={0} onClick={() => setSelectedSku(row.sku)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedSku(row.sku) }}>
                                   <ProductBarcode sku={row.sku} />
                                 </div>
                               ) : <span style={{ color: '#9ca3af' }}>—</span>}

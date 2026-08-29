@@ -536,15 +536,19 @@
   flex: 1;
 }
 
-.ws-sb-subitem svg {
+.ws-sb-subitem svg:not(.ws-sb-star-btn svg) {
   color: var(--color-gray-400);
   flex-shrink: 0;
   width: 15px;
   height: 15px;
 }
 
-.ws-sb-subitem:hover svg {
+.ws-sb-subitem:hover svg:not(.ws-sb-star-btn svg) {
   color: var(--color-text-primary);
+}
+
+.ws-sb-subitem .ws-sb-star-btn {
+  margin-left: auto;
 }
 
 /* Badge/Tag inside sub-items (e.g. Deals) */
@@ -706,29 +710,39 @@
   background: transparent;
   border: none;
   cursor: pointer;
-  color: var(--color-gray-300);
+  color: #475569;
   opacity: 0;
-  transition: opacity 0.12s, color 0.12s;
+  transition: opacity 0.15s ease, color 0.15s ease;
   padding: 4px;
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.ws-sb-star-btn svg {
+  width: 12px !important;
+  height: 12px !important;
+  flex-shrink: 0;
+  stroke: currentColor !important;
+  fill: none !important;
 }
 
 .ws-sb-nav-item-wrapper:hover .ws-sb-star-btn,
 .ws-sb-subitem:hover .ws-sb-star-btn {
-  opacity: 0.6;
+  opacity: 0.75;
+  color: #475569;
 }
 
 .ws-sb-star-btn:hover {
   opacity: 1 !important;
-  color: #eab308;
+  color: #0f172a !important;
 }
 
 .ws-sb-star-btn.favorited {
   opacity: 1 !important;
-  color: #eab308;
+  color: #475569 !important;
 }
 
 /* Arrow Toggle Button for nested sections */

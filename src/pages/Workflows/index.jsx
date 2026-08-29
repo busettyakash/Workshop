@@ -370,7 +370,7 @@ export default function Workflows() {
                               onClick={() => openWorkflow(wf)}
                               style={{ cursor: 'pointer', transition: 'background 0.12s' }}
                             >
-                              <td style={{ textAlign: 'center', paddingLeft: 6 }} onClick={e => e.stopPropagation()}>
+                              <td style={{ textAlign: 'center', paddingLeft: 6 }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
                                 <button
                                   type="button"
                                   style={{
@@ -693,7 +693,6 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
   const [runs, setRuns] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
-  const [triggering, setTriggering] = useState(false)
   const [selectedRun, setSelectedRun] = useState(initialSelectedRun)
   const [logs, setLogs] = useState([])
   const [loadingLogs, setLoadingLogs] = useState(false)
@@ -785,28 +784,6 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
     }
   }, [selectedRun?.id, selectedRun?.status, workflowId])
 
-  const handleTriggerTestRun = async () => {
-    if (!workflowId) return
-    setTriggering(true)
-    try {
-      const res = await api.post(`/workflows/${workflowId}/runs`, {
-        test_company: 'Demo Motors & Spares',
-        test_value: 35000
-      })
-      dispatch(addToast({ message: 'QStash background workflow run triggered!', type: 'success' }))
-      // Immediately show the new run, then re-fetch after a short delay for status updates
-      if (res.data) {
-        setSelectedRun(res.data)
-        setRuns(prev => [res.data, ...prev])
-      }
-      setTimeout(() => fetchRuns(true), 2000)
-      setTimeout(() => fetchRuns(true), 6000)
-    } catch (err) {
-      dispatch(addToast({ message: 'Failed to trigger run', type: 'error' }))
-    } finally {
-      setTriggering(false)
-    }
-  }
 
   const getStepProgress = (step, run) => {
     if (run?.status === 'Completed') {
@@ -1364,7 +1341,7 @@ function MultiRecipientConfig({ step, onUpdateRecipients }) {
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [people, setPeople] = useState([])
-  const [selectedPersonId, setSelectedPersonId] = useState('')
+  const [_selectedPersonId, setSelectedPersonId] = useState('')
 
   useEffect(() => {
     setRecipients(step.recipients || [])
@@ -1382,7 +1359,7 @@ function MultiRecipientConfig({ step, onUpdateRecipients }) {
     fetchPeople()
   }, [])
 
-  const handleSelectPerson = (personId) => {
+  const _handleSelectPerson = (personId) => {
     setSelectedPersonId(personId)
     if (!personId) return
     const person = people.find(p => String(p.id) === String(personId))
@@ -2180,8 +2157,8 @@ function WorkflowEditor({
   currentWf,
   wfName, setWfName, isPublished,
   activeTab, setActiveTab,
-  triggerSearch, setTriggerSearch,
-  selectedTrigger, setSelectedTrigger, filteredCategories,
+  triggerSearch, setTriggerSearch: _setTriggerSearch,
+  selectedTrigger: _selectedTrigger, setSelectedTrigger: _setSelectedTrigger, filteredCategories: _filteredCategories,
   zoom, setZoom, initials, initialRun, workflows = [],
   onBack, onToggleLive, onSaveName
 }) {

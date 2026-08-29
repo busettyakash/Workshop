@@ -92,8 +92,8 @@ function TemplateManagerModal({ onClose }) {
   }
 
   return (
-    <div className="ws-modal-backdrop" onClick={onClose} style={{ zIndex: 1100 }}>
-      <div className="ws-modal-card" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }} style={{ zIndex: 1100 }}>
+      <div className="ws-modal-card" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
         <div className="ws-modal-header">
           <h3 className="ws-modal-title">Bill Templates</h3>
           <button className="ws-modal-close-x" onClick={onClose}><X size={16} /></button>

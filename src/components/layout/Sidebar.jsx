@@ -181,7 +181,7 @@ function NavItem({ item, active, onClick, favorites, onToggleFav }) {
         onClick={(e) => onToggleFav(item.label, e)}
         aria-label={isFav ? "Remove from Favorites" : "Add to Favorites"}
       >
-        <Star size={11} fill={isFav ? "#eab308" : "none"} stroke={isFav ? "#eab308" : "currentColor"} />
+        <Star size={12} fill="none" stroke="currentColor" strokeWidth={1.8} />
       </button>
     </div>
   )
@@ -959,7 +959,7 @@ export default function Sidebar() {
                           className={`ws-sb-star-btn ${favorites.includes('Workflows') ? 'favorited' : ''}`}
                           onClick={(e) => toggleFavorite('Workflows', e)}
                         >
-                          <Star size={10} fill={favorites.includes('Workflows') ? "#eab308" : "none"} stroke={favorites.includes('Workflows') ? "#eab308" : "currentColor"} />
+                          <Star size={12} fill="none" stroke="currentColor" strokeWidth={1.8} />
                         </button>
                       </div>
                     </Link>
@@ -996,7 +996,7 @@ export default function Sidebar() {
                             className="ws-sb-star-btn favorited"
                             onClick={(e) => toggleFavorite(favLabel, e)}
                           >
-                            <Star size={10} fill="#eab308" stroke="#eab308" />
+                            <Star size={12} fill="none" stroke="currentColor" strokeWidth={1.8} />
                           </button>
                         </div>
                       </Link>
@@ -1038,7 +1038,7 @@ export default function Sidebar() {
                           className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
                           onClick={(e) => toggleFavorite(item.label, e)}
                         >
-                          <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
+                          <Star size={12} fill="none" stroke="currentColor" strokeWidth={1.8} />
                         </button>
                       </div>
                     </Link>
@@ -1079,7 +1079,7 @@ export default function Sidebar() {
                           className={`ws-sb-star-btn ${favorites.includes(item.label) ? 'favorited' : ''}`}
                           onClick={(e) => toggleFavorite(item.label, e)}
                         >
-                          <Star size={10} fill={favorites.includes(item.label) ? "#eab308" : "none"} stroke={favorites.includes(item.label) ? "#eab308" : "currentColor"} />
+                          <Star size={12} fill="none" stroke="currentColor" strokeWidth={1.8} />
                         </button>
                       </div>
                     </Link>

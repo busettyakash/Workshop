@@ -397,7 +397,7 @@ export default function ProfitMargin() {
                                   <span style={{ fontWeight: 535, fontSize: '0.89rem', color: '#1e293b' }}>
                                     {p.name}
                                   </span>
-                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
+                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                                     SKU: {p.sku || '—'}
                                   </span>
                                 </div>

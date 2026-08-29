@@ -587,16 +587,8 @@ router.post('/verify-otp', authLimiter, async (req, res) => {
 })
 
 /* POST /api/auth/register — Create a new account (owner or invited member) */
-router.post('/register', authLimiter, async (req, res) => {
-  const email = normalizeEmail(req.body?.email)
-  const {
-    password, shopName, phone, mobileNumber, gstin, workspaceHandle,
-    billingCountry, referralSource, usageType, inviteEmail,
-    firstName, lastName, first_name, last_name,
-  } = req.body
-
-  // Detect invite registration (explicit flag or existing workspace_members row)
-  let isInvite = Boolean(req.body?.isInvite || req.body?.inviteFrom || req.body?.invite_from)
+async function checkIsInviteUser(body, email) {
+  let isInvite = Boolean(body?.isInvite || body?.inviteFrom || body?.invite_from)
   if (!isInvite && email) {
     try {
       const { rows } = await query(
@@ -606,26 +598,78 @@ router.post('/register', authLimiter, async (req, res) => {
       if (rows.length > 0) isInvite = true
     } catch { /* ignore */ }
   }
+  return isInvite
+}
 
-  // Normalise fields
-  const actualFirstName = (firstName || first_name || (email ? email.split('@')[0] : '') || 'User').trim()
-  const actualLastName  = (lastName  || last_name  || 'Account').trim()
-  const actualPhone     = (phone || mobileNumber || '').trim()
-  const actualGstin     = (gstin || '').trim()
-  const actualShopName  = (shopName || req.body?.companyName || workspaceHandle || `${actualFirstName}'s Workshop`).trim()
+function normalizeRegistrationFields(body, email) {
+  const actualFirstName = (body?.firstName || body?.first_name || (email ? email.split('@')[0] : '') || 'User').trim()
+  const actualLastName  = (body?.lastName  || body?.last_name  || 'Account').trim()
+  const actualPhone     = (body?.phone || body?.mobileNumber || '').trim()
+  const actualGstin     = (body?.gstin || '').trim()
+  const actualShopName  = (body?.shopName || body?.companyName || body?.workspaceHandle || `${actualFirstName}'s Workshop`).trim()
 
+  return {
+    actualFirstName,
+    actualLastName,
+    actualPhone,
+    actualGstin,
+    actualShopName
+  }
+}
+
+function validateRegistrationFields(email, password, fields, isInvite) {
   if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required' })
+    return 'Email and password are required'
+  }
+  if (!isInvite) {
+    if (!fields.actualFirstName || !fields.actualLastName || !fields.actualPhone || !fields.actualGstin) {
+      return 'First name, Last name, Email, password, phone, and GSTIN are required'
+    }
+    if (fields.actualGstin.length !== 15) {
+      return 'GSTIN must be exactly 15 characters'
+    }
+  }
+  return null
+}
+
+async function resolveDefaultPendingWorkspace(email) {
+  try {
+    const { rows } = await query(
+      `SELECT m.workspace_owner_id, p.shop_name, p.email AS owner_email
+       FROM workspace_members m
+       JOIN shop_profiles p
+         ON p.user_id::text = m.workspace_owner_id OR p.email = m.workspace_owner_id
+       WHERE LOWER(m.member_email) = LOWER($1)
+       ORDER BY m.created_at ASC
+       LIMIT 1`,
+      [email]
+    )
+    if (rows.length > 0) {
+      return {
+        defaultWorkspaceId: rows[0].workspace_owner_id,
+        defaultWorkspaceName: rows[0].shop_name || `${rows[0].owner_email}'s Workshop`
+      }
+    }
+  } catch (err) {
+    console.error('[Register] Error checking pending invites:', err.message)
+  }
+  return { defaultWorkspaceId: null, defaultWorkspaceName: null }
+}
+
+router.post('/register', authLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  const {
+    password, workspaceHandle, billingCountry, referralSource, usageType, inviteEmail, gstin
+  } = req.body
+
+  const isInvite = await checkIsInviteUser(req.body, email)
+  const fields = normalizeRegistrationFields(req.body, email)
+  const validationError = validateRegistrationFields(email, password, fields, isInvite)
+  if (validationError) {
+    return res.status(400).json({ message: validationError })
   }
 
-  if (!isInvite) {
-    if (!actualFirstName || !actualLastName || !actualPhone || !actualGstin) {
-      return res.status(400).json({ message: 'First name, Last name, Email, password, phone, and GSTIN are required' })
-    }
-    if (actualGstin.length !== 15) {
-      return res.status(400).json({ message: 'GSTIN must be exactly 15 characters' })
-    }
-  }
+  const { actualFirstName, actualLastName, actualPhone, actualGstin, actualShopName } = fields
 
   try {
     // Register in InsForge (tolerate "already exists" since we still create the local profile)
@@ -687,28 +731,7 @@ router.post('/register', authLimiter, async (req, res) => {
       }
     }
 
-    // Resolve default workspace for invited users
-    let defaultWorkspaceId   = null
-    let defaultWorkspaceName = null
-    try {
-      const { rows } = await query(
-        `SELECT m.workspace_owner_id, p.shop_name, p.email AS owner_email
-         FROM workspace_members m
-         JOIN shop_profiles p
-           ON p.user_id::text = m.workspace_owner_id OR p.email = m.workspace_owner_id
-         WHERE LOWER(m.member_email) = LOWER($1)
-         ORDER BY m.created_at ASC
-         LIMIT 1`,
-        [email]
-      )
-      if (rows.length > 0) {
-        defaultWorkspaceId   = rows[0].workspace_owner_id
-        defaultWorkspaceName = rows[0].shop_name || `${rows[0].owner_email}'s Workshop`
-        console.log('[Register] User has pending invite → defaulting to workspace')
-      }
-    } catch (err) {
-      console.error('[Register] Error checking pending invites:', err.message)
-    }
+    const { defaultWorkspaceId, defaultWorkspaceName } = await resolveDefaultPendingWorkspace(email)
 
     const response = {
       message: 'Registration successful',

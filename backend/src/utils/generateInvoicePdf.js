@@ -35,65 +35,68 @@ function fmtDate(d) {
   } catch { return String(d) }
 }
 
-function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQuote = false) {
-  let bw = Number.parseFloat(bagWeight || 1)
-  let pName
-  if (typeof prodName === 'string' && prodName.trim()) {
-    pName = prodName
-  } else if (typeof dbUnit === 'string' && !['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) {
-    pName = dbUnit
-  } else {
-    pName = ''
+function resolveProdName(prodName, dbUnit) {
+  if (typeof prodName === 'string' && prodName.trim()) return prodName
+  if (typeof dbUnit === 'string' && !['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) {
+    return dbUnit
   }
-  const pNameLower = pName.toLowerCase()
+  return ''
+}
 
-  if (bw <= 1 && pNameLower) {
-    const nameWeightMatch = pNameLower.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
-    if (nameWeightMatch && nameWeightMatch[1]) {
-      bw = Number.parseFloat(nameWeightMatch[1])
-    } else if (pNameLower.includes('soddalu')) {
-      bw = 50
-    } else if (pNameLower.includes('kurnool') || pNameLower.includes('rice')) {
-      bw = 26
-    }
+function inferBagWeight(bw, pNameLower) {
+  if (bw > 1 || !pNameLower) return bw
+  const nameWeightMatch = pNameLower.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
+  if (nameWeightMatch && nameWeightMatch[1]) {
+    return Number.parseFloat(nameWeightMatch[1])
   }
+  if (pNameLower.includes('soddalu')) return 50
+  if (pNameLower.includes('kurnool') || pNameLower.includes('rice')) return 26
+  return bw
+}
 
+function cleanUnitStr(rawUnit) {
   let uClean = String(rawUnit || '').trim()
-
   if (uClean.includes(':') || uClean.includes('₹') || uClean.includes('/')) {
-    if (uClean.toLowerCase().includes('/ltr') || uClean.toLowerCase().includes('ltr')) {
-      uClean = 'ltrs'
-    } else if (uClean.toLowerCase().includes('/kg') || uClean.toLowerCase().includes('kg')) {
-      uClean = 'kgs'
-    } else if (uClean.toLowerCase().includes('/mtr') || uClean.toLowerCase().includes('mtr')) {
-      uClean = 'mtrs'
-    } else {
-      uClean = uClean.split(':')[0].trim()
-    }
+    const lower = uClean.toLowerCase()
+    if (lower.includes('/ltr') || lower.includes('ltr')) return 'ltrs'
+    if (lower.includes('/kg') || lower.includes('kg')) return 'kgs'
+    if (lower.includes('/mtr') || lower.includes('mtr')) return 'mtrs'
+    return uClean.split(':')[0].trim()
   }
+  return uClean
+}
 
+function getExplicitLineDiscount(li) {
+  const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
+  if (!Number.isNaN(explicit) && explicit >= 0) return explicit
+  const qty = Number.parseFloat(li.quantity || li.qty || 1)
+  const rate = Number.parseFloat(li.rate || li.price || 0)
+  const lineGross = qty * rate
+  const lineAmt = Number.parseFloat(li.amount ?? li.line_total ?? NaN)
+  if (!Number.isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
+    return Math.round((lineGross - lineAmt) * 100) / 100
+  }
+  return 0
+}
+
+function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQuote = false) {
+  const pName = resolveProdName(prodName, dbUnit)
+  const bw = inferBagWeight(Number.parseFloat(bagWeight || 1), pName.toLowerCase())
+  const uClean = cleanUnitStr(rawUnit)
   const dbUnitStr = (typeof dbUnit === 'string' && ['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) ? dbUnit : ''
   const u = (uClean || dbUnitStr).toLowerCase().trim()
   const isBagUnit = ['bag', 'bags'].includes(u)
 
-  // In Quotation flow (isQuote === true) OR explicitly specified Bag unit:
-  // Quantity = 10 means 10 Bags (e.g. 10 Bag, subtext "50kg Bag")
   if (isQuote || isBagUnit) {
-    let subtext
     if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-      subtext = 'ltrs'
-      return { displayQty: qty, displayUnit: 'ltrs', subtext }
-    } else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-      subtext = bw > 1 ? `${bw}m Roll` : 'mtrs'
-      return { displayQty: qty, displayUnit: 'mtrs', subtext }
-    } else {
-      subtext = bw > 1 ? `${bw}kg Bag` : 'Bag'
-      return { displayQty: qty, displayUnit: 'Bag', subtext }
+      return { displayQty: qty, displayUnit: 'ltrs', subtext: 'ltrs' }
     }
+    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+      return { displayQty: qty, displayUnit: 'mtrs', subtext: bw > 1 ? `${bw}m Roll` : 'mtrs' }
+    }
+    return { displayQty: qty, displayUnit: 'Bag', subtext: bw > 1 ? `${bw}kg Bag` : 'Bag' }
   }
 
-  // Direct Invoice Flow (isQuote === false):
-  // Quantity = 10 means 10 kgs (loose kgs, no bag subtext)
   let baseUnitLabel = uClean || u || 'kgs'
   if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
   else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
@@ -106,12 +109,7 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   }
 }
 
-// ─────────────────────────────────────────────
-// HTML Builder  (mirrors BillPreview.jsx exactly)
-// ─────────────────────────────────────────────
-function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {}, type = '' } = {}) {
-  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number)) || Boolean(quote.quote_number || bill.quote_number || quote.quote_id || bill.quote_id)
-
+function resolveDocumentNumber({ quote, bill, isQuote }) {
   let quoteNumFound = quote.quote_number || bill.quote_number || ''
   if (!quoteNumFound && (quote.quote_id || bill.quote_id)) {
     const qid = quote.quote_id || bill.quote_id
@@ -131,57 +129,24 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     }
   }
 
-  let docId = ''
   if (isQuote) {
-    docId = quoteNumFound || `QT-${quote.id || '820332'}`
-  } else if (bill.bill_number) {
-    docId = bill.bill_number
-  } else if (bill.id) {
-    docId = `INV-${String(bill.id).padStart(5, '0')}`
-  } else {
-    docId = 'INV-10001'
+    return quoteNumFound || `QT-${quote.id || '820332'}`
   }
+  if (bill.bill_number) {
+    return bill.bill_number
+  }
+  if (bill.id) {
+    return `INV-${String(bill.id).padStart(5, '0')}`
+  }
+  return 'INV-10001'
+}
 
-  const orderId = bill.order_number || quote.order_number || ''
-  const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
-  const sectionTitle1 = isQuote ? '1. QUOTATION DETAILS' : '1. INVOICE DETAILS'
-  const docTypeTitle = isQuote ? 'Commercial Quotation' : 'Tax Invoice'
-
-  // Supplier
-  const companyName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
-  const companyGstin = shop.gstin || quote.shop_gstin || bill.shop_gstin || ''
-  const companyPhone = shop.phone || quote.shop_phone || bill.shop_phone || ''
-  const companyAddress = shop.address || quote.shop_address || bill.shop_address || ''
-
-  // Customer
-  const customerName = quote.customer_name || bill.customer_name || ''
-  const customerGstin = quote.customer_gstin || bill.customer_gstin || ''
-  const customerPhone = quote.customer_phone || bill.customer_phone || ''
-  const customerCompany = quote.customer_company || bill.customer_company || ''
-  const custStateStr = quote.customer_state ? `, ${quote.customer_state}` : ''
-  const customerAddress = quote.customer_address || bill.customer_address ||
-    (quote.customer_city ? (quote.customer_city + custStateStr) : '')
-
-  const doc = { ...quote, ...bill }
-  const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
-
+function calculateInvoiceTotals({ items, doc, quote, bill }) {
   const grossSubtotal = items.reduce((s, li) => {
     const q = Number.parseFloat(li.qty || li.quantity || 1)
     const p = Number.parseFloat(li.price || li.rate || 0)
     return s + (p * q)
   }, 0)
-function getExplicitLineDiscount(li) {
-  const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
-  if (!Number.isNaN(explicit) && explicit >= 0) return explicit
-  const qty = Number.parseFloat(li.quantity || li.qty || 1)
-  const rate = Number.parseFloat(li.rate || li.price || 0)
-  const lineGross = qty * rate
-  const lineAmt = Number.parseFloat(li.amount ?? li.line_total ?? NaN)
-  if (!Number.isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
-    return Math.round((lineGross - lineAmt) * 100) / 100
-  }
-  return 0
-}
 
   const lineDiscounts = items.reduce((s, li) => s + getExplicitLineDiscount(li), 0)
   const explicitDiscount = Number.parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
@@ -227,77 +192,140 @@ function getExplicitLineDiscount(li) {
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2
 
+  return {
+    grossSubtotal,
+    lineDiscounts,
+    totalDiscount,
+    taxableSubtotal,
+    totalAmount,
+    taxAmt,
+    halfTaxRate,
+    cgst,
+    sgst
+  }
+}
+
+function renderInvoiceItemRow(li, i, { items, grossSubtotal, lineDiscounts, totalDiscount, catalogMap, isQuote, halfTaxRate, taxAmt }) {
+  const qty = Number.parseFloat(li.qty || li.quantity || 1)
+  const price = Number.parseFloat(li.price || li.rate || 0)
+  const disc = getExplicitLineDiscount(li)
+  const lineTotalGross = price * qty
+  let itemDisc = disc
+  if (itemDisc === 0 && lineDiscounts === 0 && totalDiscount > 0) {
+    itemDisc = items.length === 1
+      ? totalDiscount
+      : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
+  }
+  const pId = li.product_id || li.productId || li.id
+  const prodNameRaw = (typeof li === 'string' && li.trim())
+    ? li
+    : (li.name || li.product_name || li.productName || li.product || li.item_name || li.title || li.description || '')
+
+  const normSearch = prodNameRaw ? prodNameRaw.toLowerCase().replace(/[-_]/g, ' ').trim() : ''
+
+  const dbProd = (pId && catalogMap[String(pId)])
+    || (prodNameRaw && catalogMap[prodNameRaw.toLowerCase().trim()])
+    || (normSearch && catalogMap[normSearch])
+    || Object.values(catalogMap).find(p => {
+         if (!p.name) return false
+         const pNorm = p.name.toLowerCase().replace(/[-_]/g, ' ').trim()
+         return pNorm === normSearch || pNorm.includes(normSearch) || normSearch.includes(pNorm)
+       })
+
+  const prodName = prodNameRaw || dbProd?.name || 'Product Item'
+  const rawUnit = li.unit || li.unitLabel || dbProd?.unit || ''
+  const dbUnit = dbProd?.unit || ''
+
+  let bagWeight = Number.parseFloat(
+    li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? li.packWeight ??
+    dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? dbProd?.packWeight ?? 0
+  )
+
+  if (Number.isNaN(bagWeight) || bagWeight <= 0) {
+    const nameMatch = prodName.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
+    bagWeight = (nameMatch && nameMatch[1]) ? Number.parseFloat(nameMatch[1]) : 1
+  }
+
+  const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote)
+  const rawHsn = li.hsn_code || li.hsn || li.sku || dbProd?.hsn_code || dbProd?.sku || ''
+  const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
+    ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
+    : rawHsn
+
+  return `<tr>
+    <td style="font-weight:600;color:#475569;font-size:10.5px;font-family:monospace;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">${hsnCode}</td>
+    <td style="padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">
+      <div style="font-weight:700;color:#0f172a;font-size:11.5px">${prodName}</div>
+      ${subtext ? `<div style="font-size:10.5px;color:#64748b;margin-top:2px">${subtext}</div>` : ''}
+    </td>
+    <td style="text-align:center;font-weight:600;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${displayQty} ${displayUnit}</td>
+    <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${INR(lineTotalGross)}</td>
+    <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4;color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}">
+      ${itemDisc > 0.01 ? `-${INR(itemDisc)}` : '-'}
+    </td>
+    <td style="text-align:right;font-size:10.5px;color:#475569;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">
+      ${taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : '-'}
+    </td>
+  </tr>`
+}
+
+// ─────────────────────────────────────────────
+// HTML Builder  (mirrors BillPreview.jsx exactly)
+// ─────────────────────────────────────────────
+function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {}, type = '' } = {}) {
+  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number)) || Boolean(quote.quote_number || bill.quote_number || quote.quote_id || bill.quote_id)
+  const docId = resolveDocumentNumber({ quote, bill, isQuote })
+
+  const orderId = bill.order_number || quote.order_number || ''
+  const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
+  const sectionTitle1 = isQuote ? '1. QUOTATION DETAILS' : '1. INVOICE DETAILS'
+  const docTypeTitle = isQuote ? 'Commercial Quotation' : 'Tax Invoice'
+
+  // Supplier
+  const companyName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
+  const companyGstin = shop.gstin || quote.shop_gstin || bill.shop_gstin || ''
+  const companyPhone = shop.phone || quote.shop_phone || bill.shop_phone || ''
+  const companyAddress = shop.address || quote.shop_address || bill.shop_address || ''
+
+  // Customer
+  const customerName = quote.customer_name || bill.customer_name || ''
+  const customerGstin = quote.customer_gstin || bill.customer_gstin || ''
+  const customerPhone = quote.customer_phone || bill.customer_phone || ''
+  const customerCompany = quote.customer_company || bill.customer_company || ''
+  const custStateStr = quote.customer_state ? `, ${quote.customer_state}` : ''
+  const customerAddress = quote.customer_address || bill.customer_address ||
+    (quote.customer_city ? (quote.customer_city + custStateStr) : '')
+
+  const doc = { ...quote, ...bill }
+  const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
+
+  const {
+    grossSubtotal,
+    lineDiscounts,
+    totalDiscount,
+    taxableSubtotal,
+    totalAmount,
+    taxAmt,
+    halfTaxRate,
+    cgst,
+    sgst
+  } = calculateInvoiceTotals({ items, doc, quote, bill })
+
   const issueDate = fmtDate(doc.issue_date || doc.created_at)
   const dueDate = fmtDate(doc.valid_until || doc.due_date)
 
-  // Build table rows
-  const rowsHtml = items.length > 0 ? items.map((li, i) => {
-    const qty = Number.parseFloat(li.qty || li.quantity || 1)
-    const price = Number.parseFloat(li.price || li.rate || 0)
-    const disc = getExplicitLineDiscount(li)
-    const lineTotalGross = price * qty
-    let itemDisc = disc
-    if (itemDisc === 0 && lineDiscounts === 0 && totalDiscount > 0) {
-      itemDisc = items.length === 1
-        ? totalDiscount
-        : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
-    }
-    const pId = li.product_id || li.productId || li.id
-    const prodNameRaw = (typeof li === 'string' && li.trim())
-      ? li
-      : (li.name || li.product_name || li.productName || li.product || li.item_name || li.title || li.description || '')
-
-    const normSearch = prodNameRaw ? prodNameRaw.toLowerCase().replace(/[-_]/g, ' ').trim() : ''
-
-    const dbProd = (pId && catalogMap[String(pId)])
-      || (prodNameRaw && catalogMap[prodNameRaw.toLowerCase().trim()])
-      || (normSearch && catalogMap[normSearch])
-      || Object.values(catalogMap).find(p => {
-           if (!p.name) return false
-           const pNorm = p.name.toLowerCase().replace(/[-_]/g, ' ').trim()
-           return pNorm === normSearch || pNorm.includes(normSearch) || normSearch.includes(pNorm)
-         })
-
-    const prodName = prodNameRaw || dbProd?.name || 'Product Item'
-    const rawUnit = li.unit || li.unitLabel || dbProd?.unit || ''
-    const dbUnit = dbProd?.unit || ''
-
-    let bagWeight = Number.parseFloat(
-      li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? li.packWeight ??
-      dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? dbProd?.packWeight ?? 0
-    )
-
-    if (Number.isNaN(bagWeight) || bagWeight <= 0) {
-      const nameMatch = prodName.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
-      if (nameMatch && nameMatch[1]) {
-        bagWeight = Number.parseFloat(nameMatch[1])
-      } else {
-        bagWeight = 1
-      }
-    }
-
-    const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote)
-    const rawHsn = li.hsn_code || li.hsn || li.sku || dbProd?.hsn_code || dbProd?.sku || ''
-    const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
-      ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
-      : rawHsn
-
-    return `<tr>
-      <td style="font-weight:600;color:#475569;font-size:10.5px;font-family:monospace;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">${hsnCode}</td>
-      <td style="padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">
-        <div style="font-weight:700;color:#0f172a;font-size:11.5px">${prodName}</div>
-        ${subtext ? `<div style="font-size:10.5px;color:#64748b;margin-top:2px">${subtext}</div>` : ''}
-      </td>
-      <td style="text-align:center;font-weight:600;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${displayQty} ${displayUnit}</td>
-      <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${INR(lineTotalGross)}</td>
-      <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4;color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}">
-        ${itemDisc > 0.01 ? `-${INR(itemDisc)}` : '-'}
-      </td>
-      <td style="text-align:right;font-size:10.5px;color:#475569;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">
-        ${taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : '-'}
-      </td>
-    </tr>`
-  }).join('') : `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:24px">No line items found</td></tr>`
+  const rowsHtml = items.length > 0
+    ? items.map((li, i) => renderInvoiceItemRow(li, i, {
+        items,
+        grossSubtotal,
+        lineDiscounts,
+        totalDiscount,
+        catalogMap,
+        isQuote,
+        halfTaxRate,
+        taxAmt
+      })).join('')
+    : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:24px">No line items found</td></tr>'
 
   const totalsHtml = `
     <div style="display:flex;border:1px solid #cbd5e1;background:#f8fafc;margin-bottom:20px;text-align:center;width:100%">
@@ -545,6 +573,53 @@ function getSystemBrowserPath() {
   return null
 }
 
+function calculatePdfKitAmounts(items, quote, bill) {
+  const grossSubtotal = items.reduce((s, li) => {
+    const q = Number.parseFloat(li.qty || li.quantity || 1)
+    const p = Number.parseFloat(li.price || li.rate || 0)
+    return s + (p * q)
+  }, 0)
+
+  const lineDiscounts = items.reduce((s, li) => s + getExplicitLineDiscount(li), 0)
+  const explicitDocDiscount = Number.parseFloat(quote.discount || bill.discount || quote.discount_amount || bill.discount_amount || 0)
+  const totalDiscount = Math.max(lineDiscounts, explicitDocDiscount)
+  const taxableSubtotal = Math.max(0, grossSubtotal - totalDiscount)
+
+  const rawTaxRate = quote.tax_rate ?? bill.tax_rate
+  const hasTaxRate = rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !Number.isNaN(Number.parseFloat(rawTaxRate))
+  const explicitTaxRate = hasTaxRate ? Number.parseFloat(rawTaxRate) : 18.00
+
+  const rawTaxAmt = quote.tax_amount ?? bill.tax_amount
+  const hasTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !Number.isNaN(Number.parseFloat(rawTaxAmt))
+
+  let taxAmt = 0
+  if (hasTaxAmt && Number.parseFloat(rawTaxAmt) >= 0) {
+    taxAmt = Number.parseFloat(rawTaxAmt)
+  } else {
+    taxAmt = taxableSubtotal * (explicitTaxRate / 100)
+  }
+
+  const explicitTotal = Number.parseFloat(bill.amount || quote.total_amount || 0)
+  const totalAmount = explicitTotal > 0 ? explicitTotal : (taxableSubtotal + taxAmt)
+
+  const halfRate = (explicitTaxRate / 2).toFixed(2).replace(/\.00$/, '')
+  const cgst = taxAmt / 2
+  const sgst = taxAmt / 2
+
+  return {
+    grossSubtotal,
+    lineDiscounts,
+    totalDiscount,
+    taxableSubtotal,
+    explicitTaxRate,
+    taxAmt,
+    totalAmount,
+    halfRate,
+    cgst,
+    sgst
+  }
+}
+
 // ─────────────────────────────────────────────
 // PDFKit Template Matching Screenshot Exactly
 // ─────────────────────────────────────────────
@@ -578,47 +653,15 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
       const issueDate = fmtDate(quote.issue_date || bill.created_at || quote.created_at || new Date())
       const validUntilDate = fmtDate(quote.valid_until || new Date(Date.now() + 30 * 86400000))
 
-      const grossSubtotal = items.reduce((s, li) => {
-        const q = Number.parseFloat(li.qty || li.quantity || 1)
-        const p = Number.parseFloat(li.price || li.rate || 0)
-        return s + (p * q)
-      }, 0)
-
-      function getLineDiscount(li) {
-        const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? NaN)
-        if (!Number.isNaN(explicit) && explicit >= 0) return explicit
-        const q = Number.parseFloat(li.quantity || li.qty || 1)
-        const r = Number.parseFloat(li.rate || li.price || 0)
-        const amt = Number.parseFloat(li.amount ?? li.line_total ?? NaN)
-        if (!Number.isNaN(amt) && (q * r) > amt + 0.01) return Math.round(((q * r) - amt) * 100) / 100
-        return 0
-      }
-
-      const lineDiscounts = items.reduce((s, li) => s + getLineDiscount(li), 0)
-      const explicitDocDiscount = Number.parseFloat(quote.discount || bill.discount || quote.discount_amount || bill.discount_amount || 0)
-      const totalDiscount = Math.max(lineDiscounts, explicitDocDiscount)
-      const taxableSubtotal = Math.max(0, grossSubtotal - totalDiscount)
-
-      const rawTaxRate = quote.tax_rate ?? bill.tax_rate
-      const hasTaxRate = rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !Number.isNaN(Number.parseFloat(rawTaxRate))
-      const explicitTaxRate = hasTaxRate ? Number.parseFloat(rawTaxRate) : 18.00
-
-      const rawTaxAmt = quote.tax_amount ?? bill.tax_amount
-      const hasTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !Number.isNaN(Number.parseFloat(rawTaxAmt))
-      
-      let taxAmt = 0
-      if (hasTaxAmt && Number.parseFloat(rawTaxAmt) >= 0) {
-        taxAmt = Number.parseFloat(rawTaxAmt)
-      } else {
-        taxAmt = taxableSubtotal * (explicitTaxRate / 100)
-      }
-
-      const explicitTotal = Number.parseFloat(bill.amount || quote.total_amount || 0)
-      const totalAmount = explicitTotal > 0 ? explicitTotal : (taxableSubtotal + taxAmt)
-
-      const halfRate = (explicitTaxRate / 2).toFixed(2).replace(/\.00$/, '')
-      const cgst = taxAmt / 2
-      const sgst = taxAmt / 2
+      const {
+        grossSubtotal,
+        totalDiscount,
+        taxableSubtotal,
+        totalAmount,
+        halfRate,
+        cgst,
+        sgst
+      } = calculatePdfKitAmounts(items, quote, bill)
 
       const W = 535
       const X = 30
@@ -764,7 +807,7 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
         const qty = Number.parseFloat(it.quantity || 1)
         const rate = Number.parseFloat(it.price || it.rate || 0)
         const gross = qty * rate
-        const disc = getLineDiscount(it)
+        const disc = getExplicitLineDiscount(it)
         const packSubtext = it.subtext || (it.bag_weight ? `${it.bag_weight}kg ${unit}` : '')
 
         doc.fontSize(7.5).fillColor('#334155').font('Helvetica').text(hsn, colG.hsn, curY + 12)

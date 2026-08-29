@@ -7,6 +7,78 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;')
 }
 
+function normalizeUnitRaw(rawUnit) {
+  let uRaw = String(rawUnit || '').trim()
+  if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
+    const lower = uRaw.toLowerCase()
+    if (lower.includes('/ltr') || lower.includes('ltr')) return 'ltrs'
+    if (lower.includes('/kg') || lower.includes('kg')) return 'kgs'
+    if (lower.includes('/mtr') || lower.includes('mtr')) return 'mtrs'
+    return uRaw.split(':')[0].trim()
+  }
+  return uRaw
+}
+
+function resolvePackDisplay(rawUnit, qty, bagWeight, isQuoteFlow = false) {
+  const bw = Number.parseFloat(bagWeight || 1)
+  const uRaw = normalizeUnitRaw(rawUnit)
+  const u = uRaw.toLowerCase().trim()
+
+  let baseUnitLabel = uRaw || u || 'pcs'
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
+  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
+  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
+
+  if (!isQuoteFlow) {
+    return { displayQty: qty, displayUnit: baseUnitLabel, subtext: baseUnitLabel }
+  }
+
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'ltrs', subtext: 'ltrs' }
+  }
+
+  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'mtrs', subtext: bw > 1 ? `${bw}m Roll` : 'mtrs' }
+  }
+
+  const packName = bw > 1 ? 'Bag' : 'Pack'
+  const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
+
+  return {
+    displayQty: qty,
+    displayUnit: 'Bags',
+    subtext: packSubtext
+  }
+}
+
+function getExplicitLineDiscount(it) {
+  const explicit = Number.parseFloat(it.discount ?? it.discount_amount ?? it.discountAmount ?? it.disc ?? NaN)
+  if (!Number.isNaN(explicit) && explicit >= 0) return explicit
+  const qty = Number.parseFloat(it.quantity || it.qty || 1)
+  const rate = Number.parseFloat(it.price || it.rate || 0)
+  const lineGross = qty * rate
+  const lineAmt = Number.parseFloat(it.amount ?? it.line_total ?? NaN)
+  if (!Number.isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
+    return Math.round((lineGross - lineAmt) * 100) / 100
+  }
+  return 0
+}
+
+function computeInvoiceTax({ grossSubtotalVal, totalDiscountVal, totalAmount, bill, quote }) {
+  const netTaxableVal = Math.max(1, grossSubtotalVal - totalDiscountVal)
+  const explicitTaxAmtVal = Number.parseFloat(bill?.tax_amount || quote?.tax_amount || 0)
+  const inferredTaxVal = (totalAmount > netTaxableVal + 0.01) ? (totalAmount - netTaxableVal) : 0
+  const realTaxAmt = explicitTaxAmtVal > 0 ? explicitTaxAmtVal : inferredTaxVal
+
+  let effectiveRate = 0
+  if (realTaxAmt > 0 && netTaxableVal > 0) {
+    effectiveRate = Math.round((realTaxAmt / netTaxableVal) * 100)
+  }
+  const halfRate = effectiveRate > 0 ? (effectiveRate / 2).toFixed(2).replace(/\.00$/, '') : '9'
+
+  return { netTaxableVal, realTaxAmt, halfRate }
+}
+
 export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}, catalogMap = {} }) => {
   const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || 'Shree Mahalakshmi Traders'
   const sellerPhone = shop.phone || bill?.shop_phone || ''
@@ -24,8 +96,6 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const totalAmount = Number.parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
   const taxAmt = Number.parseFloat(quote?.tax_amount || 0)
 
-  // FIX: isQuoteFlow was reading an undefined `data` variable, which threw a
-  // ReferenceError every time this ran. It should be based on the `quote` param.
   const isQuoteFlow = Boolean(quote && (quote.quote_number || quote.id || !bill))
 
   const items = (billItems && billItems.length > 0) ? billItems : (quote?.line_items || [])
@@ -38,93 +108,19 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
 
   const totalDiscountVal = Number.parseFloat(bill?.discount || bill?.discount_amount || quote?.discount || 0)
   const grossSubtotalVal = itemsList.reduce((s, it) => s + (Number.parseFloat(it.price || it.rate || 0) * Number.parseFloat(it.quantity || it.qty || 1)), 0)
-  const netTaxableVal = Math.max(1, grossSubtotalVal - totalDiscountVal)
-  const explicitTaxAmtVal = Number.parseFloat(bill?.tax_amount || quote?.tax_amount || 0)
-  const inferredTaxVal = (totalAmount > netTaxableVal + 0.01) ? (totalAmount - netTaxableVal) : 0
-  const realTaxAmt = explicitTaxAmtVal > 0 ? explicitTaxAmtVal : inferredTaxVal
 
-  let effectiveRate = 0
-  if (realTaxAmt > 0 && netTaxableVal > 0) {
-    effectiveRate = Math.round((realTaxAmt / netTaxableVal) * 100)
-  }
-  const halfRate = effectiveRate > 0 ? (effectiveRate / 2).toFixed(2).replace(/\.00$/, '') : '9'
+  const { realTaxAmt, halfRate } = computeInvoiceTax({
+    grossSubtotalVal,
+    totalDiscountVal,
+    totalAmount,
+    bill,
+    quote
+  })
 
-  // FIX: moved these totals ABOVE rowsHtml. Previously `subtotal` was declared
-  // with `const` further down in the file but referenced inside the rowsHtml
-  // map callback above it — a temporal-dead-zone ReferenceError, since the
-  // map callback runs immediately when `.map()` is called.
   const billDisc = !Number.isNaN(Number.parseFloat(bill?.discount)) ? Number.parseFloat(bill.discount) : 0
   const quoteDisc = !Number.isNaN(Number.parseFloat(quote?.discount)) ? Number.parseFloat(quote.discount) : 0
   const grossTotal = grossSubtotalVal
   const diffDisc = grossTotal > totalAmount ? (grossTotal - totalAmount) : 0
-
-  function resolvePackDisplay(rawUnit, qty, bagWeight, prodName, isQuoteFlow = false) {
-    const bw = Number.parseFloat(bagWeight || 1)
-    let uRaw = String(rawUnit || '').trim()
-
-    if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
-      if (uRaw.toLowerCase().includes('/ltr') || uRaw.toLowerCase().includes('ltr')) {
-        uRaw = 'ltrs'
-      } else if (uRaw.toLowerCase().includes('/kg') || uRaw.toLowerCase().includes('kg')) {
-        uRaw = 'kgs'
-      } else if (uRaw.toLowerCase().includes('/mtr') || uRaw.toLowerCase().includes('mtr')) {
-        uRaw = 'mtrs'
-      } else {
-        uRaw = uRaw.split(':')[0].trim()
-      }
-    }
-
-    const u = uRaw.toLowerCase().trim()
-    let baseUnitLabel = uRaw || u || 'pcs'
-    if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
-    else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
-    else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
-
-    if (!isQuoteFlow) {
-      // Direct Bill Flow: Always show kgs, pcs, no pack weight!
-      return { displayQty: qty, displayUnit: baseUnitLabel, subtext: baseUnitLabel }
-    }
-
-    // Quote Flow: Show pack weight in subtext!
-    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-      return {
-        displayQty: qty,
-        displayUnit: 'ltrs',
-        subtext: 'ltrs'
-      }
-    }
-
-    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-      return {
-        displayQty: qty,
-        displayUnit: 'mtrs',
-        subtext: bw > 1 ? `${bw}m Roll` : 'mtrs'
-      }
-    }
-
-    const packName = bw > 1 ? 'Bag' : 'Pack'
-    const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
-
-    return {
-      displayQty: qty,
-      displayUnit: 'Bags',
-      subtext: packSubtext
-    }
-  }
-
-  function getExplicitLineDiscount(it) {
-    const explicit = Number.parseFloat(it.discount ?? it.discount_amount ?? it.discountAmount ?? it.disc ?? NaN)
-    if (!Number.isNaN(explicit) && explicit >= 0) return explicit
-    const qty = Number.parseFloat(it.quantity || it.qty || 1)
-    const rate = Number.parseFloat(it.price || it.rate || 0)
-    const lineGross = qty * rate
-    const lineAmt = Number.parseFloat(it.amount ?? it.line_total ?? NaN)
-    if (!Number.isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
-      return Math.round((lineGross - lineAmt) * 100) / 100
-    }
-    return 0
-  }
-
   const lineDiscountsVal = itemsList.reduce((s, it) => s + getExplicitLineDiscount(it), 0)
 
   const rowsHtml = itemsList.length > 0 ? itemsList.map(item => {
@@ -141,7 +137,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
     const bw = Number.parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? catProd?.bag_weight ?? 1)
 
     const rawUnit = item.unit || item.unitLabel || ''
-    const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw, prodName, isQuoteFlow)
+    const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw, isQuoteFlow)
 
     const rawHsn = item.hsn_code || item.hsn || item.sku || ''
     const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')

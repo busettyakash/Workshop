@@ -134,109 +134,165 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
   }
 }
 
+async function findProductForQuoteDeduction(prodId, itemName, itemCode, userId) {
+  const prodRes = await pool.query(
+    `SELECT id, name, sku, hsn_code, stock, loose_kg, bag_weight, unit FROM products 
+     WHERE (
+       ( $1::text <> '' AND id::text = $1::text )
+       OR ( $2::text <> '' AND name ILIKE $2 )
+       OR ( $3::text <> '' AND (hsn_code = $3 OR sku = $3) )
+     )
+     AND (user_id::text = $4::text OR user_id = 'default-user' OR $4 = 'default-user') 
+     LIMIT 1`,
+    [prodId ? String(prodId) : '', itemName.trim(), itemCode.trim(), userId || 'default-user']
+  ).catch(e => { console.error('[Quote Stock Lookup Error]', e.message); return null })
+
+  return prodRes?.rows?.[0] || null
+}
+
+function isQuoteItemBaseUnit(itemUnitStr, prodUnitStr) {
+  const containerKeywords = ['bag', 'bags', 'drum', 'drums', 'can', 'cans', 'roll', 'rolls', 'box', 'boxes', 'carton', 'cartons', 'dozen', 'doz', 'pack', 'packs', 'bundle', 'bundles']
+  if (itemUnitStr) {
+    return !containerKeywords.some(c => itemUnitStr.includes(c))
+  }
+  if (prodUnitStr) {
+    return !containerKeywords.some(c => prodUnitStr.includes(c))
+  }
+  return true
+}
+
+function calculateQuoteStockDeduction(currentStock, currentLoose, bw, qty, isBaseUnit) {
+  const totalBaseBefore = (bw > 1) ? ((currentStock * bw) + currentLoose) : currentStock
+  const qtyDeductedBase = (isBaseUnit || bw <= 1) ? qty : (qty * bw)
+  const totalBaseAfter = Math.max(0, totalBaseBefore - qtyDeductedBase)
+
+  if (bw > 1) {
+    return {
+      newStock: Math.floor(totalBaseAfter / bw),
+      newLooseKg: +(totalBaseAfter % bw).toFixed(2)
+    }
+  }
+  return {
+    newStock: totalBaseAfter,
+    newLooseKg: 0
+  }
+}
+
+function buildQuoteStockDeductionNote(qty, rawUnit, isBaseUnit, bw, prodUnit) {
+  if (isBaseUnit || bw <= 1) {
+    return `Deducted ${qty} ${rawUnit} for quote acceptance`
+  }
+  const uomLower = (prodUnit || '').toLowerCase()
+  let containerLabel = 'Bag'
+  if (uomLower.includes('liter')) containerLabel = 'Drum'
+  else if (uomLower.includes('meter')) containerLabel = 'Roll'
+  else if (uomLower.includes('box') || uomLower.includes('pc')) containerLabel = 'Box'
+
+  let baseShort = 'kg'
+  if (uomLower.includes('liter')) baseShort = 'ltr'
+  else if (uomLower.includes('meter')) baseShort = 'mtr'
+  else if (uomLower.includes('box') || uomLower.includes('pc')) baseShort = 'pc'
+
+  const totalBase = (qty * bw).toFixed(0)
+  return `Deducted ${qty} ${containerLabel} (${bw}${baseShort}) (${totalBase} ${baseShort}) for quote acceptance`
+}
+
+async function deductSingleItemForQuote(item, userId, quoteRef) {
+  const qty = Number.parseFloat(item.quantity || item.qty || 0)
+  const prodId = item.product_id || item.id || item.productId
+  const itemName = item.name || item.product_name || item.productName || ''
+  const itemCode = item.hsn_code || item.hsn || item.sku || ''
+  if (qty <= 0) return
+
+  const prod = await findProductForQuoteDeduction(prodId, itemName, itemCode, userId)
+  if (!prod) return
+
+  const bw = Number.parseFloat(prod.bag_weight || 1)
+  const itemUnitStr = String(item.unit || item.unitLabel || '').trim().toLowerCase()
+  const prodUnitStr = String(prod.unit || 'pcs').trim().toLowerCase()
+  const isBaseUnit = isQuoteItemBaseUnit(itemUnitStr, prodUnitStr)
+  const rawUnit = item.unit || item.unitLabel || (isBaseUnit ? 'kgs' : prod.unit) || 'pcs'
+
+  const currentStock = Number.parseFloat(prod.stock || 0)
+  const currentLoose = Number.parseFloat(prod.loose_kg || 0)
+  const { newStock, newLooseKg } = calculateQuoteStockDeduction(currentStock, currentLoose, bw, qty, isBaseUnit)
+
+  await pool.query(
+    `UPDATE products SET stock = $1, loose_kg = $2, updated_at = NOW() WHERE id = $3`,
+    [newStock, newLooseKg, prod.id]
+  ).catch(e => console.error('[Quote Products Stock Decrease Error]', e.message))
+
+  if (userId) {
+    const keys1 = await redis.keys(`*${userId}*`).catch(() => [])
+    const keys2 = await redis.keys(`*default-user*`).catch(() => [])
+    for (const k of [...keys1, ...keys2]) { await redis.del(k).catch(() => {}) }
+  }
+
+  const noteDetail = buildQuoteStockDeductionNote(qty, rawUnit, isBaseUnit, bw, prod.unit)
+
+  await logStockHistory(
+    prod.id,
+    userId || 'default-user',
+    'deducted',
+    -qty,
+    currentStock,
+    newStock,
+    'Quote',
+    quoteRef ? String(quoteRef) : null,
+    noteDetail,
+    newLooseKg
+  ).catch(e => console.error('[Quote Stock History Log Error]', e.message))
+}
+
 const decreaseProductStockForQuote = async (items, userId, quoteRef) => {
   if (!Array.isArray(items)) return
   for (const item of items) {
     if (!item) continue
-    const qty = Number.parseFloat(item.quantity || item.qty || 0)
-    const prodId = item.product_id || item.id || item.productId
-    const itemName = item.name || item.product_name || item.productName || ''
-    const itemCode = item.hsn_code || item.hsn || item.sku || ''
-    if (qty <= 0) continue
-
-    let prodRes = await pool.query(
-      `SELECT id, name, sku, hsn_code, stock, loose_kg, bag_weight, unit FROM products 
-       WHERE (
-         ( $1::text <> '' AND id::text = $1::text )
-         OR ( $2::text <> '' AND name ILIKE $2 )
-         OR ( $3::text <> '' AND (hsn_code = $3 OR sku = $3) )
-       )
-       AND (user_id::text = $4::text OR user_id = 'default-user' OR $4 = 'default-user') 
-       LIMIT 1`,
-      [prodId ? String(prodId) : '', itemName.trim(), itemCode.trim(), userId || 'default-user']
-    ).catch(e => { console.error('[Quote Stock Lookup Error]', e.message); return null })
-
-    const prod = prodRes?.rows?.[0]
-    if (!prod) continue
-
-    const bw = Number.parseFloat(prod.bag_weight || 1)
-    const itemUnitStr = String(item.unit || item.unitLabel || '').trim().toLowerCase()
-    const prodUnitStr = String(prod.unit || 'pcs').trim().toLowerCase()
-    const containerKeywords = ['bag', 'bags', 'drum', 'drums', 'can', 'cans', 'roll', 'rolls', 'box', 'boxes', 'carton', 'cartons', 'dozen', 'doz', 'pack', 'packs', 'bundle', 'bundles']
-
-    let isBaseUnit = true
-    if (itemUnitStr) {
-      isBaseUnit = !containerKeywords.some(c => itemUnitStr.includes(c))
-    } else if (prodUnitStr) {
-      isBaseUnit = !containerKeywords.some(c => prodUnitStr.includes(c))
-    }
-
-    const rawUnit = item.unit || item.unitLabel || (isBaseUnit ? 'kgs' : prod.unit) || 'pcs'
-
-    const currentStock = Number.parseFloat(prod.stock || 0)
-    const currentLoose = Number.parseFloat(prod.loose_kg || 0)
-
-    let totalBaseBefore = (bw > 1) ? ((currentStock * bw) + currentLoose) : currentStock
-    let qtyDeductedBase = (isBaseUnit || bw <= 1) ? qty : (qty * bw)
-    let totalBaseAfter = Math.max(0, totalBaseBefore - qtyDeductedBase)
-
-    let newStock = 0
-    let newLooseKg = 0
-
-    if (bw > 1) {
-      newStock = Math.floor(totalBaseAfter / bw)
-      newLooseKg = +(totalBaseAfter % bw).toFixed(2)
-    } else {
-      newStock = totalBaseAfter
-    }
-
-    // Update products table
-    await pool.query(
-      `UPDATE products SET stock = $1, loose_kg = $2, updated_at = NOW() WHERE id = $3`,
-      [newStock, newLooseKg, prod.id]
-    ).catch(e => console.error('[Quote Products Stock Decrease Error]', e.message))
-
-    // Note: import_stock table is NOT updated here so it preserves the original purchased quantity
-
-    if (userId) {
-      const keys1 = await redis.keys(`*${userId}*`).catch(() => [])
-      const keys2 = await redis.keys(`*default-user*`).catch(() => [])
-      for (const k of [...keys1, ...keys2]) { await redis.del(k).catch(() => {}) }
-    }
-
-    let noteDetail = ''
-    if (isBaseUnit || bw <= 1) {
-      noteDetail = `Deducted ${qty} ${rawUnit} for quote acceptance`
-    } else {
-      const uomLower = (prod.unit || '').toLowerCase()
-      let containerLabel = 'Bag'
-      if (uomLower.includes('liter')) containerLabel = 'Drum'
-      else if (uomLower.includes('meter')) containerLabel = 'Roll'
-      else if (uomLower.includes('box') || uomLower.includes('pc')) containerLabel = 'Box'
-
-      let baseShort = 'kg'
-      if (uomLower.includes('liter')) baseShort = 'ltr'
-      else if (uomLower.includes('meter')) baseShort = 'mtr'
-      else if (uomLower.includes('box') || uomLower.includes('pc')) baseShort = 'pc'
-
-      const totalBase = (qty * bw).toFixed(0)
-      noteDetail = `Deducted ${qty} ${containerLabel} (${bw}${baseShort}) (${totalBase} ${baseShort}) for quote acceptance`
-    }
-
-    // Log to stock history
-    await logStockHistory(
-      prod.id,
-      userId || 'default-user',
-      'deducted',
-      -qty,
-      currentStock,
-      newStock,
-      'Quote',
-      quoteRef ? String(quoteRef) : null,
-      noteDetail,
-      newLooseKg
-    ).catch(e => console.error('[Quote Stock History Log Error]', e.message))
+    await deductSingleItemForQuote(item, userId, quoteRef)
   }
+}
+
+function isWorkflowNodeEmailStep(s) {
+  if (!s) return false
+  const tag = String(s.tag || '').toLowerCase()
+  const id = String(s.id || '').toLowerCase()
+  if (tag === 'billing' || tag === 'inventory' || id === 'step-inventory' || id === 'step-bill') {
+    return false
+  }
+
+  const badge = String(s.badge || '').toLowerCase()
+  const title = String(s.title || '').toLowerCase()
+  const icon = String(s.icon || '').toLowerCase()
+  const iconType = String(s.iconType || '').toLowerCase()
+
+  return (
+    tag === 'email' ||
+    tag === 'multi-contact' ||
+    badge === 'email' ||
+    icon === 'mail' ||
+    iconType === 'send' ||
+    iconType === 'mail' ||
+    id === 'act-multi-recipient' ||
+    id === 'step-email' ||
+    title.includes('send invoice email') ||
+    title.includes('multiple') ||
+    title.includes('rejection') ||
+    title.includes('decline')
+  )
+}
+
+function extractWorkflowStepsToCheck(nodes, branch) {
+  if (!nodes || typeof nodes !== 'object') return []
+  if (branch === 'declined') {
+    return Array.isArray(nodes.declinedSteps) ? nodes.declinedSteps : []
+  }
+  if (Array.isArray(nodes.acceptedSteps)) {
+    return nodes.acceptedSteps
+  }
+  if (Array.isArray(nodes)) {
+    return nodes
+  }
+  return []
 }
 
 const isEmailStepActiveInWorkflow = async (userId, branch = 'accepted') => {
@@ -254,7 +310,6 @@ const isEmailStepActiveInWorkflow = async (userId, branch = 'accepted') => {
     }
     const wf = wfRes.rows[0]
 
-    // If workflow is not live (draft), skip email
     if (!wf.is_live) {
       console.log(`[Email Check] Workflow "${wf.name}" is in Draft mode — skipping email`)
       return false
@@ -265,48 +320,8 @@ const isEmailStepActiveInWorkflow = async (userId, branch = 'accepted') => {
       try { nodes = JSON.parse(nodes) } catch { nodes = null }
     }
 
-    let stepsToCheck = []
-    if (nodes && typeof nodes === 'object') {
-      if (branch === 'declined') {
-        stepsToCheck = Array.isArray(nodes.declinedSteps) ? nodes.declinedSteps : []
-      } else {
-        if (Array.isArray(nodes.acceptedSteps)) {
-          stepsToCheck = nodes.acceptedSteps
-        } else if (Array.isArray(nodes)) {
-          stepsToCheck = nodes
-        }
-      }
-    }
-
-    const hasEmailStep = stepsToCheck.some(s => {
-      if (!s) return false
-      const tag = String(s.tag || '').toLowerCase()
-      const badge = String(s.badge || '').toLowerCase()
-      const title = String(s.title || '').toLowerCase()
-      const icon = String(s.icon || '').toLowerCase()
-      const iconType = String(s.iconType || '').toLowerCase()
-      const id = String(s.id || '').toLowerCase()
-
-      // Exclude billing & inventory steps
-      if (tag === 'billing' || tag === 'inventory' || id === 'step-inventory' || id === 'step-bill') {
-        return false
-      }
-
-      return (
-        tag === 'email' ||
-        tag === 'multi-contact' ||
-        badge === 'email' ||
-        icon === 'mail' ||
-        iconType === 'send' ||
-        iconType === 'mail' ||
-        id === 'act-multi-recipient' ||
-        id === 'step-email' ||
-        title.includes('send invoice email') ||
-        title.includes('multiple') ||
-        title.includes('rejection') ||
-        title.includes('decline')
-      )
-    })
+    const stepsToCheck = extractWorkflowStepsToCheck(nodes, branch)
+    const hasEmailStep = stepsToCheck.some(isWorkflowNodeEmailStep)
 
     console.log(`[Email Check] Workflow "${wf.name}" (${branch}, live: ${wf.is_live}) — hasEmailStep: ${hasEmailStep}`)
     return hasEmailStep
@@ -582,6 +597,203 @@ router.get('/', apiLimiter, async (req, res) => {
   }
 })
 
+
+function buildAlreadyRespondedHtml(quote) {
+  const isAcc = quote.status === 'Accepted'
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Already Responded</title>
+        <style>body{font-family:-apple-system,sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;} .card{background:#fff;border-radius:14px;border:1px solid #e2e8f0;padding:32px;max-width:460px;width:100%;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.06);}</style>
+      </head>
+      <body>
+        <div class="card">
+          <div style="font-size:2.5rem;margin-bottom:12px;">${isAcc ? '✅' : '❌'}</div>
+          <div style="display:inline-block;padding:5px 14px;border-radius:20px;font-weight:700;font-size:0.85rem;background:${isAcc ? '#dcfce7' : '#fee2e2'};color:${isAcc ? '#15803d' : '#b91c1c'};margin-bottom:14px;">Already ${quote.status}</div>
+          <h3 style="margin:0 0 8px;color:#0f172a;">This quotation has already been ${quote.status.toLowerCase()}.</h3>
+          <p style="color:#64748b;font-size:0.875rem;">Quotation <strong>#${quote.quote_number}</strong> response has already been recorded. No further action is needed.</p>
+        </div>
+      </body>
+    </html>
+  `
+}
+
+async function resolveCustomerForQuote(quote, userId) {
+  let customerId = quote.person_id || null
+  if (customerId) return customerId
+
+  const personRes = await pool.query(
+    'SELECT id FROM people WHERE (name ILIKE $1 OR email ILIKE $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
+    [quote.customer_name || '', quote.customer_email || 'xyz', userId || 'default-user']
+  ).catch(() => ({ rows: [] }))
+
+  if (personRes.rows.length > 0) {
+    return personRes.rows[0].id
+  }
+
+  const newPerson = await pool.query(
+    `INSERT INTO people (name, phone, email, persona, user_id) VALUES ($1, $2, $3, 'Customer', $4) RETURNING id`,
+    [quote.customer_name || 'Customer', quote.customer_phone || '', quote.customer_email || '', userId || 'default-user']
+  ).catch(e => {
+    console.error('[Person Insert Error]', e.message)
+    return { rows: [] }
+  })
+  return newPerson.rows[0]?.id || null
+}
+
+function parseQuoteLineItems(lineItems) {
+  let items = []
+  if (Array.isArray(lineItems)) {
+    items = lineItems
+  } else if (typeof lineItems === 'string') {
+    try { items = JSON.parse(lineItems) } catch { items = [] }
+  }
+  return Array.isArray(items) ? items : []
+}
+
+async function insertBillItemsForConvertedQuote(billId, items) {
+  const createdItems = []
+  for (const item of items) {
+    if (item && (item.name || item.product_id)) {
+      try {
+        const itemRes = await pool.query(
+          `INSERT INTO bill_items (bill_id, product_id, product_name, quantity, price, line_total)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+          [
+            billId,
+            item.product_id || null,
+            item.name || 'Custom Item',
+            Number.parseFloat(item.quantity || 1),
+            Number.parseFloat(item.rate || item.price || 0),
+            Number.parseFloat(item.amount || item.line_total || 0)
+          ]
+        ).catch(async () => {
+          return pool.query(
+            `INSERT INTO bill_items (bill_id, product_id, quantity, price)
+             VALUES ($1, $2, $3, $4) RETURNING *`,
+            [
+              billId,
+              item.product_id || null,
+              Number.parseFloat(item.quantity || 1),
+              Number.parseFloat(item.rate || item.price || 0)
+            ]
+          ).catch(() => null)
+        })
+        if (itemRes?.rows?.[0]) createdItems.push(itemRes.rows[0])
+      } catch (_itemErr) { }
+    }
+  }
+  return createdItems
+}
+
+async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
+  try {
+    const customerId = await resolveCustomerForQuote(quote, quote.user_id)
+    const items = parseQuoteLineItems(quote.line_items)
+    const catalogMap = await getProductHsnMap()
+    const enrichedItems = enrichItemsWithCache(items, catalogMap)
+    const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
+
+    const lineSum = enrichedItems.reduce((acc, it) => acc + (Number.parseFloat(it.quantity || 1) * Number.parseFloat(it.rate || it.price || 0)), 0)
+    const quoteTotal = Number.parseFloat(quote.total_amount || 0)
+    const numericDiscount = lineSum > quoteTotal ? (lineSum - quoteTotal) : 0
+
+    const billRes = await pool.query(
+      `INSERT INTO bills (customer_id, bill_number, order_number, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'unpaid', NOW() + INTERVAL '15 days', $7, $8, NULL, NOW())
+       RETURNING *`,
+      [
+        customerId,
+        autoBillNum,
+        generatedOrderNum,
+        JSON.stringify(enrichedItems),
+        quoteTotal,
+        numericDiscount,
+        `Generated from Quotation #${quote.quote_number} (Order ${generatedOrderNum})`,
+        quote.user_id || 'default-user'
+      ]
+    )
+
+    const bill = billRes.rows[0]
+    const createdItems = await insertBillItemsForConvertedQuote(bill.id, items)
+
+    await decreaseProductStockForQuote(items, quote.user_id, quote.quote_number || quote.id)
+
+    const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
+    if (isEmailEnabled) {
+      await sendOrderConfirmationEmailToCustomer(quote, bill, createdItems.length > 0 ? createdItems : items, generatedOrderNum).catch(e => console.error('[Order Email Send Error]', e.message))
+    }
+    await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted').catch(e => console.error('[Workflow Trigger Error]', e.message))
+
+    const emailNoticeText = isEmailEnabled
+      ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
+      : ''
+
+    return `<div style="background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:20px; border-radius:12px; margin-top:20px; text-align:center;">
+      <div style="font-size:1.15rem; font-weight:800; margin-bottom:6px; color:#047857;">Official Billing Invoice Issued Successfully</div>
+      <div style="font-size:0.95rem; line-height:1.5;">Order <strong>${generatedOrderNum}</strong> · Invoice <strong>#${bill.bill_number || autoBillNum}</strong> has been generated and sent to Unpaid Bills.${emailNoticeText}</div>
+    </div>`
+  } catch (billErr) {
+    console.error('[Auto Bill Generation Error]', billErr.message)
+    const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id).catch(() => false)
+    const emailNoticeText = isEmailEnabled
+      ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
+      : ''
+    return `<div style="background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:20px; border-radius:12px; margin-top:20px; text-align:center;">
+      <div style="font-size:1.15rem; font-weight:800; margin-bottom:6px; color:#047857;">Official Billing Invoice Issued Successfully</div>
+      <div style="font-size:0.95rem; line-height:1.5;">Order <strong>${generatedOrderNum}</strong> ·${emailNoticeText}</div>
+    </div>`
+  }
+}
+
+async function handleQuoteDeclinedResponse(quote) {
+  const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id, 'declined')
+  if (isEmailEnabled) {
+    await sendQuoteDeclinedEmailToCustomer(quote).catch(e => console.error('[Declined Email Send Error]', e.message))
+  }
+  await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined').catch(e => console.error('[Workflow Trigger Error]', e.message))
+
+  const emailNoticeText = isEmailEnabled
+    ? ` A confirmation and follow-up has been sent to your email (<strong>${quote.customer_email || 'your email'}</strong>).`
+    : ''
+
+  return `<div style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:18px 20px; border-radius:12px; margin-top:20px; text-align:center;">
+    <div style="font-size:1.1rem; font-weight:800; color:#dc2626; margin-bottom:4px;">Quotation Declined</div>
+    <div style="font-size:0.9rem; color:#7f1d1d; line-height:1.5;">No charges or billing invoices have been issued.${emailNoticeText} If you need a revised quotation or customized pricing, feel free to reply or contact us!</div>
+  </div>`
+}
+
+function buildQuoteResponseRecordedHtml(quote, action, autoBillNotice) {
+  const isAcc = action === 'Accepted'
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Quotation Response Recorded</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; padding: 60px 20px; display: flex; justify-content: center; }
+          .card { background: #ffffff; max-width: 520px; width: 100%; border-radius: 16px; border: 1px solid #e2e8f0; padding: 36px; box-shadow: 0 10px 30px rgba(0,0,0,0.06); text-align: center; }
+          .badge { display: inline-block; padding: 6px 18px; border-radius: 20px; font-weight: 800; font-size: 0.9rem; margin-bottom: 18px; }
+          .accepted { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+          .declined { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div style="font-size:3rem; margin-bottom:12px;">${isAcc ? '🎉' : '📋'}</div>
+          <div class="badge ${isAcc ? 'accepted' : 'declined'}">
+            Quotation ${action}
+          </div>
+          <h2 style="margin:0 0 8px; color:#0f172a; font-size:1.4rem;">Thank you, ${quote.customer_name || 'Customer'}!</h2>
+          <p style="color:#64748b; margin:0 0 16px; line-height:1.5;">Your response for Quotation <strong>#${quote.quote_number}</strong> has been saved.</p>
+          ${autoBillNotice}
+        </div>
+      </body>
+    </html>
+  `
+}
+
 /* ── PUBLIC RESPONSE ENDPOINT: GET /api/quotes/respond ── */
 router.get('/respond', emailLimiter, async (req, res) => {
   try {
@@ -597,37 +809,17 @@ router.get('/respond', emailLimiter, async (req, res) => {
 
     const quote = quoteRes.rows[0]
 
-    // Block re-triggering if already responded
     if (quote.status === 'Accepted' || quote.status === 'Declined') {
-      const isAcc = quote.status === 'Accepted'
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Already Responded</title>
-            <style>body{font-family:-apple-system,sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;} .card{background:#fff;border-radius:14px;border:1px solid #e2e8f0;padding:32px;max-width:460px;width:100%;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.06);}</style>
-          </head>
-          <body>
-            <div class="card">
-              <div style="font-size:2.5rem;margin-bottom:12px;">${isAcc ? '✅' : '❌'}</div>
-              <div style="display:inline-block;padding:5px 14px;border-radius:20px;font-weight:700;font-size:0.85rem;background:${isAcc ? '#dcfce7' : '#fee2e2'};color:${isAcc ? '#15803d' : '#b91c1c'};margin-bottom:14px;">Already ${quote.status}</div>
-              <h3 style="margin:0 0 8px;color:#0f172a;">This quotation has already been ${quote.status.toLowerCase()}.</h3>
-              <p style="color:#64748b;font-size:0.875rem;">Quotation <strong>#${quote.quote_number}</strong> response has already been recorded. No further action is needed.</p>
-            </div>
-          </body>
-        </html>
-      `)
+      return res.send(buildAlreadyRespondedHtml(quote))
     }
 
     const generatedOrderNum = (quote.order_number && quote.order_number !== 'null') ? quote.order_number : `ORD-${crypto.randomInt(10000, 100000)}`
 
-    // order_number column ensured at startup in initSchema()
     await pool.query(
       'UPDATE quotes SET status = $1, order_number = $2, updated_at = NOW() WHERE id = $3',
       [action, generatedOrderNum, id]
     )
 
-    // Insert notification record into emails table so it immediately appears in the workspace Inbox
     await pool.query(
       `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, is_read, user_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, 'inbox', false, $6, NOW(), NOW())`,
@@ -645,178 +837,53 @@ router.get('/respond', emailLimiter, async (req, res) => {
       ]
     ).catch(eErr => console.error('[Quote Response Inbox Record Error]', eErr.message))
 
-    let autoBillNotice = ''
-    if (action === 'Accepted') {
-      try {
-        // Auto convert accepted quote to a bill
-        let customerId = quote.person_id || null
+    const autoBillNotice = action === 'Accepted'
+      ? await handleQuoteAcceptedResponse(quote, generatedOrderNum)
+      : await handleQuoteDeclinedResponse(quote)
 
-        if (!customerId) {
-          const personRes = await pool.query(
-            'SELECT id FROM people WHERE (name ILIKE $1 OR email ILIKE $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
-            [quote.customer_name || '', quote.customer_email || 'xyz', quote.user_id || 'default-user']
-          ).catch(() => ({ rows: [] }))
-
-          if (personRes.rows.length > 0) {
-            customerId = personRes.rows[0].id
-          } else {
-            const newPerson = await pool.query(
-              `INSERT INTO people (name, phone, email, persona, user_id) VALUES ($1, $2, $3, 'Customer', $4) RETURNING id`,
-              [quote.customer_name || 'Customer', quote.customer_phone || '', quote.customer_email || '', quote.user_id || 'default-user']
-            ).catch(e => {
-              console.error('[Person Insert Error]', e.message)
-              return { rows: [] }
-            })
-            if (newPerson.rows[0]) customerId = newPerson.rows[0].id
-          }
-        }
-
-        let items = []
-        if (Array.isArray(quote.line_items)) {
-          items = quote.line_items
-        } else if (typeof quote.line_items === 'string') {
-          try { items = JSON.parse(quote.line_items) } catch { }
-        }
-        if (!Array.isArray(items)) items = []
-
-        const catalogMap = await getProductHsnMap()
-        const enrichedItems = enrichItemsWithCache(items, catalogMap)
-        const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
-
-        const lineSum = enrichedItems.reduce((acc, it) => acc + (Number.parseFloat(it.quantity || 1) * Number.parseFloat(it.rate || it.price || 0)), 0)
-        const quoteTotal = Number.parseFloat(quote.total_amount || 0)
-        const numericDiscount = lineSum > quoteTotal ? (lineSum - quoteTotal) : 0
-
-        const billRes = await pool.query(
-          `INSERT INTO bills (customer_id, bill_number, order_number, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 'unpaid', NOW() + INTERVAL '15 days', $7, $8, NULL, NOW())
-           RETURNING *`,
-          [
-            customerId,
-            autoBillNum,
-            generatedOrderNum,
-            JSON.stringify(enrichedItems),
-            quoteTotal,
-            numericDiscount,
-            `Generated from Quotation #${quote.quote_number} (Order ${generatedOrderNum})`,
-            quote.user_id || 'default-user'
-          ]
-        )
-
-        const bill = billRes.rows[0]
-        const createdItems = []
-        for (const item of items) {
-          if (item && (item.name || item.product_id)) {
-            try {
-              const itemRes = await pool.query(
-                `INSERT INTO bill_items (bill_id, product_id, product_name, quantity, price, line_total)
-                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-                [
-                  bill.id,
-                  item.product_id || null,
-                  item.name || 'Custom Item',
-                  Number.parseFloat(item.quantity || 1),
-                  Number.parseFloat(item.rate || item.price || 0),
-                  Number.parseFloat(item.amount || item.line_total || 0)
-                ]
-              ).catch(async () => {
-                return pool.query(
-                  `INSERT INTO bill_items (bill_id, product_id, quantity, price)
-                   VALUES ($1, $2, $3, $4) RETURNING *`,
-                  [
-                    bill.id,
-                    item.product_id || null,
-                    Number.parseFloat(item.quantity || 1),
-                    Number.parseFloat(item.rate || item.price || 0)
-                  ]
-                ).catch(() => null)
-              })
-              if (itemRes?.rows?.[0]) createdItems.push(itemRes.rows[0])
-            } catch (_itemErr) { }
-          }
-        }
-
-        // Decrease product inventory stock for accepted quotation line items
-        await decreaseProductStockForQuote(items, quote.user_id, quote.quote_number || quote.id)
-
-        // Check if "Send Invoice Email" / "Send Onboarding Email" node is active in the workflow
-        const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
-
-        // Send combined Order Confirmation + Invoice email ONLY if the node is present in the workflow
-        if (isEmailEnabled) {
-          await sendOrderConfirmationEmailToCustomer(quote, bill, createdItems.length > 0 ? createdItems : items, generatedOrderNum).catch(e => console.error('[Order Email Send Error]', e.message))
-        }
-        await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted').catch(e => console.error('[Workflow Trigger Error]', e.message))
-
-        const emailNoticeText = isEmailEnabled
-          ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
-          : ''
-
-        autoBillNotice = `<div style="background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:20px; border-radius:12px; margin-top:20px; text-align:center;">
-          <div style="font-size:1.15rem; font-weight:800; margin-bottom:6px; color:#047857;">Official Billing Invoice Issued Successfully</div>
-          <div style="font-size:0.95rem; line-height:1.5;">Order <strong>${generatedOrderNum}</strong> · Invoice <strong>#${bill.bill_number || autoBillNum}</strong> has been generated and sent to Unpaid Bills.${emailNoticeText}</div>
-        </div>`
-      } catch (billErr) {
-        console.error('[Auto Bill Generation Error]', billErr.message)
-        const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id).catch(() => false)
-        const emailNoticeText = isEmailEnabled
-          ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
-          : ''
-        autoBillNotice = `<div style="background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:20px; border-radius:12px; margin-top:20px; text-align:center;">
-          <div style="font-size:1.15rem; font-weight:800; margin-bottom:6px; color:#047857;">Official Billing Invoice Issued Successfully</div>
-          <div style="font-size:0.95rem; line-height:1.5;">Order <strong>${generatedOrderNum}</strong> ·${emailNoticeText}</div>
-        </div>`
-      }
-    } else {
-      // Check if "Send Rejection Follow-up Email" is enabled in the workflow
-      const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id, 'declined')
-      if (isEmailEnabled) {
-        await sendQuoteDeclinedEmailToCustomer(quote).catch(e => console.error('[Declined Email Send Error]', e.message))
-      }
-      await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined').catch(e => console.error('[Workflow Trigger Error]', e.message))
-
-      const emailNoticeText = isEmailEnabled
-        ? ` A confirmation and follow-up has been sent to your email (<strong>${quote.customer_email || 'your email'}</strong>).`
-        : ''
-
-      autoBillNotice = `<div style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:18px 20px; border-radius:12px; margin-top:20px; text-align:center;">
-        <div style="font-size:1.1rem; font-weight:800; color:#dc2626; margin-bottom:4px;">Quotation Declined</div>
-        <div style="font-size:0.9rem; color:#7f1d1d; line-height:1.5;">No charges or billing invoices have been issued.${emailNoticeText} If you need a revised quotation or customized pricing, feel free to reply or contact us!</div>
-      </div>`
-    }
-
-    const isAcc = action === 'Accepted'
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Quotation Response Recorded</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; padding: 60px 20px; display: flex; justify-content: center; }
-            .card { background: #ffffff; max-width: 520px; width: 100%; border-radius: 16px; border: 1px solid #e2e8f0; padding: 36px; box-shadow: 0 10px 30px rgba(0,0,0,0.06); text-align: center; }
-            .badge { display: inline-block; padding: 6px 18px; border-radius: 20px; font-weight: 800; font-size: 0.9rem; margin-bottom: 18px; }
-            .accepted { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-            .declined { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <div style="font-size:3rem; margin-bottom:12px;">${isAcc ? '🎉' : '📋'}</div>
-            <div class="badge ${isAcc ? 'accepted' : 'declined'}">
-              Quotation ${action}
-            </div>
-            <h2 style="margin:0 0 8px; color:#0f172a; font-size:1.4rem;">Thank you, ${quote.customer_name || 'Customer'}!</h2>
-            <p style="color:#64748b; margin:0 0 16px; line-height:1.5;">Your response for Quotation <strong>#${quote.quote_number}</strong> has been saved.</p>
-            ${autoBillNotice}
-          </div>
-        </body>
-      </html>
-    `)
+    res.send(buildQuoteResponseRecordedHtml(quote, action, autoBillNotice))
   } catch (err) {
     console.error('[Quotes Respond Error]', err)
     res.status(500).send('<h3>Error processing quotation response.</h3>')
   }
 })
+
+async function convertQuoteToBillRecord(quote, userId) {
+  const customerId = await resolveCustomerForQuote(quote, userId)
+  const items = parseQuoteLineItems(quote.line_items)
+
+  const lineSum = items.reduce((acc, it) => acc + (Number.parseFloat(it.quantity || 1) * Number.parseFloat(it.rate || it.price || 0)), 0)
+  const quoteTotal = Number.parseFloat(quote.total_amount || 0)
+  const numericDiscount = lineSum > quoteTotal ? (lineSum - quoteTotal) : 0
+
+  const billRes = await pool.query(
+    `INSERT INTO bills (customer_id, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
+     VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NULL, NOW())
+     RETURNING *`,
+    [
+      customerId,
+      JSON.stringify(items),
+      quoteTotal,
+      numericDiscount,
+      `Generated from Quotation #${quote.quote_number}`,
+      userId
+    ]
+  )
+
+  const bill = billRes.rows[0]
+  const createdItems = await insertBillItemsForConvertedQuote(bill.id, items)
+
+  const orderNum = quote.order_number || `ORD-${quote.quote_number ? quote.quote_number.replace(/^QT-?/i, '') : quote.id}`
+  await pool.query("UPDATE quotes SET status = 'Accepted', order_number = $1, updated_at = NOW() WHERE id = $2", [orderNum, quote.id])
+
+  await decreaseProductStockForQuote(items, userId, quote.quote_number || quote.id)
+
+  const updatedQuote = { ...quote, status: 'Accepted', order_number: orderNum }
+  await sendInvoiceEmailToCustomer(updatedQuote, bill, createdItems.length > 0 ? createdItems : items)
+  await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
+
+  return bill
+}
 
 /* ── POST /api/quotes/:id/convert-to-bill ── */
 router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
@@ -829,89 +896,7 @@ router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Quote not found' })
     }
 
-    const quote = quoteRes.rows[0]
-
-    let customerId = quote.person_id || null
-
-    if (!customerId) {
-      const personRes = await pool.query(
-        'SELECT id FROM people WHERE (name ILIKE $1 OR email ILIKE $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
-        [quote.customer_name || '', quote.customer_email || 'xyz', userId || 'default-user']
-      ).catch(() => ({ rows: [] }))
-
-      if (personRes.rows.length > 0) {
-        customerId = personRes.rows[0].id
-      } else {
-        const newPerson = await pool.query(
-          `INSERT INTO people (name, phone, email, persona, user_id) VALUES ($1, $2, $3, 'Customer', $4) RETURNING id`,
-          [quote.customer_name || 'Customer', quote.customer_phone || '', quote.customer_email || '', userId || 'default-user']
-        ).catch(e => {
-          console.error('[Person Insert Error]', e.message)
-          return { rows: [] }
-        })
-        if (newPerson.rows[0]) customerId = newPerson.rows[0].id
-      }
-    }
-
-    let items = []
-    if (Array.isArray(quote.line_items)) {
-      items = quote.line_items
-    } else if (typeof quote.line_items === 'string') {
-      try { items = JSON.parse(quote.line_items) } catch { }
-    }
-    if (!Array.isArray(items)) items = []
-
-    const lineSum = items.reduce((acc, it) => acc + (Number.parseFloat(it.quantity || 1) * Number.parseFloat(it.rate || it.price || 0)), 0)
-    const quoteTotal = Number.parseFloat(quote.total_amount || 0)
-    const numericDiscount = lineSum > quoteTotal ? (lineSum - quoteTotal) : 0
-
-    const billRes = await pool.query(
-      `INSERT INTO bills (customer_id, items, amount, discount, status, due_date, notes, user_id, paid_at, created_at)
-       VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NULL, NOW())
-       RETURNING *`,
-      [
-        customerId,
-        JSON.stringify(items),
-        quoteTotal,
-        numericDiscount,
-        `Generated from Quotation #${quote.quote_number}`,
-        userId
-      ]
-    )
-
-    const bill = billRes.rows[0]
-    const createdItems = []
-    for (const item of items) {
-      if (item.name || item.product_id) {
-        const itemRes = await pool.query(
-          `INSERT INTO bill_items (bill_id, product_id, product_name, quantity, price, line_total)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-          [
-            bill.id,
-            item.product_id || null,
-            item.name || 'Custom Item',
-            Number.parseFloat(item.quantity || 1),
-            Number.parseFloat(item.rate || 0),
-            Number.parseFloat(item.amount || 0)
-          ]
-        )
-        if (itemRes.rows[0]) createdItems.push(itemRes.rows[0])
-      }
-    }
-
-    const orderNum = quote.order_number || `ORD-${quote.quote_number ? quote.quote_number.replace(/^QT-?/i, '') : quote.id}`
-    await pool.query("UPDATE quotes SET status = 'Accepted', order_number = $1, updated_at = NOW() WHERE id = $2", [orderNum, id])
-
-    // Decrease product inventory stock for accepted quotation line items
-    await decreaseProductStockForQuote(items, userId, quote.quote_number || quote.id)
-
-    // Send invoice email to customer
-    const updatedQuote = { ...quote, status: 'Accepted', order_number: orderNum }
-    await sendInvoiceEmailToCustomer(updatedQuote, bill, createdItems.length > 0 ? createdItems : items)
-
-    // Trigger workflow automation for quote acceptance
-    await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
-
+    const bill = await convertQuoteToBillRecord(quoteRes.rows[0], userId)
     res.json({ message: 'Converted to bill successfully and invoice sent to customer', bill })
   } catch (err) {
     console.error('[Convert to Bill Error]', err)
@@ -1070,6 +1055,49 @@ router.post('/', apiLimiter, async (req, res) => {
   }
 })
 
+async function handleQuoteUpdateAccepted(updatedQuote, userId) {
+  const orderNum = updatedQuote.order_number || `ORD-${crypto.randomInt(10000, 100000)}`
+  await pool.query(
+    "UPDATE quotes SET order_number = $1, updated_at = NOW() WHERE id = $2",
+    [orderNum, updatedQuote.id]
+  ).catch(() => { })
+  updatedQuote.order_number = orderNum
+
+  const itemsToDeduct = parseQuoteLineItems(updatedQuote.line_items)
+  if (itemsToDeduct.length > 0) {
+    await decreaseProductStockForQuote(itemsToDeduct, userId, updatedQuote.quote_number || updatedQuote.id)
+  }
+
+  let bill = null
+  const existingBillRes = await pool.query(
+    'SELECT * FROM bills WHERE (notes ILIKE $1 OR order_number = $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
+    [`%Quotation #${updatedQuote.quote_number}%`, orderNum, userId]
+  ).catch(() => ({ rows: [] }))
+
+  if (existingBillRes.rows.length > 0) {
+    bill = existingBillRes.rows[0]
+  } else {
+    const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
+    const quoteTotal = Number.parseFloat(updatedQuote.total_amount || 0)
+    const newBillRes = await pool.query(
+      `INSERT INTO bills (bill_number, order_number, items, amount, status, due_date, notes, user_id, created_at)
+       VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NOW()) RETURNING *`,
+      [
+        autoBillNum,
+        orderNum,
+        JSON.stringify(itemsToDeduct),
+        quoteTotal,
+        `Generated from Quotation #${updatedQuote.quote_number} (Order ${orderNum})`,
+        userId
+      ]
+    ).catch(() => ({ rows: [] }))
+    if (newBillRes.rows?.[0]) bill = newBillRes.rows[0]
+  }
+
+  await sendOrderConfirmationEmailToCustomer(updatedQuote, bill, itemsToDeduct, orderNum).catch(e => console.error('[PUT Quote Order Confirmation Email Error]', e.message))
+  await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
+}
+
 /* ── PUT /api/quotes/:id ── */
 router.put('/:id', apiLimiter, async (req, res) => {
   try {
@@ -1130,58 +1158,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
     const updatedQuote = result.rows[0]
 
     if (updatedQuote.status === 'Accepted') {
-      const orderNum = updatedQuote.order_number || `ORD-${crypto.randomInt(10000, 100000)}`
-      // order_number column ensured at startup
-      await pool.query(
-        "UPDATE quotes SET order_number = $1, updated_at = NOW() WHERE id = $2",
-        [orderNum, updatedQuote.id]
-      ).catch(() => { })
-      updatedQuote.order_number = orderNum
-
-      let itemsToDeduct = []
-      if (Array.isArray(updatedQuote.line_items)) {
-        itemsToDeduct = updatedQuote.line_items
-      } else if (typeof updatedQuote.line_items === 'string') {
-        try { itemsToDeduct = JSON.parse(updatedQuote.line_items) } catch { }
-      }
-      if (itemsToDeduct.length > 0) {
-        await decreaseProductStockForQuote(itemsToDeduct, userId, updatedQuote.quote_number || updatedQuote.id)
-      }
-
-      // Find or create bill for accepted quotation so PDF invoice can be generated
-      let bill = null
-      const existingBillRes = await pool.query(
-        'SELECT * FROM bills WHERE (notes ILIKE $1 OR order_number = $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
-        [`%Quotation #${updatedQuote.quote_number}%`, orderNum, userId]
-      ).catch(() => ({ rows: [] }))
-
-      if (existingBillRes.rows.length > 0) {
-        bill = existingBillRes.rows[0]
-      } else {
-        const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
-        const quoteTotal = Number.parseFloat(updatedQuote.total_amount || 0)
-        const newBillRes = await pool.query(
-          `INSERT INTO bills (bill_number, order_number, items, amount, status, due_date, notes, user_id, created_at)
-           VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NOW()) RETURNING *`,
-          [
-            autoBillNum,
-            orderNum,
-            JSON.stringify(itemsToDeduct),
-            quoteTotal,
-            `Generated from Quotation #${updatedQuote.quote_number} (Order ${orderNum})`,
-            userId
-          ]
-        ).catch(() => ({ rows: [] }))
-        if (newBillRes.rows?.[0]) bill = newBillRes.rows[0]
-      }
-
-      // Send Order Confirmation Email with attached TAX INVOICE PDF
-      await sendOrderConfirmationEmailToCustomer(updatedQuote, bill, itemsToDeduct, orderNum).catch(e => console.error('[PUT Quote Order Confirmation Email Error]', e.message))
-    }
-
-    // Trigger workflow when quote is accepted
-    if (updatedQuote.status === 'Accepted') {
-      await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
+      await handleQuoteUpdateAccepted(updatedQuote, userId)
     }
 
     res.json(updatedQuote)

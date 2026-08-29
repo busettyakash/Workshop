@@ -85,34 +85,41 @@ router.get('/top-customers', async (req, res) => {
   }
 })
 
+function parseBillItems(itemsRaw) {
+  if (typeof itemsRaw === 'string') {
+    try { return JSON.parse(itemsRaw) } catch { return [] }
+  }
+  return Array.isArray(itemsRaw) ? itemsRaw : []
+}
+
+async function syncSingleBillItems(bill, userId) {
+  const check = await query("SELECT id FROM bill_items WHERE bill_id = $1 LIMIT 1", [bill.id])
+  if (check.rows.length > 0) return
+
+  const itemsList = parseBillItems(bill.items)
+  for (const item of itemsList) {
+    const productId = item.product_id || item.id
+    if (!productId) continue
+
+    const qty = Number.parseFloat(item.qty || item.quantity || 1)
+    const price = Number.parseFloat(item.price || 0)
+
+    const prodCheck = await query("SELECT id FROM products WHERE id = $1 AND user_id = $2", [productId, userId])
+    if (prodCheck.rows.length > 0) {
+      await query(
+        `INSERT INTO bill_items (bill_id, product_id, quantity, price)
+         VALUES ($1, $2, $3, $4)`,
+        [bill.id, productId, qty, price]
+      )
+    }
+  }
+}
+
 async function syncBillItems(userId) {
   try {
     const { rows: bills } = await query("SELECT id, items FROM bills WHERE user_id = $1", [userId])
     for (const b of bills) {
-      const check = await query("SELECT id FROM bill_items WHERE bill_id = $1 LIMIT 1", [b.id])
-      if (check.rows.length === 0) {
-        let itemsList = []
-        if (typeof b.items === 'string') {
-          try { itemsList = JSON.parse(b.items) } catch {}
-        } else if (Array.isArray(b.items)) {
-          itemsList = b.items
-        }
-        for (const item of itemsList) {
-          const productId = item.product_id || item.id
-          const qty = Number.parseFloat(item.qty || item.quantity || 1)
-          const price = Number.parseFloat(item.price || 0)
-          if (productId) {
-            const prodCheck = await query("SELECT id FROM products WHERE id = $1 AND user_id = $2", [productId, userId])
-            if (prodCheck.rows.length > 0) {
-              await query(
-                `INSERT INTO bill_items (bill_id, product_id, quantity, price)
-                 VALUES ($1, $2, $3, $4)`,
-                [b.id, productId, qty, price]
-              )
-            }
-          }
-        }
-      }
+      await syncSingleBillItems(b, userId)
     }
   } catch (err) {
     console.error('[SYNC BILL ITEMS ERROR]', err)

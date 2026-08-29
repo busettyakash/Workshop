@@ -71,68 +71,64 @@ router.use(async (_req, _res, next) => {
   }
 })
 
+async function fetchWorkshopKnownEntities(userId) {
+  const workshopEmails = new Set()
+  const quoteNumbers = new Set()
+  const billNumbers = new Set()
+
+  const custRes = await query(`SELECT LOWER(email) as email FROM customers WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [userId]).catch(() => ({ rows: [] }))
+  custRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
+
+  const peopleRes = await query(`SELECT LOWER(email) as email FROM people WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [userId]).catch(() => ({ rows: [] }))
+  peopleRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
+
+  const quotesRes = await query(`SELECT LOWER(customer_email) as email, quote_number FROM quotes WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] }))
+  quotesRes.rows.forEach(r => {
+    if (r.email) workshopEmails.add(r.email.trim())
+    if (r.quote_number) quoteNumbers.add(r.quote_number.toLowerCase().trim())
+  })
+
+  const billsRes = await query(`SELECT bill_number FROM bills WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] }))
+  billsRes.rows.forEach(r => {
+    if (r.bill_number) billNumbers.add(r.bill_number.toLowerCase().trim())
+  })
+
+  return { workshopEmails, quoteNumbers, billNumbers }
+}
+
+function isEmailWorkshopRelated(email, { workshopEmails, quoteNumbers, billNumbers }) {
+  const fromAddr = (email.from_email || '').trim()
+  const subj = (email.subject || '').trim()
+  const body = (email.body || '').trim()
+
+  if (workshopEmails.has(fromAddr)) return true
+
+  for (const qNum of quoteNumbers) {
+    if (qNum && (subj.includes(qNum) || body.includes(qNum))) return true
+  }
+
+  for (const bNum of billNumbers) {
+    if (bNum && (subj.includes(bNum) || body.includes(bNum))) return true
+  }
+
+  const isWorkshopSubject = subj.includes('workshop') ||
+                           subj.includes('quotation') ||
+                           subj.includes('quote') ||
+                           subj.includes('inv-') ||
+                           subj.includes('qt-')
+
+  return isWorkshopSubject
+}
+
 /* Helper to purge non-Workshop emails from inbox */
 const cleanupInbox = async (userId) => {
   try {
-    const workshopEmails = new Set()
-
-    const custRes = await query(`SELECT LOWER(email) as email FROM customers WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [userId]).catch(() => ({ rows: [] }))
-    custRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
-
-    const peopleRes = await query(`SELECT LOWER(email) as email FROM people WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [userId]).catch(() => ({ rows: [] }))
-    peopleRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
-
-    const quotesRes = await query(`SELECT LOWER(customer_email) as email, quote_number FROM quotes WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] }))
-    const quoteNumbers = new Set()
-    quotesRes.rows.forEach(r => {
-      if (r.email) workshopEmails.add(r.email.trim())
-      if (r.quote_number) quoteNumbers.add(r.quote_number.toLowerCase().trim())
-    })
-
-    const billsRes = await query(`SELECT bill_number FROM bills WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] }))
-    const billNumbers = new Set()
-    billsRes.rows.forEach(r => {
-      if (r.bill_number) billNumbers.add(r.bill_number.toLowerCase().trim())
-    })
-
+    const knownEntities = await fetchWorkshopKnownEntities(userId)
     const inboxRes = await query(`SELECT id, LOWER(from_email) as from_email, LOWER(subject) as subject, LOWER(body) as body FROM emails WHERE user_id = $1 AND direction = 'inbox'`, [userId])
 
-    const idsToDelete = []
-    for (const email of inboxRes.rows) {
-      const fromAddr = (email.from_email || '').trim()
-      const subj = (email.subject || '').trim()
-      const body = (email.body || '').trim()
-
-      const isKnownContact = workshopEmails.has(fromAddr)
-
-      let hasRefNumber = false
-      for (const qNum of quoteNumbers) {
-        if (qNum && (subj.includes(qNum) || body.includes(qNum))) {
-          hasRefNumber = true
-          break
-        }
-      }
-      if (!hasRefNumber) {
-        for (const bNum of billNumbers) {
-          if (bNum && (subj.includes(bNum) || body.includes(bNum))) {
-            hasRefNumber = true
-            break
-          }
-        }
-      }
-
-      const isWorkshopSubject = subj.includes('workshop') ||
-                               subj.includes('quotation') ||
-                               subj.includes('quote') ||
-                               subj.includes('inv-') ||
-                               subj.includes('qt-')
-
-      const isWorkshopRelated = isKnownContact || hasRefNumber || isWorkshopSubject
-
-      if (!isWorkshopRelated) {
-        idsToDelete.push(email.id)
-      }
-    }
+    const idsToDelete = inboxRes.rows
+      .filter(email => !isEmailWorkshopRelated(email, knownEntities))
+      .map(email => email.id)
 
     if (idsToDelete.length > 0) {
       await query(`DELETE FROM emails WHERE id = ANY($1::int[]) AND user_id = $2`, [idsToDelete, userId])

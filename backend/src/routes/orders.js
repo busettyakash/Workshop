@@ -61,6 +61,46 @@ function ordersUnion(whereClause = '') {
   `
 }
 
+async function fetchOrdersWithCursor(res, { conditions, params, limit, cursor }) {
+  params.push(cursor.created_at, cursor.id)
+  conditions.push(`(created_at, id) < ($${params.length - 1}, $${params.length})`)
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  params.push(limit + 1)
+
+  const { rows } = await query(
+    `${ordersUnion(where)} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
+    params
+  )
+  const hasNextPage = rows.length > limit
+  if (hasNextPage) rows.pop()
+  const nextCursor = (hasNextPage && rows.length > 0)
+    ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
+    : null
+
+  return res.json({ data: rows, limit, hasNextPage, nextCursor })
+}
+
+async function fetchOrdersWithOffset(res, { conditions, params, page, limit, offset }) {
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const countRes = await query(`SELECT COUNT(*) FROM (${ordersUnion(where)}) counted_orders`, params)
+  const total = Number.parseInt(countRes.rows[0].count, 10) || 0
+  const totalPages = Math.ceil(total / limit) || 1
+
+  params.push(limit, offset)
+  const { rows } = await query(
+    `${ordersUnion(where)} ORDER BY created_at DESC, id DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  )
+
+  const hasNextPage = page < totalPages
+  const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+  const nextCursor = (hasNextPage && lastRow)
+    ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
+    : null
+
+  return res.json({ data: rows, total, page, limit, totalPages, hasNextPage, nextCursor })
+}
+
 /* GET /api/orders */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
@@ -82,45 +122,11 @@ router.get('/', async (req, res) => {
 
   try {
     if (cursor?.created_at && cursor?.id) {
-      params.push(cursor.created_at, cursor.id)
-      conditions.push(`(created_at, id) < ($${params.length - 1}, $${params.length})`)
-      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-      params.push(limit + 1)
-
-      const { rows } = await query(
-        `${ordersUnion(where)} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
-        params
-      )
-      const hasNextPage = rows.length > limit
-      if (hasNextPage) rows.pop()
-      const nextCursor = (hasNextPage && rows.length > 0)
-        ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
-        : null
-
-      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+      return await fetchOrdersWithCursor(res, { conditions, params, limit, cursor })
     }
-
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-    const countRes = await query(`SELECT COUNT(*) FROM (${ordersUnion(where)}) counted_orders`, params)
-    const total = Number.parseInt(countRes.rows[0].count, 10) || 0
-    const totalPages = Math.ceil(total / limit) || 1
-
-    params.push(limit, offset)
-    const { rows } = await query(
-      `${ordersUnion(where)} ORDER BY created_at DESC, id DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params
-    )
-
-    const hasNextPage = page < totalPages
-    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
-    const nextCursor = (hasNextPage && lastRow)
-      ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
-      : null
-
-    res.json({ data: rows, total, page, limit, totalPages, hasNextPage, nextCursor })
+    return await fetchOrdersWithOffset(res, { conditions, params, page, limit, offset })
   } catch (err) {
-    console.error('[Orders GET Error]', err)
-    res.status(500).json({ error: 'Failed to fetch orders' })
+    return res.status(500).json({ error: err.message })
   }
 })
 

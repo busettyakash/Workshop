@@ -28,17 +28,206 @@ export function formatWorkflowDuration(createdAt) {
  * Execute a single step in the workflow pipeline and schedule next step.
  * Used by both the QStash Webhook receiver (production) and the local runner (dev).
  */
+function resolveBranchSteps(nodes, isDeclinedBranch) {
+  if (isDeclinedBranch) {
+    return Array.isArray(nodes?.declinedSteps) ? nodes.declinedSteps : []
+  }
+  if (Array.isArray(nodes?.acceptedSteps)) return nodes.acceptedSteps
+  if (Array.isArray(nodes)) return nodes
+  return []
+}
+
+async function resolveWorkflowQuote(run, companyName) {
+  let quote = null
+  const redisQuoteId = await redis.get(`run:${run.id}:quote_id`).catch(() => null)
+  if (redisQuoteId) {
+    const qRes = await query('SELECT * FROM quotes WHERE id = $1', [redisQuoteId]).catch(() => ({ rows: [] }))
+    quote = qRes.rows[0]
+  }
+  if (!quote && run.quote_id) {
+    const qRes = await query('SELECT * FROM quotes WHERE id = $1', [run.quote_id]).catch(() => ({ rows: [] }))
+    quote = qRes.rows[0]
+  }
+  if (!quote && companyName) {
+    const qNumMatch = String(companyName).match(/QT-\w+/i) || String(run.test_company).match(/QT-\w+/i)
+    if (qNumMatch) {
+      const qRes = await query('SELECT * FROM quotes WHERE quote_number ILIKE $1 OR id::text = $2 LIMIT 1', [`%${qNumMatch[0]}%`, qNumMatch[0].replace(/\D/g, '')]).catch(() => ({ rows: [] }))
+      quote = qRes.rows[0]
+    }
+  }
+  if (!quote && companyName) {
+    const rawCust = String(companyName).split('(')[0].split('·')[0].trim()
+    if (rawCust) {
+      const qRes = await query('SELECT * FROM quotes WHERE LOWER(customer_name) = LOWER($1) ORDER BY id DESC LIMIT 1', [rawCust]).catch(() => ({ rows: [] }))
+      quote = qRes.rows[0]
+    }
+  }
+  return quote || {
+    customer_name: companyName,
+    total_amount: run.test_value || 0,
+    quote_number: 'QT-001'
+  }
+}
+
+async function resolveWorkflowBill(quote, run) {
+  let bill = null
+  let billItems = []
+  if (quote?.quote_number || quote?.order_number) {
+    const bRes = await query(
+      'SELECT * FROM bills WHERE notes ILIKE $1 OR (order_number IS NOT NULL AND order_number = $2) ORDER BY id DESC LIMIT 1',
+      [`%${quote.quote_number || ''}%`, quote.order_number || '']
+    ).catch(() => ({ rows: [] }))
+    bill = bRes.rows[0]
+  }
+  if (!bill) {
+    bill = {
+      bill_number: quote.bill_number || `INV-${String(quote.id || 1).padStart(6, '0')}`,
+      order_number: quote.order_number || '',
+      customer_name: quote.customer_name,
+      customer_phone: quote.customer_phone,
+      customer_email: quote.customer_email,
+      customer_company: quote.customer_company,
+      customer_address: quote.customer_address,
+      amount: quote.total_amount || run.test_value || 0,
+      total_amount: quote.total_amount || run.test_value || 0,
+      tax_rate: quote.tax_rate,
+      tax_amount: quote.tax_amount,
+      discount: quote.discount,
+      items: quote.line_items
+    }
+  }
+  if (bill?.id) {
+    const biRes = await query('SELECT * FROM bill_items WHERE bill_id = $1', [bill.id]).catch(() => ({ rows: [] }))
+    billItems = biRes.rows || []
+  }
+  return { bill, billItems }
+}
+
+function resolveActionLogText(currentAction, companyName, isDeclinedBranch) {
+  const tag = String(currentAction.tag || '').toLowerCase()
+  const title = String(currentAction.title || '').toLowerCase()
+
+  if (tag === 'records' || title.includes('record')) {
+    return `Log Quote Record: Successfully archived quotation status as Declined in database for '${companyName}'. (No bill issued).`
+  }
+  if (tag === 'inventory' || title.includes('inventory') || title.includes('stock')) {
+    return `Inventory Sync: Automatically deducted item stock from warehouse and recorded history log for '${companyName}'.`
+  }
+  if (tag === 'billing' || title.includes('bill')) {
+    return `Generate Bill: Auto-generated Tax Invoice and created order in Unpaid Bills for '${companyName}'.`
+  }
+  if (title.includes('rejection') || title.includes('decline') || (isDeclinedBranch && (tag === 'email' || currentAction.iconType === 'mail'))) {
+    return `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
+  }
+  if (tag === 'email' || title.includes('email') || currentAction.iconType === 'send') {
+    return `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${companyName}.`
+  }
+  if (tag === 'whatsapp' || title.includes('whatsapp')) {
+    return `WhatsApp Alert: Dispatched automated WhatsApp notification with quote link to ${companyName}.`
+  }
+  if (tag === 'sms' || title.includes('sms')) {
+    return `SMS Notification: Sent instant SMS delivery status update to ${companyName}.`
+  }
+  if (tag === 'api' || tag === 'webhook' || title.includes('webhook') || title.includes('api')) {
+    return `Call Webhook: Dispatched JSON payload to external CRM/accounting endpoint for '${companyName}'.`
+  }
+  if (tag === 'tasks' || title.includes('task')) {
+    return `Workshop Task: Created technician calendar task for '${companyName}'.`
+  }
+  if (tag === 'print' || title.includes('print')) {
+    return 'Print: Queued document to printer.'
+  }
+  if (tag === 'alert' || title.includes('alert')) {
+    return 'Internal Alert: Dispatched team notification on internal dispatch channel.'
+  }
+  return `${currentAction.title || 'Action'}: Executed step successfully for '${companyName}'.`
+}
+
+async function executeMultiContactAction(currentAction, run, companyName, logKey, step) {
+  const recipients = Array.isArray(currentAction.recipients) ? currentAction.recipients : []
+  const shopProfileRes = await query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles LIMIT 1').catch(() => ({ rows: [] }))
+  const shop = shopProfileRes.rows[0] || {}
+
+  const quote = await resolveWorkflowQuote(run, companyName)
+  const { bill, billItems } = await resolveWorkflowBill(quote, run)
+
+  const invNum = bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`
+  const sellerName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
+  const totalValFormatted = Number.parseFloat(quote.total_amount || bill.amount || run.test_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const pdfBuffer = await generateInvoicePdfBuffer({
+    quote,
+    bill,
+    billItems,
+    shop,
+    type: 'invoice'
+  }).catch(e => {
+    console.error('[Multi-Contact Invoice PDF Generation Warning]', e.message)
+    return null
+  })
+
+  const attachments = pdfBuffer ? [
+    {
+      filename: `Tax_Invoice_${invNum}.pdf`,
+      content: Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer),
+      contentType: 'application/pdf'
+    }
+  ] : []
+
+  let sentCount = 0
+  const activeRecipients = recipients.filter(r => r && r.email)
+
+  await Promise.allSettled(
+    activeRecipients.map(async (r) => {
+      const recipientName = r.name && r.name.trim() ? r.name.trim() : 'Team Member'
+      const emailBodyHtml = `
+        <div style="font-family: Arial, Helvetica, sans-serif; font-size: 0.95rem; color: #1e293b; line-height: 1.6; text-align: left; max-width: 600px;">
+          <p style="margin-top: 0;">Hello <strong>${recipientName}</strong>,</p>
+          <p style="margin-bottom: 14px;">An official Tax Invoice has been issued for <strong>${companyName}</strong> by <strong>${sellerName}</strong>.</p>
+          <p style="margin-bottom: 14px;">Please find attached the official PDF Tax Invoice document (<strong>Tax_Invoice_${invNum}.pdf</strong>).</p>
+          <div style="margin: 16px 0; font-size: 0.9rem; line-height: 1.8; color: #334155;">
+            <div>• <strong>Customer / Entity:</strong> ${companyName}</div>
+            <div>• <strong>Invoice Number:</strong> ${invNum}</div>
+            <div>• <strong>Total Amount:</strong> ₹${totalValFormatted}</div>
+            <div>• <strong>Attached Document:</strong> Tax_Invoice_${invNum}.pdf</div>
+          </div>
+          <p style="margin-top: 18px; color: #64748b; font-size: 0.86rem;">If you have any questions or require further details, please feel free to reply directly to this email.</p>
+          <p style="margin-top: 22px; color: #475569; font-size: 0.88rem;">Best regards,<br/><strong>${sellerName} Team</strong></p>
+        </div>
+      `
+
+      const res = await sendEmail({
+        to: r.email,
+        subject: `Tax Invoice & Bill Copy for ${companyName}`,
+        html: emailBodyHtml,
+        attachments
+      }).catch(err => ({ data: null, error: err }))
+
+      if (res?.data?.id) {
+        sentCount++
+        const logLine = `Email sent ✅ to ${recipientName} <${r.email}>`
+        await redis.rpush(logKey, JSON.stringify({ time: new Date().toISOString(), step, text: logLine })).catch(() => {})
+      } else {
+        const errLine = `Email delivery failed ❌ to ${recipientName} <${r.email}>: ${res?.error?.message || 'Unknown SMTP error'}`
+        await redis.rpush(logKey, JSON.stringify({ time: new Date().toISOString(), step, text: errLine })).catch(() => {})
+      }
+    })
+  )
+
+  return `Multi-Contact Summary: Configured Recipients (${sentCount}/${recipients.length}) processed successfully with attached Tax_Invoice_${invNum}.pdf.`
+}
+
+/**
+ * Execute a single step in the workflow pipeline and schedule next step.
+ * Used by both the QStash Webhook receiver (production) and the local runner (dev).
+ */
 export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted' }) {
   if (!runId || Number.isNaN(step)) {
     return { error: 'Missing required runId or step in workflow payload' }
   }
 
   // 1. Fetch current run details
-  const runRes = await query(
-    'SELECT * FROM workflow_runs WHERE id = $1',
-    [runId]
-  )
-
+  const runRes = await query('SELECT * FROM workflow_runs WHERE id = $1', [runId])
   if (!runRes.rows.length) {
     console.warn('[WORKFLOW EXECUTION] Workflow run not found in database. Skipping step.')
     return { status: 'ignored', reason: 'Run not found' }
@@ -47,7 +236,6 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
   const run = runRes.rows[0]
   const logKey = `run:${run.id}:logs`
 
-  // If run was cancelled by user, stop progressing
   if (run.status === 'Cancelled') {
     console.log('[WORKFLOW EXECUTION] Run was cancelled. Halting workflow progression.')
     return { status: 'halted', reason: 'Run was cancelled' }
@@ -62,17 +250,7 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
 
   const companyName = run.test_company || 'Quotation Customer'
   const isDeclinedBranch = branch === 'declined' || Boolean(run.test_company && String(run.test_company).toLowerCase().includes('declined'))
-  let branchSteps = []
-
-  if (isDeclinedBranch) {
-    branchSteps = Array.isArray(nodes?.declinedSteps) ? nodes.declinedSteps : []
-  } else if (Array.isArray(nodes?.acceptedSteps)) {
-    branchSteps = nodes.acceptedSteps
-  } else if (Array.isArray(nodes)) {
-    branchSteps = nodes
-  } else {
-    branchSteps = []
-  }
+  const branchSteps = resolveBranchSteps(nodes, isDeclinedBranch)
 
   // STEP 1: Condition Evaluation
   if (step === 1) {
@@ -87,10 +265,7 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
       text: logText
     })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
 
-    await query(
-      `UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`,
-      [run.id]
-    )
+    await query(`UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`, [run.id])
 
     if (branchSteps.length > 0) {
       setTimeout(() => {
@@ -120,191 +295,9 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
 
     let logText = ''
     if (tag === 'multi-contact' || title.includes('multiple') || currentAction.id === 'act-multi-recipient') {
-      const recipients = Array.isArray(currentAction.recipients) ? currentAction.recipients : []
-
-      // Fetch shop details for invoice generation
-      const shopProfileRes = await query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles LIMIT 1').catch(() => ({ rows: [] }))
-      const shop = shopProfileRes.rows[0] || {}
-
-      // Fetch quote and associated bill and line items
-      let quote = null
-      const redisQuoteId = await redis.get(`run:${run.id}:quote_id`).catch(() => null)
-      if (redisQuoteId) {
-        const qRes = await query('SELECT * FROM quotes WHERE id = $1', [redisQuoteId]).catch(() => ({ rows: [] }))
-        quote = qRes.rows[0]
-      }
-      if (!quote && run.quote_id) {
-        const qRes = await query('SELECT * FROM quotes WHERE id = $1', [run.quote_id]).catch(() => ({ rows: [] }))
-        quote = qRes.rows[0]
-      }
-      if (!quote && companyName) {
-        const qNumMatch = String(companyName).match(/QT-\w+/i) || String(run.test_company).match(/QT-\w+/i)
-        if (qNumMatch) {
-          const qRes = await query('SELECT * FROM quotes WHERE quote_number ILIKE $1 OR id::text = $2 LIMIT 1', [`%${qNumMatch[0]}%`, qNumMatch[0].replace(/\D/g, '')]).catch(() => ({ rows: [] }))
-          quote = qRes.rows[0]
-        }
-      }
-      if (!quote && companyName) {
-        const rawCust = String(companyName).split('(')[0].split('·')[0].trim()
-        if (rawCust) {
-          const qRes = await query('SELECT * FROM quotes WHERE LOWER(customer_name) = LOWER($1) ORDER BY id DESC LIMIT 1', [rawCust]).catch(() => ({ rows: [] }))
-          quote = qRes.rows[0]
-        }
-      }
-      if (!quote) {
-        quote = {
-          customer_name: companyName,
-          total_amount: run.test_value || 0,
-          quote_number: 'QT-001'
-        }
-      }
-
-      let bill = null
-      let billItems = []
-      if (quote?.quote_number || quote?.order_number) {
-        const bRes = await query(
-          'SELECT * FROM bills WHERE notes ILIKE $1 OR (order_number IS NOT NULL AND order_number = $2) ORDER BY id DESC LIMIT 1',
-          [`%${quote.quote_number || ''}%`, quote.order_number || '']
-        ).catch(() => ({ rows: [] }))
-        bill = bRes.rows[0]
-      }
-      if (!bill) {
-        bill = {
-          bill_number: quote.bill_number || `INV-${String(quote.id || 1).padStart(6, '0')}`,
-          order_number: quote.order_number || '',
-          customer_name: quote.customer_name,
-          customer_phone: quote.customer_phone,
-          customer_email: quote.customer_email,
-          customer_company: quote.customer_company,
-          customer_address: quote.customer_address,
-          amount: quote.total_amount || run.test_value || 0,
-          total_amount: quote.total_amount || run.test_value || 0,
-          tax_rate: quote.tax_rate,
-          tax_amount: quote.tax_amount,
-          discount: quote.discount,
-          items: quote.line_items
-        }
-      }
-
-      if (bill?.id) {
-        const biRes = await query('SELECT * FROM bill_items WHERE bill_id = $1', [bill.id]).catch(() => ({ rows: [] }))
-        billItems = biRes.rows || []
-      }
-
-      const invNum = bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`
-      const sellerName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
-      const totalValFormatted = Number.parseFloat(quote.total_amount || bill.amount || run.test_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-      // Generate the official Tax Invoice PDF attachment buffer
-      const pdfBuffer = await generateInvoicePdfBuffer({
-        quote,
-        bill,
-        billItems,
-        shop,
-        type: 'invoice'
-      }).catch(e => {
-        console.error('[Multi-Contact Invoice PDF Generation Warning]', e.message)
-        return null
-      })
-
-      const attachments = pdfBuffer ? [
-        {
-          filename: `Tax_Invoice_${invNum}.pdf`,
-          content: Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer),
-          contentType: 'application/pdf'
-        }
-      ] : []
-
-      let sentCount = 0
-      const activeRecipients = recipients.filter(r => r && r.email)
-
-      await Promise.allSettled(
-        activeRecipients.map(async (r) => {
-          const recipientName = r.name && r.name.trim() ? r.name.trim() : 'Team Member'
-          
-          const emailBodyHtml = `
-            <div style="font-family: Arial, Helvetica, sans-serif; font-size: 0.95rem; color: #1e293b; line-height: 1.6; text-align: left; max-width: 600px;">
-              <p style="margin-top: 0;">Hello <strong>${recipientName}</strong>,</p>
-              
-              <p style="margin-bottom: 14px;">
-                An official Tax Invoice has been issued for <strong>${companyName}</strong> by <strong>${sellerName}</strong>.
-              </p>
-
-              <p style="margin-bottom: 14px;">
-                Please find attached the official PDF Tax Invoice document (<strong>Tax_Invoice_${invNum}.pdf</strong>).
-              </p>
-
-              <div style="margin: 16px 0; font-size: 0.9rem; line-height: 1.8; color: #334155;">
-                <div>• <strong>Customer / Entity:</strong> ${companyName}</div>
-                <div>• <strong>Invoice Number:</strong> ${invNum}</div>
-                <div>• <strong>Total Amount:</strong> ₹${totalValFormatted}</div>
-                <div>• <strong>Attached Document:</strong> Tax_Invoice_${invNum}.pdf</div>
-              </div>
-
-              <p style="margin-top: 18px; color: #64748b; font-size: 0.86rem;">
-                If you have any questions or require further details, please feel free to reply directly to this email.
-              </p>
-
-              <p style="margin-top: 22px; color: #475569; font-size: 0.88rem;">
-                Best regards,<br/>
-                <strong>${sellerName} Team</strong>
-              </p>
-            </div>
-          `
-
-          const res = await sendEmail({
-            to: r.email,
-            subject: `Tax Invoice & Bill Copy for ${companyName}`,
-            html: emailBodyHtml,
-            attachments
-          }).catch(err => ({ data: null, error: err }))
-
-          if (res?.data?.id) {
-            sentCount++
-            const logLine = `Email sent ✅ to ${recipientName} <${r.email}>`
-            console.log(`[WORKFLOW MULTI-EMAIL] ${logLine}`)
-            await redis.rpush(logKey, JSON.stringify({
-              time: new Date().toISOString(),
-              step: step,
-              text: logLine
-            })).catch(() => {})
-          } else {
-            const errLine = `Email delivery failed ❌ to ${recipientName} <${r.email}>: ${res?.error?.message || 'Unknown SMTP error'}`
-            console.error(`[WORKFLOW MULTI-EMAIL ERROR] ${errLine}`)
-            await redis.rpush(logKey, JSON.stringify({
-              time: new Date().toISOString(),
-              step: step,
-              text: errLine
-            })).catch(() => {})
-          }
-        })
-      )
-
-      logText = `Multi-Contact Summary: Configured Recipients (${sentCount}/${recipients.length}) processed successfully with attached Tax_Invoice_${invNum}.pdf.`
-    } else if (tag === 'records' || title.includes('record')) {
-      logText = `Log Quote Record: Successfully archived quotation status as Declined in database for '${companyName}'. (No bill issued).`
-    } else if (tag === 'inventory' || title.includes('inventory') || title.includes('stock')) {
-      logText = `Inventory Sync: Automatically deducted item stock from warehouse and recorded history log for '${companyName}'.`
-    } else if (tag === 'billing' || title.includes('bill')) {
-      logText = `Generate Bill: Auto-generated Tax Invoice and created order in Unpaid Bills for '${companyName}'.`
-    } else if (title.includes('rejection') || title.includes('decline') || (isDeclinedBranch && (tag === 'email' || currentAction.iconType === 'mail'))) {
-      logText = `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
-    } else if (tag === 'email' || title.includes('email') || currentAction.iconType === 'send') {
-      logText = `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${companyName}.`
-    } else if (tag === 'whatsapp' || title.includes('whatsapp')) {
-      logText = `WhatsApp Alert: Dispatched automated WhatsApp notification with quote link to ${companyName}.`
-    } else if (tag === 'sms' || title.includes('sms')) {
-      logText = `SMS Notification: Sent instant SMS delivery status update to ${companyName}.`
-    } else if (tag === 'api' || tag === 'webhook' || title.includes('webhook') || title.includes('api')) {
-      logText = `Call Webhook: Dispatched JSON payload to external CRM/accounting endpoint for '${companyName}'.`
-    } else if (tag === 'tasks' || title.includes('task')) {
-      logText = `Workshop Task: Created technician calendar task for '${companyName}'.`
-    } else if (tag === 'print' || title.includes('print')) {
-      logText = `Print: Queued document to printer.`
-    } else if (tag === 'alert' || title.includes('alert')) {
-      logText = `Internal Alert: Dispatched team notification on internal dispatch channel.`
+      logText = await executeMultiContactAction(currentAction, run, companyName, logKey, step)
     } else {
-      logText = `${currentAction.title || 'Action'}: Executed step successfully for '${companyName}'.`
+      logText = resolveActionLogText(currentAction, companyName, isDeclinedBranch)
     }
 
     await redis.rpush(logKey, JSON.stringify({
@@ -314,7 +307,6 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
     })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
 
     const isLastStep = actionIndex === branchSteps.length - 1
-
     if (isLastStep) {
       const durationStr = formatWorkflowDuration(run.created_at)
 
@@ -349,27 +341,19 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
           workflowId: run.workflow_id,
           step: step + 1,
           branch: isDeclinedBranch ? 'declined' : 'accepted'
-        }).catch(e => console.error('[Step %s Auto-Advance Error]', step + 1, e.message))
-      }, 500)
+        }).catch(e => console.error('[Next Step Auto-Advance Error]', e.message))
+      }, 700)
 
       return {
         success: true,
         runId: run.id,
         step,
-        message: `Step ${step} (${currentAction.title || 'Action'}) executed. Next step scheduled.`
+        message: `Step ${step} executed. Next step scheduled.`
       }
     }
-  } else {
-    // If step exceeded node count, finalize as Completed
-    const durationStr = formatWorkflowDuration(run.created_at)
-
-    await query(
-      `UPDATE workflow_runs SET status = 'Completed', duration = $1 WHERE id = $2`,
-      [durationStr, run.id]
-    )
-
-    return { status: 'noop', step, message: `Workflow completed` }
   }
+
+  return { status: 'noop', reason: 'No matching action for step index' }
 }
 
 // Register local execution fallback for offline development
@@ -759,187 +743,210 @@ router.get('/:id/runs', async (req, res) => {
   }
 })
 
+function parseWorkflowLogEntry(l) {
+  let parsed = l
+  if (typeof l === 'string') {
+    try {
+      parsed = JSON.parse(l)
+    } catch {
+      parsed = { text: l }
+    }
+  }
+
+  let text = ''
+  if (typeof parsed === 'object' && parsed !== null) {
+    if (typeof parsed.text === 'string') {
+      text = parsed.text
+    } else if (typeof parsed.text === 'object' && parsed.text !== null) {
+      text = parsed.text.text || JSON.stringify(parsed.text)
+    } else if (typeof parsed.message === 'string') {
+      text = parsed.message
+    } else {
+      text = JSON.stringify(parsed)
+    }
+  } else {
+    text = String(parsed || '')
+  }
+
+  return {
+    time: (typeof parsed === 'object' && parsed?.time) ? parsed.time : new Date().toISOString(),
+    step: (typeof parsed === 'object' && parsed?.step !== undefined) ? parsed.step : 0,
+    text
+  }
+}
+
+function synthesizeDeclinedLogs(run, nodes, company, val, runTime) {
+  const declinedSteps = Array.isArray(nodes?.declinedSteps) && nodes.declinedSteps.length > 0
+    ? nodes.declinedSteps
+    : [
+        { id: 'step-record', title: 'Log Quote Record', tag: 'Records' },
+        { id: 'step-decline-email', title: 'Send Rejection Follow-up Email', tag: 'Email' }
+      ]
+
+  const syntheticLogs = [
+    { time: runTime, step: 0, text: `Trigger: Declined — Customer '${company}' for ₹${val}` },
+    { time: runTime, step: 1, text: `Check Condition: Evaluated quotation status ('Declined') and total value (₹${val}). Result: Routing to Declined Branch.` }
+  ]
+
+  declinedSteps.forEach((st, idx) => {
+    const stepNum = idx + 2
+    const title = st.title || 'Action'
+    const tag = String(st.tag || '').toLowerCase()
+    let logText = ''
+
+    if (tag === 'records' || title.toLowerCase().includes('record')) {
+      logText = `Log Quote Record: Archived quotation status as Declined in database for '${company}'. (No bill issued).`
+    } else if (title.toLowerCase().includes('rejection') || title.toLowerCase().includes('decline') || tag === 'email') {
+      logText = `Send Email: Delivered quotation decline follow-up & revision options email to ${company}.`
+    } else {
+      logText = `${title}: Executed successfully for '${company}'.`
+    }
+
+    syntheticLogs.push({ time: new Date(Date.parse(runTime) + (idx + 1) * 1000).toISOString(), step: stepNum, text: logText })
+  })
+
+  const totalSteps = declinedSteps.length + 1
+  syntheticLogs.push({
+    time: new Date(Date.parse(runTime) + (declinedSteps.length + 1) * 1000).toISOString(),
+    step: totalSteps + 1,
+    text: `Workflow completed: All ${totalSteps} steps finished successfully in ${run.duration || '3s'}.`
+  })
+
+  return syntheticLogs
+}
+
+function synthesizeAcceptedLogs(run, nodes, company, val, runTime) {
+  let acceptedSteps = []
+  if (Array.isArray(nodes?.acceptedSteps) && nodes.acceptedSteps.length > 0) {
+    acceptedSteps = nodes.acceptedSteps
+  } else if (Array.isArray(nodes) && nodes.length > 0) {
+    acceptedSteps = nodes
+  } else {
+    acceptedSteps = [
+      { id: 'step-inventory', title: 'Inventory Deduction', tag: 'Inventory' },
+      { id: 'step-bill', title: 'Auto-generate Bill', tag: 'Billing' },
+      { id: 'step-email', title: 'Send Invoice Email', tag: 'Email' }
+    ]
+  }
+
+  const runMaxStep = Number(run.current_step || 0)
+  if (runMaxStep > 1 && runMaxStep - 1 < acceptedSteps.length) {
+    acceptedSteps = acceptedSteps.slice(0, runMaxStep - 1)
+  }
+
+  const syntheticLogs = [
+    { time: runTime, step: 0, text: `Trigger: Quotation Accepted — Customer '${company}' for ₹${val}` },
+    { time: runTime, step: 1, text: `Check Condition: Evaluated quotation status ('Accepted') and total value (₹${val}). Result: Condition Met (Accepted).` }
+  ]
+
+  acceptedSteps.forEach((st, idx) => {
+    const stepNum = idx + 2
+    const title = st.title || 'Action'
+    const tag = String(st.tag || '').toLowerCase()
+    let logText = ''
+
+    if (tag === 'multi-contact' || title.toLowerCase().includes('multiple') || st.id === 'act-multi-recipient') {
+      const recipients = Array.isArray(st.recipients) ? st.recipients : []
+      let recs = 'All designated team contacts'
+      if (recipients.length > 0) {
+        recs = recipients.map(r => {
+          const emailSuffix = r.email ? ` (${r.email})` : ''
+          return (r.name || 'Contact') + emailSuffix
+        }).join(', ')
+      }
+      logText = `Multi-Contact Dispatch: Delivered official Tax Invoice PDF attachment to: ${recs}.`
+    } else if (tag === 'inventory' || title.toLowerCase().includes('inventory') || title.toLowerCase().includes('stock')) {
+      logText = `Inventory Sync: Automatically deducted item stock from warehouse and recorded history log for '${company}'.`
+    } else if (tag === 'billing' || title.toLowerCase().includes('bill')) {
+      logText = `Generate Bill: Auto-generated Tax Invoice and created order in Unpaid Bills for '${company}'.`
+    } else if (tag === 'email' || title.toLowerCase().includes('email')) {
+      logText = `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${company}.`
+    } else {
+      logText = `${title}: Executed step successfully for '${company}'.`
+    }
+
+    syntheticLogs.push({ time: new Date(Date.parse(runTime) + (idx + 1) * 1000).toISOString(), step: stepNum, text: logText })
+  })
+
+  const totalSteps = acceptedSteps.length + 1
+  syntheticLogs.push({
+    time: new Date(Date.parse(runTime) + (acceptedSteps.length + 1) * 1000).toISOString(),
+    step: totalSteps + 1,
+    text: `Workflow completed: All ${totalSteps} steps finished successfully in ${run.duration || '3s'}.`
+  })
+
+  return syntheticLogs
+}
+
+async function synthesizeWorkflowLogs(runId, logKey) {
+  const runRes = await query('SELECT * FROM workflow_runs WHERE id = $1', [runId]).catch(() => ({ rows: [] }))
+  const run = runRes.rows[0]
+  if (!run) return []
+
+  const wfRes = await query('SELECT nodes FROM workflows WHERE id = $1', [run.workflow_id]).catch(() => ({ rows: [] }))
+  let nodes = wfRes.rows[0]?.nodes
+  if (typeof nodes === 'string') {
+    try { nodes = JSON.parse(nodes) } catch { nodes = null }
+  }
+
+  const company = run.test_company || 'Quotation Customer'
+  const val = Number(run.test_value || 0).toLocaleString('en-IN')
+  const runTime = run.created_at ? new Date(run.created_at).toISOString() : new Date().toISOString()
+  const isDeclinedRun = Boolean(run.test_company && String(run.test_company).toLowerCase().includes('declined'))
+
+  const syntheticLogs = isDeclinedRun
+    ? synthesizeDeclinedLogs(run, nodes, company, val, runTime)
+    : synthesizeAcceptedLogs(run, nodes, company, val, runTime)
+
+  for (const item of syntheticLogs) {
+    await redis.rpush(logKey, JSON.stringify(item)).catch(() => {})
+  }
+  await redis.expire(logKey, 86400).catch(() => {})
+
+  return syntheticLogs
+}
+
+function deduplicateWorkflowLogs(logs) {
+  const deduplicatedLogs = []
+  const seenLogKeys = new Set()
+
+  for (const logItem of logs) {
+    const stepNum = Number(logItem?.step || 0)
+    let cleanText = String(logItem?.text || '')
+    if (cleanText.includes('id: <')) {
+      cleanText = cleanText.replace(/id:\s*<[^>]+>\s*/g, '')
+    }
+
+    const textPrefix = cleanText.substring(0, 40)
+    const key = `${stepNum}:${textPrefix}`
+
+    if (!seenLogKeys.has(key)) {
+      seenLogKeys.add(key)
+      deduplicatedLogs.push({
+        ...logItem,
+        text: cleanText
+      })
+    }
+  }
+
+  return deduplicatedLogs
+}
+
 /* GET /api/workflows/:id/runs/:runId/logs */
 router.get('/:id/runs/:runId/logs', async (req, res) => {
   try {
     await healStalledRuns()
     const logKey = `run:${req.params.runId}:logs`
     const rawLogs = await redis.lrange(logKey, 0, -1).catch(() => [])
-    let logs = (Array.isArray(rawLogs) ? rawLogs : []).map(l => {
-      let parsed = l
-      if (typeof l === 'string') {
-        try {
-          parsed = JSON.parse(l)
-        } catch {
-          parsed = { text: l }
-        }
-      }
+    let logs = (Array.isArray(rawLogs) ? rawLogs : []).map(parseWorkflowLogEntry)
 
-      let text = ''
-      if (typeof parsed === 'object' && parsed !== null) {
-        if (typeof parsed.text === 'string') {
-          text = parsed.text
-        } else if (typeof parsed.text === 'object' && parsed.text !== null) {
-          text = parsed.text.text || JSON.stringify(parsed.text)
-        } else if (typeof parsed.message === 'string') {
-          text = parsed.message
-        } else {
-          text = JSON.stringify(parsed)
-        }
-      } else {
-        text = String(parsed || '')
-      }
-
-      return {
-        time: (typeof parsed === 'object' && parsed?.time) ? parsed.time : new Date().toISOString(),
-        step: (typeof parsed === 'object' && parsed?.step !== undefined) ? parsed.step : 0,
-        text
-      }
-    })
-
-    // If logs are empty (e.g. key expired or direct DB insert), synthesize accurate logs based on actual workflow nodes
     if (logs.length === 0) {
-      const runRes = await query('SELECT * FROM workflow_runs WHERE id = $1', [req.params.runId]).catch(() => ({ rows: [] }))
-      const run = runRes.rows[0]
-      if (run) {
-        const wfRes = await query('SELECT nodes FROM workflows WHERE id = $1', [run.workflow_id]).catch(() => ({ rows: [] }))
-        let nodes = wfRes.rows[0]?.nodes
-        if (typeof nodes === 'string') {
-          try { nodes = JSON.parse(nodes) } catch { nodes = null }
-        }
-
-        const company = run.test_company || 'Quotation Customer'
-        const val = Number(run.test_value || 0).toLocaleString('en-IN')
-        const runTime = run.created_at ? new Date(run.created_at).toISOString() : new Date().toISOString()
-        const isDeclinedRun = Boolean(run.test_company && String(run.test_company).toLowerCase().includes('declined'))
-
-        let syntheticLogs = []
-
-        if (isDeclinedRun) {
-          const declinedSteps = Array.isArray(nodes?.declinedSteps) && nodes.declinedSteps.length > 0
-            ? nodes.declinedSteps
-            : [
-                { id: 'step-record', title: 'Log Quote Record', tag: 'Records' },
-                { id: 'step-decline-email', title: 'Send Rejection Follow-up Email', tag: 'Email' }
-              ]
-
-          syntheticLogs = [
-            { time: runTime, step: 0, text: `Trigger: Declined — Customer '${company}' for ₹${val}` },
-            { time: runTime, step: 1, text: `Check Condition: Evaluated quotation status ('Declined') and total value (₹${val}). Result: Routing to Declined Branch.` }
-          ]
-
-          declinedSteps.forEach((st, idx) => {
-            const stepNum = idx + 2
-            const title = st.title || 'Action'
-            const tag = String(st.tag || '').toLowerCase()
-            let logText = ''
-
-            if (tag === 'records' || title.toLowerCase().includes('record')) {
-              logText = `Log Quote Record: Archived quotation status as Declined in database for '${company}'. (No bill issued).`
-            } else if (title.toLowerCase().includes('rejection') || title.toLowerCase().includes('decline') || tag === 'email') {
-              logText = `Send Email: Delivered quotation decline follow-up & revision options email to ${company}.`
-            } else {
-              logText = `${title}: Executed successfully for '${company}'.`
-            }
-
-            syntheticLogs.push({ time: new Date(Date.parse(runTime) + (idx + 1) * 1000).toISOString(), step: stepNum, text: logText })
-          })
-
-          const totalSteps = declinedSteps.length + 1
-          syntheticLogs.push({ time: new Date(Date.parse(runTime) + (declinedSteps.length + 1) * 1000).toISOString(), step: totalSteps + 1, text: `Workflow completed: All ${totalSteps} steps finished successfully in ${run.duration || '3s'}.` })
-        } else {
-          let acceptedSteps = []
-          if (Array.isArray(nodes?.acceptedSteps) && nodes.acceptedSteps.length > 0) {
-            acceptedSteps = nodes.acceptedSteps
-          } else if (Array.isArray(nodes) && nodes.length > 0) {
-            acceptedSteps = nodes
-          } else {
-            acceptedSteps = [
-              { id: 'step-inventory', title: 'Inventory Deduction', tag: 'Inventory' },
-              { id: 'step-bill', title: 'Auto-generate Bill', tag: 'Billing' },
-              { id: 'step-email', title: 'Send Invoice Email', tag: 'Email' }
-            ]
-          }
-
-          const runMaxStep = Number(run.current_step || 0)
-          if (runMaxStep > 1 && runMaxStep - 1 < acceptedSteps.length) {
-            acceptedSteps = acceptedSteps.slice(0, runMaxStep - 1)
-          }
-
-          syntheticLogs = [
-            { time: runTime, step: 0, text: `Trigger: Quotation Accepted — Customer '${company}' for ₹${val}` },
-            { time: runTime, step: 1, text: `Check Condition: Evaluated quotation status ('Accepted') and total value (₹${val}). Result: Condition Met (Accepted).` }
-          ]
-
-          acceptedSteps.forEach((st, idx) => {
-            const stepNum = idx + 2
-            const title = st.title || 'Action'
-            const tag = String(st.tag || '').toLowerCase()
-            let logText = ''
-
-            if (tag === 'multi-contact' || title.toLowerCase().includes('multiple') || st.id === 'act-multi-recipient') {
-              const recipients = Array.isArray(st.recipients) ? st.recipients : []
-              let recs = 'All designated team contacts'
-              if (recipients.length > 0) {
-                recs = recipients.map(r => {
-                  const emailSuffix = r.email ? ` (${r.email})` : ''
-                  return (r.name || 'Contact') + emailSuffix
-                }).join(', ')
-              }
-              logText = `Multi-Contact Dispatch: Delivered official Tax Invoice PDF attachment to: ${recs}.`
-            } else if (tag === 'inventory' || title.toLowerCase().includes('inventory') || title.toLowerCase().includes('stock')) {
-              logText = `Inventory Sync: Automatically deducted item stock from warehouse and recorded history log for '${company}'.`
-            } else if (tag === 'billing' || title.toLowerCase().includes('bill')) {
-              logText = `Generate Bill: Auto-generated Tax Invoice and created order in Unpaid Bills for '${company}'.`
-            } else if (tag === 'email' || title.toLowerCase().includes('email')) {
-              logText = `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${company}.`
-            } else {
-              logText = `${title}: Executed step successfully for '${company}'.`
-            }
-
-            syntheticLogs.push({ time: new Date(Date.parse(runTime) + (idx + 1) * 1000).toISOString(), step: stepNum, text: logText })
-          })
-
-          const totalSteps = acceptedSteps.length + 1
-          syntheticLogs.push({ time: new Date(Date.parse(runTime) + (acceptedSteps.length + 1) * 1000).toISOString(), step: totalSteps + 1, text: `Workflow completed: All ${totalSteps} steps finished successfully in ${run.duration || '3s'}.` })
-        }
-
-        logs = syntheticLogs
-
-        // Cache into Redis for future fast reads
-        for (const item of syntheticLogs) {
-          await redis.rpush(logKey, JSON.stringify(item)).catch(() => {})
-        }
-        await redis.expire(logKey, 86400).catch(() => {})
-      }
+      logs = await synthesizeWorkflowLogs(req.params.runId, logKey)
     }
 
-    // Deduplicate logs by step and text prefix to ensure clean single-entry rendering
-    const deduplicatedLogs = []
-    const seenLogKeys = new Set()
-
-    for (const logItem of logs) {
-      const stepNum = Number(logItem?.step || 0)
-      let cleanText = String(logItem?.text || '')
-      if (cleanText.includes('id: <')) {
-        cleanText = cleanText.replace(/id:\s*<[^>]+>\s*/g, '')
-      }
-
-      const textPrefix = cleanText.substring(0, 40)
-      const key = `${stepNum}:${textPrefix}`
-
-      if (!seenLogKeys.has(key)) {
-        seenLogKeys.add(key)
-        deduplicatedLogs.push({
-          ...logItem,
-          text: cleanText
-        })
-      }
-    }
-
-    res.json(deduplicatedLogs)
+    return res.json(deduplicateWorkflowLogs(logs))
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: err.message })
   }
 })
 

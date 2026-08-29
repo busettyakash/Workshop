@@ -107,6 +107,349 @@ const tools = [
   }
 ]
 
+async function handleDealP2PChat(conversationId, userId, lastMsg) {
+  if (!conversationId || !conversationId.startsWith('deal-')) return null
+  const dealIdStr = conversationId.split('-')[1]
+  const dealId = Number.parseInt(dealIdStr, 10)
+  if (Number.isNaN(dealId)) return null
+
+  const dealCheck = await query('SELECT * FROM deals WHERE id = $1 AND (user_id = $2 OR company_shop_id = $2)', [dealId, userId])
+  if (!dealCheck.rows.length) return null
+
+  const deal = dealCheck.rows[0]
+  const senderName = deal.user_id === userId ? 'Seller' : 'Buyer'
+
+  const currentSession = await query('SELECT messages FROM chat_sessions WHERE conversation_id = $1', [conversationId])
+  const dbMessages = currentSession.rows[0]?.messages || []
+
+  dbMessages.push({
+    id: Date.now(),
+    role: 'user',
+    content: `**${senderName}:** ${lastMsg}`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  })
+
+  await query(
+    `UPDATE chat_sessions SET messages = $1::jsonb, last_message = $2, updated_at = NOW() WHERE conversation_id = $3`,
+    [JSON.stringify(dbMessages), lastMsg.slice(0, 255), conversationId]
+  )
+
+  const targetUserId = deal.user_id === userId ? deal.company_shop_id : deal.user_id
+  if (targetUserId) {
+    try {
+      const notifTitle = `New message from ${senderName}`
+      const notifBody = `New message in deal "${deal.title}": ${lastMsg}`
+      const notifLink = deal.user_id === targetUserId ? `/deals/edit/${deal.id}` : `/deals/review/${deal.id}`
+
+      await query(
+        `INSERT INTO notifications (user_id, title, body, type, read, link, created_at)
+         VALUES ($1, $2, $3, 'info', false, $4, NOW())`,
+        [targetUserId, notifTitle, notifBody, notifLink]
+      )
+
+      await insforge.realtime.publish(`notifications:${targetUserId}`, {
+        event: 'new_notification',
+        payload: { title: notifTitle, body: notifBody, link: notifLink }
+      }).catch(() => {})
+    } catch (err) {
+      console.error('Failed to notify counterparty:', err.message)
+    }
+  }
+
+  return `*Message delivered to ${senderName === 'Seller' ? 'Buyer' : 'Seller'}.*`
+}
+
+async function callOpenRouterWithFallback(apiMessages) {
+  const MODELS = ['openai/gpt-4o-mini', 'openrouter/free', 'meta-llama/llama-3.3-70b-instruct']
+  let lastErrText = ''
+
+  for (const modelCandidate of MODELS) {
+    try {
+      const resCandidate = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://workshop.app',
+          'X-Title': 'Workshop AI Assistant'
+        },
+        body: JSON.stringify({
+          model: modelCandidate,
+          messages: apiMessages,
+          tools: tools,
+          max_tokens: 1024,
+          temperature: 0.7
+        })
+      })
+
+      if (resCandidate.ok) {
+        return { ok: true, response: resCandidate }
+      }
+      lastErrText = await resCandidate.text()
+      console.warn(`[OPENROUTER MODEL FAIL] ${modelCandidate} status ${resCandidate.status}: ${lastErrText}`)
+    } catch (fetchErr) {
+      lastErrText = fetchErr.message
+      console.warn(`[OPENROUTER FETCH ERROR] ${modelCandidate}: ${fetchErr.message}`)
+    }
+  }
+
+  return { ok: false, error: lastErrText }
+}
+
+async function queryBusinessData(args, userId) {
+  const { dataset, search, status, limit: rawLimit } = args || {}
+  const limit = Math.min(Math.max(Number.parseInt(rawLimit, 10) || 20, 1), 50)
+  const searchPattern = search ? `%${search.trim()}%` : null
+
+  switch (dataset) {
+    case 'products': {
+      let res
+      if (searchPattern && status) {
+        res = await query(
+          'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 AND (name ILIKE $3 OR sku ILIKE $3) ORDER BY id DESC LIMIT $4',
+          [userId, status, searchPattern, limit]
+        )
+      } else if (searchPattern) {
+        res = await query(
+          'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3',
+          [userId, searchPattern, limit]
+        )
+      } else if (status) {
+        res = await query(
+          'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3',
+          [userId, status, limit]
+        )
+      } else {
+        res = await query(
+          'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+          [userId, limit]
+        )
+      }
+      return { success: true, count: res.rows.length, data: res.rows }
+    }
+
+    case 'import_stock': {
+      let res
+      if (searchPattern) {
+        res = await query(
+          'SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3',
+          [userId, searchPattern, limit]
+        )
+      } else {
+        res = await query(
+          'SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+          [userId, limit]
+        )
+      }
+      return { success: true, count: res.rows.length, data: res.rows }
+    }
+
+    case 'bills': {
+      let res
+      if (status) {
+        res = await query(
+          'SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 AND b.status = $2 ORDER BY b.id DESC LIMIT $3',
+          [userId, status, limit]
+        )
+      } else {
+        res = await query(
+          'SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 ORDER BY b.id DESC LIMIT $2',
+          [userId, limit]
+        )
+      }
+      return { success: true, count: res.rows.length, data: res.rows }
+    }
+
+    case 'quotes': {
+      let res
+      if (status) {
+        res = await query(
+          'SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3',
+          [userId, status, limit]
+        )
+      } else {
+        res = await query(
+          'SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+          [userId, limit]
+        )
+      }
+      return { success: true, count: res.rows.length, data: res.rows }
+    }
+
+    case 'people': {
+      let res
+      if (searchPattern) {
+        res = await query(
+          'SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 AND (name ILIKE $2 OR email ILIKE $2 OR company ILIKE $2) ORDER BY id DESC LIMIT $3',
+          [userId, searchPattern, limit]
+        )
+      } else {
+        res = await query(
+          'SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+          [userId, limit]
+        )
+      }
+      return { success: true, count: res.rows.length, data: res.rows }
+    }
+
+    case 'notes': {
+      const res = await query(
+        'SELECT title, content, created_at FROM notes WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+        [userId, limit]
+      )
+      return { success: true, count: res.rows.length, data: res.rows }
+    }
+
+    case 'deals': {
+      const res = await query(
+        'SELECT title, value, stage, owner, close_date, status FROM deals WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
+        [userId, limit]
+      )
+      return { success: true, count: res.rows.length, data: res.rows }
+    }
+
+    case 'revenue_summary': {
+      const res = await query(
+        `SELECT (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = $1 GROUP BY day ORDER BY day DESC LIMIT $2`,
+        [userId, limit]
+      )
+      return { success: true, data: res.rows }
+    }
+
+    case 'top_products': {
+      const res = await query(
+        'SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = $1 GROUP BY bi.name ORDER BY total_qty DESC LIMIT $2',
+        [userId, limit]
+      )
+      return { success: true, data: res.rows }
+    }
+
+    case 'quotes_summary': {
+      const res = await query(
+        'SELECT status, COUNT(*) AS count, SUM(total_amount) AS total_value FROM quotes WHERE user_id = $1 GROUP BY status',
+        [userId]
+      )
+      return { success: true, data: res.rows }
+    }
+
+    default:
+      return { error: `Unsupported dataset: ${dataset}` }
+  }
+}
+
+async function sendEmailTool(args, userId, reqUser) {
+  const { to, subject, body } = args
+  if (!to || !subject || !body) {
+    return { error: 'to, subject and body are required' }
+  }
+
+  const { rows } = await query(
+    `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
+     VALUES ('Me', $1, $2, $3, $4, 'sent', $5, NOW(), NOW()) RETURNING *`,
+    [to.trim(), subject.trim(), body, body.slice(0, 120), userId]
+  )
+
+  try {
+    const keys = await redis.keys(`emails:${userId}:*`).catch(() => [])
+    for (const key of keys) { await redis.del(key).catch(() => {}) }
+  } catch { }
+
+  try {
+    const recipientEmail = to.toLowerCase().trim()
+    const senderEmail = reqUser?.email || ''
+    let recipientUserId = recipientEmail === senderEmail.toLowerCase().trim() ? userId : null
+
+    if (!recipientUserId) {
+      const recipientRes = await query(
+        'SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1) LIMIT 1',
+        [recipientEmail]
+      )
+      recipientUserId = recipientRes.rows[0]?.user_id || null
+    }
+
+    if (recipientUserId) {
+      await query(
+        `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'inbox', $6, NOW(), NOW())`,
+        [reqUser?.shopName || senderEmail || 'Me', senderEmail || 'Me', subject.trim(), body, body.slice(0, 120), recipientUserId]
+      )
+
+      const recipientKeys = await redis.keys(`emails:${recipientUserId}:*`).catch(() => [])
+      for (const key of recipientKeys) { await redis.del(key).catch(() => {}) }
+    }
+  } catch (inboxErr) {
+    console.error('[Emails AI Recipient Inbox Error]', inboxErr.message)
+  }
+
+  await sendEmail({
+    to: to.trim(),
+    subject: subject.trim(),
+    html: body.replace(/\n/g, '<br/>')
+  })
+
+  return { success: true, email: rows[0], message: 'Email sent successfully via SMTP' }
+}
+
+async function executeToolCall(toolName, args, userId, reqUser) {
+  if (toolName === 'add_to_import_stock') {
+    const { name, sku, category, price, stock, status, unit, description } = args
+    if (!name || price === undefined) {
+      return { error: 'name and price are required' }
+    }
+    const { rows } = await query(
+      `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *`,
+      [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null, userId]
+    )
+    await redis.del(`import_stock:${userId}`).catch(() => {})
+    return { success: true, product: rows[0] }
+  }
+
+  if (toolName === 'query_business_data') {
+    return await queryBusinessData(args, userId)
+  }
+
+  if (toolName === 'send_email') {
+    return await sendEmailTool(args, userId, reqUser)
+  }
+
+  if (toolName === 'add_note') {
+    const { title, body = '' } = args
+    if (!title) return { error: 'title is required' }
+    const { rows } = await query(
+      `INSERT INTO notes (title, body, user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *`,
+      [title.trim(), body, userId]
+    )
+    try {
+      const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
+      for (const key of keys) { await redis.del(key).catch(() => {}) }
+    } catch { }
+    return { success: true, note: rows[0] }
+  }
+
+  if (toolName === 'create_person') {
+    const { name, email = '', phone = '', company = '', persona = 'Lead', notes = '' } = args
+    if (!name) return { error: 'name is required' }
+    const validPersonas = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
+    const matchedPersona = validPersonas.find(p => p.toLowerCase() === String(persona).toLowerCase()) || persona || 'Lead'
+    const compVal = company && company.trim() ? company.trim() : null
+
+    const { rows } = await query(
+      `INSERT INTO people (name, email, phone, company, company_name, persona, notes, user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING *`,
+      [name.trim(), email.trim(), phone.trim(), compVal, compVal, matchedPersona, notes, userId]
+    )
+    try {
+      const pKeys = await redis.keys(`people:${userId}:*`).catch(() => [])
+      for (const key of pKeys) { await redis.del(key).catch(() => {}) }
+    } catch { }
+    return { success: true, person: rows[0] }
+  }
+
+  return { error: `Unknown tool: ${toolName}` }
+}
+
 /* POST /api/chat — send a message and get AI response */
 router.post('/', async (req, res) => {
   const { messages, conversationId, title } = req.body
@@ -118,74 +461,22 @@ router.post('/', async (req, res) => {
   const userId = req.workspaceId
   const lastMsg = messages[messages.length - 1]?.content || ''
 
-  // ── Redis Cache Check ──
   const cacheKey = `chat_cache:${userId}:${crypto.createHash('sha256').update(lastMsg.toLowerCase().trim()).digest('hex')}`
   try {
     const cached = await redis.get(cacheKey)
     if (cached) {
       console.log('[REDIS] Cache Hit for query:', lastMsg)
-      saveSession(userId, conversationId, messages, cached, title).catch(err => {
-        console.warn('[DB] Session save failed:', err.message)
-      })
+      saveSession(userId, conversationId, messages, cached, title).catch(() => {})
       return res.json({ content: cached, cached: true })
     }
-  } catch (cacheErr) {
-    console.warn('[REDIS] Cache read failed:', cacheErr.message)
-  }
+  } catch { }
 
   try {
-    // ── Handle Deal P2P Chat Bypassing AI ──
-    if (conversationId && conversationId.startsWith('deal-')) {
-      const dealIdStr = conversationId.split('-')[1]
-      const dealId = Number.parseInt(dealIdStr, 10)
-      if (!Number.isNaN(dealId)) {
-        const dealCheck = await query('SELECT * FROM deals WHERE id = $1 AND (user_id = $2 OR company_shop_id = $2)', [dealId, userId])
-        if (dealCheck.rows.length > 0) {
-          const deal = dealCheck.rows[0]
-          const senderName = deal.user_id === userId ? 'Seller' : 'Buyer'
-
-          const currentSession = await query('SELECT messages FROM chat_sessions WHERE conversation_id = $1', [conversationId])
-          let dbMessages = currentSession.rows[0]?.messages || []
-          
-          dbMessages.push({
-            id: Date.now(),
-            role: 'user',
-            content: `**${senderName}:** ${lastMsg}`,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          })
-
-          await query(`UPDATE chat_sessions SET messages = $1::jsonb, last_message = $2, updated_at = NOW() WHERE conversation_id = $3`, [JSON.stringify(dbMessages), lastMsg.slice(0, 255), conversationId])
-          
-          // Notify counterparty
-          const targetUserId = deal.user_id === userId ? deal.company_shop_id : deal.user_id
-          if (targetUserId) {
-            try {
-              const notifTitle = `New message from ${senderName}`
-              const notifBody = `New message in deal "${deal.title}": ${lastMsg}`
-              const notifLink = deal.user_id === targetUserId ? `/deals/edit/${deal.id}` : `/deals/review/${deal.id}`
-              
-              await query(
-                `INSERT INTO notifications (user_id, title, body, type, read, link, created_at)
-                 VALUES ($1, $2, $3, 'info', false, $4, NOW())`,
-                [targetUserId, notifTitle, notifBody, notifLink]
-              )
-              
-              await insforge.realtime.publish(`notifications:${targetUserId}`, {
-                event: 'new_notification',
-                payload: { title: notifTitle, body: notifBody, link: notifLink }
-              }).catch(() => {})
-            } catch (err) {
-              console.error('Failed to notify counterparty:', err.message)
-            }
-          }
-
-          // Send system confirmation
-          return res.json({ content: `*Message delivered to ${senderName === 'Seller' ? 'Buyer' : 'Seller'}.*`, cached: false })
-        }
-      }
+    const dealChatResponse = await handleDealP2PChat(conversationId, userId, lastMsg)
+    if (dealChatResponse) {
+      return res.json({ content: dealChatResponse, cached: false })
     }
 
-    // ── Call OpenRouter ──
     if (!OPENROUTER_API_KEY) {
       return res.status(500).json({ error: 'OpenRouter API key not configured' })
     }
@@ -225,60 +516,23 @@ CRITICAL DISPLAY & FORMATTING RULES:
 Always call query_business_data to get real-time accurate information when asked about business data (e.g. products, bills, quotes, people/customers, or sales summaries) instead of using placeholders or dump data.`
     }
 
-    let apiMessages = [systemPrompt, ...messages.map(m => ({ role: m.role, content: m.content }))]
+    const apiMessages = [systemPrompt, ...messages.map(m => ({ role: m.role, content: m.content }))]
     let loopCount = 0
     let finalContent = ''
 
     while (loopCount < 5) {
-      let response
-      let lastErrText = ''
-      const MODELS = ['openai/gpt-4o-mini', 'openrouter/free', 'meta-llama/llama-3.3-70b-instruct']
-
-      for (const modelCandidate of MODELS) {
-        try {
-          const resCandidate = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-              'Content-Type': 'application/json',
-              'HTTP-Referer': 'https://workshop.app',
-              'X-Title': 'Workshop AI Assistant'
-            },
-            body: JSON.stringify({
-              model: modelCandidate,
-              messages: apiMessages,
-              tools: tools,
-              max_tokens: 1024,
-              temperature: 0.7
-            })
-          })
-
-          if (resCandidate.ok) {
-            response = resCandidate
-            break
-          } else {
-            lastErrText = await resCandidate.text()
-            console.warn(`[OPENROUTER MODEL FAIL] ${modelCandidate} status ${resCandidate.status}: ${lastErrText}`)
-          }
-        } catch (fetchErr) {
-          lastErrText = fetchErr.message
-          console.warn(`[OPENROUTER FETCH ERROR] ${modelCandidate}: ${fetchErr.message}`)
-        }
+      const openRouterResult = await callOpenRouterWithFallback(apiMessages)
+      if (!openRouterResult.ok) {
+        return res.status(502).json({ error: 'AI service unavailable', details: openRouterResult.error })
       }
 
-      if (!response || !response.ok) {
-        console.error('[OPENROUTER ALL MODELS FAILED]', lastErrText)
-        return res.status(502).json({ error: 'AI service unavailable', details: lastErrText })
-      }
-
-      const data = await response.json()
+      const data = await openRouterResult.response.json()
       const message = data.choices?.[0]?.message
       if (!message) {
         throw new Error('Empty response from AI model')
       }
 
       if (message.tool_calls && message.tool_calls.length > 0) {
-        // Add assistant's message with tool calls to history
         apiMessages.push(message)
 
         for (const toolCall of message.tool_calls) {
@@ -286,296 +540,15 @@ Always call query_business_data to get real-time accurate information when asked
           let args = {}
           try {
             args = JSON.parse(toolArgsStr)
-          } catch (e) {
-            console.error('[TOOL PARSE ERROR]', e)
-          }
+          } catch { }
 
           let toolResult
           try {
-            if (toolName === 'add_to_import_stock') {
-              const { name, sku, category, price, stock, status, unit, description } = args
-              if (!name || price === undefined) {
-                toolResult = { error: 'name and price are required' }
-              } else {
-                const { rows } = await query(
-                  `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *`,
-                  [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null, userId]
-                )
-                await redis.del(`import_stock:${userId}`).catch(() => {})
-                toolResult = { success: true, product: rows[0] }
-              }
-            } else if (toolName === 'query_business_data') {
-              const { dataset, search, status, limit: rawLimit } = args || {}
-              const limit = Math.min(Math.max(Number.parseInt(rawLimit, 10) || 20, 1), 50)
-              const searchPattern = search ? `%${search.trim()}%` : null
-
-              try {
-                switch (dataset) {
-                  case 'products': {
-                    let res
-                    if (searchPattern && status) {
-                      res = await query(
-                        'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 AND (name ILIKE $3 OR sku ILIKE $3) ORDER BY id DESC LIMIT $4',
-                        [userId, status, searchPattern, limit]
-                      )
-                    } else if (searchPattern) {
-                      res = await query(
-                        'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3',
-                        [userId, searchPattern, limit]
-                      )
-                    } else if (status) {
-                      res = await query(
-                        'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3',
-                        [userId, status, limit]
-                      )
-                    } else {
-                      res = await query(
-                        'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-                        [userId, limit]
-                      )
-                    }
-                    toolResult = { success: true, count: res.rows.length, data: res.rows }
-                    break
-                  }
-
-                  case 'import_stock': {
-                    let res
-                    if (searchPattern) {
-                      res = await query(
-                        'SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3',
-                        [userId, searchPattern, limit]
-                      )
-                    } else {
-                      res = await query(
-                        'SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-                        [userId, limit]
-                      )
-                    }
-                    toolResult = { success: true, count: res.rows.length, data: res.rows }
-                    break
-                  }
-
-                  case 'bills': {
-                    let res
-                    if (status) {
-                      res = await query(
-                        'SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 AND b.status = $2 ORDER BY b.id DESC LIMIT $3',
-                        [userId, status, limit]
-                      )
-                    } else {
-                      res = await query(
-                        'SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 ORDER BY b.id DESC LIMIT $2',
-                        [userId, limit]
-                      )
-                    }
-                    toolResult = { success: true, count: res.rows.length, data: res.rows }
-                    break
-                  }
-
-                  case 'quotes': {
-                    let res
-                    if (status) {
-                      res = await query(
-                        'SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3',
-                        [userId, status, limit]
-                      )
-                    } else {
-                      res = await query(
-                        'SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-                        [userId, limit]
-                      )
-                    }
-                    toolResult = { success: true, count: res.rows.length, data: res.rows }
-                    break
-                  }
-
-                  case 'people': {
-                    let res
-                    if (searchPattern) {
-                      res = await query(
-                        'SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 AND (name ILIKE $2 OR email ILIKE $2 OR company ILIKE $2) ORDER BY id DESC LIMIT $3',
-                        [userId, searchPattern, limit]
-                      )
-                    } else {
-                      res = await query(
-                        'SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-                        [userId, limit]
-                      )
-                    }
-                    toolResult = { success: true, count: res.rows.length, data: res.rows }
-                    break
-                  }
-
-                  case 'notes': {
-                    const res = await query(
-                      'SELECT title, content, created_at FROM notes WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-                      [userId, limit]
-                    )
-                    toolResult = { success: true, count: res.rows.length, data: res.rows }
-                    break
-                  }
-
-                  case 'deals': {
-                    const res = await query(
-                      'SELECT title, value, stage, owner, close_date, status FROM deals WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-                      [userId, limit]
-                    )
-                    toolResult = { success: true, count: res.rows.length, data: res.rows }
-                    break
-                  }
-
-                  case 'revenue_summary': {
-                    const res = await query(
-                      `SELECT (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = $1 GROUP BY day ORDER BY day DESC LIMIT $2`,
-                      [userId, limit]
-                    )
-                    toolResult = { success: true, data: res.rows }
-                    break
-                  }
-
-                  case 'top_products': {
-                    const res = await query(
-                      'SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = $1 GROUP BY bi.name ORDER BY total_qty DESC LIMIT $2',
-                      [userId, limit]
-                    )
-                    toolResult = { success: true, data: res.rows }
-                    break
-                  }
-
-                  case 'quotes_summary': {
-                    const res = await query(
-                      'SELECT status, COUNT(*) AS count, SUM(total_amount) AS total_value FROM quotes WHERE user_id = $1 GROUP BY status',
-                      [userId]
-                    )
-                    toolResult = { success: true, data: res.rows }
-                    break
-                  }
-
-                  default:
-                    toolResult = { error: `Unsupported dataset: ${dataset}` }
-                }
-              } catch (queryErr) {
-                toolResult = { error: queryErr.message }
-              }
-            } else if (toolName === 'send_email') {
-              const { to, subject, body } = args
-              if (!to || !subject || !body) {
-                toolResult = { error: 'to, subject and body are required' }
-              } else {
-                // 1. Record sent email in DB
-                const { rows } = await query(
-                  `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
-                   VALUES ('Me', $1, $2, $3, $4, 'sent', $5, NOW(), NOW()) RETURNING *`,
-                  [to.trim(), subject.trim(), body, body.slice(0, 120), userId]
-                )
-                
-                // Invalidate emails cache
-                try {
-                  const keys = await redis.keys(`emails:${userId}:*`).catch(() => [])
-                  for (const key of keys) {
-                    await redis.del(key).catch(() => {})
-                  }
-                } catch (cErr) {
-                  console.error('[Emails AI Cache Invalidation Error]', cErr.message)
-                }
-
-                // Also create an inbox copy for registered recipients.
-                try {
-                  const recipientEmail = to.toLowerCase().trim()
-                  const senderEmail = req.user?.email || ''
-                  let recipientUserId = recipientEmail === senderEmail.toLowerCase().trim() ? userId : null
-
-                  if (!recipientUserId) {
-                    const recipientRes = await query(
-                      'SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1) LIMIT 1',
-                      [recipientEmail]
-                    )
-                    recipientUserId = recipientRes.rows[0]?.user_id || null
-                  }
-
-                  if (recipientUserId) {
-                    await query(
-                      `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
-                       VALUES ($1, $2, $3, $4, $5, 'inbox', $6, NOW(), NOW())`,
-                      [req.user?.shopName || senderEmail || 'Me', senderEmail || 'Me', subject.trim(), body, body.slice(0, 120), recipientUserId]
-                    )
-
-                    const recipientKeys = await redis.keys(`emails:${recipientUserId}:*`).catch(() => [])
-                    for (const key of recipientKeys) {
-                      await redis.del(key).catch(() => {})
-                    }
-                  }
-                } catch (inboxErr) {
-                  console.error('[Emails AI Recipient Inbox Error]', inboxErr.message)
-                }
-
-                // 2. Deliver via SMTP
-                await sendEmail({
-                  to: to.trim(),
-                  subject: subject.trim(),
-                  html: body.replace(/\n/g, '<br/>')
-                })
-                
-                toolResult = { success: true, email: rows[0], message: 'Email sent successfully via SMTP' }
-              }
-            } else if (toolName === 'add_note') {
-              const { title, body = '' } = args
-              if (!title) {
-                toolResult = { error: 'title is required' }
-              } else {
-                const { rows } = await query(
-                  `INSERT INTO notes (title, body, user_id, created_at, updated_at)
-                   VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *`,
-                  [title.trim(), body, userId]
-                )
-
-                // Invalidate notes cache
-                try {
-                  const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
-                  for (const key of keys) {
-                    await redis.del(key).catch(() => {})
-                  }
-                } catch (cErr) {
-                  console.error('[Notes AI Cache Invalidation Error]', cErr.message)
-                }
-
-                toolResult = { success: true, note: rows[0] }
-              }
-            } else if (toolName === 'create_person') {
-              const { name, email = '', phone = '', company = '', persona = 'Lead', notes = '' } = args
-              if (!name) {
-                toolResult = { error: 'name is required' }
-              } else {
-                const validPersonas = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
-                const matchedPersona = validPersonas.find(p => p.toLowerCase() === String(persona).toLowerCase()) || persona || 'Lead'
-                const compVal = company && company.trim() ? company.trim() : null
-
-                const { rows } = await query(
-                  `INSERT INTO people (name, email, phone, company, company_name, persona, notes, user_id, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING *`,
-                  [name.trim(), email.trim(), phone.trim(), compVal, compVal, matchedPersona, notes, userId]
-                )
-
-                // Invalidate people cache if any
-                try {
-                  const pKeys = await redis.keys(`people:${userId}:*`).catch(() => [])
-                  for (const key of pKeys) {
-                    await redis.del(key).catch(() => {})
-                  }
-                } catch { }
-
-                toolResult = { success: true, person: rows[0] }
-              }
-            } else {
-              toolResult = { error: `Unknown tool: ${toolName}` }
-            }
+            toolResult = await executeToolCall(toolName, args, userId, req.user)
           } catch (err) {
-            console.error('[TOOL EXECUTION ERROR]', err)
             toolResult = { error: err.message }
           }
 
-          // Push tool response
           apiMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
@@ -593,23 +566,13 @@ Always call query_business_data to get real-time accurate information when asked
 
     const content = finalContent || 'Sorry, I could not generate a response.'
 
-    // Save to Redis Cache
-    try {
-      await redis.set(cacheKey, content, { ex: 3600 })
-      console.log('[REDIS] Cache Saved for query:', lastMsg)
-    } catch (cacheErr) {
-      console.warn('[REDIS] Cache write failed:', cacheErr.message)
-    }
+    redis.set(cacheKey, content, { ex: 3600 }).catch(() => {})
+    saveSession(userId, conversationId, messages, content, title).catch(() => {})
 
-    // ── Save session to DB ──
-    saveSession(userId, conversationId, messages, content, title).catch(err => {
-      console.warn('[DB] Session save failed:', err.message)
-    })
-
-    res.json({ content, cached: false })
+    return res.json({ content, cached: false })
   } catch (err) {
     console.error('[CHAT ERROR]', err.message)
-    res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: err.message })
   }
 })
 

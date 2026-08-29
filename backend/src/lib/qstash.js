@@ -1,47 +1,41 @@
 import { Client, Receiver } from '@upstash/qstash'
+import dotenv from 'dotenv'
 
-const qstashToken = process.env.QSTASH_TOKEN
-const currentSigningKey = process.env.QSTASH_CURRENT_SIGNING_KEY
-const nextSigningKey = process.env.QSTASH_NEXT_SIGNING_KEY
-const qstashUrl = process.env.QSTASH_URL
+dotenv.config()
 
-console.log('[QSTASH] Initializing QStash Client & Receiver...', {
-  hasToken: Boolean(qstashToken),
-  hasCurrentKey: Boolean(currentSigningKey),
-  hasNextKey: Boolean(nextSigningKey),
-  url: qstashUrl || 'default'
-})
-
+/**
+ * Initialize QStash API client and cryptographic signature receiver.
+ */
 export const qstash = new Client({
-  token: qstashToken || 'dummy_token_dev',
-  baseUrl: qstashUrl || undefined,
+  token: process.env.QSTASH_TOKEN || 'dummy-token-for-dev'
 })
 
 export const receiver = new Receiver({
-  currentSigningKey: currentSigningKey || '',
-  nextSigningKey: nextSigningKey || '',
+  currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY || '',
+  nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY || ''
 })
 
 /**
- * Express middleware to verify QStash cryptographic signatures on incoming webhooks.
+ * Express middleware to verify incoming QStash webhook cryptographic signatures.
  */
 export async function verifyQStashSignature(req, res, next) {
-  const signature = req.headers['upstash-signature'] || req.headers['Upstash-Signature']
+  const signature = req.headers['upstash-signature']
 
   if (!signature) {
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[QSTASH AUTH] Development notice: Webhook request processed in development mode without Upstash-Signature header.')
       req.qstashVerified = true
       return next()
     }
-    console.error('[QSTASH AUTH] Verification Failed: Missing Upstash-Signature header')
     return res.status(401).json({
       error: 'Unauthorized',
-      message: 'Missing Upstash-Signature header on QStash webhook endpoint'
+      message: 'Missing Upstash-Signature header'
     })
   }
 
-  if (!currentSigningKey && !nextSigningKey) {
+  const currentKey = process.env.QSTASH_CURRENT_SIGNING_KEY
+  const nextKey = process.env.QSTASH_NEXT_SIGNING_KEY
+
+  if (!currentKey && !nextKey) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn('[QSTASH AUTH] Warning: QStash signing keys are missing in environment variables. Allowing in development mode.')
       req.qstashVerified = true
@@ -83,67 +77,62 @@ export async function verifyQStashSignature(req, res, next) {
 
 let localStepRunner = null
 
-/**
- * Register a local step runner to execute workflow steps in local offline development
- * when QStash cloud cannot reach private loopback / localhost ports.
- */
 export function setLocalStepRunner(fn) {
   localStepRunner = fn
 }
 
-/**
- * Helper to publish a workflow step event to QStash with automatic retries and exponential backoff.
- * 
- * @param {Object} payload - { runId, workflowId, step, test_company, test_value, ... }
- * @param {Object} [options] - { delay, retries, retryDelay, url }
- */
-export async function publishWorkflowStep(payload, options = {}) {
-  let backendBaseUrl = process.env.BACKEND_URL
-  if (!backendBaseUrl) {
+function resolveTargetUrl(optionsUrl) {
+  if (optionsUrl) return optionsUrl
+  if (process.env.QSTASH_WEBHOOK_URL) return process.env.QSTASH_WEBHOOK_URL
+
+  let base = process.env.BACKEND_URL
+  if (!base) {
     const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
     if (vercelHost) {
-      backendBaseUrl = vercelHost.startsWith('http') ? vercelHost : `https://${vercelHost}`
+      base = vercelHost.startsWith('http') ? vercelHost : `https://${vercelHost}`
     }
   }
-  if (!backendBaseUrl) {
-    backendBaseUrl = 'http://localhost:5000'
+  if (!base) {
+    base = 'http://localhost:5000'
   }
+  const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base
+  return `${cleanBase}/api/workflows/qstash-callback`
+}
 
-  const cleanBaseUrl = backendBaseUrl.endsWith('/') ? backendBaseUrl.slice(0, -1) : backendBaseUrl
-  const targetUrl =
-    options.url ||
-    process.env.QSTASH_WEBHOOK_URL ||
-    `${cleanBaseUrl}/api/workflows/qstash-callback`
+function isLocalEndpoint(url) {
+  return url.includes('localhost') ||
+    url.includes('127.0.0.1') ||
+    url.includes('::1') ||
+    url.startsWith('http://localhost')
+}
 
+function runLocalStep(payload, delaySeconds) {
+  if (!localStepRunner || typeof localStepRunner !== 'function') return
+
+  if (process.env.VERCEL) {
+    localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
+  } else {
+    setTimeout(() => {
+      localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
+    }, Math.max(200, delaySeconds * 1000))
+  }
+}
+
+export async function publishWorkflowStep(payload, options = {}) {
+  const targetUrl = resolveTargetUrl(options.url)
   const delaySeconds = options.delay !== undefined ? options.delay : 1
   const retriesCount = options.retries !== undefined ? options.retries : 3
   const retryDelay = options.retryDelay || '5s'
 
-  // Check if target URL is local / unroutable from QStash cloud
-  const isLocalTarget =
-    targetUrl.includes('localhost') ||
-    targetUrl.includes('127.0.0.1') ||
-    targetUrl.includes('::1') ||
-    targetUrl.startsWith('http://localhost')
-
-  // In local development or with local target URLs, use localStepRunner directly
-  if (isLocalTarget || !process.env.QSTASH_TOKEN) {
+  if (isLocalEndpoint(targetUrl) || !process.env.QSTASH_TOKEN) {
     console.log('[WORKFLOW RUNNER] Executing local step runner for run #%s step %s in %ds (Local target)...', payload.runId, payload.step, delaySeconds)
-    if (localStepRunner && typeof localStepRunner === 'function') {
-      if (process.env.VERCEL) {
-        localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
-      } else {
-        setTimeout(() => {
-          localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
-        }, Math.max(200, delaySeconds * 1000))
-      }
-    }
+    runLocalStep(payload, delaySeconds)
     return { local: true, scheduledLocalFallback: true, reason: 'LOCAL_TARGET' }
   }
 
   try {
     console.log('[QSTASH] Publishing message to %s for run #%s step %s (delay: %ds, retries: %d)', targetUrl, payload.runId, payload.step, delaySeconds, retriesCount)
-    
+
     const result = await qstash.publishJSON({
       url: targetUrl,
       body: payload,
@@ -160,16 +149,7 @@ export async function publishWorkflowStep(payload, options = {}) {
     return result
   } catch (err) {
     console.warn('[QSTASH LOCAL FALLBACK] Target publish failed for run #%s step %s: %s. Advancing via local runner...', payload.runId, payload.step, err.message)
-    if (localStepRunner && typeof localStepRunner === 'function') {
-      if (process.env.VERCEL) {
-        localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
-      } else {
-        setTimeout(() => {
-          localStepRunner(payload).catch(e => console.error('[LOCAL STEP RUNNER ERROR]', e.message))
-        }, Math.max(300, delaySeconds * 1000))
-      }
-    }
-
+    runLocalStep(payload, delaySeconds)
     return {
       local: true,
       scheduledLocalFallback: true,
@@ -178,5 +158,3 @@ export async function publishWorkflowStep(payload, options = {}) {
     }
   }
 }
-
-export default qstash

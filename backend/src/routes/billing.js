@@ -270,205 +270,209 @@ router.get('/:id', async (req, res) => {
       [req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
-    res.json(rows[0])
+    return res.json(rows[0])
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: err.message })
   }
 })
 
-/* POST /api/billing */
-router.post('/', async (req, res) => {
-  const userId = req.workspaceId
-  const { customer_id, bill_number: customBillNum, items, amount, due_date, notes, discount, status } = req.body
-
+function calculateBillAmount(items, amount, discount) {
   const computedAmount = (items || []).reduce((acc, item) => {
     const qty = Number.parseFloat(item.qty || 1)
     const price = Number.parseFloat(item.price || 0)
     const itemDisc = Number.parseFloat(item.discount || 0)
     return acc + Math.max(0, (qty * price) - itemDisc)
   }, 0)
-  const finalAmount = amount !== undefined ? Number.parseFloat(amount) : Math.max(0, computedAmount - Number.parseFloat(discount || 0))
+  return amount !== undefined ? Number.parseFloat(amount) : Math.max(0, computedAmount - Number.parseFloat(discount || 0))
+}
 
-  const parsedCustomerId = Number.isInteger(Number(customer_id)) && Number(customer_id) > 0 ? Number.parseInt(customer_id, 10) : null
-
-  // Use custom invoice number if passed, else generate unique 5-digit number
+async function generateUniqueBillNumber(customBillNum) {
   let billNumber = (customBillNum && customBillNum.trim()) ? customBillNum.trim() : `INV-${crypto.randomInt(10000, 100000)}`
   try {
-    let isUnique = false
-    let attempts = 0
-    while (!isUnique && attempts < 5) {
+    for (let attempts = 0; attempts < 5; attempts++) {
       const check = await query("SELECT id FROM bills WHERE bill_number = $1 LIMIT 1", [billNumber]).catch(() => ({ rows: [] }))
-      if (!check.rows.length) {
-        isUnique = true
-      } else {
-        billNumber = `INV-${crypto.randomInt(10000, 100000)}`
-        attempts++
-      }
+      if (!check.rows.length) break
+      billNumber = `INV-${crypto.randomInt(10000, 100000)}`
     }
-  } catch (_e) { }
+  } catch { }
+  return billNumber
+}
 
-  // Enrich items with actual product names and HSN codes from fast Redis/In-Memory Cache (Zero DB load)
+async function insertBillRecord({ parsedCustomerId, billNumber, finalItemsJson, finalAmount, discount, due_date, notes, status, userId }) {
+  try {
+    const resDb = await query(
+      `INSERT INTO bills (customer_id, bill_number, items, amount, discount, due_date, notes, status, user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+       RETURNING *`,
+      [
+        parsedCustomerId,
+        billNumber,
+        finalItemsJson,
+        finalAmount,
+        Number.parseFloat(discount || 0),
+        due_date || null,
+        notes || '',
+        status || 'unpaid',
+        userId
+      ]
+    )
+    return resDb.rows
+  } catch {
+    const resDb = await query(
+      `INSERT INTO bills (customer_id, items, amount, discount, due_date, notes, status, user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+       RETURNING *`,
+      [
+        parsedCustomerId,
+        finalItemsJson,
+        finalAmount,
+        Number.parseFloat(discount || 0),
+        due_date || null,
+        notes || '',
+        status || 'unpaid',
+        userId
+      ]
+    )
+    return resDb.rows
+  }
+}
+
+function buildStockDeductionNote(isBaseUnit, bw, qty, rawUnit, prodUnit) {
+  if (isBaseUnit || bw <= 1) {
+    return `Deducted ${qty} ${rawUnit} for bill creation`
+  }
+  const uomLower = (prodUnit || '').toLowerCase()
+  let containerLabel = 'Bag'
+  if (uomLower.includes('liter')) containerLabel = 'Drum'
+  else if (uomLower.includes('meter')) containerLabel = 'Roll'
+  else if (uomLower.includes('box') || uomLower.includes('pc')) containerLabel = 'Box'
+
+  let baseShort = 'kg'
+  if (uomLower.includes('liter')) baseShort = 'ltr'
+  else if (uomLower.includes('meter')) baseShort = 'mtr'
+  else if (uomLower.includes('box') || uomLower.includes('pc')) baseShort = 'pc'
+
+  const totalBase = (qty * bw).toFixed(0)
+  return `Deducted ${qty} ${containerLabel} (${bw}${baseShort}) (${totalBase} ${baseShort}) for bill creation`
+}
+
+async function deductStockForItem(item, userId, billId) {
+  if (!item) return
+  const qty = Number.parseFloat(item.qty || item.quantity || 0)
+  if (qty <= 0) return
+
+  const prodId = item.product_id || item.id || item.productId
+  const itemName = item.name || item.product_name || item.productName || ''
+  const itemCode = item.hsn_code || item.hsn || item.sku || ''
+
+  const prodRes = await query(
+    `SELECT id, name, sku, hsn_code, stock, loose_kg, bag_weight, unit FROM products 
+     WHERE (
+       ( $1::text <> '' AND id::text = $1::text )
+       OR ( $2::text <> '' AND name ILIKE $2 )
+       OR ( $3::text <> '' AND (hsn_code = $3 OR sku = $3) )
+     )
+     AND (user_id::text = $4::text OR user_id = 'default-user' OR $4 = 'default-user') 
+     LIMIT 1`,
+    [prodId ? String(prodId) : '', itemName.trim(), itemCode.trim(), userId || 'default-user']
+  ).catch(e => { console.error('[Product Lookup Error]', e.message); return null })
+
+  const prod = prodRes?.rows?.[0]
+  if (!prod) return
+
+  const bw = Number.parseFloat(prod.bag_weight || 1)
+  const itemUnitStr = String(item.unit || item.unitLabel || '').trim().toLowerCase()
+  const prodUnitStr = String(prod.unit || 'pcs').trim().toLowerCase()
+  const containerKeywords = ['bag', 'bags', 'drum', 'drums', 'can', 'cans', 'roll', 'rolls', 'box', 'boxes', 'carton', 'cartons', 'dozen', 'doz', 'pack', 'packs', 'bundle', 'bundles']
+
+  let isBaseUnit = true
+  if (itemUnitStr) {
+    isBaseUnit = !containerKeywords.some(c => itemUnitStr.includes(c))
+  } else if (prodUnitStr) {
+    isBaseUnit = !containerKeywords.some(c => prodUnitStr.includes(c))
+  }
+
+  const rawUnit = item.unit || item.unitLabel || (isBaseUnit ? 'kgs' : prod.unit) || 'pcs'
+  const currentStock = Number.parseFloat(prod.stock || 0)
+  const currentLoose = Number.parseFloat(prod.loose_kg || 0)
+
+  const totalBaseBefore = (bw > 1) ? ((currentStock * bw) + currentLoose) : currentStock
+  const qtyDeductedBase = (isBaseUnit || bw <= 1) ? qty : (qty * bw)
+  const totalBaseAfter = Math.max(0, totalBaseBefore - qtyDeductedBase)
+
+  const newStock = (bw > 1) ? Math.floor(totalBaseAfter / bw) : totalBaseAfter
+  const newLooseKg = (bw > 1) ? +(totalBaseAfter % bw).toFixed(2) : 0
+
+  await query(
+    `UPDATE products SET stock = $1, loose_kg = $2, updated_at = NOW() WHERE id = $3`,
+    [newStock, newLooseKg, prod.id]
+  ).catch(e => console.error('[Products Stock Update Error]', e.message))
+
+  const noteDetail = buildStockDeductionNote(isBaseUnit, bw, qty, rawUnit, prod.unit)
+
+  await logStockHistory(
+    prod.id,
+    userId || 'default-user',
+    'deducted',
+    -qty,
+    currentStock,
+    newStock,
+    'Bill',
+    billId || null,
+    noteDetail,
+    newLooseKg
+  ).catch(e => console.warn('[Stock History Log Error]', e.message))
+}
+
+async function deductStockForBillItems(items, userId, billId) {
+  for (const item of (items || [])) {
+    await deductStockForItem(item, userId, billId)
+  }
+  if (userId) {
+    const keys1 = await redis.keys(`import_stock:${userId}*`).catch(() => [])
+    const keys2 = await redis.keys(`import_stock_note:${userId}*`).catch(() => [])
+    for (const k of [...keys1, ...keys2]) { await redis.del(k).catch(() => { }) }
+  }
+}
+
+/* POST /api/billing */
+router.post('/', async (req, res) => {
+  const userId = req.workspaceId
+  const { customer_id, bill_number: customBillNum, items, amount, due_date, notes, discount, status } = req.body
+
+  const finalAmount = calculateBillAmount(items, amount, discount)
+  const parsedCustomerId = Number.isInteger(Number(customer_id)) && Number(customer_id) > 0 ? Number.parseInt(customer_id, 10) : null
+  const billNumber = await generateUniqueBillNumber(customBillNum)
+
   const catalogMap = await getProductHsnMap()
   const enrichedItems = enrichItemsWithCache(items || [], catalogMap)
-
   const finalItemsJson = JSON.stringify(enrichedItems)
 
   try {
-    let insertedRows
-    try {
-      const resDb = await query(
-        `INSERT INTO bills (customer_id, bill_number, items, amount, discount, due_date, notes, status, user_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-         RETURNING *`,
-        [
-          parsedCustomerId,
-          billNumber,
-          finalItemsJson,
-          finalAmount,
-          Number.parseFloat(discount || 0),
-          due_date || null,
-          notes || '',
-          status || 'unpaid',
-          userId
-        ]
-      )
-      insertedRows = resDb.rows
-    } catch (_insertErr) {
-      // Fallback insert if bill_number column missing
-      const resDb = await query(
-        `INSERT INTO bills (customer_id, items, amount, discount, due_date, notes, status, user_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-         RETURNING *`,
-        [
-          parsedCustomerId,
-          finalItemsJson,
-          finalAmount,
-          Number.parseFloat(discount || 0),
-          due_date || null,
-          notes || '',
-          status || 'unpaid',
-          userId
-        ]
-      )
-      insertedRows = resDb.rows
-    }
+    const insertedRows = await insertBillRecord({
+      parsedCustomerId,
+      billNumber,
+      finalItemsJson,
+      finalAmount,
+      discount,
+      due_date,
+      notes,
+      status,
+      userId
+    })
 
-    // Deduct stock for items in the bill based on purchased quantity and UOM
-    for (const item of (enrichedItems || [])) {
-      if (!item) continue
-      const qty = Number.parseFloat(item.qty || item.quantity || 0)
-      const prodId = item.product_id || item.id || item.productId
-      const itemName = item.name || item.product_name || item.productName || ''
-      const itemCode = item.hsn_code || item.hsn || item.sku || ''
-      if (qty <= 0) continue
+    const billRecord = insertedRows[0]
+    await deductStockForBillItems(enrichedItems, userId, billRecord?.id)
 
-      let prodRes = await query(
-        `SELECT id, name, sku, hsn_code, stock, loose_kg, bag_weight, unit FROM products 
-         WHERE (
-           ( $1::text <> '' AND id::text = $1::text )
-           OR ( $2::text <> '' AND name ILIKE $2 )
-           OR ( $3::text <> '' AND (hsn_code = $3 OR sku = $3) )
-         )
-         AND (user_id::text = $4::text OR user_id = 'default-user' OR $4 = 'default-user') 
-         LIMIT 1`,
-        [prodId ? String(prodId) : '', itemName.trim(), itemCode.trim(), userId || 'default-user']
-      ).catch(e => { console.error('[Product Lookup Error]', e.message); return null })
-
-      const prod = prodRes?.rows?.[0]
-      if (!prod) {
-        console.warn('[Stock Decrease] Product not found in products table:', prodId, itemName, itemCode)
-        continue
-      }
-
-      const bw = Number.parseFloat(prod.bag_weight || 1)
-      const itemUnitStr = String(item.unit || item.unitLabel || '').trim().toLowerCase()
-      const prodUnitStr = String(prod.unit || 'pcs').trim().toLowerCase()
-      const containerKeywords = ['bag', 'bags', 'drum', 'drums', 'can', 'cans', 'roll', 'rolls', 'box', 'boxes', 'carton', 'cartons', 'dozen', 'doz', 'pack', 'packs', 'bundle', 'bundles']
-
-      let isBaseUnit = true
-      if (itemUnitStr) {
-        isBaseUnit = !containerKeywords.some(c => itemUnitStr.includes(c))
-      } else if (prodUnitStr) {
-        isBaseUnit = !containerKeywords.some(c => prodUnitStr.includes(c))
-      }
-
-      const rawUnit = item.unit || item.unitLabel || (isBaseUnit ? 'kgs' : prod.unit) || 'pcs'
-
-      const currentStock = Number.parseFloat(prod.stock || 0)
-      const currentLoose = Number.parseFloat(prod.loose_kg || 0)
-
-      let totalBaseBefore = (bw > 1) ? ((currentStock * bw) + currentLoose) : currentStock
-      let qtyDeductedBase = (isBaseUnit || bw <= 1) ? qty : (qty * bw)
-      let totalBaseAfter = Math.max(0, totalBaseBefore - qtyDeductedBase)
-
-      let newStock = 0
-      let newLooseKg = 0
-
-      if (bw > 1) {
-        newStock = Math.floor(totalBaseAfter / bw)
-        newLooseKg = +(totalBaseAfter % bw).toFixed(2)
-      } else {
-        newStock = totalBaseAfter
-      }
-
-      // Update products table
-      await query(
-        `UPDATE products SET stock = $1, loose_kg = $2, updated_at = NOW() WHERE id = $3`,
-        [newStock, newLooseKg, prod.id]
-      ).catch(e => console.error('[Products Stock Update Error]', e.message))
-
-      if (userId) {
-        const keys1 = await redis.keys(`import_stock:${userId}*`).catch(() => [])
-        const keys2 = await redis.keys(`import_stock_note:${userId}*`).catch(() => [])
-        for (const k of [...keys1, ...keys2]) { await redis.del(k).catch(() => {}) }
-      }
-
-      let noteDetail = ''
-      if (isBaseUnit || bw <= 1) {
-        noteDetail = `Deducted ${qty} ${rawUnit} for bill creation`
-      } else {
-        const uomLower = (prod.unit || '').toLowerCase()
-        let containerLabel = 'Bag'
-        if (uomLower.includes('liter')) containerLabel = 'Drum'
-        else if (uomLower.includes('meter')) containerLabel = 'Roll'
-        else if (uomLower.includes('box') || uomLower.includes('pc')) containerLabel = 'Box'
-
-        let baseShort = 'kg'
-        if (uomLower.includes('liter')) baseShort = 'ltr'
-        else if (uomLower.includes('meter')) baseShort = 'mtr'
-        else if (uomLower.includes('box') || uomLower.includes('pc')) baseShort = 'pc'
-
-        const totalBase = (qty * bw).toFixed(0)
-        noteDetail = `Deducted ${qty} ${containerLabel} (${bw}${baseShort}) (${totalBase} ${baseShort}) for bill creation`
-      }
-
-      // Log to Stock History with Source = 'Bill'!
-      await logStockHistory(
-        prod.id,
-        userId || 'default-user',
-        'deducted',
-        -qty,
-        currentStock,
-        newStock,
-        'Bill',
-        insertedRows[0]?.id || null,
-        noteDetail,
-        newLooseKg
-      ).catch(e => console.warn('[Stock History Log Error]', e.message))
-
-      // Note: import_stock table is NOT updated here so it preserves the original purchased quantity
-    }
-
-    // Clear redis cache
     try {
       const keys = await redis.keys(`*${userId}*`).catch(() => [])
       for (const key of keys) { await redis.del(key).catch(() => { }) }
-    } catch (_err) { }
+    } catch { }
 
-    res.status(201).json(insertedRows[0])
+    return res.status(201).json(billRecord)
   } catch (err) {
     console.error('[Create Bill Error]', err)
-    res.status(500).json({ error: 'Failed to create bill: ' + err.message })
+    return res.status(500).json({ error: 'Failed to create bill: ' + err.message })
   }
 })
 

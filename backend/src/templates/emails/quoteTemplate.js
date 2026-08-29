@@ -20,6 +20,41 @@ function getExplicitLineDiscount(li) {
   return 0
 }
 
+function normalizeUnitRaw(rawUnit) {
+  let uRaw = String(rawUnit || '').trim()
+  if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
+    const lower = uRaw.toLowerCase()
+    if (lower.includes('/ltr') || lower.includes('ltr')) return 'ltrs'
+    if (lower.includes('/kg') || lower.includes('kg')) return 'kgs'
+    if (lower.includes('/mtr') || lower.includes('mtr')) return 'mtrs'
+    return uRaw.split(':')[0].trim()
+  }
+  return uRaw
+}
+
+function resolvePackDisplay(rawUnit, qty, bagWeight) {
+  const bw = Number.parseFloat(bagWeight || 1)
+  const uRaw = normalizeUnitRaw(rawUnit)
+  const u = uRaw.toLowerCase().trim()
+
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'ltrs', subtext: 'ltrs' }
+  }
+
+  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'mtrs', subtext: bw > 1 ? `${bw}m Roll` : 'mtrs' }
+  }
+
+  const packName = bw > 1 ? 'Bag' : 'Pack'
+  const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
+
+  return {
+    displayQty: qty,
+    displayUnit: 'Bags',
+    subtext: packSubtext
+  }
+}
+
 export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt, catalogMap = {} }) => {
   let items = []
   if (Array.isArray(quote.line_items)) {
@@ -50,52 +85,6 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
 
   const companyName = quote.shop_name || ''
   const customerName = quote.customer_name || ''
-
-  function resolvePackDisplay(rawUnit, qty, bagWeight) {
-    const bw = Number.parseFloat(bagWeight || 1)
-    let uRaw = String(rawUnit || '').trim()
-
-    if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
-      if (uRaw.toLowerCase().includes('/ltr') || uRaw.toLowerCase().includes('ltr')) {
-        uRaw = 'ltrs'
-      } else if (uRaw.toLowerCase().includes('/kg') || uRaw.toLowerCase().includes('kg')) {
-        uRaw = 'kgs'
-      } else if (uRaw.toLowerCase().includes('/mtr') || uRaw.toLowerCase().includes('mtr')) {
-        uRaw = 'mtrs'
-      } else {
-        uRaw = uRaw.split(':')[0].trim()
-      }
-    }
-
-    const u = uRaw.toLowerCase().trim()
-
-    // Liquids (ltrs, ltr, litres, ml) ALWAYS show ltrs/ml (NEVER Drums!)
-    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-      return {
-        displayQty: qty,
-        displayUnit: 'ltrs',
-        subtext: 'ltrs'
-      }
-    }
-
-    // Meters / Feet
-    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-      return {
-        displayQty: qty,
-        displayUnit: 'mtrs',
-        subtext: bw > 1 ? `${bw}m Roll` : 'mtrs'
-      }
-    }
-
-    const packName = bw > 1 ? 'Bag' : 'Pack'
-    const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
-
-    return {
-      displayQty: qty,
-      displayUnit: 'Bags',
-      subtext: packSubtext
-    }
-  }
 
   const explicitTaxRate = (quote?.tax_rate !== undefined && quote?.tax_rate !== null && quote?.tax_rate !== '')
     ? Number.parseFloat(quote.tax_rate)

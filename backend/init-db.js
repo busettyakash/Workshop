@@ -325,6 +325,7 @@ async function createTables() {
         payment_mode VARCHAR(50) NOT NULL,
         payment_method VARCHAR(50),
         payment_date DATE,
+        note TEXT,
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
@@ -333,6 +334,7 @@ async function createTables() {
       ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);
       ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
       ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS payment_date DATE;
+      ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS note TEXT;
       ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS notes TEXT;
 
       CREATE TABLE IF NOT EXISTS uoms (

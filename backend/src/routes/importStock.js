@@ -52,8 +52,14 @@ async function ensureImportStockSchema() {
       user_id TEXT NOT NULL,
       amount DECIMAL(10, 2) NOT NULL,
       payment_mode VARCHAR(50) NOT NULL,
+      payment_date DATE,
+      note TEXT,
+      notes TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
+    ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS payment_date DATE;
+    ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS note TEXT;
+    ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS notes TEXT;
     ALTER TABLE import_stock_payments ENABLE ROW LEVEL SECURITY;
     ALTER TABLE import_stock_payments FORCE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS import_stock_payments_user_policy ON public.import_stock_payments;
@@ -291,7 +297,7 @@ router.get('/:id', async (req, res) => {
     console.log('%s GET /:id — found', LOG_PREFIX)
     
     const payments = await query(
-      `SELECT id, amount, payment_mode, created_at 
+      `SELECT id, amount, payment_mode, payment_date, COALESCE(note, notes) as note, created_at 
        FROM import_stock_payments 
        WHERE import_stock_id = $1 AND user_id = $2 
        ORDER BY created_at DESC`, 
@@ -525,21 +531,22 @@ router.patch('/:id/payment', async (req, res) => {
 /* POST /api/import-stock/:id/payments */
 router.post('/:id/payments', async (req, res) => {
   const userId = req.workspaceId
-  const { amount, payment_mode, payment_date, note } = req.body
+  const { amount, payment_mode, payment_date, note, notes } = req.body
+  const paymentNote = note || notes || null
   if (!amount || Number.parseFloat(amount) <= 0) {
     return res.status(400).json({ error: 'Valid amount is required' })
   }
   try {
     const { rows } = await query(
-      `INSERT INTO import_stock_payments (import_stock_id, user_id, amount, payment_mode, payment_date, note, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *`,
+      `INSERT INTO import_stock_payments (import_stock_id, user_id, amount, payment_mode, payment_date, note, notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $6, NOW()) RETURNING *`,
       [
         req.params.id,
         userId,
         Number.parseFloat(amount),
         payment_mode || 'Cash',
         payment_date || getIndianDateStr(),
-        note || null
+        paymentNote
       ]
     )
     await clearImportStockCache(userId)

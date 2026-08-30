@@ -199,13 +199,16 @@ async function createTables() {
 
       CREATE TABLE IF NOT EXISTS workflows (
         id SERIAL PRIMARY KEY,
-        user_id UUID NOT NULL,
+        user_id TEXT NOT NULL,
         name VARCHAR(255) NOT NULL,
         is_live BOOLEAN DEFAULT true,
         nodes JSONB NOT NULL,
+        is_starred BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE workflows ADD COLUMN IF NOT EXISTS is_starred BOOLEAN DEFAULT false;
 
       CREATE TABLE IF NOT EXISTS workflow_runs (
         id SERIAL PRIMARY KEY,

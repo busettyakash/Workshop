@@ -1,4 +1,9 @@
-import 'dotenv/config'
+import fs from 'node:fs'
+import dotenv from 'dotenv'
+dotenv.config()
+if (fs.existsSync('.env.local')) {
+  dotenv.config({ path: '.env.local', override: true })
+}
 import dns from 'node:dns'
 const isDevelopment = process.env.NODE_ENV === 'development' && !process.env.VERCEL
 

@@ -672,19 +672,23 @@ router.post('/register', authLimiter, async (req, res) => {
   const { actualFirstName, actualLastName, actualPhone, actualGstin, actualShopName } = fields
 
   try {
-    // Register in InsForge (tolerate "already exists" since we still create the local profile)
-    const { data, error } = await insforge.auth.signUp({ email, password })
-    if (error) {
-      const msg = error.nextActions || error.error || error.message || 'Registration failed'
-      if (msg === 'AUTH_EMAIL_EXISTS' || msg.toLowerCase().includes('already registered')) {
-        console.log('[Register] User exists in InsForge Cloud but not locally. Proceeding to create local profile.')
-      } else {
-        console.error('[Auth Error]', error)
-        return res.status(400).json({ message: msg })
+    let insforgeData = null
+    try {
+      const { data, error } = await insforge.auth.signUp({ email, password })
+      if (error) {
+        const msg = error.nextActions || error.error || error.message || 'Registration failed'
+        if (msg === 'AUTH_EMAIL_EXISTS' || msg.toLowerCase().includes('already registered')) {
+          console.log('[Register] User exists in InsForge Cloud but not locally. Proceeding to create local profile.')
+        } else {
+          console.warn('[InsForge Auth Notice]', msg)
+        }
       }
+      insforgeData = data
+    } catch (authErr) {
+      console.warn('[InsForge Auth Network Notice] Cloud signup skipped/offline, using local DB:', authErr.message)
     }
 
-    const userId = data?.user?.id || getLocalUserId(email)
+    const userId = insforgeData?.user?.id || getLocalUserId(email)
 
     // Persist local profile
     await query(
@@ -796,12 +800,17 @@ router.post('/login', authLimiter, async (req, res) => {
       token = signLocalJwt({ sub: localUserId, email, shopName, firstName, lastName })
     } else {
       // ── Fallback: verify via InsForge auth service ──
-      const { data, error } = await insforge.auth.signInWithPassword({ email, password })
-      if (error) {
+      try {
+        const { data, error } = await insforge.auth.signInWithPassword({ email, password })
+        if (error) {
+          return res.status(401).json({ message: 'Invalid email or password.' })
+        }
+        userId = localUserId || data?.user?.id || getLocalUserId(email)
+        token  = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
+      } catch (authErr) {
+        console.warn('[InsForge Auth SignIn Notice]', authErr.message)
         return res.status(401).json({ message: 'Invalid email or password.' })
       }
-      userId = localUserId || data?.user?.id || getLocalUserId(email)
-      token  = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
     }
 
     // Ensure we always have a token

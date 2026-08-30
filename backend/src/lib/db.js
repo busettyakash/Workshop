@@ -1,3 +1,10 @@
+import fs from 'node:fs'
+import dotenv from 'dotenv'
+dotenv.config()
+if (fs.existsSync('.env.local')) {
+  dotenv.config({ path: '.env.local', override: true })
+}
+
 import dns from 'node:dns'
 import pg from 'pg'
 
@@ -49,7 +56,7 @@ const getPoolMax = () => {
 const createPool = () => new Pool({
   connectionString: dbUrl,
   application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
-  ssl: true,
+  ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
   min: 1,
   idleTimeoutMillis: 30000,

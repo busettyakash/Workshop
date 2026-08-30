@@ -1,5 +1,11 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-import 'dotenv/config';
+import fs from 'node:fs';
+import dotenv from 'dotenv';
+
+dotenv.config();
+if (fs.existsSync('.env.local')) {
+  dotenv.config({ path: '.env.local', override: true });
+}
 
 import pg from 'pg';
 
@@ -37,6 +43,11 @@ async function createTables() {
       ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
       ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
       ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT;
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS workspace_handle VARCHAR(100);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS billing_country VARCHAR(100);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS referral_source VARCHAR(100);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS usage_type VARCHAR(100);
 
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
@@ -221,12 +232,75 @@ async function createTables() {
       ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_company VARCHAR(255);
       ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2);
       ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50);
-      ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50);
-      ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50);
-      ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT;
-      ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2);
-      ALTER TABLE workflows ADD COLUMN IF NOT EXISTS is_starred BOOLEAN DEFAULT false;
-      ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT;
+      CREATE TABLE IF NOT EXISTS bill_items (
+        id SERIAL PRIMARY KEY,
+        bill_id INT,
+        product_id INT,
+        product_name TEXT,
+        quantity NUMERIC(10,2),
+        price NUMERIC(10,2),
+        line_total NUMERIC(10,2),
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS notes (
+        id               SERIAL PRIMARY KEY,
+        title            TEXT NOT NULL,
+        body             TEXT DEFAULT '',
+        attachment_name  TEXT,
+        attachment_data  TEXT,
+        user_id          TEXT NOT NULL,
+        created_at       TIMESTAMPTZ DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS emails (
+        id               SERIAL PRIMARY KEY,
+        from_name        TEXT NOT NULL,
+        from_email       TEXT NOT NULL,
+        to_email         TEXT,
+        subject          TEXT NOT NULL,
+        body             TEXT DEFAULT '',
+        preview          TEXT DEFAULT '',
+        is_read          BOOLEAN DEFAULT false,
+        starred          BOOLEAN DEFAULT false,
+        direction        TEXT DEFAULT 'inbox',
+        attachment_name  TEXT,
+        attachment_data  TEXT,
+        user_id          TEXT NOT NULL,
+        created_at       TIMESTAMPTZ DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS bill_templates (
+        id          SERIAL PRIMARY KEY,
+        user_id     TEXT NOT NULL,
+        name        VARCHAR(255) NOT NULL,
+        html        TEXT NOT NULL,
+        is_default  BOOLEAN DEFAULT false,
+        created_at  TIMESTAMPTZ DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS workspace_members (
+        id SERIAL PRIMARY KEY,
+        workspace_owner_id TEXT NOT NULL,
+        member_email TEXT NOT NULL,
+        role TEXT DEFAULT 'Member',
+        permissions JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (workspace_owner_id, member_email)
+      );
+
+      CREATE TABLE IF NOT EXISTS import_stock_payments (
+        id SERIAL PRIMARY KEY,
+        import_stock_id INT,
+        amount DECIMAL(10,2),
+        payment_method VARCHAR(50),
+        payment_date DATE,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
       CREATE TABLE IF NOT EXISTS uoms (
         id SERIAL PRIMARY KEY,

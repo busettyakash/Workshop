@@ -416,7 +416,7 @@ async function dispatchInviteEmail({ to, subject, html }) {
   try {
     const smtpRes = await sendEmail({ to, subject, html })
     if (smtpRes && !smtpRes.error) {
-      console.log('[Invite Email] Delivered via SMTP to', to)
+      console.log('[Invite Email] Delivered via SMTP')
       return { success: true, method: 'smtp' }
     }
     console.error('[Invite Email] SMTP delivery error:', smtpRes?.error?.message)

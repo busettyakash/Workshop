@@ -411,25 +411,20 @@ async function resolveLoginWorkspace(email, userId, shopName) {
 //  Invite email helpers
 // ─────────────────────────────────────────────
 
-/** Fire-and-forget: try SMTP first, fall back to Resend for invite emails */
+/** Deliver invite email directly via SMTP (Nodemailer) */
 async function dispatchInviteEmail({ to, subject, html }) {
-  const smtpRes = await sendEmail({ to, subject, html }).catch(err => ({ error: err }))
-  if (smtpRes && !smtpRes.error) {
-    console.log('[Invite Email] Delivered via SMTP')
-    return
+  try {
+    const smtpRes = await sendEmail({ to, subject, html })
+    if (smtpRes && !smtpRes.error) {
+      console.log('[Invite Email] Delivered via SMTP to', to)
+      return { success: true, method: 'smtp' }
+    }
+    console.error('[Invite Email] SMTP delivery error:', smtpRes?.error?.message)
+    return { success: false, error: smtpRes?.error?.message }
+  } catch (err) {
+    console.error('[Invite Email] SMTP exception:', err.message)
+    return { success: false, error: err.message }
   }
-  console.warn(`[Invite Email] SMTP warning (${smtpRes?.error?.message}), trying Resend...`)
-  resend.emails.send({
-    from: process.env.RESEND_FROM_EMAIL || 'Workshop <onboarding@resend.dev>',
-    to,
-    subject,
-    html,
-  }).then(({ error }) => {
-    if (error) console.error('[Invite Email] Resend fallback error:', error.message || error)
-    else        console.log('[Invite Email] Delivered via Resend')
-  }).catch(err => {
-    console.error('[Invite Email] Resend fallback exception:', err.message)
-  })
 }
 
 /** Create an in-app notification and push a real-time event to user B on invite */
@@ -944,8 +939,19 @@ router.post('/invite', apiLimiter, requireAuth, async (req, res) => {
       role,
     })
 
-    // Invite email (fire-and-forget)
-    const frontendUrl  = process.env.FRONTEND_URL || 'http://localhost:5173'
+    // Resolve frontend URL dynamically from request origin so Preview links point to the actual preview deployment
+    const reqOrigin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null)
+    let frontendUrl = reqOrigin
+    if (!frontendUrl || (frontendUrl.includes('localhost') && process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('localhost'))) {
+      frontendUrl = process.env.FRONTEND_URL
+    }
+    if (!frontendUrl && process.env.VERCEL_URL) {
+      frontendUrl = `https://${process.env.VERCEL_URL}`
+    }
+    if (!frontendUrl) {
+      frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+    }
+
     const signupLink   = `${frontendUrl}/signup?invite_email=${encodeURIComponent(email)}&email=${encodeURIComponent(email)}&invite_from=${encodeURIComponent(req.user.email)}&workspace=${encodeURIComponent(req.user.shopName || 'Workshop')}`
     const subject      = `Invitation to collaborate on ${req.user.shopName || 'Workshop'}`
     const html         = getInviteEmailTemplate({
@@ -955,11 +961,18 @@ router.post('/invite', apiLimiter, requireAuth, async (req, res) => {
       role,
       signupLink,
     })
-    dispatchInviteEmail({ to: email, subject, html }).catch(err => {
+
+    // Await delivery so serverless (Vercel Lambda) does NOT freeze before the email is sent
+    const emailResult = await dispatchInviteEmail({ to: email, subject, html }).catch(err => {
       console.error('[Invite Email] Error during invitation email dispatch:', err.message)
+      return { success: false, error: err.message }
     })
 
-    res.json({ message: `Successfully invited ${email}` })
+    res.json({
+      message: `Successfully invited ${email}`,
+      emailSent: emailResult?.success !== false,
+      signupLink
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

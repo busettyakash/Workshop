@@ -2,12 +2,13 @@ import nodemailer from 'nodemailer'
 import dotenv from 'dotenv'
 dotenv.config()
 
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
 const createTransporter = () => nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: Number.parseInt(process.env.SMTP_PORT) || 587,
   secure: String(process.env.SMTP_PORT) === '465',
-  pool: true,
-  maxConnections: 5,
+  pool: !isServerless,
+  maxConnections: isServerless ? 1 : 5,
   maxMessages: 100,
   rateLimit: 14,
   auth: {
@@ -24,13 +25,15 @@ const createTransporter = () => nodemailer.createTransport({
 
 let transporter = createTransporter()
 
-transporter.verify((error) => {
-  if (error) {
-    console.error('[SMTP] Connection verify warning:', error.message)
-  } else {
-    console.log('[SMTP] Ready ✅ — using', process.env.SMTP_USER)
-  }
-})
+if (!isServerless) {
+  transporter.verify((error) => {
+    if (error) {
+      console.error('[SMTP] Connection verify warning:', error.message)
+    } else {
+      console.log('[SMTP] Ready ✅ — using', process.env.SMTP_USER)
+    }
+  })
+}
 
 export const sendEmail = async ({ to, subject, html, attachments = [] }, retriesLeft = 2) => {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {

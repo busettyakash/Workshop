@@ -249,7 +249,6 @@ export async function requireAuth(req, res, next) {
 
     // Fallback for owner/admin: if requestedWorkspaceId is stale or not found, route to own workspace
     if (user.id) {
-      console.warn(`[Auth Middleware] Stale workspaceId "${requestedWorkspaceId}" not found for ${user.email}. Defaulting to own workspace ${user.id}`)
       req.workspaceId = user.id
       return dbLocalStorage.run(user.id, () => next())
     }

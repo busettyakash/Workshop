@@ -11,6 +11,11 @@ router.use(requireAuth)
  * Calculates product procurement cost, active retail prices, unit margins, and inventory profit potentials.
  */
 router.get(['/', '/profit-margins'], async (req, res) => {
+  const isOwnerOrAdmin = !req.memberRole || req.memberRole === 'Owner' || req.memberRole === 'Admin'
+  if (!isOwnerOrAdmin && req.memberPermissions?.profit_margin?.read !== true) {
+    return res.status(403).json({ error: 'You do not have permission to access Profit Margin. Please ask your administrator to grant access.' })
+  }
+
   const userId = req.workspaceId
 
   try {

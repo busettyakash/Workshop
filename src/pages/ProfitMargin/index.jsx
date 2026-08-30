@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { 
   Filter, ArrowUpDown, Download, Loader2, 
-  Search, Package, TrendingUp, TrendingDown 
+  Search, TrendingUp, TrendingDown 
 } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
 import { formatStockDisplay } from '../../utils/unitHelpers'
@@ -354,7 +354,6 @@ export default function ProfitMargin() {
                   </div>
                 ) : filteredProducts.length === 0 ? (
                   <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
-                    <Package size={28} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.5 }} />
                     No products found matching the criteria.
                   </div>
                 ) : (

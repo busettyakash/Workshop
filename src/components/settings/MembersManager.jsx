@@ -118,7 +118,7 @@ export default function MembersManager() {
     setActiveRole('Member')
     const initial = {}
     MODULE_DEFINITIONS.forEach(m => {
-      initial[m.id] = { read: true, edit: false, delete: false }
+      initial[m.id] = { read: m.id !== 'profit_margin', edit: false, delete: false }
     })
     setActivePermissions(initial)
   }
@@ -139,7 +139,7 @@ export default function MembersManager() {
     const full = {}
     MODULE_DEFINITIONS.forEach(m => {
       full[m.id] = {
-        read: isMemberAdmin ? true : (current[m.id]?.read === true),
+        read: isMemberAdmin ? true : (current[m.id] !== undefined ? current[m.id]?.read === true : m.id !== 'profit_margin'),
         edit: isMemberAdmin ? true : (current[m.id]?.edit === true),
         delete: isMemberAdmin ? true : (current[m.id]?.delete === true)
       }

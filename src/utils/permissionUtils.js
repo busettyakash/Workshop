@@ -77,9 +77,9 @@ export function hasModulePermission(moduleName, permissions, role) {
   if (isOwnerOrAdmin(role)) return true
 
   const currentPermissions = getActivePermissions(permissions)
-  // If no permissions configured, default to true for safety
+  // If no permissions configured, default to true for general modules, but false for profit_margin
   if (!currentPermissions || typeof currentPermissions !== 'object' || Object.keys(currentPermissions).length === 0) {
-    return true
+    return moduleName !== 'profit_margin'
   }
 
   const perm = currentPermissions[moduleName]

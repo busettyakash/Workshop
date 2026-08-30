@@ -231,7 +231,8 @@ export async function requireAuth(req, res, next) {
     !requestedWorkspaceId ||
     requestedWorkspaceId === 'undefined' ||
     requestedWorkspaceId === 'null' ||
-    requestedWorkspaceId === user.id
+    requestedWorkspaceId === user.id ||
+    requestedWorkspaceId === user.email
   ) {
     req.workspaceId = user.id
     return dbLocalStorage.run(user.id, () => next())
@@ -245,8 +246,20 @@ export async function requireAuth(req, res, next) {
     if (granted) {
       return dbLocalStorage.run(resolvedOwnerId, () => next())
     }
+
+    // Fallback for owner/admin: if requestedWorkspaceId is stale or not found, route to own workspace
+    if (user.id) {
+      console.warn(`[Auth Middleware] Stale workspaceId "${requestedWorkspaceId}" not found for ${user.email}. Defaulting to own workspace ${user.id}`)
+      req.workspaceId = user.id
+      return dbLocalStorage.run(user.id, () => next())
+    }
+
     return res.status(403).json({ error: 'Forbidden: You do not have access to this workspace' })
   } catch {
+    if (user.id) {
+      req.workspaceId = user.id
+      return dbLocalStorage.run(user.id, () => next())
+    }
     return res.status(500).json({ error: 'Internal server error checking workspace membership' })
   }
 }

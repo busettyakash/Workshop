@@ -340,7 +340,7 @@ async function issueOtp(email, logPrefix = 'OTP') {
 const MODULE_KEYS = [
   'dashboard', 'notes', 'emails', 'reports', 'workflows',
   'products', 'people', 'price_history', 'quotes', 'orders',
-  'import_stock', 'billing', 'paid', 'unpaid', 'chats',
+  'import_stock', 'profit_margin', 'billing', 'paid', 'unpaid', 'chats',
 ]
 
 const FULL_ADMIN_PERMISSIONS = Object.fromEntries(
@@ -348,7 +348,12 @@ const FULL_ADMIN_PERMISSIONS = Object.fromEntries(
 )
 
 const DEFAULT_MEMBER_PERMISSIONS = Object.fromEntries(
-  MODULE_KEYS.map(k => [k, { read: true, edit: false, delete: false }])
+  MODULE_KEYS.map(k => [
+    k,
+    k === 'profit_margin'
+      ? { read: false, edit: false, delete: false }
+      : { read: true, edit: false, delete: false }
+  ])
 )
 
 function resolvePermissions(role, permissions) {

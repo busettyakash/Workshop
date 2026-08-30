@@ -67,8 +67,12 @@ async function createTables() {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'pcs';
       ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS bag_weight NUMERIC DEFAULT 1;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS next_restock_time TEXT DEFAULT 'TBD';
       ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2);
       ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2);
 
       CREATE TABLE IF NOT EXISTS product_price_history (
         id SERIAL PRIMARY KEY,
@@ -89,11 +93,14 @@ async function createTables() {
         qty_change NUMERIC(10, 2) NOT NULL,
         stock_before NUMERIC(10, 2),
         stock_after NUMERIC(10, 2),
+        loose_kg_after NUMERIC(10, 2),
         source TEXT,
         source_ref TEXT,
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE product_stock_history ADD COLUMN IF NOT EXISTS loose_kg_after NUMERIC(10, 2);
 
       CREATE TABLE IF NOT EXISTS import_stock (
         id SERIAL PRIMARY KEY,
@@ -113,10 +120,21 @@ async function createTables() {
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'pcs';
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS user_id TEXT;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS bag_weight NUMERIC DEFAULT 1;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_name TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_phone TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_city TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buyer_state TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS buying_price DECIMAL(10, 2);
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price DECIMAL(10, 2);
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2);
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS note TEXT;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS add_stock_qty NUMERIC;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS supplier_total_cost DECIMAL(10, 2);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(10, 2) DEFAULT 0;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);
 
       CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
@@ -145,6 +163,10 @@ async function createTables() {
         created_at   TIMESTAMPTZ DEFAULT NOW(),
         updated_at   TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE people ADD COLUMN IF NOT EXISTS company TEXT;
+      ALTER TABLE people ADD COLUMN IF NOT EXISTS company_name TEXT;
+
 
       CREATE TABLE IF NOT EXISTS bills (
         id SERIAL PRIMARY KEY,
@@ -294,13 +316,21 @@ async function createTables() {
 
       CREATE TABLE IF NOT EXISTS import_stock_payments (
         id SERIAL PRIMARY KEY,
-        import_stock_id INT,
-        amount DECIMAL(10,2),
+        import_stock_id INT NOT NULL,
+        user_id TEXT NOT NULL,
+        amount DECIMAL(10, 2) NOT NULL,
+        payment_mode VARCHAR(50) NOT NULL,
         payment_method VARCHAR(50),
         payment_date DATE,
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS user_id TEXT;
+      ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);
+      ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+      ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS payment_date DATE;
+      ALTER TABLE import_stock_payments ADD COLUMN IF NOT EXISTS notes TEXT;
 
       CREATE TABLE IF NOT EXISTS uoms (
         id SERIAL PRIMARY KEY,

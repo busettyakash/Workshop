@@ -359,7 +359,7 @@ export default function Dashboard() {
           // Find indices of internal technical columns to exclude (ID, user_id, etc.)
           const excludedIndices = new Set()
           headerRow.forEach((col, cIdx) => {
-            const cleanCol = col.replace(/\*/g, '').trim().toLowerCase()
+            const cleanCol = col.replaceAll('*', '').trim().toLowerCase()
             if (cleanCol === 'id' || cleanCol === 'user_id' || cleanCol === 'uid') {
               excludedIndices.add(cIdx)
             }

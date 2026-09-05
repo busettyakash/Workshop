@@ -16,7 +16,7 @@ const getProductAvatarBg = (name = '') => {
     '#0891b2', '#4f46e5', '#ca8a04', '#0d9488', '#e11d48'
   ]
   let hash = 0
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  for (let i = 0; i < name.length; i++) hash = name.codePointAt(i) + ((hash << 5) - hash)
   return colors[Math.abs(hash) % colors.length]
 }
 

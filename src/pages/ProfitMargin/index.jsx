@@ -182,7 +182,7 @@ export default function ProfitMargin() {
     ]
 
     const rows = filteredProducts.map(p => [
-      `"${(p.name || '').replace(/"/g, '""')}"`,
+      `"${(p.name || '').replaceAll('"', '""')}"`,
       `"${p.sku || ''}"`,
       `"${p.category || ''}"`,
       p.stock || 0,
@@ -197,7 +197,7 @@ export default function ProfitMargin() {
       `${p.margin_pct || 0}%`,
       p.present_profit !== undefined ? p.present_profit : p.total_potential_profit || 0,
       p.full_stock_profit || 0,
-      `"${(p.buyer_name || '').replace(/"/g, '""')}"`
+      `"${(p.buyer_name || '').replaceAll('"', '""')}"`
     ])
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n')
@@ -207,7 +207,7 @@ export default function ProfitMargin() {
     link.setAttribute('download', `profit_margins_${new Date().toISOString().split('T')[0]}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
 
     dispatch(addToast({ message: 'Profit margins exported to CSV', type: 'success' }))
   }

@@ -4,7 +4,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
 import { updateUser } from '../../redux/slices/authSlice'
 import { useAuth } from '../../hooks/useAuth'
-import { 
+import {
   ChevronLeft, ArrowLeft, Search, User, Palette, Bell, Lock, Building2, LayoutGrid, Scale, Users, DollarSign, Info, Camera, HelpCircle, Save, Plus, Trash2, Copy, Download, Calendar, X
 } from 'lucide-react'
 import api from '../../api/client'
@@ -122,7 +122,6 @@ export default function Settings() {
     return user?.email || ''
   })
   const [timezone, setTimezone] = useState('Asia/Kolkata')
-  const [startWeekOn, setStartWeekOn] = useState('Monday')
   const [avatarUrl, setAvatarUrl] = useState(() => {
     return localStorage.getItem('ws_avatar_url') || ''
   })
@@ -208,7 +207,7 @@ export default function Settings() {
           }))
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [dispatch])
 
   const handleAvatarChange = (e) => {
@@ -249,7 +248,7 @@ export default function Settings() {
     // Debounced API call to backend
     if (window.wsNameDebounce) clearTimeout(window.wsNameDebounce)
     window.wsNameDebounce = setTimeout(() => {
-      api.put('/auth/workspace', updatedForm).catch(() => {})
+      api.put('/auth/workspace', updatedForm).catch(() => { })
     }, 400)
   }
 
@@ -303,47 +302,10 @@ export default function Settings() {
 
     try {
       await api.put('/auth/profile', updated)
-    } catch {}
+    } catch { }
 
     dispatch(addToast({ message: 'Profile details saved successfully!', type: 'success' }))
   }
-
-  const handleSaveWorkspace = async (e) => {
-    e.preventDefault()
-    localStorage.setItem('ws_workspace_settings', JSON.stringify(workspaceForm))
-    sessionStorage.setItem('ws_active_workspace_name', workspaceForm.shopName)
-    localStorage.setItem('ws_workspace_name', workspaceForm.shopName)
-    dispatch(updateUser({ shopName: workspaceForm.shopName }))
-    window.dispatchEvent(new Event('workspace_updated'))
-
-    try {
-      await api.put('/auth/workspace', workspaceForm)
-    } catch {}
-
-    dispatch(addToast({ message: 'Workspace details saved successfully!', type: 'success' }))
-  }
-
-  const handleSavePassword = (e) => {
-    e.preventDefault()
-    if (!currentPassword) {
-      dispatch(addToast({ message: 'Please enter current password', type: 'error' }))
-      return
-    }
-    if (newPassword.length < 6) {
-      dispatch(addToast({ message: 'New password must be at least 6 characters', type: 'error' }))
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      dispatch(addToast({ message: 'Passwords do not match', type: 'error' }))
-      return
-    }
-    dispatch(addToast({ message: 'Password updated successfully!', type: 'success' }))
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-  }
-
-
 
   return (
     <div style={{
@@ -355,7 +317,7 @@ export default function Settings() {
       background: '#ffffff',
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
     }}>
-      
+
       {/* Settings Top Header Bar (Matching Image 3) */}
       <div style={{
         height: 44,
@@ -407,11 +369,11 @@ export default function Settings() {
           boxSizing: 'border-box'
         }}>
           <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0f172a' }}>
-            {!isOwnerAdmin || activeSection === 'profile' ? 'Profile' : 
-             activeSection === 'general' ? 'General' :
-             activeSection === 'uom' ? 'Unit of Measure (UOM)' :
-             activeSection === 'members' ? 'Members & Teams' :
-             activeSection === 'billing' ? 'Billing' : 'Settings'}
+            {!isOwnerAdmin || activeSection === 'profile' ? 'Profile' :
+              activeSection === 'general' ? 'General' :
+                activeSection === 'uom' ? 'Unit of Measure (UOM)' :
+                  activeSection === 'members' ? 'Members & Teams' :
+                    activeSection === 'billing' ? 'Billing' : 'Settings'}
           </span>
 
           <button
@@ -426,7 +388,7 @@ export default function Settings() {
 
       {/* Settings Inner Body */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', background: '#ffffff' }}>
-        
+
         {/* Unified Left Settings Sidebar containing ALL Personal & Workspace Sections */}
         <div style={{
           width: 235,
@@ -592,18 +554,18 @@ export default function Settings() {
           background: '#ffffff'
         }}>
 
-          
+
           {/* PROFILE SECTION */}
           {(activeSection === 'profile' || !VALID_SECTIONS.includes(activeSection)) && (
             <div style={{ width: '100%', maxWidth: 640 }}>
-              
+
               {/* Header Title & Subtitle */}
               <div style={{ marginBottom: 12 }}>
                 <h1 style={{ fontSize: '1.45rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.02em' }}>
                   Profile
                 </h1>
                 <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  Manage your personal details. 
+                  Manage your personal details.
                   <a href="#" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 500 }} onClick={e => e.preventDefault()}>
                     Learn more ↗
                   </a>
@@ -865,14 +827,14 @@ export default function Settings() {
           {/* GENERAL WORKSPACE SECTION */}
           {isOwnerAdmin && activeSection === 'general' && (
             <div style={{ width: '100%', maxWidth: 720 }}>
-              
+
               {/* Header Title & Subtitle */}
               <div style={{ marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid #f1f5f9' }}>
                 <h1 style={{ fontSize: '1.45rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.02em' }}>
                   General
                 </h1>
                 <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  Change the settings for your current workspace. 
+                  Change the settings for your current workspace.
                   <a href="#" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 500 }} onClick={e => e.preventDefault()}>
                     Learn more ↗
                   </a>

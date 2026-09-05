@@ -575,7 +575,7 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
 </html>`
 }
 
-import fs from 'fs'
+import fs from 'node:fs'
 
 function getSystemBrowserPath() {
   const possiblePaths = [

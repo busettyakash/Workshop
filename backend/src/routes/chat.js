@@ -384,7 +384,7 @@ async function sendEmailTool(args, userId, reqUser) {
   await sendEmail({
     to: to.trim(),
     subject: subject.trim(),
-    html: body.replace(/\n/g, '<br/>')
+    html: body.replaceAll('\n', '<br/>')
   })
 
   return { success: true, email: rows[0], message: 'Email sent successfully via SMTP' }

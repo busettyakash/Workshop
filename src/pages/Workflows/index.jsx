@@ -792,7 +792,6 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
   const [logs, setLogs] = useState([])
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [internalWfs, setInternalWfs] = useState(Array.isArray(workflows) ? workflows : [])
-  const dispatch = useAppDispatch()
 
   useEffect(() => {
     if (Array.isArray(workflows) && workflows.length > 0) {

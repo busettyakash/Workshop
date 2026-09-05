@@ -250,6 +250,14 @@ async function executeCustomerInvoiceEmailAction(currentAction, run, companyName
     return `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${companyName}.`
   }
 
+  const dedupKey = `email:dedup:order_confirmation:${orderNum}`
+  const alreadySent = await redis.get(dedupKey).catch(() => null)
+  if (alreadySent) {
+    console.log(`[Workflow Email] ⏸️ Duplicate order confirmation email prevented for order #${orderNum}. Already sent.`)
+    return `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${companyName}.`
+  }
+  await redis.set(dedupKey, '1', { ex: 300 }).catch(() => {})
+
   const catalogMap = await getProductHsnMap().catch(() => ({}))
   const enrichedBillItems = enrichItemsWithCache(billItems || [], catalogMap)
 
@@ -345,6 +353,15 @@ async function executeCustomerDeclineEmailAction(currentAction, run, companyName
   if (!customerEmail) {
     return `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
   }
+
+  const quoteId = quote?.quote_number || quote?.id || companyName
+  const dedupKey = `email:dedup:quote_decline:${quoteId}`
+  const alreadySent = await redis.get(dedupKey).catch(() => null)
+  if (alreadySent) {
+    console.log(`[Workflow Email] ⏸️ Duplicate decline email prevented for quote #${quoteId}. Already sent.`)
+    return `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
+  }
+  await redis.set(dedupKey, '1', { ex: 300 }).catch(() => {})
 
   const declineHtml = getQuoteDeclinedTemplate({
     quote: quote || { quote_number: 'QT-Declined', customer_name: customerName },

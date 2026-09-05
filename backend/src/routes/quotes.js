@@ -3,11 +3,10 @@ import crypto from 'node:crypto'
 import pool from '../lib/db.js'
 import { sendEmail } from '../lib/smtp.js'
 import { apiLimiter, emailLimiter } from '../middleware/rateLimit.js'
-import { getInvoiceEmailTemplate, getQuoteEmailTemplate, getQuoteDeclinedTemplate, getOrderConfirmationTemplate } from '../utils/emailTemplates.js'
+import { getInvoiceEmailTemplate, getQuoteEmailTemplate } from '../utils/emailTemplates.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
 import redis from '../lib/redis.js'
-
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 import { executeWorkflowStep } from './workflows.js'
 
@@ -331,60 +330,6 @@ const isEmailStepActiveInWorkflow = async (userId, branch = 'accepted') => {
   }
 }
 
-const sendQuoteDeclinedEmailToCustomer = async (quote) => {
-  if (!quote?.customer_email) return
-
-  // Check if "Send Rejection Follow-up Email" node is enabled in active workflow
-  const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id, 'declined')
-  if (!isEmailEnabled) {
-    console.log(`[Declined Email] ⏸️ Skipping decline email for quote #${quote.quote_number || quote.id}: "Send Rejection Follow-up Email" node was not enabled in Declined workflow branch.`)
-    return
-  }
-
-  const shopProfileRes = await pool.query('SELECT shop_name, phone, email, address FROM shop_profiles WHERE user_id::text = $1::text LIMIT 1', [quote.user_id || 'default-user']).catch(() => ({ rows: [] }))
-  const shop = shopProfileRes.rows[0] || {}
-  const shopName = shop.shop_name || quote.shop_name || 'Workshop'
-
-  const emailHtml = getQuoteDeclinedTemplate({
-    quote,
-    shopName,
-    supportEmail: shop.email,
-    supportPhone: shop.phone
-  })
-
-  const subject = `Update: Quotation #${quote.quote_number || quote.id} Declined — ${shopName}`
-
-  const sendRes = await sendEmail({
-    to: quote.customer_email,
-    subject,
-    html: emailHtml
-  }).catch(e => {
-    console.error('[Declined Email Send Error]', e.message)
-    return { error: e }
-  })
-
-  if (sendRes?.error) {
-    console.error('[Declined Email Failed]', sendRes.error.message)
-  } else {
-    console.log('[Declined Email Sent] ✅ Sent quotation decline follow-up email')
-    
-    // Save email log into emails table
-    await pool.query(
-      `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'sent', $7, NOW(), NOW())`,
-      [
-        shopName,
-        process.env.SMTP_USER || 'noreply@workshop.app',
-        quote.customer_email,
-        subject,
-        emailHtml,
-        `Follow-up on declined Quotation #${quote.quote_number || quote.id} for ${quote.customer_name || 'Customer'}`,
-        quote.user_id || 'default-user'
-      ]
-    ).catch(e => console.error('[Declined Email Record Save Error]', e.message))
-  }
-}
-
 const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber = null) => {
   if (!quote?.customer_email) return
 
@@ -454,95 +399,6 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
       quote.user_id || 'default-user'
     ]
   ).catch(e => console.error('[Invoice Email Record Save Error]', e.message))
-}
-
-const sendOrderConfirmationEmailToCustomer = async (quote, bill, billItems, orderNumber) => {
-  if (!quote?.customer_email) {
-    console.warn('[Order Confirmation Email] Skipped — no customer_email found on quote')
-    return
-  }
-
-  // Check if "Send Invoice Email" node is enabled in active workflow
-  const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
-  if (!isEmailEnabled) {
-    console.log(`[Order Confirmation Email] ⏸️ Skipping automatic order confirmation email for quote #${quote.quote_number || quote.id}: "Send Invoice Email" node was removed from workflow.`)
-    return
-  }
-
-  // Handle flexible signature: (quote, bill, orderNumber) vs (quote, bill, billItems, orderNumber)
-  if (typeof billItems === 'string' && !orderNumber) {
-    orderNumber = billItems
-    billItems = []
-  }
-
-  const orderNum = orderNumber || quote.order_number || bill?.order_number || `ORD-1001`
-
-  const shopProfileRes = await pool.query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles WHERE user_id::text = $1::text LIMIT 1', [quote.user_id || 'default-user']).catch(() => ({ rows: [] }))
-  const shop = shopProfileRes.rows[0] || {}
-  const sellerName = shop.shop_name || quote.shop_name || 'Workshop'
-
-  const customerName = quote.customer_name || bill?.customer_name || 'Customer'
-  const dateObj = new Date()
-  const orderDateStr = `${dateObj.getDate()}-${dateObj.toLocaleString('en-US', { month: 'short' })}-${dateObj.getFullYear()}`
-  const totalAmount = Number.parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
-
-  const catalogMap = await getProductHsnMap()
-  const enrichedBillItems = enrichItemsWithCache(billItems || [], catalogMap)
-
-  const confirmationHtml = getOrderConfirmationTemplate({
-    customerName,
-    orderNumber: orderNum,
-    orderDate: orderDateStr,
-    totalAmount
-  })
-
-  const subject = `Order Confirmation - ${orderNum}`
-
-  const invNum = bill?.bill_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill?.id || 1) * 899999))}`
-  const pdfBuffer = await generateInvoicePdfBuffer({ quote, bill, billItems: enrichedBillItems, shop, type: 'invoice' }).catch(e => {
-    console.error('[Invoice PDF Generation Error]', e.message)
-    return null
-  })
-
-  const attachments = pdfBuffer ? [
-    {
-      filename: `Tax_Invoice_${invNum}.pdf`,
-      content: pdfBuffer,
-      contentType: 'application/pdf'
-    }
-  ] : []
-
-  // Send Order Confirmation email with attached Tax Invoice PDF
-  const sendRes = await sendEmail({
-    to: quote.customer_email,
-    subject,
-    html: confirmationHtml,
-    attachments
-  }).catch(e => {
-    console.error('[Order Confirmation Email Error]', e.message)
-    return { error: e }
-  })
-
-  if (sendRes?.error) {
-    console.error('[Order Confirmation Email Failed]', sendRes.error.message)
-  } else {
-    console.log('[Order Confirmation Email Sent] ✅ Sent order confirmation email')
-  }
-
-  // Save email log
-  await pool.query(
-    `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'sent', $7, NOW(), NOW())`,
-    [
-      sellerName,
-      quote.customer_email,
-      quote.customer_email,
-      subject,
-      confirmationHtml,
-      `Order ${orderNumber} confirmed for ${customerName} — ₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-      quote.user_id || 'default-user'
-    ]
-  ).catch(e => console.error('[Order Email Record Save Error]', e.message)).catch(() => { })
 }
 
 /* ── GET /api/quotes ── */
@@ -793,14 +649,11 @@ async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
     )
 
     const bill = billRes.rows[0]
-    const createdItems = await insertBillItemsForConvertedQuote(bill.id, items)
+    await insertBillItemsForConvertedQuote(bill.id, items)
 
     await decreaseProductStockForQuote(items, quote.user_id, quote.quote_number || quote.id)
 
     const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
-    if (isEmailEnabled) {
-      await sendOrderConfirmationEmailToCustomer(quote, bill, createdItems.length > 0 ? createdItems : items, generatedOrderNum).catch(e => console.error('[Order Email Send Error]', e.message))
-    }
     await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted').catch(e => console.error('[Workflow Trigger Error]', e.message))
 
     const emailNoticeText = isEmailEnabled
@@ -826,9 +679,6 @@ async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
 
 async function handleQuoteDeclinedResponse(quote) {
   const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id, 'declined')
-  if (isEmailEnabled) {
-    await sendQuoteDeclinedEmailToCustomer(quote).catch(e => console.error('[Declined Email Send Error]', e.message))
-  }
   await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined').catch(e => console.error('[Workflow Trigger Error]', e.message))
 
   const emailNoticeText = isEmailEnabled
@@ -1197,20 +1047,17 @@ async function handleQuoteUpdateAccepted(updatedQuote, userId) {
     await decreaseProductStockForQuote(itemsToDeduct, userId, updatedQuote.quote_number || updatedQuote.id)
   }
 
-  let bill = null
   const existingBillRes = await pool.query(
-    'SELECT * FROM bills WHERE (notes ILIKE $1 OR order_number = $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
+    'SELECT id FROM bills WHERE (notes ILIKE $1 OR order_number = $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
     [`%Quotation #${updatedQuote.quote_number}%`, orderNum, userId]
   ).catch(() => ({ rows: [] }))
 
-  if (existingBillRes.rows.length > 0) {
-    bill = existingBillRes.rows[0]
-  } else {
+  if (existingBillRes.rows.length === 0) {
     const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
     const quoteTotal = Number.parseFloat(updatedQuote.total_amount || 0)
-    const newBillRes = await pool.query(
+    await pool.query(
       `INSERT INTO bills (bill_number, order_number, items, amount, status, due_date, notes, user_id, created_at)
-       VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NOW()) RETURNING *`,
+       VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NOW())`,
       [
         autoBillNum,
         orderNum,
@@ -1220,10 +1067,8 @@ async function handleQuoteUpdateAccepted(updatedQuote, userId) {
         userId
       ]
     ).catch(() => ({ rows: [] }))
-    if (newBillRes.rows?.[0]) bill = newBillRes.rows[0]
   }
 
-  await sendOrderConfirmationEmailToCustomer(updatedQuote, bill, itemsToDeduct, orderNum).catch(e => console.error('[PUT Quote Order Confirmation Email Error]', e.message))
   await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
 }
 

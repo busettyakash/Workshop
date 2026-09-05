@@ -266,7 +266,7 @@ async function executeCustomerInvoiceEmailAction(currentAction, run, companyName
   const dedupKey = `email:dedup:order_confirmation:${orderNum}`
   const alreadySent = await redis.get(dedupKey).catch(() => null)
   if (alreadySent) {
-    console.log(`[Workflow Email] ⏸️ Duplicate order confirmation email prevented for order #${orderNum}. Already sent.`)
+    console.log('[Workflow Email] Duplicate order confirmation email prevented: Already sent.')
     return `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${companyName}.`
   }
   await redis.set(dedupKey, '1', { ex: 300 }).catch(() => {})
@@ -364,7 +364,7 @@ async function executeCustomerDeclineEmailAction(currentAction, run, companyName
   const dedupKey = `email:dedup:quote_decline:${quoteId}`
   const alreadySent = await redis.get(dedupKey).catch(() => null)
   if (alreadySent) {
-    console.log(`[Workflow Email] ⏸️ Duplicate decline email prevented for quote #${quoteId}. Already sent.`)
+    console.log('[Workflow Email] Duplicate decline email prevented: Already sent.')
     return `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
   }
   await redis.set(dedupKey, '1', { ex: 300 }).catch(() => {})
@@ -752,6 +752,7 @@ query(`
 
 /* GET /api/workflows */
 router.get('/', async (req, res) => {
+  await healStalledRuns()
   const cacheKey = `workflows:list:${req.workspaceId}`
   try {
     // Try reading from Redis cache first

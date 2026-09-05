@@ -1144,7 +1144,7 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                 }}>
                   {selectedRun.workflow_name || currentWf?.name || 'Quotation Pipeline Workflow'}
                 </span>
-                {selectedRun.status === 'Executing' && (
+                {selectedRun.status === 'Executing' && (!selectedRun?.created_at || (Date.now() - new Date(selectedRun.created_at).getTime() <= 60000)) && (
                   <span style={{ fontSize: '0.7rem', color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> Streaming...
                   </span>

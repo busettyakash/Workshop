@@ -164,8 +164,8 @@ function QuickAddProductModal({ onClose, onSaved }) {
                   value={form.price_100 ?? ''}
                   onChange={e => {
                     const val = e.target.value
-                    const bw = parseFloat(form.bag_weight || 100)
-                    const packPrice = val ? ((parseFloat(val) / 100) * bw).toFixed(2) : ''
+                    const bw = Number.parseFloat(form.bag_weight || 100)
+                    const packPrice = val ? ((Number.parseFloat(val) / 100) * bw).toFixed(2) : ''
                     setForm(prev => ({ ...prev, price_100: val, price: packPrice }))
                   }}
                   placeholder={`Rate for 100${bulkUnit.short}`}
@@ -186,8 +186,8 @@ function QuickAddProductModal({ onClose, onSaved }) {
                   step="any"
                   value={form.bag_weight}
                   onChange={e => {
-                    const bw = parseFloat(e.target.value || 1)
-                    const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
+                    const bw = Number.parseFloat(e.target.value || 1)
+                    const p100 = Number.parseFloat(form.price_100 || (form.price ? ((Number.parseFloat(form.price) / Number.parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
                     const packPrice = p100 ? ((p100 / 100) * bw).toFixed(2) : form.price
                     setForm(prev => ({ ...prev, bag_weight: e.target.value, price: packPrice }))
                   }}
@@ -203,7 +203,7 @@ function QuickAddProductModal({ onClose, onSaved }) {
                           key={size}
                           type="button"
                           onClick={() => {
-                            const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
+                            const p100 = Number.parseFloat(form.price_100 || (form.price ? ((Number.parseFloat(form.price) / Number.parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
                             const calculatedPrice = p100 ? ((p100 / 100) * size).toFixed(2) : form.price
                             setForm(prev => ({ ...prev, bag_weight: size, price: calculatedPrice }))
                           }}
@@ -235,8 +235,8 @@ function QuickAddProductModal({ onClose, onSaved }) {
                   readOnly
                   value={
                     (() => {
-                      const p100 = parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
-                      const bw = parseFloat(form.bag_weight || 100)
+                      const p100 = Number.parseFloat(form.price_100 || (form.price ? ((Number.parseFloat(form.price) / Number.parseFloat(form.bag_weight || 100)) * 100).toFixed(2) : 0))
+                      const bw = Number.parseFloat(form.bag_weight || 100)
                       return p100 > 0 ? `₹${((p100 / 100) * bw).toFixed(2)}` : '₹0.00'
                     })()
                   }
@@ -246,7 +246,7 @@ function QuickAddProductModal({ onClose, onSaved }) {
             )}
             <div>
               <label style={S.label}>
-                {bulkUnit && parseFloat(form.bag_weight) > 1
+                {bulkUnit && Number.parseFloat(form.bag_weight) > 1
                   ? `Stock Quantity (${bulkUnit.pluralName})`
                   : `Stock Quantity (${bulkUnit?.short || form.unit || 'pcs'})`}
               </label>
@@ -255,8 +255,8 @@ function QuickAddProductModal({ onClose, onSaved }) {
           </div>
           {bulkUnit && (form.price_100 || form.price) && form.bag_weight && (
             <div style={{ marginTop: 12, fontSize: '0.8125rem', color: '#10b981', fontWeight: 600 }}>
-              Calculated Unit Rate: ₹{(parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
-              • {form.bag_weight}{bulkUnit.short} {bulkUnit.name} Price: ₹{(((parseFloat(form.price_100 || (form.price ? ((parseFloat(form.price) / parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100) * parseFloat(form.bag_weight))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              Calculated Unit Rate: ₹{(Number.parseFloat(form.price_100 || (form.price ? ((Number.parseFloat(form.price) / Number.parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
+              • {form.bag_weight}{bulkUnit.short} {bulkUnit.name} Price: ₹{(((Number.parseFloat(form.price_100 || (form.price ? ((Number.parseFloat(form.price) / Number.parseFloat(form.bag_weight || 100)) * 100) : 0)) / 100) * Number.parseFloat(form.bag_weight))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           )}
         </form>
@@ -393,9 +393,9 @@ export default function BillForm() {
   function calcProductPrices(prod) {
     if (!prod) return { perUnitRate: 0, perKgRate: 0, perPackPrice: 0 }
 
-    const bw = parseFloat(prod?.bag_weight) || 1
-    const rawP = parseFloat(prod?.price || 0)
-    const rawUP = parseFloat(prod?.updated_price || 0)
+    const bw = Number.parseFloat(prod?.bag_weight) || 1
+    const rawP = Number.parseFloat(prod?.price || 0)
+    const rawUP = Number.parseFloat(prod?.updated_price || 0)
 
     // updated_price and price are both stored as 1-bag price (per bag_weight kg)
     // So to get per-kg rate: divide by bag_weight
@@ -410,9 +410,9 @@ export default function BillForm() {
     const perUnitRate = perKgRate
 
     return {
-      perUnitRate: parseFloat(perUnitRate.toFixed(2)),
-      perKgRate: parseFloat(perKgRate.toFixed(2)),
-      perPackPrice: parseFloat(perPackPrice.toFixed(2))
+      perUnitRate: Number.parseFloat(perUnitRate.toFixed(2)),
+      perKgRate: Number.parseFloat(perKgRate.toFixed(2)),
+      perPackPrice: Number.parseFloat(perPackPrice.toFixed(2))
     }
   }
 
@@ -425,7 +425,7 @@ export default function BillForm() {
     const existingIdx = lineItems.findIndex(item => String(item.product_id) === String(prod.id))
     if (existingIdx >= 0) {
       const existingItem = lineItems[existingIdx]
-      const currentQty = parseFloat(existingItem.qty || 1)
+      const currentQty = Number.parseFloat(existingItem.qty || 1)
       const nextQty = currentQty + 1
       const stockInfo = calcMaxStock(prod, existingItem.unit)
       if (stockInfo && stockInfo.maxStock >= 0 && nextQty > stockInfo.maxStock) {
@@ -478,7 +478,7 @@ export default function BillForm() {
     setLineItems(prev => {
       const existingIdx = prev.findIndex(item => String(item.product_id) === String(productId))
       if (existingIdx === -1) return prev
-      const currentQty = parseFloat(prev[existingIdx].qty || 1)
+      const currentQty = Number.parseFloat(prev[existingIdx].qty || 1)
       if (currentQty <= 1) {
         return prev.filter((_, i) => i !== existingIdx)
       }
@@ -494,8 +494,8 @@ export default function BillForm() {
 
 const calcMaxStock = (prod, itemUnit) => {
   if (!prod || prod.stock === undefined || prod.stock === null) return null
-  const stockBags = parseFloat(prod.stock) || 0
-  const bw = parseFloat(prod.bag_weight) || 1
+  const stockBags = Number.parseFloat(prod.stock) || 0
+  const bw = Number.parseFloat(prod.bag_weight) || 1
   const bulkUnit = getBulkUnitDetails(prod.unit)
   const unitStr = String(itemUnit || prod.unit || '').toLowerCase()
 
@@ -505,13 +505,13 @@ const calcMaxStock = (prod, itemUnit) => {
   )
 
   if (isBaseUnit && bw > 1) {
-    const maxBase = (stockBags * bw) + parseFloat(prod.loose_kg || 0)
+    const maxBase = (stockBags * bw) + Number.parseFloat(prod.loose_kg || 0)
     return {
       maxStock: maxBase,
       displayLabel: `${maxBase} ${bulkUnit.short || 'kg'} (${stockBags} ${bulkUnit.name || 'Bags'})`
     }
   } else {
-    const maxBags = stockBags + (bw > 1 ? (parseFloat(prod.loose_kg || 0) / bw) : 0)
+    const maxBags = stockBags + (bw > 1 ? (Number.parseFloat(prod.loose_kg || 0) / bw) : 0)
     const label = (bulkUnit && bw > 1)
       ? `${bulkUnit.name || 'Bag'} (${bw}${bulkUnit.short || 'kg'})`
       : (bulkUnit?.short || prod.unit || 'pcs')
@@ -524,7 +524,7 @@ const calcMaxStock = (prod, itemUnit) => {
 
   const updateLineItem = (index, field, value) => {
     if (field === 'qty') {
-      const numQty = parseFloat(value) || 0
+      const numQty = Number.parseFloat(value) || 0
       const targetItem = lineItems[index]
       const selectedProd = products.find(p => String(p.id) === String(targetItem?.product_id))
       const stockInfo = calcMaxStock(selectedProd, targetItem?.unit)
@@ -566,7 +566,7 @@ const calcMaxStock = (prod, itemUnit) => {
     for (const item of lineItems) {
       const selectedProd = products.find(p => String(p.id) === String(item.product_id))
       const stockInfo = calcMaxStock(selectedProd, item?.unit)
-      const qty = parseFloat(item.qty) || 0
+      const qty = Number.parseFloat(item.qty) || 0
       if (stockInfo && stockInfo.maxStock >= 0 && qty > stockInfo.maxStock) {
         dispatch(addToast({
           message: `Cannot proceed: We have only ${stockInfo.displayLabel} available in stock for ${selectedProd?.name || 'this product'}.`,
@@ -583,12 +583,12 @@ const calcMaxStock = (prod, itemUnit) => {
   }
 
   // Calculations
-  const grossSubtotal = lineItems.reduce((sum, li) => sum + (parseFloat(li.price || 0) * parseFloat(li.qty || 1)), 0)
-  const lineDiscounts = lineItems.reduce((sum, li) => sum + parseFloat(li.discount || 0), 0)
-  const discountAmt = parseFloat(form.discount || 0)
+  const grossSubtotal = lineItems.reduce((sum, li) => sum + (Number.parseFloat(li.price || 0) * Number.parseFloat(li.qty || 1)), 0)
+  const lineDiscounts = lineItems.reduce((sum, li) => sum + Number.parseFloat(li.discount || 0), 0)
+  const discountAmt = Number.parseFloat(form.discount || 0)
   const netSubtotal = Math.max(0, grossSubtotal - lineDiscounts - discountAmt)
 
-  const taxRate = parseFloat(form.tax_rate || 0)
+  const taxRate = Number.parseFloat(form.tax_rate || 0)
   const taxAmount = netSubtotal * (taxRate / 100)
   const cgst = taxAmount / 2
   const sgst = taxAmount / 2
@@ -610,8 +610,8 @@ const calcMaxStock = (prod, itemUnit) => {
         amount: total,
         status: form.status,
         due_date: form.status === 'unpaid' ? form.due_date : null,
-        discount: parseFloat(form.discount || 0),
-        tax_rate: parseFloat(form.tax_rate || 0),
+        discount: Number.parseFloat(form.discount || 0),
+        tax_rate: Number.parseFloat(form.tax_rate || 0),
         notes: form.notes,
         items: lineItems.map(li => ({
           product_id: li.product_id,
@@ -620,9 +620,9 @@ const calcMaxStock = (prod, itemUnit) => {
           productName: li.name || li.product_name || li.productName || 'Product',
           hsn_code: li.hsn_code || li.hsn || '10064000',
           hsn: li.hsn_code || li.hsn || '10064000',
-          qty: parseFloat(li.qty || 1),
-          price: parseFloat(li.price || 0),
-          discount: parseFloat(li.discount || 0),
+          qty: Number.parseFloat(li.qty || 1),
+          price: Number.parseFloat(li.price || 0),
+          discount: Number.parseFloat(li.discount || 0),
           unit: li.unit || 'pcs'
         }))
       }
@@ -748,7 +748,7 @@ const calcMaxStock = (prod, itemUnit) => {
                       {lineItems.map((li, idx) => {
                         const productObj = products.find(p => p.id === li.product_id)
                         const stockAvailable = productObj ? productObj.stock : 999999
-                        const exceedsStock = parseFloat(li.qty) > stockAvailable
+                        const exceedsStock = Number.parseFloat(li.qty) > stockAvailable
                         const bulkUnit = getBulkUnitDetails(li.unit)
 
                         return (
@@ -779,7 +779,7 @@ const calcMaxStock = (prod, itemUnit) => {
                               <input
                                 type="text"
                                 readOnly
-                                value={`₹${parseFloat(li.price || 0).toFixed(2)}`}
+                                value={`₹${Number.parseFloat(li.price || 0).toFixed(2)}`}
                                 style={{ ...S.input, height: 28, padding: '0 6px', fontSize: '0.8125rem', fontWeight: 600, color: '#4b5563', background: '#f8fafc', cursor: 'not-allowed' }}
                               />
                             </div>
@@ -789,13 +789,13 @@ const calcMaxStock = (prod, itemUnit) => {
                                 min="0"
                                 step="0.01"
                                 value={li.discount === 0 ? '' : li.discount}
-                                onChange={e => updateLineItem(idx, 'discount', e.target.value === '' ? 0 : parseFloat(e.target.value))}
+                                onChange={e => updateLineItem(idx, 'discount', e.target.value === '' ? 0 : Number.parseFloat(e.target.value))}
                                 style={{ ...S.input, height: 28, padding: '0 6px', fontSize: '0.8125rem' }}
                                 placeholder="0"
                               />
                             </div>
                             <div style={{ textAlign: 'right', fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
-                              {INR(Math.max(0, (parseFloat(li.price || 0) * parseFloat(li.qty || 0)) - parseFloat(li.discount || 0)))}
+                              {INR(Math.max(0, (Number.parseFloat(li.price || 0) * Number.parseFloat(li.qty || 0)) - Number.parseFloat(li.discount || 0)))}
                             </div>
                             <button
                               type="button"
@@ -1104,10 +1104,10 @@ const calcMaxStock = (prod, itemUnit) => {
                     ) : (
                       filteredProducts.map(p => {
                         const lineItem = lineItems.find(li => li.product_id === p.id)
-                        const qtyAdded = lineItem ? parseFloat(lineItem.qty || 0) : 0
+                        const qtyAdded = lineItem ? Number.parseFloat(lineItem.qty || 0) : 0
                         const alreadyAdded = qtyAdded > 0
                         const bulkUnit = getBulkUnitDetails(p.unit)
-                        const bw = parseFloat(p.bag_weight || 1)
+                        const bw = Number.parseFloat(p.bag_weight || 1)
                         const unitStr = String(lineItem?.unit || p.unit || '').toLowerCase()
 
                         const isBaseUnit = bulkUnit && (
@@ -1115,7 +1115,7 @@ const calcMaxStock = (prod, itemUnit) => {
                           unitStr === 'kgs' || unitStr === 'kg' || unitStr === 'ltr' || unitStr === 'mtr'
                         )
 
-                        const totalAvailableBase = ((parseFloat(p.stock || 0)) * (bulkUnit && bw > 1 ? bw : 1)) + parseFloat(p.loose_kg || 0)
+                        const totalAvailableBase = ((Number.parseFloat(p.stock || 0)) * (bulkUnit && bw > 1 ? bw : 1)) + Number.parseFloat(p.loose_kg || 0)
                         const qtyAddedBase = isBaseUnit ? qtyAdded : (qtyAdded * bw)
                         const remainingBaseQty = Math.max(0, totalAvailableBase - qtyAddedBase)
 
@@ -1349,7 +1349,7 @@ const calcMaxStock = (prod, itemUnit) => {
                       <select
                         name="tax_rate"
                         value={form.tax_rate}
-                        onChange={e => setForm(prev => ({ ...prev, tax_rate: parseInt(e.target.value) }))}
+                        onChange={e => setForm(prev => ({ ...prev, tax_rate: Number.parseInt(e.target.value) }))}
                         style={{ ...S.input, height: 30, padding: '0 8px', fontSize: '0.8125rem' }}
                       >
                         <option value="0">0% (GST Exempt / Nil Rated)</option>
@@ -1411,7 +1411,7 @@ const calcMaxStock = (prod, itemUnit) => {
                             <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>{li.qty} {li.unit} × {INR(li.price)}</span>
                           </div>
                           <span style={{ fontWeight: 600, color: '#111827', flexShrink: 0 }}>
-                            {INR(Math.max(0, (parseFloat(li.price || 0) * parseFloat(li.qty || 1)) - parseFloat(li.discount || 0)))}
+                            {INR(Math.max(0, (Number.parseFloat(li.price || 0) * Number.parseFloat(li.qty || 1)) - Number.parseFloat(li.discount || 0)))}
                           </span>
                         </div>
                       ))}

@@ -231,7 +231,7 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
                   <span style={{ fontSize: '0.68rem', color: '#64748b' }}>Stock: {formatStockDisplay(p.stock, p.bag_weight, p.unit, p.loose_kg)}</span>
                 </div>
                 <span style={{ fontWeight: 700, color: '#059669', fontSize: '0.78rem', flexShrink: 0 }}>
-                  ₹{parseFloat(p.updated_price || p.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{Number.parseFloat(p.updated_price || p.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
               </div>
             ))
@@ -244,9 +244,9 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
 
 const calcMaxStock = (prod, itemUnit) => {
   if (!prod || prod.stock === undefined || prod.stock === null) return null
-  const stockBags = parseFloat(prod.stock) || 0
-  const looseKg = parseFloat(prod.loose_kg) || 0
-  const bw = parseFloat(prod.bag_weight) || 1
+  const stockBags = Number.parseFloat(prod.stock) || 0
+  const looseKg = Number.parseFloat(prod.loose_kg) || 0
+  const bw = Number.parseFloat(prod.bag_weight) || 1
   const bulkUnit = getBulkUnitDetails(prod.unit)
   const unitStr = String(itemUnit || prod.unit || '').toLowerCase()
 
@@ -333,12 +333,12 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   }, [])
 
   const [gstRate, setGstRate] = useState(() => {
-    if (quote?.tax_rate !== undefined && quote?.tax_rate !== null && !isNaN(parseFloat(quote.tax_rate))) {
-      return parseFloat(quote.tax_rate)
+    if (quote?.tax_rate !== undefined && quote?.tax_rate !== null && !Number.isNaN(Number.parseFloat(quote.tax_rate))) {
+      return Number.parseFloat(quote.tax_rate)
     }
-    const taxAmt = parseFloat(quote?.tax_amount || 0)
+    const taxAmt = Number.parseFloat(quote?.tax_amount || 0)
     const subtotal = (quote?.line_items && Array.isArray(quote.line_items))
-      ? quote.line_items.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0)
+      ? quote.line_items.reduce((s, it) => s + (Number.parseFloat(it.amount) || 0), 0)
       : 0
     if (taxAmt > 0 && subtotal > 0) {
       return Math.round((taxAmt / subtotal) * 100)
@@ -348,7 +348,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
   // Calculate totals whenever items or GST rate change
   useEffect(() => {
-    const subtotal = lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0)
+    const subtotal = lineItems.reduce((acc, item) => acc + (Number.parseFloat(item.amount) || 0), 0)
     let tax = 0
     if (gstRate > 0) {
       tax = subtotal * (gstRate / 100)
@@ -381,9 +381,9 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   function calcProductPrices(prod) {
     if (!prod) return { perUnitRate: 0, perKgRate: 0, perPackPrice: 0 }
 
-    const bw = parseFloat(prod?.bag_weight) || 1
-    const rawP = parseFloat(prod?.price || 0)
-    const rawUP = parseFloat(prod?.updated_price || 0)
+    const bw = Number.parseFloat(prod?.bag_weight) || 1
+    const rawP = Number.parseFloat(prod?.price || 0)
+    const rawUP = Number.parseFloat(prod?.updated_price || 0)
 
     // updated_price and price are both stored as 1-bag price (per bag_weight kg)
     // So to get per-kg rate: divide by bag_weight
@@ -398,9 +398,9 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     const perUnitRate = perKgRate
 
     return {
-      perUnitRate: parseFloat(perUnitRate.toFixed(2)),
-      perKgRate: parseFloat(perKgRate.toFixed(2)),
-      perPackPrice: parseFloat(perPackPrice.toFixed(2))
+      perUnitRate: Number.parseFloat(perUnitRate.toFixed(2)),
+      perKgRate: Number.parseFloat(perKgRate.toFixed(2)),
+      perPackPrice: Number.parseFloat(perPackPrice.toFixed(2))
     }
   }
 
@@ -410,7 +410,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
     const prices = calcProductPrices(prod)
     const bulkUnit = getBulkUnitDetails(prod.unit)
-    const bagWeight = parseFloat(prod.bag_weight || 1)
+    const bagWeight = Number.parseFloat(prod.bag_weight || 1)
 
     const isPack = bulkUnit && bagWeight > 1
     const unitLabel = isPack ? (bulkUnit.name || prod.unit || 'Bag') : (prod.unit || 'pcs')
@@ -420,13 +420,13 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     if (bulkUnit && bagWeight > 1) {
       subtext = `${bulkUnit.name || 'Pack'}: ₹${prices.perPackPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
     } else if (prod.unit) {
-      subtext = `${prod.unit}: ₹${(parseFloat(prod.updated_price || prod.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      subtext = `${prod.unit}: ₹${(Number.parseFloat(prod.updated_price || prod.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }
 
     setLineItems(prev => prev.map((item, i) => {
       if (i === index) {
         const stockInfo = calcMaxStock(prod, unitLabel)
-        let qty = parseFloat(item.quantity) || 1
+        let qty = Number.parseFloat(item.quantity) || 1
         if (stockInfo && stockInfo.maxStock >= 0 && qty > stockInfo.maxStock) {
           qty = stockInfo.maxStock || 1
           dispatch(addToast({
@@ -452,7 +452,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   }
 
   const handleQtyChange = (index, qty) => {
-    const numQty = parseFloat(qty) || 0
+    const numQty = Number.parseFloat(qty) || 0
     const targetItem = lineItems[index]
     const selectedProd = products.find(p => String(p.id) === String(targetItem?.product_id))
     const stockInfo = calcMaxStock(selectedProd, targetItem?.unit)
@@ -465,8 +465,8 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
       setLineItems(prev => prev.map((item, i) => {
         if (i === index) {
-          const rate = parseFloat(item.rate) || 0
-          const disc = parseFloat(item.discount) || 0
+          const rate = Number.parseFloat(item.rate) || 0
+          const disc = Number.parseFloat(item.discount) || 0
           return { ...item, quantity: stockInfo.maxStock, amount: Math.max(0, (stockInfo.maxStock * rate) - disc) }
         }
         return item
@@ -476,8 +476,8 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
     setLineItems(prev => prev.map((item, i) => {
       if (i === index) {
-        const rate = parseFloat(item.rate) || 0
-        const disc = parseFloat(item.discount) || 0
+        const rate = Number.parseFloat(item.rate) || 0
+        const disc = Number.parseFloat(item.discount) || 0
         return { ...item, quantity: qty, amount: Math.max(0, (numQty * rate) - disc) }
       }
       return item
@@ -485,11 +485,11 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   }
 
   const handleRateChange = (index, rate) => {
-    const numRate = parseFloat(rate) || 0
+    const numRate = Number.parseFloat(rate) || 0
     setLineItems(prev => prev.map((item, i) => {
       if (i === index) {
-        const qty = parseFloat(item.quantity) || 0
-        const disc = parseFloat(item.discount) || 0
+        const qty = Number.parseFloat(item.quantity) || 0
+        const disc = Number.parseFloat(item.discount) || 0
         return { ...item, rate: rate, amount: Math.max(0, (qty * numRate) - disc) }
       }
       return item
@@ -497,11 +497,11 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   }
 
   const handleDiscountChange = (index, disc) => {
-    const numDisc = parseFloat(disc) || 0
+    const numDisc = Number.parseFloat(disc) || 0
     setLineItems(prev => prev.map((item, i) => {
       if (i === index) {
-        const qty = parseFloat(item.quantity) || 0
-        const rate = parseFloat(item.rate) || 0
+        const qty = Number.parseFloat(item.quantity) || 0
+        const rate = Number.parseFloat(item.rate) || 0
         return { ...item, discount: disc, discount_amount: numDisc, amount: Math.max(0, (qty * rate) - numDisc) }
       }
       return item
@@ -530,8 +530,8 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
       status: newStatus,
       line_items: lineItems.map(it => ({
         ...it,
-        discount: parseFloat(it.discount || 0),
-        discount_amount: parseFloat(it.discount || 0)
+        discount: Number.parseFloat(it.discount || 0),
+        discount_amount: Number.parseFloat(it.discount || 0)
       }))
     }
     const targetId = currentQuoteId || quote?.id
@@ -868,19 +868,19 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             <tbody>
               {lineItems.map((item, index) => {
                 const selectedProd = products.find(p => String(p.id) === String(item.product_id))
-                const bw = parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
+                const bw = Number.parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
                 const rawUnit = item.unit || selectedProd?.unit || 'pcs'
                 const bulkUnit = getBulkUnitDetails(selectedProd?.unit || rawUnit)
                 const unitLabel = item.unit || (bw > 1
                   ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
                   : (selectedProd?.unit || rawUnit))
 
-                const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? parseFloat(selectedProd.stock) : null
-                const isExceeded = maxStock !== null && maxStock >= 0 && (parseFloat(item.quantity) || 0) > maxStock
+                const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? Number.parseFloat(selectedProd.stock) : null
+                const isExceeded = maxStock !== null && maxStock >= 0 && (Number.parseFloat(item.quantity) || 0) > maxStock
 
                 const baseSubtext = item.subtext || (selectedProd && bw > 1 && bulkUnit
-                  ? `${bulkUnit.name || 'Bag'}: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
-                  : (selectedProd ? `${selectedProd.unit || 'Unit'}: ₹${(parseFloat(selectedProd?.updated_price || selectedProd?.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}` : ''))
+                  ? `${bulkUnit.name || 'Bag'}: ₹${(Number.parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
+                  : (selectedProd ? `${selectedProd.unit || 'Unit'}: ₹${(Number.parseFloat(selectedProd?.updated_price || selectedProd?.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}` : ''))
 
                 const stockSubtext = selectedProd ? `Available Stock: ${formatStockDisplay(selectedProd.stock, selectedProd.bag_weight, selectedProd.unit, selectedProd.loose_kg)}` : ''
                 const fullSubtext = [baseSubtext, stockSubtext].filter(Boolean).join(' • ')
@@ -928,7 +928,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                           type="text"
                           readOnly
                           disabled
-                          value={item.rate ? `₹${(parseFloat(item.rate) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
+                          value={item.rate ? `₹${(Number.parseFloat(item.rate) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
                           style={{
                             width: 85, height: 26, padding: '0 4px', borderRadius: 4,
                             border: '1px solid #cbd5e1', fontSize: '0.75rem', fontWeight: 700,
@@ -943,7 +943,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                     <td style={{ padding: '6px 8px', verticalAlign: 'middle', textAlign: 'right' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
                         <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
-                          ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
+                          ₹{(Number.parseFloat(item.amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                         </span>
                         <button
                           type="button"
@@ -970,11 +970,11 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               onClick={() => {
                 for (const item of lineItems) {
                   const selectedProd = products.find(p => String(p.id) === String(item.product_id))
-                  const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? parseFloat(selectedProd.stock) : null
-                  const qty = parseFloat(item.quantity) || 0
+                  const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? Number.parseFloat(selectedProd.stock) : null
+                  const qty = Number.parseFloat(item.quantity) || 0
                   if (maxStock !== null && maxStock >= 0 && qty > maxStock) {
                     const bulkUnit = getBulkUnitDetails(item.unit || selectedProd?.unit)
-                    const bw = parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
+                    const bw = Number.parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
                     const unitLabel = (selectedProd && bw > 1)
                       ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
                       : (item.unit || selectedProd?.unit || 'pcs')
@@ -1014,7 +1014,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               <div style={{ textAlign: 'right' }}>
                 <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600 }}>Total Quotation Amount</span>
                 <p style={{ margin: '1px 0 0', fontWeight: 800, color: '#15803d', fontSize: '1.1rem' }}>
-                  ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
+                  ₹{(Number.parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                 </p>
                 <p style={{ margin: '1px 0 0', fontSize: '0.72rem', color: '#64748b' }}>Quote #{formData.quote_number} • Valid till {formData.valid_until}</p>
               </div>
@@ -1044,12 +1044,12 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               </div>
 
               <div style={{ textAlign: 'right', fontSize: '0.78rem' }}>
-                <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
+                <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (Number.parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
                 <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
-                <span style={{ color: gstRate > 0 ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST ({gstRate}%): ₹{(parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
+                <span style={{ color: gstRate > 0 ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST ({gstRate}%): ₹{(Number.parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
                 <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
                 <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.82rem' }}>
-                  Final Total: ₹{(parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
+                  Final Total: ₹{(Number.parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
@@ -1084,7 +1084,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                       </div>
 
                       <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.82rem', minWidth: 80, textAlign: 'right' }}>
-                        ₹{(parseFloat(item.amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
+                        ₹{(Number.parseFloat(item.amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -1493,7 +1493,7 @@ export default function Quotes() {
                                 </td>
                                 <td>
                                   <span style={{ fontWeight: 700, color: '#0f172a' }}>
-                                    ₹{parseFloat(row.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ₹{Number.parseFloat(row.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                 </td>
                                 <td>

@@ -612,8 +612,8 @@ export default function Workflows() {
                                         const isExec = runItem?.status === 'Executing'
                                         const runDate = runItem?.created_at ? new Date(runItem.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
                                         const rawDur = String(runItem?.duration || '')
-                                        const durNum = parseInt(rawDur, 10)
-                                        const displayDuration = isExec ? 'Running' : (rawDur && !isNaN(durNum) && durNum > 600 ? '6s' : (rawDur || '—'))
+                                        const durNum = Number.parseInt(rawDur, 10)
+                                        const displayDuration = isExec ? 'Running' : (rawDur && !Number.isNaN(durNum) && durNum > 600 ? '6s' : (rawDur || '—'))
 
                                         return (
                                           <div
@@ -651,7 +651,7 @@ export default function Workflows() {
                                               </span>
                                               {runItem.test_value !== undefined && (
                                                 <span style={{ color: '#059669', fontWeight: 600, fontSize: '0.72rem' }}>
-                                                  ₹{parseFloat(runItem.test_value || 0).toLocaleString('en-IN')}
+                                                  ₹{Number.parseFloat(runItem.test_value || 0).toLocaleString('en-IN')}
                                                 </span>
                                               )}
                                             </div>
@@ -887,7 +887,7 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
     if (run?.status === 'Cancelled' || run?.status === 'Failed') {
       return { label: run.status, pct: 100, color: '#ef4444' }
     }
-    const s = parseInt(step || 0, 10)
+    const s = Number.parseInt(step || 0, 10)
     if (s >= 4) return { label: 'Step 4: Send Email', pct: 100, color: '#16a34a' }
     if (s === 3) return { label: 'Step 3: Auto-generate Bill', pct: 75, color: '#2563eb' }
     if (s === 2) return { label: 'Step 2: Inventory Deduction', pct: 50, color: '#16a34a' }
@@ -998,8 +998,8 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                     const isCompleted = r.status === 'Completed'
                     const isSelected = selectedRun?.id === r.id
                     const rawDur = String(r?.duration || '')
-                    const durNum = parseInt(rawDur, 10)
-                    const displayDuration = isExecuting ? 'Running' : (rawDur && !isNaN(durNum) && durNum > 60 ? '4s' : (rawDur || '3s'))
+                    const durNum = Number.parseInt(rawDur, 10)
+                    const displayDuration = isExecuting ? 'Running' : (rawDur && !Number.isNaN(durNum) && durNum > 60 ? '4s' : (rawDur || '3s'))
 
                     return (
                       <tr
@@ -1041,7 +1041,7 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                             
                             {r.test_value !== undefined && (
                               <span style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600 }}>
-                                ₹{parseFloat(r.test_value || 0).toLocaleString('en-IN')}
+                                ₹{Number.parseFloat(r.test_value || 0).toLocaleString('en-IN')}
                               </span>
                             )}
                           </div>

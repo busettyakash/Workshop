@@ -121,7 +121,7 @@ export default function UnpaidBills() {
       s = s.replace(' ', 'T') + 'Z'
     }
     const parsed = new Date(s)
-    const validDate = isNaN(parsed.getTime()) ? new Date(d) : parsed
+    const validDate = Number.isNaN(parsed.getTime()) ? new Date(d) : parsed
     return validDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
   }
 

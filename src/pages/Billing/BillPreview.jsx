@@ -10,12 +10,12 @@ const fmtDate = (d) => {
     s = s.replace(' ', 'T') + 'Z'
   }
   const parsed = new Date(s)
-  const valid = isNaN(parsed.getTime()) ? new Date(d) : parsed
+  const valid = Number.isNaN(parsed.getTime()) ? new Date(d) : parsed
   return valid.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQuoteFlow = false) {
-  let bw = parseFloat(bagWeight || 1)
+  let bw = Number.parseFloat(bagWeight || 1)
   let pName
   if (typeof prodName === 'string' && prodName.trim()) {
     pName = prodName
@@ -161,25 +161,25 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   } catch { items = [] }
 
   const grossSubtotal = items.reduce((s, li) => {
-    const q = parseFloat(li.qty || li.quantity || 1)
-    const p = parseFloat(li.price || li.rate || 0)
+    const q = Number.parseFloat(li.qty || li.quantity || 1)
+    const p = Number.parseFloat(li.price || li.rate || 0)
     return s + (p * q)
   }, 0)
 
   const lineDiscounts = items.reduce((s, li) => {
-    const d = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? 0)
-    return s + (isNaN(d) ? 0 : d)
+    const d = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? 0)
+    return s + (Number.isNaN(d) ? 0 : d)
   }, 0)
-  const explicitDiscount = parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
-  const explicitTotalAmount = parseFloat(doc.amount || doc.total_amount || 0)
+  const explicitDiscount = Number.parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
+  const explicitTotalAmount = Number.parseFloat(doc.amount || doc.total_amount || 0)
 
   const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
-  const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !isNaN(parseFloat(rawTaxAmt))
-  const explicitTaxAmt = hasExplicitTaxAmt ? parseFloat(rawTaxAmt) : 0
+  const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !Number.isNaN(Number.parseFloat(rawTaxAmt))
+  const explicitTaxAmt = hasExplicitTaxAmt ? Number.parseFloat(rawTaxAmt) : 0
 
   const rawTaxRate = doc.tax_rate ?? doc.taxRate ?? quote?.tax_rate ?? bill?.tax_rate
-  const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !isNaN(parseFloat(rawTaxRate)))
-    ? parseFloat(rawTaxRate)
+  const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !Number.isNaN(Number.parseFloat(rawTaxRate)))
+    ? Number.parseFloat(rawTaxRate)
     : null
 
   const tempDiscount = Math.max(explicitDiscount, lineDiscounts)
@@ -203,7 +203,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (subtotal + taxAmt)
 
   let effectiveTaxRate = 0
-  if (explicitTaxRate !== null && explicitTaxRate !== undefined && !isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
+  if (explicitTaxRate !== null && explicitTaxRate !== undefined && !Number.isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
     effectiveTaxRate = explicitTaxRate
   } else if (taxAmt > 0 && subtotal > 0) {
     effectiveTaxRate = Math.round((taxAmt / subtotal) * 100)
@@ -424,8 +424,8 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                 </thead>
                 <tbody>
                   {items.length > 0 ? items.map((li, i) => {
-                    const qty = parseFloat(li.qty || li.quantity || 1)
-                    const price = parseFloat(li.price || li.rate || 0)
+                    const qty = Number.parseFloat(li.qty || li.quantity || 1)
+                    const price = Number.parseFloat(li.price || li.rate || 0)
                     const pId = li.product_id || li.productId || li.id
                     const prodNameRaw = (typeof li === 'string' && li.trim())
                       ? li
@@ -445,15 +445,15 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                     const prodName = prodNameRaw || dbProd?.name || 'Product Item'
                     const unitRaw = li.unit || li.unitLabel || (dbProd?.unit || '')
 
-                    let bagWeight = parseFloat(
+                    let bagWeight = Number.parseFloat(
                       li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? li.packWeight ??
                       dbProd?.bag_weight ?? dbProd?.bagWeight ?? dbProd?.pack_weight ?? dbProd?.packWeight ?? 0
                     )
 
-                    if (isNaN(bagWeight) || bagWeight <= 0) {
+                    if (Number.isNaN(bagWeight) || bagWeight <= 0) {
                       const nameMatch = prodName.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
                       if (nameMatch && nameMatch[1]) {
-                        bagWeight = parseFloat(nameMatch[1])
+                        bagWeight = Number.parseFloat(nameMatch[1])
                       } else {
                         bagWeight = 1
                       }
@@ -465,7 +465,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                       ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
                       : rawHsn
 
-                    const explicitDisc = parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? 0)
+                    const explicitDisc = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? 0)
                     const lineTotalGross = price * qty
                     const itemDisc = explicitDisc > 0
                       ? explicitDisc

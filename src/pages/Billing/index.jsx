@@ -372,8 +372,8 @@ export default function Billing() {
       setTotal(billsRes.data?.total || 0)
       let rev = 0, totalCount = 0, pendingCount = 0, paidCount = 0
       summaryRes.data?.forEach(s => {
-        const val = parseFloat(s.total) || 0
-        const cnt = parseInt(s.count) || 0
+        const val = Number.parseFloat(s.total) || 0
+        const cnt = Number.parseInt(s.count) || 0
         totalCount += cnt
         if (s.status === 'paid') { rev = val; paidCount = cnt }
         else if (s.status === 'unpaid') { pendingCount = cnt }
@@ -419,7 +419,7 @@ export default function Billing() {
   }
 
   const formatCurrency = (val) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(val) || 0)
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.parseFloat(val) || 0)
 
   const formatDate = (d) => {
     if (!d) return '—'
@@ -428,7 +428,7 @@ export default function Billing() {
       s = s.replace(' ', 'T') + 'Z'
     }
     const parsed = new Date(s)
-    const validDate = isNaN(parsed.getTime()) ? new Date(d) : parsed
+    const validDate = Number.isNaN(parsed.getTime()) ? new Date(d) : parsed
     return validDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
   }
 
@@ -694,11 +694,11 @@ export default function Billing() {
                                   {row.total_bills}
                                 </span>
                               </td>
-                              <td style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600, color: '#0f172a' }}>{formatCurrency(parseFloat(row.total_revenue))}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600, color: '#0f172a' }}>{formatCurrency(Number.parseFloat(row.total_revenue))}</td>
                               <td style={{ textAlign: 'center', padding: '8px 12px', color: '#059669', fontWeight: 600 }}>{row.paid_count}</td>
-                              <td style={{ textAlign: 'right', padding: '8px 12px', color: '#059669' }}>{formatCurrency(parseFloat(row.paid_revenue))}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', color: '#059669' }}>{formatCurrency(Number.parseFloat(row.paid_revenue))}</td>
                               <td style={{ textAlign: 'center', padding: '8px 12px', color: '#d97706', fontWeight: 600 }}>{row.pending_count}</td>
-                              <td style={{ textAlign: 'right', padding: '8px 12px', color: '#d97706' }}>{formatCurrency(parseFloat(row.pending_revenue))}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', color: '#d97706' }}>{formatCurrency(Number.parseFloat(row.pending_revenue))}</td>
                               <td style={{ textAlign: 'center', padding: '8px 12px' }}>
                                 <button
                                   className="attio-btn"

@@ -913,7 +913,7 @@ router.patch('/:id/toggle-live', async (req, res) => {
     await redis.set(`workflow:${req.params.id}:is_live`, nextLive ? '1' : '0').catch(() => {})
     await redis.del(`workflows:list:${userId}`).catch(() => {})
 
-    console.log('[WORKFLOW LIVE TOGGLE] Single Live workflow enforced. Switched workflow %s to %s', req.params.id, nextLive)
+    console.log('[WORKFLOW LIVE TOGGLE] Single Live workflow enforced')
     res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })

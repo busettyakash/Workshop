@@ -16,7 +16,7 @@ import '../Products/Products.css'
 const limit = 20
 
 function formatCurrency(value) {
-  return (parseFloat(value || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata',
+  return (Number.parseFloat(value || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata',
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 2,
@@ -89,7 +89,7 @@ export default function Orders() {
     } else if (sort === 'order_desc') {
       rows.sort((a, b) => String(b.order_number || '').localeCompare(String(a.order_number || '')))
     } else if (sort === 'amount_desc') {
-      rows.sort((a, b) => parseFloat(b.total_amount || 0) - parseFloat(a.total_amount || 0))
+      rows.sort((a, b) => Number.parseFloat(b.total_amount || 0) - Number.parseFloat(a.total_amount || 0))
     }
     return rows
   }, [orders, sort])

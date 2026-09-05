@@ -37,8 +37,8 @@ export default function ImportStockNote() {
     const decimalPart = parts.length > 1 ? '.' + parts[1].replace(/[^0-9]/g, '').slice(0, 2) : ''
     
     if (integerPart) {
-      const num = parseInt(integerPart, 10)
-      if (!isNaN(num)) {
+      const num = Number.parseInt(integerPart, 10)
+      if (!Number.isNaN(num)) {
         integerPart = num.toLocaleString('en-IN')
       }
     }
@@ -89,7 +89,7 @@ export default function ImportStockNote() {
   }
 
   const handleSavePayment = async () => {
-    if (!paidAmt || parseFloat(paidAmt) <= 0) {
+    if (!paidAmt || Number.parseFloat(paidAmt) <= 0) {
       dispatch(addToast({ message: 'Please enter a valid amount', type: 'error' }))
       return
     }
@@ -100,7 +100,7 @@ export default function ImportStockNote() {
     setSaving(true)
     try {
       const res = await api.post(`/import-stock/${id}/payments`, {
-        amount: parseFloat(paidAmt),
+        amount: Number.parseFloat(paidAmt),
         payment_mode: payMode
       })
       dispatch(addToast({ message: 'Payment recorded successfully!', type: 'success' }))
@@ -136,17 +136,17 @@ export default function ImportStockNote() {
   const bulkUnit = stockItem ? getBulkUnitDetails(stockItem.unit) : null
   const unitShort = bulkUnit?.short || 'unit'
   const unitPlural = bulkUnit?.pluralName || 'Bags / Units'
-  const bw = parseFloat(stockItem?.bag_weight || 1)
+  const bw = Number.parseFloat(stockItem?.bag_weight || 1)
   
-  const buyRatePerUnit = stockItem && parseFloat(stockItem.buying_price || 0) > 0
-    ? (stockItem.price_covers > 0 ? (parseFloat(stockItem.buying_price) / stockItem.price_covers).toFixed(2) : (bw > 0 ? (parseFloat(stockItem.buying_price) / bw).toFixed(2) : '0.00'))
+  const buyRatePerUnit = stockItem && Number.parseFloat(stockItem.buying_price || 0) > 0
+    ? (stockItem.price_covers > 0 ? (Number.parseFloat(stockItem.buying_price) / stockItem.price_covers).toFixed(2) : (bw > 0 ? (Number.parseFloat(stockItem.buying_price) / bw).toFixed(2) : '0.00'))
     : '0.00'
 
   const calcTotalSupplierCost = (item) => {
     if (!item) return 0
-    const bags = parseFloat(item.stock || 0)
-    const bp = parseFloat(item.buying_price || 0)
-    const pc = parseFloat(item.price_covers || 0)
+    const bags = Number.parseFloat(item.stock || 0)
+    const bp = Number.parseFloat(item.buying_price || 0)
+    const pc = Number.parseFloat(item.price_covers || 0)
     if (pc > 0) {
       return bags * bw * (bp / pc)
     } else {
@@ -156,9 +156,9 @@ export default function ImportStockNote() {
 
   const calcAddStockCost = (item) => {
     if (!item) return 0
-    const bags = parseFloat(item.add_stock_qty || 0)
-    const bp = parseFloat(item.buying_price || 0)
-    const pc = parseFloat(item.price_covers || 0)
+    const bags = Number.parseFloat(item.add_stock_qty || 0)
+    const bp = Number.parseFloat(item.buying_price || 0)
+    const pc = Number.parseFloat(item.price_covers || 0)
     if (pc > 0) {
       return bags * bw * (bp / pc)
     } else {
@@ -167,13 +167,13 @@ export default function ImportStockNote() {
   }
 
   const calculatedSupplierCost = calcTotalSupplierCost(stockItem)
-  const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0)
+  const totalPaid = payments.reduce((sum, p) => sum + Number.parseFloat(p.amount || 0), 0)
   const remainingBalance = calculatedSupplierCost - totalPaid
 
-  const totalWeight = stockItem ? (parseFloat(stockItem.stock || 0) * bw) : 0
+  const totalWeight = stockItem ? (Number.parseFloat(stockItem.stock || 0) * bw) : 0
 
-  const addQty = stockItem ? parseFloat(stockItem.add_stock_qty || 0) : 0
-  const finalStock = stockItem ? parseFloat(stockItem.stock || 0) : 0
+  const addQty = stockItem ? Number.parseFloat(stockItem.add_stock_qty || 0) : 0
+  const finalStock = stockItem ? Number.parseFloat(stockItem.stock || 0) : 0
   const prevStock = finalStock - addQty
   const addStockCost = calcAddStockCost(stockItem)
   const prevStockCost = calcTotalSupplierCost({
@@ -258,7 +258,7 @@ export default function ImportStockNote() {
                         <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: '10px 12px', borderRadius: 6 }}>
                           <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: 500 }}>Buyer Price (Supplier)</div>
                           <div style={{ fontSize: '0.98rem', fontWeight: 700, color: '#166534', marginTop: 4 }}>
-                            ₹{stockItem?.buying_price ? parseFloat(stockItem.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
+                            ₹{stockItem?.buying_price ? Number.parseFloat(stockItem.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
                           </div>
                           <div style={{ fontSize: '0.7rem', color: '#15803d', marginTop: 2 }}>₹{buyRatePerUnit} / {unitShort} cost</div>
                         </div>
@@ -273,8 +273,8 @@ export default function ImportStockNote() {
                           </div>
                           <div style={{ fontSize: '0.66rem', color: '#15803d', marginTop: 2, fontFamily: 'monospace', wordBreak: 'break-all' }}>
                             {stockItem?.price_covers > 0
-                              ? `${stockItem?.stock} Bags * ${stockItem?.bag_weight} ${unitShort} * (${parseFloat(stockItem?.buying_price || 0).toLocaleString('en-IN')} / ${parseFloat(stockItem?.price_covers || 1).toLocaleString('en-IN')})`
-                              : `${stockItem?.stock} Bags * ${parseFloat(stockItem?.buying_price || 0).toLocaleString('en-IN')}`}
+                              ? `${stockItem?.stock} Bags * ${stockItem?.bag_weight} ${unitShort} * (${Number.parseFloat(stockItem?.buying_price || 0).toLocaleString('en-IN')} / ${Number.parseFloat(stockItem?.price_covers || 1).toLocaleString('en-IN')})`
+                              : `${stockItem?.stock} Bags * ${Number.parseFloat(stockItem?.buying_price || 0).toLocaleString('en-IN')}`}
                           </div>
                         </div>
 
@@ -299,7 +299,7 @@ export default function ImportStockNote() {
                       <div>
                         <div style={{ fontSize: '0.74rem', color: '#1e40af', fontWeight: 600 }}>Purchased Batch Stock Overview</div>
                         <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1e3a8a', marginTop: 3 }}>
-                          {(parseFloat(stockItem?.stock || 0) + addQty)} {unitPlural}
+                          {(Number.parseFloat(stockItem?.stock || 0) + addQty)} {unitPlural}
                         </div>
                         <div style={{ fontSize: '0.74rem', color: '#2563eb', display: 'flex', gap: 12, marginTop: 4 }}>
                           <div>Pack Size: <strong>{stockItem?.bag_weight} {unitShort} / pack</strong></div>
@@ -312,7 +312,7 @@ export default function ImportStockNote() {
                         <div style={{ textAlign: 'right', fontSize: '0.74rem', color: '#1e40af', display: 'flex', flexDirection: 'column', gap: 3 }}>
                           <div>Initial Batch Qty: <strong>{stockItem?.stock || 0} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{prevStockCost.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })})</span></div>
                           <div>Added Stock: <strong>+{addQty} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{Math.abs(addStockCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span></div>
-                          <div>Total Batch Purchased: <strong>{(parseFloat(stockItem?.stock || 0) + addQty)} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{totalStockCost.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })})</span></div>
+                          <div>Total Batch Purchased: <strong>{(Number.parseFloat(stockItem?.stock || 0) + addQty)} {unitPlural}</strong> <span style={{ color: '#475569' }}>(Cost: ₹{totalStockCost.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })})</span></div>
                         </div>
                       ) : (
                         <div style={{ textAlign: 'right', fontSize: '0.74rem', color: '#1e40af' }}>
@@ -572,7 +572,7 @@ export default function ImportStockNote() {
                                       </span>
                                     </td>
                                     <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#166534', fontSize: '0.86rem' }}>
-                                      ₹{parseFloat(p.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      ₹{Number.parseFloat(p.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                     </td>
                                     <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                                       <button

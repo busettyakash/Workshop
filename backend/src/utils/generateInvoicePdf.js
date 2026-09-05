@@ -67,16 +67,55 @@ function cleanUnitStr(rawUnit) {
 }
 
 function getExplicitLineDiscount(li) {
-  const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? NaN)
+  const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? Number.NaN)
   if (!Number.isNaN(explicit) && explicit >= 0) return explicit
   const qty = Number.parseFloat(li.quantity || li.qty || 1)
   const rate = Number.parseFloat(li.rate || li.price || 0)
   const lineGross = qty * rate
-  const lineAmt = Number.parseFloat(li.amount ?? li.line_total ?? NaN)
+  const lineAmt = Number.parseFloat(li.amount ?? li.line_total ?? Number.NaN)
   if (!Number.isNaN(lineAmt) && lineGross > lineAmt + 0.01) {
     return Math.round((lineGross - lineAmt) * 100) / 100
   }
   return 0
+}
+
+function resolveBoxUnit(u, qty, bw) {
+  if (!['box', 'boxes', 'carton', 'cartons', 'pkt', 'pack', 'packs'].includes(u)) return null
+  let unitName = 'Pack'
+  if (u === 'box' || u === 'boxes') {
+    unitName = qty === 1 ? 'Box' : 'Boxes'
+  }
+  const sub = bw > 1 ? `${bw} pcs/${unitName}` : unitName
+  return { displayQty: qty, displayUnit: unitName, subtext: sub }
+}
+
+function resolveCountUnit(u, qty) {
+  if (['pcs', 'pc', 'piece', 'pieces'].includes(u)) return { displayQty: qty, displayUnit: 'pcs', subtext: 'pcs' }
+  if (['doz', 'dozen'].includes(u)) return { displayQty: qty, displayUnit: 'doz', subtext: 'Dozen' }
+  if (['set', 'sets'].includes(u)) return { displayQty: qty, displayUnit: 'set', subtext: 'Set' }
+  return null
+}
+
+function resolveLengthUnit(u, qty, bw) {
+  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) return { displayQty: qty, displayUnit: 'mtrs', subtext: bw > 1 ? `${bw}m Roll` : 'mtrs' }
+  if (['ft', 'feet', 'foot'].includes(u)) return { displayQty: qty, displayUnit: 'ft', subtext: bw > 1 ? `${bw}ft Bundle` : 'ft' }
+  return null
+}
+
+function resolveVolumeUnit(u, qty, bw) {
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) return { displayQty: qty, displayUnit: 'ltrs', subtext: bw > 1 ? `${bw}L Drum` : 'ltrs' }
+  if (['ml', 'milliliter', 'milliliters'].includes(u)) return { displayQty: qty, displayUnit: 'ml', subtext: 'ml' }
+  return null
+}
+
+function resolveWeightUnit(u, qty, bw, isQuote) {
+  if (['bag', 'bags'].includes(u) || (isQuote && ['kgs', 'kg', 'kilogram', 'kilograms'].includes(u))) {
+    return { displayQty: qty, displayUnit: 'Bag', subtext: bw > 1 ? `${bw}kg Bag` : 'Bag' }
+  }
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'kgs', subtext: bw > 1 ? `${bw}kg Bag` : 'kgs' }
+  }
+  return null
 }
 
 function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQuote = false) {
@@ -86,57 +125,12 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   const dbUnitStr = (typeof dbUnit === 'string' && ['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'pc', 'box', 'boxes', 'pack', 'doz', 'set', 'mtr', 'mtrs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) ? dbUnit : ''
   const u = (uClean || dbUnitStr).toLowerCase().trim()
 
-  // 1. Box / Pack / Cartons
-  if (['box', 'boxes', 'carton', 'cartons', 'pkt', 'pack', 'packs'].includes(u)) {
-    let unitName = 'Pack'
-    if (u === 'box' || u === 'boxes') {
-      unitName = qty === 1 ? 'Box' : 'Boxes'
-    }
-    const sub = bw > 1 ? `${bw} pcs/${unitName}` : unitName
-    return { displayQty: qty, displayUnit: unitName, subtext: sub }
-  }
-
-  // 2. Count / Pieces / Dozen / Set
-  if (['pcs', 'pc', 'piece', 'pieces'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'pcs', subtext: 'pcs' }
-  }
-  if (['doz', 'dozen'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'doz', subtext: 'Dozen' }
-  }
-  if (['set', 'sets'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'set', subtext: 'Set' }
-  }
-
-  // 3. Length / Meters / Feet
-  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-    const sub = bw > 1 ? `${bw}m Roll` : 'mtrs'
-    return { displayQty: qty, displayUnit: 'mtrs', subtext: sub }
-  }
-  if (['ft', 'feet', 'foot'].includes(u)) {
-    const sub = bw > 1 ? `${bw}ft Bundle` : 'ft'
-    return { displayQty: qty, displayUnit: 'ft', subtext: sub }
-  }
-
-  // 4. Volume / Liters / Milliliters
-  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
-    const sub = bw > 1 ? `${bw}L Drum` : 'ltrs'
-    return { displayQty: qty, displayUnit: 'ltrs', subtext: sub }
-  }
-  if (['ml', 'milliliter', 'milliliters'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'ml', subtext: 'ml' }
-  }
-
-  // 5. Weight / Kilograms / Bags
-  if (['bag', 'bags'].includes(u) || (isQuote && ['kgs', 'kg', 'kilogram', 'kilograms'].includes(u))) {
-    const sub = bw > 1 ? `${bw}kg Bag` : 'Bag'
-    return { displayQty: qty, displayUnit: 'Bag', subtext: sub }
-  }
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'kgs', subtext: bw > 1 ? `${bw}kg Bag` : 'kgs' }
-  }
-
-  const fallbackUnit = uClean || dbUnitStr || 'unit'
-  return { displayQty: qty, displayUnit: fallbackUnit, subtext: fallbackUnit }
+  return resolveBoxUnit(u, qty, bw) ||
+    resolveCountUnit(u, qty) ||
+    resolveLengthUnit(u, qty, bw) ||
+    resolveVolumeUnit(u, qty, bw) ||
+    resolveWeightUnit(u, qty, bw, isQuote) ||
+    { displayQty: qty, displayUnit: uClean || dbUnitStr || 'unit', subtext: uClean || dbUnitStr || 'unit' }
 }
 
 function resolveDocumentNumber({ quote, bill, isQuote }) {

@@ -18,8 +18,8 @@ import TablePagination from '../../components/ui/TablePagination'
 
 const formatINR = (val) => {
   if (val === null || val === undefined || val === '') return '—'
-  const num = parseFloat(val)
-  if (isNaN(num)) return '—'
+  const num = Number.parseFloat(val)
+  if (Number.isNaN(num)) return '—'
   return '₹' + num.toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
@@ -146,9 +146,9 @@ export default function ProfitMargin() {
   }
 
   const getStockBadgeClass = (stock, looseKg = 0, bagWeight = 1) => {
-    const s = parseFloat(stock || 0)
-    const l = parseFloat(looseKg || 0)
-    const bw = parseFloat(bagWeight || 1)
+    const s = Number.parseFloat(stock || 0)
+    const l = Number.parseFloat(looseKg || 0)
+    const bw = Number.parseFloat(bagWeight || 1)
     const totalBase = (bw > 1 ? s * bw : s) + l
     if (totalBase > 10) return 'attio-stock-high'
     if (totalBase > 0) return 'attio-stock-low'

@@ -14,8 +14,8 @@ import TablePagination from '../../components/ui/TablePagination'
 
 const formatINR = (val) => {
   if (val === null || val === undefined || val === '') return '—'
-  const num = parseFloat(val)
-  if (isNaN(num)) return '—'
+  const num = Number.parseFloat(val)
+  if (Number.isNaN(num)) return '—'
   return '₹' + num.toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
@@ -30,14 +30,14 @@ const parseUtcDate = (raw) => {
     s = s.replace(' ', 'T') + 'Z'
   }
   const d = new Date(s)
-  return isNaN(d.getTime()) ? new Date(raw) : d
+  return Number.isNaN(d.getTime()) ? new Date(raw) : d
 }
 
 const formatIndianDateTime = (raw) => {
   if (!raw) return 'N/A'
   try {
     const d = parseUtcDate(raw)
-    if (!d || isNaN(d.getTime())) return String(raw)
+    if (!d || Number.isNaN(d.getTime())) return String(raw)
     return d.toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata',
       day: '2-digit',
@@ -57,7 +57,7 @@ const formatIndianDateOnly = (raw) => {
   if (!raw) return 'N/A'
   try {
     const d = parseUtcDate(raw)
-    if (!d || isNaN(d.getTime())) return String(raw)
+    if (!d || Number.isNaN(d.getTime())) return String(raw)
     return d.toLocaleDateString('en-IN', {
       timeZone: 'Asia/Kolkata',
       day: '2-digit',
@@ -71,10 +71,10 @@ const formatIndianDateOnly = (raw) => {
 
 // Helper: compute effective display price (per price_covers qty) from raw DB value
 const getDisplayPrice = (rawP, bw, pc) => {
-  const p = parseFloat(rawP)
-  if (!rawP || isNaN(p) || p <= 0) return 0
-  const bagW = parseFloat(bw) || 1
-  const priceC = parseFloat(pc) || 0
+  const p = Number.parseFloat(rawP)
+  if (!rawP || Number.isNaN(p) || p <= 0) return 0
+  const bagW = Number.parseFloat(bw) || 1
+  const priceC = Number.parseFloat(pc) || 0
   if (priceC > 0 && bagW > 0 && priceC !== bagW) {
     return (p / bagW) * priceC
   }
@@ -82,17 +82,17 @@ const getDisplayPrice = (rawP, bw, pc) => {
 }
 
 const getBagPrice = (rawP) => {
-  const p = parseFloat(rawP)
-  if (!rawP || isNaN(p) || p <= 0) return 0
+  const p = Number.parseFloat(rawP)
+  if (!rawP || Number.isNaN(p) || p <= 0) return 0
   return p
 }
 
 const getItemPriceDetails = (rawP, bw, pc) => {
   if (rawP === null || rawP === undefined || rawP === '') return null
-  const p = parseFloat(rawP)
-  if (isNaN(p) || p <= 0) return null
-  const bagW = parseFloat(bw) || 1
-  const priceC = parseFloat(pc) || 0
+  const p = Number.parseFloat(rawP)
+  if (Number.isNaN(p) || p <= 0) return null
+  const bagW = Number.parseFloat(bw) || 1
+  const priceC = Number.parseFloat(pc) || 0
 
   const packPrice = p
   const price100 = (priceC > 0 && bagW > 0 && priceC !== bagW) ? (p / bagW) * priceC : p
@@ -103,8 +103,8 @@ const getItemPriceDetails = (rawP, bw, pc) => {
 
 // Accepts already-computed display prices (per price_covers qty) so the trend matches what the user sees
 const renderPriceTrendGraph = (baseDisplayPrice, updatedDisplayPrice, rowId) => {
-  const b = parseFloat(baseDisplayPrice) || 0
-  const u = updatedDisplayPrice != null && parseFloat(updatedDisplayPrice) > 0 ? parseFloat(updatedDisplayPrice) : null
+  const b = Number.parseFloat(baseDisplayPrice) || 0
+  const u = updatedDisplayPrice != null && Number.parseFloat(updatedDisplayPrice) > 0 ? Number.parseFloat(updatedDisplayPrice) : null
   const diff = (u !== null && b > 0) ? (u - b) : 0
   const pct = b > 0 && u !== null ? ((diff / b) * 100).toFixed(1) : '0.0'
   const isUp = diff > 0
@@ -208,10 +208,10 @@ function ProductPriceHistoryDetail({ product, onBack }) {
   const [loadingStock, setLoadingStock] = useState(true)
 
   const bulkUnit = getBulkUnitDetails(product.unit)
-  const bagWeight = parseFloat(product.bag_weight || 1)
-  const pc = parseFloat(product.price_covers || 0)
-  const rawP = parseFloat(product.price || 0)
-  const rawUP = parseFloat(product.updated_price || 0)
+  const bagWeight = Number.parseFloat(product.bag_weight || 1)
+  const pc = Number.parseFloat(product.price_covers || 0)
+  const rawP = Number.parseFloat(product.price || 0)
+  const rawUP = Number.parseFloat(product.updated_price || 0)
 
   const basePriceVal = getDisplayPrice(rawP, bagWeight, pc)
   const updatedPriceVal = rawUP > 0 ? getDisplayPrice(rawUP, bagWeight, pc) : basePriceVal
@@ -447,8 +447,8 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                   </thead>
                   <tbody>
                     {history.map((row, idx) => {
-                      const bw = parseFloat(bagWeight || 1)
-                      const pc = parseFloat(product.price_covers || 0)
+                      const bw = Number.parseFloat(bagWeight || 1)
+                      const pc = Number.parseFloat(product.price_covers || 0)
                       const uomShort = bulkUnit?.short || product.unit || 'unit'
 
                       const currDetails = getItemPriceDetails(row.new_price, bw, pc)
@@ -590,8 +590,8 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                 </thead>
                 <tbody>
                   {stockHistory.map((s, idx) => {
-                    const isDeducted = s.change_type === 'deducted' || parseFloat(s.qty_change) < 0
-                    const qtyVal = Math.abs(parseFloat(s.qty_change || 0))
+                    const isDeducted = s.change_type === 'deducted' || Number.parseFloat(s.qty_change) < 0
+                    const qtyVal = Math.abs(Number.parseFloat(s.qty_change || 0))
                     const dateStr = formatIndianDateTime(s.created_at)
 
                     return (
@@ -634,7 +634,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                               }
 
                               if (!unitLabel) {
-                                const bw = parseFloat(product?.bag_weight || 1)
+                                const bw = Number.parseFloat(product?.bag_weight || 1)
                                 if (bw > 1) {
                                   unitLabel = qtyVal === 1 ? 'Bag' : 'Bags'
                                 } else {
@@ -665,7 +665,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                         </td>
                         <td>
                           <span style={{ color: '#475467', fontSize: '0.8125rem' }}>
-                            {(s.notes || 'Automated stock deduction on quotation acceptance').replace(/(\d+)\.00(\s+[a-zA-Z]+)/g, '$1$2')}
+                            {(s.notes || 'Automated stock deduction on quotation acceptance').replace(/(\d+)\.00(?=[^\d]|$)/g, '$1')}
                           </span>
                         </td>
                       </tr>
@@ -737,9 +737,9 @@ export default function PriceHistory() {
   }, [dispatch, page, search, sort, filterCategory, filterStatus])
 
   const getStockBadgeClass = (stock, looseKg = 0, bagWeight = 1) => {
-    const s = parseFloat(stock || 0)
-    const l = parseFloat(looseKg || 0)
-    const bw = parseFloat(bagWeight || 1)
+    const s = Number.parseFloat(stock || 0)
+    const l = Number.parseFloat(looseKg || 0)
+    const bw = Number.parseFloat(bagWeight || 1)
     const totalBase = (bw > 1 ? s * bw : s) + l
     if (totalBase > 10) return 'attio-stock-high'
     if (totalBase > 0) return 'attio-stock-low'
@@ -887,7 +887,7 @@ export default function PriceHistory() {
                         <tbody>
                           {products.map(row => {
                             const bulkUnit = getBulkUnitDetails(row.unit)
-                            const bagWeight = parseFloat(row.bag_weight || 1)
+                            const bagWeight = Number.parseFloat(row.bag_weight || 1)
                             const updatedDateFormatted = row.updated_price ? formatIndianDateOnly(row.updated_price_date || row.updated_at) : ''
                             const catStyle = getCategoryTagStyle(row.category)
 
@@ -940,8 +940,8 @@ export default function PriceHistory() {
                                   {(() => {
                                     const bulkUnit = getBulkUnitDetails(row.unit)
                                     const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
-                                    const pc = parseFloat(row.price_covers || 0)
-                                    const bw = parseFloat(row.bag_weight || 1)
+                                    const pc = Number.parseFloat(row.price_covers || 0)
+                                    const bw = Number.parseFloat(row.bag_weight || 1)
                                     const priceVal = getDisplayPrice(row.price, bw, pc)
 
                                     const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
@@ -963,8 +963,8 @@ export default function PriceHistory() {
                                     if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
                                     const bulkUnit = getBulkUnitDetails(row.unit)
                                     const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
-                                    const pc = parseFloat(row.price_covers || 0)
-                                    const bw = parseFloat(row.bag_weight || 1)
+                                    const pc = Number.parseFloat(row.price_covers || 0)
+                                    const bw = Number.parseFloat(row.bag_weight || 1)
                                     const updatedPriceVal = getDisplayPrice(row.updated_price, bw, pc)
 
                                     const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
@@ -983,8 +983,8 @@ export default function PriceHistory() {
                                 </td>
                                 <td>
                                   {(() => {
-                                    const pc = parseFloat(row.price_covers || 100)
-                                    const bw = parseFloat(row.bag_weight || 1)
+                                    const pc = Number.parseFloat(row.price_covers || 100)
+                                    const bw = Number.parseFloat(row.bag_weight || 1)
                                     const baseDisplay = getDisplayPrice(row.price, bw, pc)
                                     const updDisplay = row.updated_price ? getDisplayPrice(row.updated_price, bw, pc) : null
 

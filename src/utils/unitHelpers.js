@@ -181,9 +181,9 @@ export const getBulkUnitDetails = (unit) => {
 
 // Calculates accurate per-kg and per-pack pricing regardless of bulk lot input size
 export const calculateUnitPricing = (price, basePrice, bagWeight = 1, unit = '') => {
-  const p = parseFloat(price || 0);
-  const bp = parseFloat(basePrice || price || 0);
-  const bw = parseFloat(bagWeight || 1);
+  const p = Number.parseFloat(price || 0);
+  const bp = Number.parseFloat(basePrice || price || 0);
+  const bw = Number.parseFloat(bagWeight || 1);
 
   if (p <= 0 || bw <= 0) {
     return { perKgPrice: '0.00', perPackPrice: '0.00', packWeight: bw, totalKg: bw, packCount: 1 };
@@ -220,8 +220,8 @@ export const calculateUnitPricing = (price, basePrice, bagWeight = 1, unit = '')
 
 // Formatter helper to get clear production unit text string
 export const formatProductUnitPrice = (price, unit, packCapacity = 1) => {
-  const p = parseFloat(price || 0);
-  const cap = parseFloat(packCapacity || 1);
+  const p = Number.parseFloat(price || 0);
+  const cap = Number.parseFloat(packCapacity || 1);
   const details = getBulkUnitDetails(unit);
 
   if (details && cap > 1) {
@@ -233,13 +233,13 @@ export const formatProductUnitPrice = (price, unit, packCapacity = 1) => {
 
 export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0) => {
   if (stock === undefined || stock === null) return '0';
-  const numStock = parseFloat(stock);
-  const bw = parseFloat(bagWeight) || 1;
-  const passedLoose = parseFloat(looseKg || 0);
+  const numStock = Number.parseFloat(stock);
+  const bw = Number.parseFloat(bagWeight) || 1;
+  const passedLoose = Number.parseFloat(looseKg || 0);
 
-  if (isNaN(numStock) && isNaN(passedLoose)) return '0';
+  if (Number.isNaN(numStock) && Number.isNaN(passedLoose)) return '0';
 
-  const validStock = isNaN(numStock) ? 0 : numStock;
+  const validStock = Number.isNaN(numStock) ? 0 : numStock;
   const rawUnit = String(unit || '').trim();
   const uLow = rawUnit.toLowerCase();
   const unitCode = ['lit', 'lite', 'liter', 'liters', 'litre', 'litres'].includes(uLow) ? 'ltr' : rawUnit;
@@ -276,10 +276,10 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0)
 
 export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '') => {
   if (totalBaseQty === undefined || totalBaseQty === null) return '0';
-  const total = parseFloat(totalBaseQty);
-  if (isNaN(total)) return '0';
+  const total = Number.parseFloat(totalBaseQty);
+  if (Number.isNaN(total)) return '0';
 
-  const bw = parseFloat(bagWeight) || 1;
+  const bw = Number.parseFloat(bagWeight) || 1;
   const rawUnit = String(unit || '').trim();
   const uLow = rawUnit.toLowerCase();
   const unitCode = ['lit', 'lite', 'liter', 'liters', 'litre', 'litres'].includes(uLow) ? 'ltr' : rawUnit;

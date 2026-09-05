@@ -109,7 +109,7 @@ export default function ImportStockForm() {
         setUomOptions(dbOptions)
         if (!id && activeUnits.length > 0) {
           const firstUom = activeUnits[0]
-          const presets = firstUom?.presets ? String(firstUom.presets).split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0) : []
+          const presets = firstUom?.presets ? String(firstUom.presets).split(',').map(s => Number.parseFloat(s.trim())).filter(n => !Number.isNaN(n) && n > 0) : []
           const initialWeight = presets.length > 0 ? presets[0] : 1
           setForm(prev => ({
             ...prev,
@@ -140,9 +140,9 @@ export default function ImportStockForm() {
           price: item.price || '',
           updated_price: item.updated_price || '',
           updated_price_100: (() => {
-            const up = parseFloat(item.updated_price || 0)
-            const bw = parseFloat(item.bag_weight || 1)
-            const pc = parseFloat(item.price_covers || 0)
+            const up = Number.parseFloat(item.updated_price || 0)
+            const bw = Number.parseFloat(item.bag_weight || 1)
+            const pc = Number.parseFloat(item.price_covers || 0)
             if (up > 0 && pc > 0 && bw > 0 && pc !== bw) {
               return ((up / bw) * pc).toFixed(2)
             }
@@ -185,8 +185,8 @@ export default function ImportStockForm() {
     if (!currentUomObj?.presets) return []
     return String(currentUomObj.presets)
       .split(',')
-      .map(s => parseFloat(s.trim()))
-      .filter(n => !isNaN(n) && n > 0)
+      .map(s => Number.parseFloat(s.trim()))
+      .filter(n => !Number.isNaN(n) && n > 0)
   }, [currentUomObj])
 
   const uomShort = currentUomObj?.code || form.unit || 'unit'
@@ -219,16 +219,16 @@ export default function ImportStockForm() {
     const { name, value } = e.target
     if (name === 'unit') {
       const matchedUom = uomRecords.find(u => u.code?.toLowerCase() === String(value).toLowerCase().trim())
-      const presets = matchedUom?.presets ? String(matchedUom.presets).split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0) : []
+      const presets = matchedUom?.presets ? String(matchedUom.presets).split(',').map(s => Number.parseFloat(s.trim())).filter(n => !Number.isNaN(n) && n > 0) : []
       const nextBw = presets.length > 0 ? presets[0] : ''
       const nextPc = presets.length > 0 ? presets[0] : ''
 
       setForm(prev => {
-        const pc = parseFloat(nextPc || prev.price_covers || 1)
-        const bwVal = parseFloat(nextBw || prev.bag_weight || 1)
+        const pc = Number.parseFloat(nextPc || prev.price_covers || 1)
+        const bwVal = Number.parseFloat(nextBw || prev.bag_weight || 1)
         let calculatedPrice = prev.price
-        if (prev.price_100 && !isNaN(prev.price_100)) {
-          const p100 = parseFloat(prev.price_100)
+        if (prev.price_100 && !Number.isNaN(Number.parseFloat(prev.price_100))) {
+          const p100 = Number.parseFloat(prev.price_100)
           calculatedPrice = pc > 0 ? ((p100 / pc) * bwVal).toFixed(2) : p100.toFixed(2)
         }
         return {
@@ -259,8 +259,8 @@ export default function ImportStockForm() {
   const validateStep2 = () => {
     const err = {}
     if (!form.name.trim()) err.name = 'Product name is required'
-    if (!form.price || isNaN(form.price) || parseFloat(form.price) <= 0) err.price = 'Enter a valid selling price'
-    if (isBulkUom && (!form.bag_weight || isNaN(form.bag_weight) || parseFloat(form.bag_weight) <= 0)) {
+    if (!form.price || Number.isNaN(Number.parseFloat(form.price)) || Number.parseFloat(form.price) <= 0) err.price = 'Enter a valid selling price'
+    if (isBulkUom && (!form.bag_weight || Number.isNaN(Number.parseFloat(form.bag_weight)) || Number.parseFloat(form.bag_weight) <= 0)) {
       err.bag_weight = `Enter a valid pack size / capacity (${uomShort})`
     }
     setErrors(err)
@@ -305,13 +305,13 @@ Category: ${form.category || 'General'}
 Pack Weight: ${form.bag_weight} ${unitShort} per pack
 
 PRICING & UNIT RATE ANALYSIS:
-Buyer Price (Supplier): ₹${form.buying_price ? parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'} (₹${buyRatePerUnit} / ${unitShort} cost)
-Updated Market Price: ${form.updated_price ? `₹${parseFloat(form.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+Buyer Price (Supplier): ₹${form.buying_price ? Number.parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'} (₹${buyRatePerUnit} / ${unitShort} cost)
+Updated Market Price: ${form.updated_price ? `₹${Number.parseFloat(form.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
 
 TOTAL INVENTORY STOCK:
 Total Quantity: ${form.stock} ${unitPlural}
 Pack Size: ${form.bag_weight} ${unitShort} / pack
-Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${unitShort}`
+Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${unitShort}`
 
       const payload = { ...form, note: noteBody }
       let res
@@ -339,22 +339,22 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
   })
 
   // Unit rate and margin calculations
-  const bw = parseFloat(form.bag_weight || 1)
-  const pc = parseFloat(form.price_covers) || 0
-  const rawPrice = parseFloat(form.price || 0)
+  const bw = Number.parseFloat(form.bag_weight || 1)
+  const pc = Number.parseFloat(form.price_covers) || 0
+  const rawPrice = Number.parseFloat(form.price || 0)
 
   // Calculate displaying Selling Price for the form input
   const sellPriceDisplay = form.price_100 !== undefined && form.price_100 !== ''
     ? form.price_100
     : (rawPrice > 0 ? (pc > 0 && bw > 0 && pc !== bw ? ((rawPrice / bw) * pc).toFixed(2) : rawPrice.toFixed(2)) : '')
 
-  const sell100 = parseFloat(sellPriceDisplay) || 0
+  const sell100 = Number.parseFloat(sellPriceDisplay) || 0
 
   const sellRatePerUnit = sell100 > 0
     ? (pc > 0 ? (sell100 / pc).toFixed(2) : (bw > 0 ? (sell100 / bw).toFixed(2) : '0.00'))
     : (rawPrice > 0 ? (bw > 0 ? (rawPrice / bw).toFixed(2) : rawPrice.toFixed(2)) : '0.00')
-  const buyRatePerUnit = parseFloat(form.buying_price || 0) > 0
-    ? (pc > 0 ? (parseFloat(form.buying_price) / pc).toFixed(2) : (bw > 0 ? (parseFloat(form.buying_price) / bw).toFixed(2) : '0.00'))
+  const buyRatePerUnit = Number.parseFloat(form.buying_price || 0) > 0
+    ? (pc > 0 ? (Number.parseFloat(form.buying_price) / pc).toFixed(2) : (bw > 0 ? (Number.parseFloat(form.buying_price) / bw).toFixed(2) : '0.00'))
     : '0.00'
 
   return (
@@ -636,7 +636,7 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                         onBlur={() => setFocus(null)}
                       />
                       <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3, display: 'block' }}>
-                        {form.buying_price ? `₹${(parseFloat(form.buying_price) / parseFloat(form.price_covers || 1)).toFixed(2)} / ${uomShort} cost` : 'Purchase cost paid to supplier'}
+                        {form.buying_price ? `₹${(Number.parseFloat(form.buying_price) / Number.parseFloat(form.price_covers || 1)).toFixed(2)} / ${uomShort} cost` : 'Purchase cost paid to supplier'}
                       </span>
                     </div>
 
@@ -667,10 +667,10 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                         value={sellPriceDisplay}
                         onChange={(e) => {
                           const val = e.target.value
-                          const bw = parseFloat(form.bag_weight || 1)
-                          const pc = parseFloat(form.price_covers || 0)
+                          const bw = Number.parseFloat(form.bag_weight || 1)
+                          const pc = Number.parseFloat(form.price_covers || 0)
                           const calculatedPrice = val
-                            ? (pc > 0 ? ((parseFloat(val) / pc) * bw).toFixed(2) : parseFloat(val).toFixed(2))
+                            ? (pc > 0 ? ((Number.parseFloat(val) / pc) * bw).toFixed(2) : Number.parseFloat(val).toFixed(2))
                             : ''
                           setForm(prev => ({ ...prev, price_100: val, price: calculatedPrice }))
                           if (errors.price) setErrors(prev => ({ ...prev, price: '' }))
@@ -697,11 +697,11 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                         value={form.bag_weight}
                         onChange={(e) => {
                           const bw = e.target.value
-                          const pc = parseFloat(form.price_covers || 0)
-                          const bwVal = parseFloat(bw || 1)
+                          const pc = Number.parseFloat(form.price_covers || 0)
+                          const bwVal = Number.parseFloat(bw || 1)
                           let calculatedPrice = form.price
-                          if (form.price_100 && !isNaN(form.price_100)) {
-                            const p100 = parseFloat(form.price_100)
+                          if (form.price_100 && !Number.isNaN(form.price_100)) {
+                            const p100 = Number.parseFloat(form.price_100)
                             calculatedPrice = pc > 0 ? ((p100 / pc) * bwVal).toFixed(2) : p100.toFixed(2)
                           }
                           setForm(prev => ({ ...prev, bag_weight: bw, price: calculatedPrice }))
@@ -721,10 +721,10 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                                 key={size}
                                 type="button"
                                 onClick={() => {
-                                  const pc = parseFloat(form.price_covers || 0)
+                                  const pc = Number.parseFloat(form.price_covers || 0)
                                   let calculatedPrice = form.price
-                                  if (form.price_100 && !isNaN(form.price_100)) {
-                                    const p100 = parseFloat(form.price_100)
+                                  if (form.price_100 && !Number.isNaN(form.price_100)) {
+                                    const p100 = Number.parseFloat(form.price_100)
                                     calculatedPrice = pc > 0 ? ((p100 / pc) * size).toFixed(2) : p100.toFixed(2)
                                   }
                                   setForm(prev => ({ ...prev, bag_weight: size, price: calculatedPrice }))
@@ -768,9 +768,9 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                         value={form.updated_price_100 ?? ''}
                         onChange={(e) => {
                           const val = e.target.value
-                          const p100val = parseFloat(val || 0)
-                          const bwVal = parseFloat(form.bag_weight || 1)
-                          const pcVal = parseFloat(form.price_covers || 0)
+                          const p100val = Number.parseFloat(val || 0)
+                          const bwVal = Number.parseFloat(form.bag_weight || 1)
+                          const pcVal = Number.parseFloat(form.price_covers || 0)
                           // Convert price_covers rate → bag price for storage
                           const bagPrice = (p100val > 0 && pcVal > 0 && bwVal > 0 && pcVal !== bwVal)
                             ? ((p100val / pcVal) * bwVal).toFixed(2)
@@ -787,9 +787,9 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                         onFocus={() => setFocus('updated_price_100')}
                         onBlur={() => setFocus(null)}
                       />
-                      {form.updated_price_100 && parseFloat(form.updated_price_100) > 0 && pc > 0 && (
+                      {form.updated_price_100 && Number.parseFloat(form.updated_price_100) > 0 && pc > 0 && (
                         <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, display: 'block' }}>
-                          ₹{(parseFloat(form.updated_price_100) / pc).toFixed(2)} / {uomShort} rate
+                          ₹{(Number.parseFloat(form.updated_price_100) / pc).toFixed(2)} / {uomShort} rate
                         </span>
                       )}
                       <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 1, display: 'block' }}>
@@ -894,10 +894,10 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                       <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
                         <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Buyer Price (Supplier)</div>
                         <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b' }}>
-                          {form.buying_price ? `₹${parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+                          {form.buying_price ? `₹${Number.parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
-                          ₹{parseFloat(buyRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {uomShort} cost
+                          ₹{Number.parseFloat(buyRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {uomShort} cost
                         </div>
                       </div>
 
@@ -907,14 +907,14 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                           ₹{sell100 > 0 ? sell100.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 }) : '0.00'}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
-                          ₹{parseFloat(sellRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {uomShort} selling
+                          ₹{Number.parseFloat(sellRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {uomShort} selling
                         </div>
                       </div>
 
                       <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
                         <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Updated Market Price</div>
                         <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#059669' }}>
-                          {form.updated_price ? `₹${parseFloat(form.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+                          {form.updated_price ? `₹${Number.parseFloat(form.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
                           {form.updated_price_date ? `as of ${form.updated_price_date}` : 'No revision'}
@@ -929,9 +929,9 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                         Total Inventory Stock
                       </div>
                       <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1e3a8a', marginTop: 2 }}>
-                        {form.add_stock_qty && parseFloat(form.add_stock_qty) > 0 ? (
+                        {form.add_stock_qty && Number.parseFloat(form.add_stock_qty) > 0 ? (
                           <span>
-                            Total After Addition: <strong style={{ color: '#15803d' }}>{(parseFloat(form.initial_stock ?? form.stock ?? 0) + parseFloat(form.add_stock_qty || 0))} {uomName}</strong>
+                            Total After Addition: <strong style={{ color: '#15803d' }}>{(Number.parseFloat(form.initial_stock ?? form.stock ?? 0) + Number.parseFloat(form.add_stock_qty || 0))} {uomName}</strong>
                           </span>
                         ) : (
                           <span>{form.stock} {uomName}</span>
@@ -940,7 +940,7 @@ Total Volume / Weight: ${(parseFloat(form.stock || 0) * bw).toLocaleString('en-I
                     </div>
                     <div style={{ textAlign: 'right', fontSize: '0.75rem', color: '#2563eb' }}>
                       <div>Initial Batch Qty: <strong>{form.initial_stock ?? form.stock} {uomName}</strong></div>
-                      {form.add_stock_qty && parseFloat(form.add_stock_qty) > 0 && (
+                      {form.add_stock_qty && Number.parseFloat(form.add_stock_qty) > 0 && (
                         <div style={{ color: '#15803d', fontWeight: 600 }}>Adding to Stock: <strong>+{form.add_stock_qty} {uomName}</strong></div>
                       )}
                       <div>Pack Size: <strong>{form.bag_weight} {uomShort}</strong> / pack</div>

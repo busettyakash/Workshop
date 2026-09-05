@@ -115,95 +115,87 @@ const COLOR_PALETTE = [
   '#64748b', // slate
 ]
 
-function buildTimeBuckets(dayFilter, anchorDate = new Date(), startDate = '', endDate = '') {
-  const d = anchorDate instanceof Date && !Number.isNaN(anchorDate.getTime()) ? anchorDate : new Date()
+function buildLast7DaysBuckets(d) {
+  const buckets = []
+  for (let i = 6; i >= 0; i--) {
+    const past = new Date(d)
+    past.setDate(past.getDate() - i)
+    const iso = past.toISOString().slice(0, 10)
+    const label = past.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+    buckets.push({ key: iso, label, type: 'day', dateStr: iso })
+  }
+  return {
+    buckets,
+    dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata') >= (NOW() AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '6 days'`,
+    groupBy: 'day'
+  }
+}
 
-  if (dayFilter === 'Last 7 days') {
+function buildLast30DaysBuckets(d) {
+  const buckets = []
+  for (let i = 4; i >= 0; i--) {
+    const startD = new Date(d)
+    startD.setDate(startD.getDate() - (i * 6 + 5))
+    const endD = new Date(d)
+    endD.setDate(endD.getDate() - (i * 6))
+    const label = startD.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' - ' + endD.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+    buckets.push({
+      key: `r_${i}`,
+      label,
+      type: 'range',
+      startDateStr: startD.toISOString().slice(0, 10),
+      endDateStr: endD.toISOString().slice(0, 10)
+    })
+  }
+  return {
+    buckets,
+    dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata') >= (NOW() AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '29 days'`,
+    groupBy: 'day'
+  }
+}
+
+function buildCustomBuckets(d, startDate, endDate) {
+  const s = startDate ? new Date(startDate) : new Date(d.getTime() - 6 * 86400000)
+  const e = endDate ? new Date(endDate) : new Date(d)
+  const startIso = s.toISOString().slice(0, 10)
+  const endIso = e.toISOString().slice(0, 10)
+  const diffDays = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+
+  if (diffDays <= 31) {
     const buckets = []
-    for (let i = 6; i >= 0; i--) {
-      const past = new Date(d)
-      past.setDate(past.getDate() - i)
-      const iso = past.toISOString().slice(0, 10)
-      const label = past.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+    for (let cur = new Date(s); cur <= e; cur = new Date(cur.getTime() + 86400000)) {
+      const iso = cur.toISOString().slice(0, 10)
+      const label = cur.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
       buckets.push({ key: iso, label, type: 'day', dateStr: iso })
     }
     return {
       buckets,
-      dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata') >= (NOW() AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '6 days'`,
-      groupBy: 'day'
-    }
-  }
-
-  if (dayFilter === 'Last 30 days') {
-    const buckets = []
-    for (let i = 4; i >= 0; i--) {
-      const startD = new Date(d)
-      startD.setDate(startD.getDate() - (i * 6 + 5))
-      const endD = new Date(d)
-      endD.setDate(endD.getDate() - (i * 6))
-      const label = startD.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' - ' + endD.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-      buckets.push({
-        key: `r_${i}`,
-        label,
-        type: 'range',
-        startDateStr: startD.toISOString().slice(0, 10),
-        endDateStr: endD.toISOString().slice(0, 10)
-      })
-    }
-    return {
-      buckets,
-      dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata') >= (NOW() AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '29 days'`,
-      groupBy: 'day'
-    }
-  }
-
-  if (dayFilter === 'Custom date' || dayFilter === 'Custom range' || dayFilter === 'Custom Date' || (startDate && endDate)) {
-    const s = startDate ? new Date(startDate) : new Date(d.getTime() - 6 * 86400000)
-    const e = endDate ? new Date(endDate) : new Date(d)
-    const startIso = s.toISOString().slice(0, 10)
-    const endIso = e.toISOString().slice(0, 10)
-    const diffDays = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1)
-
-    if (diffDays <= 31) {
-      const buckets = []
-      const cur = new Date(s)
-      while (cur <= e) {
-        const iso = cur.toISOString().slice(0, 10)
-        const label = cur.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-        buckets.push({ key: iso, label, type: 'day', dateStr: iso })
-        cur.setDate(cur.getDate() + 1)
-      }
-      return {
-        buckets,
-        dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN '${startIso}'::date AND '${endIso}'::date`,
-        groupBy: 'day'
-      }
-    }
-
-    const buckets = []
-    const cur = new Date(s.getFullYear(), s.getMonth(), 1)
-    const endMonth = new Date(e.getFullYear(), e.getMonth(), 1)
-    while (cur <= endMonth) {
-      const num = cur.getMonth() + 1
-      const year = cur.getFullYear()
-      const label = cur.toLocaleString('default', { month: 'short' }) + ' ' + year
-      buckets.push({ key: `${year}-${num}`, label, num, year, type: 'month' })
-      cur.setMonth(cur.getMonth() + 1)
-    }
-    return {
-      buckets,
       dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN '${startIso}'::date AND '${endIso}'::date`,
-      groupBy: 'month'
+      groupBy: 'day'
     }
   }
 
+  const buckets = []
+  const endMonth = new Date(e.getFullYear(), e.getMonth(), 1)
+  for (let cur = new Date(s.getFullYear(), s.getMonth(), 1); cur <= endMonth; cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)) {
+    const num = cur.getMonth() + 1
+    const year = cur.getFullYear()
+    const label = cur.toLocaleString('default', { month: 'short' }) + ' ' + year
+    buckets.push({ key: `${year}-${num}`, label, num, year, type: 'month' })
+  }
+  return {
+    buckets,
+    dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN '${startIso}'::date AND '${endIso}'::date`,
+    groupBy: 'month'
+  }
+}
+
+function buildMonthSpanBuckets(d, dayFilter) {
   let count = d.getMonth() + 1
   if (dayFilter === 'Last 3 months') {
     count = 3
   } else if (dayFilter === 'Last 6 months') {
     count = 6
-  } else if (dayFilter === 'This year') {
-    count = d.getMonth() + 1
   }
   const buckets = []
   for (let i = count - 1; i >= 0; i--) {
@@ -218,6 +210,17 @@ function buildTimeBuckets(dayFilter, anchorDate = new Date(), startDate = '', en
     dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata') >= DATE_TRUNC('month', (NOW() AT TIME ZONE 'Asia/Kolkata') - INTERVAL '${count - 1} months')`,
     groupBy: 'month'
   }
+}
+
+function buildTimeBuckets(dayFilter, anchorDate = new Date(), startDate = '', endDate = '') {
+  const d = anchorDate instanceof Date && !Number.isNaN(anchorDate.getTime()) ? anchorDate : new Date()
+
+  if (dayFilter === 'Last 7 days') return buildLast7DaysBuckets(d)
+  if (dayFilter === 'Last 30 days') return buildLast30DaysBuckets(d)
+  if (dayFilter === 'Custom date' || dayFilter === 'Custom range' || dayFilter === 'Custom Date' || (startDate && endDate)) {
+    return buildCustomBuckets(d, startDate, endDate)
+  }
+  return buildMonthSpanBuckets(d, dayFilter)
 }
 
 async function getDistinctCategories(userId) {

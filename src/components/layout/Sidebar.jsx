@@ -596,8 +596,8 @@ export default function Sidebar() {
 
   const [sidebarWidth] = useState(() => {
     const saved = localStorage.getItem('ws_sidebar_width')
-    const parsed = saved ? parseInt(saved, 10) : 240
-    return Math.max(240, isNaN(parsed) ? 240 : parsed)
+    const parsed = saved ? Number.parseInt(saved, 10) : 240
+    return Math.max(240, Number.isNaN(parsed) ? 240 : parsed)
   })
 
   useEffect(() => {

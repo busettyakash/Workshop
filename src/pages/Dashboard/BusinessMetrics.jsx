@@ -35,7 +35,7 @@ function formatYAxisLabel(val) {
     if (Number.isInteger(inLakhs)) {
       return `₹${inLakhs}L`
     }
-    return `₹${parseFloat(inLakhs.toFixed(1))}L`
+    return `₹${Number.parseFloat(inLakhs.toFixed(1))}L`
   }
   if (val >= 1000) {
     return `₹${Math.round(val / 1000)}k`
@@ -331,6 +331,7 @@ export default function BusinessMetrics({
 
                 {showCustomPicker && (
                   <div
+                    role="presentation"
                     style={{
                       marginTop: 8,
                       paddingTop: 8,
@@ -340,6 +341,7 @@ export default function BusinessMetrics({
                       gap: 8
                     }}
                     onClick={e => e.stopPropagation()}
+                    onKeyDown={e => e.stopPropagation()}
                   >
                     <div>
                       <label style={{ display: 'block', fontSize: '0.70rem', fontWeight: 600, color: '#64748b', marginBottom: 3 }}>
@@ -561,12 +563,21 @@ export default function BusinessMetrics({
                           <div
                             key={s.key}
                             className="ws-bm-bar"
+                            role={!isDrilldown ? "button" : undefined}
+                            tabIndex={!isDrilldown ? 0 : undefined}
                             onMouseEnter={(e) => {
                               e.stopPropagation()
                               setHoveredSeriesKey(s.key)
                             }}
                             onClick={(e) => {
                               if (!isDrilldown) {
+                                e.stopPropagation()
+                                setSelectedCategory(s.label)
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (!isDrilldown && (e.key === 'Enter' || e.key === ' ')) {
+                                e.preventDefault()
                                 e.stopPropagation()
                                 setSelectedCategory(s.label)
                               }
@@ -616,8 +627,17 @@ export default function BusinessMetrics({
                               return (
                                 <div 
                                   key={s.key}
+                                  role={!isDrilldown ? "button" : undefined}
+                                  tabIndex={!isDrilldown ? 0 : undefined}
                                   onClick={(e) => {
                                     if (!isDrilldown) {
+                                      e.stopPropagation()
+                                      setSelectedCategory(s.label)
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (!isDrilldown && (e.key === 'Enter' || e.key === ' ')) {
+                                      e.preventDefault()
                                       e.stopPropagation()
                                       setSelectedCategory(s.label)
                                     }
@@ -659,10 +679,20 @@ export default function BusinessMetrics({
 
                           {!isDrilldown && (
                             <div 
+                              role="button"
+                              tabIndex={0}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 const catToUse = (tip?.product && tip.product !== 'N/A') ? tip.product : (displaySeries[0]?.label || 'Grains')
                                 setSelectedCategory(catToUse)
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  const catToUse = (tip?.product && tip.product !== 'N/A') ? tip.product : (displaySeries[0]?.label || 'Grains')
+                                  setSelectedCategory(catToUse)
+                                }
                               }}
                               style={{
                                 marginTop: 6,

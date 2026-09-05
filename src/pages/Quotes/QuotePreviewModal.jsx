@@ -13,7 +13,7 @@ function parseItems(value) {
 }
 
 function money(value) {
-  return (parseFloat(value || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata',
+  return (Number.parseFloat(value || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata',
     style: 'currency',
     currency: 'INR',
     minimumFractionDigits: 2,
@@ -105,14 +105,14 @@ export default function QuotePreviewModal({ quote, onClose, onEdit, onStatusChan
                 <span style={{ color: '#64748b' }}>Valid until</span>
                 <strong style={{ textAlign: 'right' }}>{dateText(quote?.valid_until)}</strong>
                 {(() => {
-                  const explicitDiscount = parseFloat(quote?.discount || quote?.discount_amount || 0)
-                  const lineDiscounts = items.reduce((s, it) => s + parseFloat(it.discount || 0), 0)
-                  const grossTotal = items.reduce((s, it) => s + (parseFloat(it.rate || it.price || 0) * parseFloat(it.quantity || it.qty || 1)), 0)
-                  const lineAmtTotal = items.reduce((s, it) => s + parseFloat(it.amount || it.line_total || 0), 0)
+                  const explicitDiscount = Number.parseFloat(quote?.discount || quote?.discount_amount || 0)
+                  const lineDiscounts = items.reduce((s, it) => s + Number.parseFloat(it.discount || 0), 0)
+                  const grossTotal = items.reduce((s, it) => s + (Number.parseFloat(it.rate || it.price || 0) * Number.parseFloat(it.quantity || it.qty || 1)), 0)
+                  const lineAmtTotal = items.reduce((s, it) => s + Number.parseFloat(it.amount || it.line_total || 0), 0)
                   const diffDiscount = (grossTotal > 0 && lineAmtTotal > 0 && grossTotal > lineAmtTotal + 0.01) ? (grossTotal - lineAmtTotal) : 0
                   const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
                   const taxableTotal = Math.max(0, grossTotal - totalDiscount)
-                  const taxAmt = parseFloat(quote?.tax_amount || 0)
+                  const taxAmt = Number.parseFloat(quote?.tax_amount || 0)
 
                   return (
                     <>
@@ -158,15 +158,15 @@ export default function QuotePreviewModal({ quote, onClose, onEdit, onStatusChan
                   </tr>
                 ) : (
                   items.map((item, index) => {
-                    const q = parseFloat(item.quantity || item.qty || 1)
-                    const r = parseFloat(item.rate || item.price || 0)
+                    const q = Number.parseFloat(item.quantity || item.qty || 1)
+                    const r = Number.parseFloat(item.rate || item.price || 0)
                     const gross = q * r
-                    const disc = parseFloat(item.discount ?? item.discount_amount ?? item.discountAmount ?? item.disc ?? 0)
-                    const taxable = parseFloat(item.amount || item.line_total || (gross - disc))
+                    const disc = Number.parseFloat(item.discount ?? item.discount_amount ?? item.discountAmount ?? item.disc ?? 0)
+                    const taxable = Number.parseFloat(item.amount || item.line_total || (gross - disc))
 
-                    const explicitTaxAmt = parseFloat(quote?.tax_amount || 0)
-                    const totalAmt = parseFloat(quote?.total_amount || 0)
-                    const totalTaxable = items.reduce((s, it) => s + (parseFloat(it.amount || it.line_total || 0)), 0)
+                    const explicitTaxAmt = Number.parseFloat(quote?.tax_amount || 0)
+                    const totalAmt = Number.parseFloat(quote?.total_amount || 0)
+                    const totalTaxable = items.reduce((s, it) => s + (Number.parseFloat(it.amount || it.line_total || 0)), 0)
 
                     let itemTax = 0
                     if (explicitTaxAmt > 0) {

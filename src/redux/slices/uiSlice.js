@@ -60,7 +60,7 @@ const uiSlice = createSlice({
     },
     addToast(state, action) {
       const newToast = {
-        id:      Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        id:      globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now() + '-' + (state.toasts.length + 1)),
         message: action.payload.message,
         type:    action.payload.type || 'info',
       }

@@ -4,34 +4,26 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Filter, ArrowUpDown, Package, X, Edit2, Trash2, Loader2, Search, Eye } from 'lucide-react'
+import { Plus, Filter, ArrowUpDown, Package, X, Edit2, Trash2, Loader2, Search, Eye, ArrowLeftRight } from 'lucide-react'
 import { drawBarcode } from '../../utils/barcode'
 import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
-import { getBulkUnitDetails, formatStockDisplay, calculateUnitPricing } from '../../utils/unitHelpers'
+import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import './Products.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
-import { hasModulePermission, canDeleteModule, canCreateModule, canEditModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
+import { hasModulePermission, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
-const formatIndianDateOnly = (raw) => {
-  if (!raw) return ''
-  try {
-    let str = String(raw)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-      str = str + 'T00:00:00'
-    }
-    const d = new Date(str)
-    if (Number.isNaN(d.getTime())) return String(raw)
-    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    })
-  } catch {
-    return String(raw)
-  }
+
+const getStockBadgeClass = (stock, looseKg = 0, bagWeight = 1) => {
+  const s = Number.parseFloat(stock || 0)
+  const l = Number.parseFloat(looseKg || 0)
+  const bw = Number.parseFloat(bagWeight || 1)
+  const totalBase = (bw > 1 ? s * bw : s) + l
+  if (totalBase > 10) return 'attio-stock-high'
+  if (totalBase > 0) return 'attio-stock-low'
+  return 'attio-stock-out'
 }
 
 function ProductBarcode({ sku }) {
@@ -119,7 +111,6 @@ function PricingModal({ product, onClose }) {
   const targetId = product?.product_id || product?.id
   const bulkUnit = getBulkUnitDetails(product?.unit)
   const bagWeight = Number.parseFloat(product?.bag_weight || 1)
-  const pc = Number.parseFloat(product?.price_covers || 0)
 
   const calcBagPrice = (rawVal) => {
     const p = Number.parseFloat(rawVal || 0)
@@ -288,12 +279,347 @@ function PricingModal({ product, onClose }) {
   )
 }
 
+function ProductComparisonModal({ products, onClose, onRemoveProduct, onClearAll }) {
+  if (!products || products.length === 0) return null
+
+  const productData = products.map(p => {
+    const bulkUnit = getBulkUnitDetails(p.unit)
+    const uomShort = (bulkUnit?.short || p.unit || 'kg').toLowerCase().replace(/s$/, '')
+    const pc = Number.parseFloat(p.price_covers || 0)
+    const bw = Number.parseFloat(p.bag_weight || 1)
+    const rawP = Number.parseFloat(p.price || 0)
+    const rawUP = Number.parseFloat(p.updated_price || 0)
+
+    let priceVal = rawP
+    if (pc > 0 && bw > 0 && pc !== bw) {
+      priceVal = (rawP / bw) * pc
+    }
+
+    let updatedPriceVal = rawUP
+    if (rawUP > 0 && pc > 0 && bw > 0 && pc !== bw) {
+      updatedPriceVal = (rawUP / bw) * pc
+    }
+
+    const priceSubtext = pc > 0 ? `${pc} ${uomShort}` : (bw > 1 ? `${bw} ${uomShort}` : `1 ${uomShort}`)
+    const effectiveUnitPrice = bw > 0 ? (rawP / bw) : rawP
+    const effectiveUpdatedUnitPrice = (rawUP > 0 && bw > 0) ? (rawUP / bw) : (rawUP > 0 ? rawUP : null)
+
+    const stockQty = Number.parseFloat(p.stock || 0)
+    const looseQty = Number.parseFloat(p.loose_kg || 0)
+    const totalBaseUnits = (bw > 1 ? stockQty * bw : stockQty) + looseQty
+    const activeRate = effectiveUpdatedUnitPrice !== null ? effectiveUpdatedUnitPrice : effectiveUnitPrice
+    const stockValuation = totalBaseUnits * activeRate
+
+    return {
+      ...p,
+      bulkUnit,
+      uomShort,
+      bw,
+      pc,
+      priceVal,
+      priceSubtext,
+      effectiveUnitPrice,
+      effectiveUpdatedUnitPrice,
+      updatedPriceVal,
+      totalBaseUnits,
+      stockValuation
+    }
+  })
+
+  const allSameUnit = productData.length > 1 && productData.every(p => p.uomShort === productData[0].uomShort)
+  const minEffectiveRate = allSameUnit ? Math.min(...productData.map(p => (p.effectiveUpdatedUnitPrice || p.effectiveUnitPrice))) : null
+
+  return (
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card compare-modal-card" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="ws-modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ background: '#eff6ff', color: '#2563eb', padding: '6px', borderRadius: 8, display: 'flex', alignItems: 'center' }}>
+                <ArrowLeftRight size={18} />
+              </div>
+              <div>
+                <h3 className="ws-modal-title" style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
+                  Product Comparison
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                  Comparing {products.length} product{products.length > 1 ? 's' : ''} side-by-side
+                </p>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {products.length > 0 && (
+              <button
+                onClick={onClearAll}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                Clear all
+              </button>
+            )}
+            <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="ws-modal-body" style={{ padding: 0, overflowX: 'auto', overflowY: 'auto', flex: 1 }}>
+          {products.length < 2 ? (
+            <div style={{ padding: '48px 24px', textAlign: 'center', color: '#64748b' }}>
+              <div style={{ background: '#f1f5f9', width: 44, height: 44, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, color: '#475467' }}>
+                <ArrowLeftRight size={22} />
+              </div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '0.95rem', color: '#1e293b' }}>Select at least 2 products</h4>
+              <p style={{ margin: 0, fontSize: '0.82rem', maxWidth: 360, marginInline: 'auto' }}>
+                You have removed products from comparison. Please select at least 2 products from the product table to compare them side-by-side.
+              </p>
+            </div>
+          ) : (
+            <table className="compare-matrix-table">
+              <thead>
+                <tr>
+                  <th className="attr-col">Product Details</th>
+                  {productData.map(p => {
+                    const catStyle = getCategoryTagStyle(p.category)
+                    return (
+                      <th key={p.id} className="product-col" style={{ background: '#ffffff', position: 'relative' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div className="attio-avatar" style={{ background: getAvatarColor(p.name), width: 26, height: 26, minWidth: 26, fontSize: '0.82rem' }}>
+                              {getSingleLetter(p.name)}
+                            </div>
+                            <div style={{ textAlign: 'left' }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a', lineHeight: 1.2 }}>
+                                {p.name}
+                              </div>
+                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                HSN: {p.hsn_code || p.sku || '—'}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => onRemoveProduct(p.id)}
+                            style={{
+                              background: '#f1f5f9',
+                              border: 'none',
+                              borderRadius: '50%',
+                              width: 22,
+                              height: 22,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#64748b',
+                              cursor: 'pointer',
+                              flexShrink: 0
+                            }}
+                            title="Remove from comparison"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                        <div style={{ marginTop: 8, textAlign: 'left' }}>
+                          <span style={{ background: catStyle.bg, color: catStyle.text, border: `1px solid ${catStyle.border}`, borderRadius: 5, padding: '2px 8px', fontSize: '0.7rem', fontWeight: 600, display: 'inline-block' }}>
+                            {p.category || 'Unassigned'}
+                          </span>
+                        </div>
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Row: Base Price */}
+                <tr>
+                  <td className="attr-cell">Base Price</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>
+                        ₹{p.priceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                        per {p.priceSubtext}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Updated Price */}
+                <tr>
+                  <td className="attr-cell">Updated Price</td>
+                  {productData.map(p => {
+                    if (!p.updated_price) {
+                      return (
+                        <td key={p.id} className="product-col" style={{ color: '#94a3b8' }}>
+                          — (No update)
+                        </td>
+                      )
+                    }
+                    const diff = p.updatedPriceVal - p.priceVal
+                    const isLower = diff < 0
+                    return (
+                      <td key={p.id} className="product-col">
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#2563eb' }}>
+                          ₹{p.updatedPriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: isLower ? '#16a34a' : '#dc2626', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {isLower ? `↓ Savings of ₹${Math.abs(diff).toFixed(2)}` : `↑ Higher by ₹${diff.toFixed(2)}`}
+                        </div>
+                      </td>
+                    )
+                  })}
+                </tr>
+
+                {/* Row: Effective Rate */}
+                <tr>
+                  <td className="attr-cell">Effective Rate</td>
+                  {productData.map(p => {
+                    const activeRate = p.effectiveUpdatedUnitPrice !== null ? p.effectiveUpdatedUnitPrice : p.effectiveUnitPrice
+                    const isBest = minEffectiveRate !== null && activeRate === minEffectiveRate
+                    return (
+                      <td key={p.id} className="product-col">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: isBest ? '#15803d' : '#334155' }}>
+                            ₹{activeRate.toFixed(2)} / {p.uomShort}
+                          </span>
+                          {isBest && (
+                            <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px', fontSize: '0.68rem', fontWeight: 700 }}>
+                              Best Value
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          Standard base unit rate
+                        </div>
+                      </td>
+                    )
+                  })}
+                </tr>
+
+                {/* Row: Stock Available */}
+                <tr>
+                  <td className="attr-cell">Stock on Hand</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <span className={`attio-stock-badge ${getStockBadgeClass(p.stock, p.loose_kg, p.bag_weight)}`}>
+                        {formatStockDisplay(p.stock, p.bag_weight, p.unit, p.loose_kg)}
+                      </span>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 4 }}>
+                        Total: {p.totalBaseUnits.toLocaleString('en-IN')} {p.uomShort}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Estimated Stock Valuation */}
+                <tr>
+                  <td className="attr-cell">Stock Valuation</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <div style={{ fontWeight: 600, fontSize: '0.86rem', color: '#0f172a' }}>
+                        ₹{p.stockValuation.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                        Qty × Effective Rate
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Packaging & Unit */}
+                <tr>
+                  <td className="attr-cell">Packaging Specs</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <div style={{ fontSize: '0.82rem', color: '#1e293b', fontWeight: 500 }}>
+                        {p.unit || 'Standard'} ({p.bw} {p.uomShort})
+                      </div>
+                      {p.pc > 0 && (
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          Price covers: {p.pc} {p.uomShort}
+                        </div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Status */}
+                <tr>
+                  <td className="attr-cell">Status</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <span className={`attio-status-badge ${p.status === 'active' ? 'attio-status-active' : 'attio-status-inactive'}`}>
+                        {p.status || 'active'}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Next Restock */}
+                <tr>
+                  <td className="attr-cell">Next Restock</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <span style={{ fontSize: '0.82rem', color: p.next_restock_time ? '#0f172a' : '#94a3b8' }}>
+                        {p.next_restock_time || '—'}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Barcode / SKU */}
+                <tr>
+                  <td className="attr-cell">Barcode (SKU)</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      {p.sku ? (
+                        <div style={{ display: 'inline-block' }}>
+                          <ProductBarcode sku={p.sku} />
+                          <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 4, fontFamily: 'monospace' }}>
+                            {p.sku}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>—</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="ws-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+            Tip: Click the <strong style={{ color: '#0f172a' }}>✕</strong> next to any product name to remove it from comparison.
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="ws-modal-btn ws-modal-btn--primary" onClick={onClose}>
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Products() {
   const dispatch  = useAppDispatch()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const navigate = useNavigate()
 
-  const { canRead, canCreate, canEdit, canDelete, hasModulePermission: checkModPerm } = usePermissions('products')
+  const { canRead, canDelete, hasModulePermission: checkModPerm } = usePermissions('products')
   const canAccessImportStock = checkModPerm ? checkModPerm('import_stock') : hasModulePermission('import_stock')
   
   const [products, setProducts] = useState([])
@@ -301,6 +627,9 @@ export default function Products() {
   const [selectedSku, setSelectedSku] = useState(null)
   const [selectedPricing, setSelectedPricing] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' })
+
+  const [selectedProducts, setSelectedProducts] = useState([])
+  const [showCompareModal, setShowCompareModal] = useState(false)
 
   const [page, setPage] = useState(1)
   const [limit] = useState(20) // fixed limit to remove dropdown
@@ -336,6 +665,7 @@ export default function Products() {
       setProducts(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to load products', type: 'error' }))
     } finally {
       setLoading(false)
@@ -354,13 +684,14 @@ export default function Products() {
 
 
   const handleConfirmDelete = async () => {
-    const { id, name } = confirmDelete
+    const { id } = confirmDelete
     setConfirmDelete({ isOpen: false, id: null, name: '' })
     try {
       await api.delete(`/products/${id}`)
       setProducts(prev => prev.filter(p => p.id !== id))
       dispatch(addToast({ message: 'Product deleted successfully', type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete product', type: 'error' }))
     }
   }
@@ -372,20 +703,40 @@ export default function Products() {
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, next_restock_time: value } : p))
       dispatch(addToast({ message: 'Restock time updated', type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to update restock time', type: 'error' }))
     }
   }
 
+  const allSelectedOnPage = products.length > 0 && products.every(p => selectedProducts.some(sp => sp.id === p.id))
 
+  const handleToggleSelectAll = () => {
+    if (allSelectedOnPage) {
+      const pageIds = new Set(products.map(p => p.id))
+      setSelectedProducts(prev => prev.filter(p => !pageIds.has(p.id)))
+    } else {
+      setSelectedProducts(prev => {
+        const map = new Map(prev.map(p => [p.id, p]))
+        products.forEach(p => map.set(p.id, p))
+        return Array.from(map.values())
+      })
+    }
+  }
 
-  const getStockBadgeClass = (stock, looseKg = 0, bagWeight = 1) => {
-    const s = Number.parseFloat(stock || 0)
-    const l = Number.parseFloat(looseKg || 0)
-    const bw = Number.parseFloat(bagWeight || 1)
-    const totalBase = (bw > 1 ? s * bw : s) + l
-    if (totalBase > 10) return 'attio-stock-high'
-    if (totalBase > 0) return 'attio-stock-low'
-    return 'attio-stock-out'
+  const handleToggleSelectRow = (product) => {
+    setSelectedProducts(prev => {
+      const exists = prev.some(p => p.id === product.id)
+      if (exists) return prev.filter(p => p.id !== product.id)
+      return [...prev, product]
+    })
+  }
+
+  const handleRemoveFromCompare = (productId) => {
+    setSelectedProducts(prev => prev.filter(p => p.id !== productId))
+  }
+
+  const handleClearSelection = () => {
+    setSelectedProducts([])
   }
 
   return (
@@ -510,7 +861,13 @@ export default function Products() {
                     <thead>
                       <tr>
                         <th style={{ width: 28, textAlign: 'left', paddingLeft: 4 }}>
-                          <input type="checkbox" className="attio-chk" readOnly />
+                          <input 
+                            type="checkbox" 
+                            className="attio-chk" 
+                            checked={allSelectedOnPage}
+                            onChange={handleToggleSelectAll}
+                            title="Select all on this page"
+                          />
                         </th>
                         <th>PRODUCT NAME</th>
                         <th>HSN CODE</th>
@@ -528,11 +885,18 @@ export default function Products() {
                       {products.map(row => {
                         const restockOpts = ['TBD', 'In 30 mins', 'Tomorrow', 'Next week', 'Next month']
                         const restock = row.next_restock_time || 'TBD'
+                        const isSelected = selectedProducts.some(sp => sp.id === row.id)
 
                         return (
-                          <tr key={row.id}>
+                          <tr key={row.id} style={{ background: isSelected ? '#f0f5ff' : undefined }}>
                             <td style={{ textAlign: 'left', paddingLeft: 4 }}>
-                              <input type="checkbox" className="attio-chk" readOnly />
+                              <input 
+                                type="checkbox" 
+                                className="attio-chk" 
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectRow(row)}
+                                title="Select product"
+                              />
                             </td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -714,6 +1078,86 @@ export default function Products() {
 
       {selectedPricing && (
         <PricingModal product={selectedPricing} onClose={() => setSelectedPricing(null)} />
+      )}
+
+      {showCompareModal && (
+        <ProductComparisonModal
+          products={selectedProducts}
+          onClose={() => setShowCompareModal(false)}
+          onRemoveProduct={handleRemoveFromCompare}
+          onClearAll={handleClearSelection}
+        />
+      )}
+
+      {/* Floating Action Pill when items are selected */}
+      {selectedProducts.length > 0 && (
+        <div className="product-compare-floating-bar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              background: '#2563eb',
+              color: '#ffffff',
+              borderRadius: '50%',
+              width: 22,
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.75rem',
+              fontWeight: 700
+            }}>
+              {selectedProducts.length}
+            </span>
+            <span style={{ fontWeight: 500 }}>
+              product{selectedProducts.length > 1 ? 's' : ''} selected
+            </span>
+          </div>
+
+          <div style={{ width: 1, height: 18, background: '#334155' }} />
+
+          {selectedProducts.length >= 2 ? (
+            <button
+              onClick={() => setShowCompareModal(true)}
+              style={{
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                padding: '6px 16px',
+                borderRadius: 20,
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.4)',
+                transition: 'all 0.15s'
+              }}
+            >
+              <ArrowLeftRight size={14} /> Compare Products
+            </button>
+          ) : (
+            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+              Select 1 more product to compare
+            </span>
+          )}
+
+          <button
+            onClick={handleClearSelection}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              textDecoration: 'underline'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#ffffff' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8' }}
+          >
+            Deselect all
+          </button>
+        </div>
       )}
 
       <ConfirmModal

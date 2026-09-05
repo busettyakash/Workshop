@@ -1,36 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown, Eye, FileText } from 'lucide-react'
-import { getAvatarColor, getSingleLetter, getPillStyle, getCategoryTagStyle } from '../../utils/tableHelpers'
-import { getBulkUnitDetails, formatStockDisplay, calculateUnitPricing } from '../../utils/unitHelpers'
+import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
+import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
-import { hasModulePermission, canDeleteModule, canCreateModule, canEditModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
-
-const formatIndianDateOnly = (raw) => {
-  if (!raw) return ''
-  try {
-    let str = String(raw)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-      str = str + 'T00:00:00'
-    }
-    const d = new Date(str)
-    if (Number.isNaN(d.getTime())) return String(raw)
-    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    })
-  } catch {
-    return String(raw)
-  }
-}
+import { getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 function PricingModal({ product, onClose }) {
   const [history, setHistory] = useState([])
@@ -39,7 +20,6 @@ function PricingModal({ product, onClose }) {
   const targetId = product?.product_id || product?.id
   const bulkUnit = getBulkUnitDetails(product?.unit)
   const bagWeight = Number.parseFloat(product?.bag_weight || 1)
-  const pc = Number.parseFloat(product?.price_covers || 0)
 
   const calcBagPrice = (rawVal) => {
     const p = Number.parseFloat(rawVal || 0)
@@ -274,13 +254,14 @@ export default function ImportStock() {
 
 
   const handleConfirmDelete = async () => {
-    const { id, name } = confirmDelete
+    const { id } = confirmDelete
     setConfirmDelete({ isOpen: false, id: null, name: '' })
     try {
       await api.delete(`/import-stock/${id}`)
       setProducts(prev => prev.filter(p => p.id !== id))
       dispatch(addToast({ message: 'Item deleted successfully', type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete item', type: 'error' }))
     }
   }
@@ -292,6 +273,7 @@ export default function ImportStock() {
       setSelectedIds(prev => prev.filter(item => item !== id))
       dispatch(addToast({ message: `${name} successfully added to Products!`, type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to add to products', type: 'error' }))
     }
   }
@@ -304,12 +286,9 @@ export default function ImportStock() {
       dispatch(addToast({ message: `${selectedIds.length} items successfully added to Products!`, type: 'success' }))
       setSelectedIds([])
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to add items to products', type: 'error' }))
     }
-  }
-
-  const getPillStyle = (status) => {
-    return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }
   }
 
   return (
@@ -461,14 +440,8 @@ export default function ImportStock() {
                     </tr>
                   </thead>
                   <tbody>
-                    {products.map(row => {
-                      const catStyle = getPillStyle(row.category || 'default')
-                      const statusStyle = getPillStyle(row.status || 'pending')
-                      const stockStatus = row.stock > 10 ? 'in stock' : row.stock > 0 ? 'low stock' : 'out of stock'
-                      const stockStyle = getPillStyle(stockStatus)
-                      const updatedDate = row.updated_price_date ? String(row.updated_price_date).split('T')[0] : ''
-                      return (
-                        <tr key={row.id}>
+                    {products.map(row => (
+                      <tr key={row.id}>
                           <td style={{ textAlign: 'left', paddingLeft: 4 }}>
                             {row.status === 'added' ? (
                               <input 
@@ -735,8 +708,7 @@ export default function ImportStock() {
                             </div>
                           </td>
                         </tr>
-                      )
-                    })}
+                      ))}
                   </tbody>
                 </table>
               )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
@@ -6,19 +6,9 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Plus, Minus, Trash2, Search, UserPlus, AlertCircle, X, ChevronDown, PackagePlus, ArrowRight, Check, User, ShoppingBag } from 'lucide-react'
 import api from '../../api/client'
-import { getBulkUnitDetails, ALL_UOM_OPTIONS, formatStockDisplay, formatStockDisplayFromBase } from '../../utils/unitHelpers'
-import { getRandomCode, getRandomInt } from '../../utils/cryptoUtils'
+import { getBulkUnitDetails, ALL_UOM_OPTIONS, formatStockDisplayFromBase } from '../../utils/unitHelpers'
+import { getRandomInt } from '../../utils/cryptoUtils'
 import '../Dashboard/Dashboard.css'
-
-const getProductAvatarBg = (name = '') => {
-  const colors = [
-    '#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626',
-    '#0891b2', '#4f46e5', '#ca8a04', '#0d9488', '#e11d48'
-  ]
-  let hash = 0
-  for (let i = 0; i < name.length; i++) hash = name.codePointAt(i) + ((hash << 5) - hash)
-  return colors[Math.abs(hash) % colors.length]
-}
 
 const S = {
   input: {
@@ -98,11 +88,6 @@ function QuickAddProductModal({ onClose, onSaved }) {
       }
     }).catch(() => { })
   }, [])
-
-  const generateSKU = () => {
-    const rand = getRandomCode(8)
-    setForm(prev => ({ ...prev, sku: `SKU-${rand}` }))
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -747,8 +732,6 @@ const calcMaxStock = (prod, itemUnit) => {
                       </div>
                       {lineItems.map((li, idx) => {
                         const productObj = products.find(p => p.id === li.product_id)
-                        const stockAvailable = productObj ? productObj.stock : 999999
-                        const exceedsStock = Number.parseFloat(li.qty) > stockAvailable
                         const bulkUnit = getBulkUnitDetails(li.unit)
 
                         return (

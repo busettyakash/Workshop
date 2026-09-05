@@ -11,7 +11,7 @@ import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
 import BillPreview from '../Billing/BillPreview'
 import { useNavigate } from 'react-router'
-import { hasModulePermission, canDeleteModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
+import { getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 export default function PaidBills() {
   const dispatch = useAppDispatch()
@@ -82,6 +82,7 @@ export default function PaidBills() {
       setBills(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to load paid bills', type: 'error' }))
     } finally {
       setLoading(false)
@@ -96,6 +97,7 @@ export default function PaidBills() {
       setBills(prev => prev.filter(b => b.id !== id))
       dispatch(addToast({ message: 'Bill record deleted successfully', type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete bill record', type: 'error' }))
     }
   }
@@ -209,6 +211,7 @@ export default function PaidBills() {
                       <th>INVOICE ID</th>
                       <th>QUOTE / ORDER #</th>
                       <th>CUSTOMER</th>
+                      <th>CREATED BY</th>
                       <th>TOTAL AMOUNT</th>
                       <th>INVOICE DATE</th>
                       <th>DUE DATE</th>
@@ -259,6 +262,22 @@ export default function PaidBills() {
                               <span className="ws-table-name-text">
                                 {name}
                               </span>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                              <span style={{ fontWeight: 600, fontSize: '0.80rem', color: '#1e293b' }}>
+                                {bill.created_by_name || 'Admin'}
+                              </span>
+                              {(bill.created_by_name || 'Admin').toLowerCase().trim() !== (bill.created_by_role || 'Admin').toLowerCase().trim() && (
+                                <span style={{
+                                  fontSize: '0.70rem',
+                                  fontWeight: 500,
+                                  color: bill.created_by_role === 'Member' ? '#2563eb' : '#64748b'
+                                }}>
+                                  ({bill.created_by_role || 'Admin'})
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="ws-td-price">{formatCurrency(bill.amount)}</td>

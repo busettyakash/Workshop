@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
-import { useAppDispatch, useAppSelector } from '../../redux/hooks'
-import { selectSidebarOpen, addToast, setActiveNav } from '../../redux/slices/uiSlice'
+import { useAppDispatch } from '../../redux/hooks'
+import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
 import { useAuth } from '../../hooks/useAuth'
 import { 
   ArrowLeft, Search, User, Palette, Mail, PhoneCall, HardDrive, Share2, Bell, MessageSquare, Plug,

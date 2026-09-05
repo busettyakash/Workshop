@@ -92,7 +92,6 @@ export default function BusinessMetrics({
   })
   const [customEndDate, setCustomEndDate]       = useState(() => new Date().toISOString().slice(0, 10))
   const [showCustomPicker, setShowCustomPicker] = useState(false)
-  const [customerFilter, setCustomerFilter]     = useState('All Customers')
   const [localProductFilter, setLocalProductFilter] = useState('All Products')
   const [showDayDrop, setShowDayDrop]           = useState(false)
   const [showCustDrop, setShowCustDrop]         = useState(false)
@@ -100,6 +99,7 @@ export default function BusinessMetrics({
   const [people, setPeople]                     = useState([])
   const [allProducts, setAllProducts]           = useState([])
 
+  const customerFilter = 'All Customers'
   const productFilter = propProductFilter !== undefined ? propProductFilter : localProductFilter
   const setProductFilter = propSetProductFilter || setLocalProductFilter
 
@@ -182,9 +182,10 @@ export default function BusinessMetrics({
     return () => { active = false }
   }, [selectedCategory, dayFilter, customerFilter, productFilter, customStartDate, customEndDate, refreshTrigger])
 
-  // Fetch People / Customers
+  // Fetch People / Customers (lazy-loaded on dropdown open or after idle)
   useEffect(() => {
     let active = true
+    let timer = null
     const fetchPeople = async () => {
       try {
         const res = await api.get('/people')
@@ -195,13 +196,24 @@ export default function BusinessMetrics({
         console.error('Error loading people for metrics:', err)
       }
     }
-    fetchPeople()
-    return () => { active = false }
-  }, [refreshTrigger])
 
-  // Fetch All Products for dropdown
+    if (showCustDrop) {
+      fetchPeople()
+    } else if (people.length === 0) {
+      // Background preload after initial chart render
+      timer = setTimeout(fetchPeople, 1500)
+    }
+
+    return () => {
+      active = false
+      if (timer) clearTimeout(timer)
+    }
+  }, [showCustDrop, refreshTrigger])
+
+  // Fetch All Products for dropdown (lazy-loaded on dropdown open or after idle)
   useEffect(() => {
     let active = true
+    let timer = null
     const fetchProducts = async () => {
       try {
         const res = await api.get('/products')
@@ -213,15 +225,19 @@ export default function BusinessMetrics({
         console.error('Error loading products for filter:', err)
       }
     }
-    fetchProducts()
-    return () => { active = false }
-  }, [refreshTrigger])
 
-  const customerOptions = [
-    'All Customers',
-    'Walking Customer',
-    ...Array.from(new Set(people.map(p => p?.name).filter(Boolean))).filter(n => !n.toLowerCase().includes('walk'))
-  ]
+    if (showProdDrop) {
+      fetchProducts()
+    } else if (allProducts.length === 0) {
+      // Background preload after initial chart render
+      timer = setTimeout(fetchProducts, 2000)
+    }
+
+    return () => {
+      active = false
+      if (timer) clearTimeout(timer)
+    }
+  }, [showProdDrop, refreshTrigger])
 
   // Compute product options based on current view
   const isDrilldown = Boolean(selectedCategory && categoryBreakdown)

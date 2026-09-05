@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast, setSidebarOpen } from '../../redux/slices/uiSlice'
-import { Plus, Filter, ArrowUpDown, X, Trash2, Loader2, Search, Eye, FileText, Calendar, Edit2, ArrowLeft, User, Package, Calculator, CheckCircle2, Send, Receipt, ArrowRight, ChevronDown } from 'lucide-react'
+import { Plus, Filter, ArrowUpDown, X, Trash2, Loader2, Search, Eye, FileText, Calendar, Edit2, ArrowLeft, User, Package, Calculator, CheckCircle2, Send, Receipt, ArrowRight, ChevronDown, ArrowLeftRight } from 'lucide-react'
 import { getAvatarColor, getSingleLetter } from '../../utils/tableHelpers'
 import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
@@ -276,7 +276,6 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   const [currentQuoteId, setCurrentQuoteId] = useState(quote?.id || null)
   const isEdit = Boolean(quote?.id || currentQuoteId)
   const dispatch = useAppDispatch()
-  const navigate = useNavigate()
 
   const [step, setStep] = useState(1) // Step 1: Customer, Step 2: Line Items, Step 3: Review & Send
 
@@ -308,7 +307,6 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   const [products, setProducts] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [sendingEmail, setSendingEmail] = useState(false)
-  const [converting, setConverting] = useState(false)
 
   useEffect(() => {
     api.get('/people?limit=200')
@@ -484,18 +482,6 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     }))
   }
 
-  const handleRateChange = (index, rate) => {
-    const numRate = Number.parseFloat(rate) || 0
-    setLineItems(prev => prev.map((item, i) => {
-      if (i === index) {
-        const qty = Number.parseFloat(item.quantity) || 0
-        const disc = Number.parseFloat(item.discount) || 0
-        return { ...item, rate: rate, amount: Math.max(0, (qty * numRate) - disc) }
-      }
-      return item
-    }))
-  }
-
   const handleDiscountChange = (index, disc) => {
     const numDisc = Number.parseFloat(disc) || 0
     setLineItems(prev => prev.map((item, i) => {
@@ -579,20 +565,6 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     }
   }
 
-  const handleConvertToBill = async () => {
-    setConverting(true)
-    try {
-      const saved = await saveQuoteAsync('Accepted')
-      await api.post(`/quotes/${saved.id}/convert-to-bill`)
-      dispatch(addToast({ message: 'Quote Accepted! Invoice generated and moved to Billing', type: 'success' }))
-      navigate('/billing')
-    } catch (err) {
-      dispatch(addToast({ message: 'Failed to convert quote to bill', type: 'error' }))
-    } finally {
-      setConverting(false)
-    }
-  }
-
   const handleBackToQuotes = async () => {
     const hasData = Boolean(formData.customer_name?.trim() || lineItems.some(it => it.name || it.product_id))
     // Only auto-save as Draft if it has data and hasn't already been sent/accepted
@@ -601,7 +573,9 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
         const saved = await saveQuoteAsync('Draft')
         if (onSaved) await onSaved(saved)
         dispatch(addToast({ message: 'Quotation saved as Draft', type: 'info' }))
-      } catch (_e) { }
+      } catch (err) {
+        console.error(err)
+      }
     }
     onBack()
   }
@@ -1201,6 +1175,297 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
   )
 }
 
+function parseQuoteLineItems(value) {
+  if (Array.isArray(value)) return value
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function QuoteComparisonModal({ quotes, onClose, onRemoveQuote, onClearAll }) {
+  if (!quotes || quotes.length === 0) return null
+
+  const quoteData = quotes.map(q => {
+    const items = parseQuoteLineItems(q.line_items)
+    const totalAmount = Number.parseFloat(q.total_amount || 0)
+    const taxAmount = Number.parseFloat(q.tax_amount || 0)
+    const subtotal = totalAmount - taxAmount
+    return {
+      ...q,
+      items,
+      totalAmount,
+      taxAmount,
+      subtotal
+    }
+  })
+
+  const amounts = quoteData.map(q => q.totalAmount)
+  const minAmount = Math.min(...amounts)
+  const maxAmount = Math.max(...amounts)
+  const hasAmountVariance = minAmount !== maxAmount
+
+  return (
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card compare-modal-card" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="ws-modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ background: '#eff6ff', color: '#2563eb', padding: '6px', borderRadius: 8, display: 'flex', alignItems: 'center' }}>
+                <ArrowLeftRight size={18} />
+              </div>
+              <div>
+                <h3 className="ws-modal-title" style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
+                  Quotation Comparison
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                  Comparing {quotes.length} quotation{quotes.length > 1 ? 's' : ''} side-by-side
+                </p>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {quotes.length > 0 && (
+              <button
+                onClick={onClearAll}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                Clear all
+              </button>
+            )}
+            <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="ws-modal-body" style={{ padding: 0, overflowX: 'auto', overflowY: 'auto', flex: 1 }}>
+          {quotes.length < 2 ? (
+            <div style={{ padding: '48px 24px', textAlign: 'center', color: '#64748b' }}>
+              <div style={{ background: '#f1f5f9', width: 44, height: 44, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, color: '#475467' }}>
+                <ArrowLeftRight size={22} />
+              </div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '0.95rem', color: '#1e293b' }}>Select at least 2 quotes</h4>
+              <p style={{ margin: 0, fontSize: '0.82rem', maxWidth: 360, marginInline: 'auto' }}>
+                Please select at least 2 quotations from the list to compare their pricing, terms, line items, and validity side-by-side.
+              </p>
+            </div>
+          ) : (
+            <table className="compare-matrix-table">
+              <thead>
+                <tr>
+                  <th className="attr-col">Quote Details</th>
+                  {quoteData.map(q => (
+                    <th key={q.id} className="product-col" style={{ background: '#ffffff', position: 'relative' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div className="attio-avatar" style={{ background: getAvatarColor(q.customer_name), width: 26, height: 26, minWidth: 26, fontSize: '0.82rem' }}>
+                            {getSingleLetter(q.customer_name)}
+                          </div>
+                          <div style={{ textAlign: 'left' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.88rem', fontFamily: 'monospace', color: '#0f172a' }}>
+                              {q.quote_number || `#${q.id}`}
+                            </div>
+                            <span style={{ fontSize: '0.75rem', color: '#1e293b', fontWeight: 600 }}>
+                              {q.customer_name}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => onRemoveQuote(q.id)}
+                          style={{
+                            background: '#f1f5f9',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: 22,
+                            height: 22,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#64748b',
+                            cursor: 'pointer',
+                            flexShrink: 0
+                          }}
+                          title="Remove from comparison"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                      <div style={{ marginTop: 8, textAlign: 'left' }}>
+                        {(() => {
+                          const st = (q.status || 'Draft').toLowerCase()
+                          let bg = '#f1f5f9', color = '#475569', border = '#e2e8f0'
+                          if (st === 'accepted') { bg = '#dcfce7'; color = '#15803d'; border = '#bbf7d0' }
+                          else if (st === 'declined' || st === 'rejected') { bg = '#fee2e2'; color = '#b91c1c'; border = '#fecaca' }
+                          else if (st === 'sent' || st === 'pending') { bg = '#eff6ff'; color = '#2563eb'; border = '#bfdbfe' }
+                          return (
+                            <span style={{ background: bg, color, border: `1px solid ${border}`, borderRadius: 5, padding: '2px 8px', fontSize: '0.7rem', fontWeight: 600, display: 'inline-block' }}>
+                              {q.status || 'Draft'}
+                            </span>
+                          )
+                        })()}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Total Value */}
+                <tr>
+                  <td className="attr-cell">Total Amount</td>
+                  {quoteData.map(q => {
+                    const isLowest = hasAmountVariance && q.totalAmount === minAmount
+                    return (
+                      <td key={q.id} className="product-col">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 800, fontSize: '1.05rem', color: isLowest ? '#15803d' : '#0f172a' }}>
+                            ₹{q.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          {isLowest && (
+                            <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px', fontSize: '0.68rem', fontWeight: 700 }}>
+                              Lowest Total
+                            </span>
+                          )}
+                        </div>
+                        {q.taxAmount > 0 && (
+                          <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
+                            Tax: ₹{q.taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+
+                {/* Customer Details */}
+                <tr>
+                  <td className="attr-cell">Customer & Contact</td>
+                  {quoteData.map(q => (
+                    <td key={q.id} className="product-col">
+                      <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.84rem' }}>{q.customer_name || '—'}</div>
+                      {q.customer_company && <div style={{ fontSize: '0.75rem', color: '#475467' }}>{q.customer_company}</div>}
+                      {q.customer_phone && <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: 2 }}>📞 {q.customer_phone}</div>}
+                      {q.customer_email && <div style={{ fontSize: '0.73rem', color: '#64748b' }}>✉️ {q.customer_email}</div>}
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Timeline */}
+                <tr>
+                  <td className="attr-cell">Issue & Validity</td>
+                  {quoteData.map(q => {
+                    const issueStr = q.issue_date ? String(q.issue_date).split('T')[0] : '—'
+                    const validStr = q.valid_until ? String(q.valid_until).split('T')[0] : '—'
+                    return (
+                      <td key={q.id} className="product-col">
+                        <div style={{ fontSize: '0.78rem', color: '#1e293b' }}>
+                          <span style={{ color: '#64748b' }}>Issued:</span> <strong>{issueStr}</strong>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#1e293b', marginTop: 3 }}>
+                          <span style={{ color: '#64748b' }}>Valid Till:</span> <strong>{validStr}</strong>
+                        </div>
+                      </td>
+                    )
+                  })}
+                </tr>
+
+                {/* Converted Order */}
+                <tr>
+                  <td className="attr-cell">Order Conversion</td>
+                  {quoteData.map(q => {
+                    const orderNum = (q.status === 'Accepted')
+                      ? (q.order_number || `ORD-${q.quote_number ? q.quote_number.replace(/^QT-?/i, '') : q.id}`)
+                      : null
+                    return (
+                      <td key={q.id} className="product-col">
+                        {orderNum ? (
+                          <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 4, padding: '2px 8px', fontSize: '0.75rem', fontWeight: 700, fontFamily: 'monospace' }}>
+                            {orderNum}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>Not Converted</span>
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+
+                {/* Line Items Overview */}
+                <tr>
+                  <td className="attr-cell">Line Items</td>
+                  {quoteData.map(q => (
+                    <td key={q.id} className="product-col">
+                      <div style={{ fontWeight: 600, fontSize: '0.8rem', color: '#0f172a', marginBottom: 6 }}>
+                        {q.items.length} item{q.items.length === 1 ? '' : 's'} included
+                      </div>
+                      {q.items.length === 0 ? (
+                        <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>No items detailed</span>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
+                          {q.items.map((it, idx) => {
+                            const qty = Number.parseFloat(it.quantity ?? it.qty ?? 1)
+                            const rate = Number.parseFloat(it.rate ?? it.unit_price ?? it.price ?? 0)
+                            const lineTotal = Number.parseFloat(it.amount ?? it.total ?? it.total_price ?? it.line_total ?? (qty * rate)) || 0
+                            const unitLabel = it.unit || 'pcs'
+
+                            return (
+                              <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 5, padding: '6px 10px', fontSize: '0.74rem' }}>
+                                <div style={{ fontWeight: 600, color: '#1e293b' }}>{it.name || it.product_name || `Item ${idx + 1}`}</div>
+                                <div style={{ color: '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                                  <span>{qty} {unitLabel} × ₹{rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  <strong style={{ color: '#0f172a', fontWeight: 700 }}>₹{lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Notes */}
+                <tr>
+                  <td className="attr-cell">Notes & Terms</td>
+                  {quoteData.map(q => (
+                    <td key={q.id} className="product-col">
+                      <div style={{ fontSize: '0.75rem', color: q.notes ? '#334155' : '#94a3b8', maxHeight: 80, overflowY: 'auto' }}>
+                        {q.notes || '—'}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="ws-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+            Tip: Click the <strong style={{ color: '#0f172a' }}>✕</strong> next to any quote to remove it from comparison.
+          </span>
+          <button className="ws-modal-btn ws-modal-btn--primary" onClick={onClose}>
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Quotes() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
@@ -1214,6 +1479,9 @@ export default function Quotes() {
   const [editingQuote, setEditingQuote] = useState(null)
   const [viewingQuote, setViewingQuote] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, number: '' })
+
+  const [selectedQuotes, setSelectedQuotes] = useState([])
+  const [showCompareModal, setShowCompareModal] = useState(false)
 
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
@@ -1247,6 +1515,7 @@ export default function Quotes() {
       setQuotes(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
+      console.error(err)
       if (!isBackground) {
         dispatch(addToast({ message: 'Failed to load quotes', type: 'error' }))
       }
@@ -1293,12 +1562,13 @@ export default function Quotes() {
       dispatch(addToast({ message: `Quote #${quoteId} marked as ${newStatus}`, type: 'success' }))
       fetchQuotes(page, true)
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to update quote status', type: 'error' }))
       fetchQuotes(page)
     }
   }
 
-  const handleSaveQuote = (savedQuote) => {
+  const handleSaveQuote = (_savedQuote) => {
     setIsFormOpen(false)
     setEditingQuote(null)
     fetchQuotes(page)
@@ -1312,6 +1582,7 @@ export default function Quotes() {
       dispatch(addToast({ message: `Quote ${number} deleted`, type: 'success' }))
       fetchQuotes(page)
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete quote', type: 'error' }))
     }
   }
@@ -1328,6 +1599,37 @@ export default function Quotes() {
       return { bg: '#fee2e2', text: '#b91c1c', border: '#fecaca', label: 'Declined' }
     }
     return { bg: '#f1f5f9', text: '#475467', border: '#cbd5e1', label: 'Draft' }
+  }
+
+  const allSelectedOnPage = quotes.length > 0 && quotes.every(q => selectedQuotes.some(sq => sq.id === q.id))
+
+  const handleToggleSelectAll = () => {
+    if (allSelectedOnPage) {
+      const pageIds = new Set(quotes.map(q => q.id))
+      setSelectedQuotes(prev => prev.filter(q => !pageIds.has(q.id)))
+    } else {
+      setSelectedQuotes(prev => {
+        const map = new Map(prev.map(q => [q.id, q]))
+        quotes.forEach(q => map.set(q.id, q))
+        return Array.from(map.values())
+      })
+    }
+  }
+
+  const handleToggleSelectRow = (quote) => {
+    setSelectedQuotes(prev => {
+      const exists = prev.some(q => q.id === quote.id)
+      if (exists) return prev.filter(q => q.id !== quote.id)
+      return [...prev, quote]
+    })
+  }
+
+  const handleRemoveFromCompare = (quoteId) => {
+    setSelectedQuotes(prev => prev.filter(q => q.id !== quoteId))
+  }
+
+  const handleClearSelection = () => {
+    setSelectedQuotes([])
   }
 
   return (
@@ -1433,7 +1735,13 @@ export default function Quotes() {
                         <thead>
                           <tr>
                             <th style={{ width: 28, textAlign: 'left', paddingLeft: 4 }}>
-                              <input type="checkbox" className="attio-chk" readOnly />
+                              <input 
+                                type="checkbox" 
+                                className="attio-chk" 
+                                checked={allSelectedOnPage}
+                                onChange={handleToggleSelectAll}
+                                title="Select all on this page"
+                              />
                             </th>
                             <th>QUOTE #</th>
                             <th>CUSTOMER</th>
@@ -1452,11 +1760,18 @@ export default function Quotes() {
                             const issueStr = row.issue_date ? String(row.issue_date).split('T')[0] : '—'
                             const validStr = row.valid_until ? String(row.valid_until).split('T')[0] : '—'
                             const isClosed = row.status === 'Accepted' || row.status === 'Declined' || row.status === 'Rejected'
+                            const isSelected = selectedQuotes.some(sq => sq.id === row.id)
 
                             return (
-                              <tr key={row.id}>
+                              <tr key={row.id} style={{ background: isSelected ? '#f0f5ff' : undefined }}>
                                 <td style={{ textAlign: 'left', paddingLeft: 4 }}>
-                                  <input type="checkbox" className="attio-chk" readOnly />
+                                  <input 
+                                    type="checkbox" 
+                                    className="attio-chk" 
+                                    checked={isSelected}
+                                    onChange={() => handleToggleSelectRow(row)}
+                                    title="Select quote"
+                                  />
                                 </td>
                                 <td>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1610,6 +1925,86 @@ export default function Quotes() {
           }}
           onStatusChange={handleUpdateStatus}
         />
+      )}
+
+      {showCompareModal && (
+        <QuoteComparisonModal
+          quotes={selectedQuotes}
+          onClose={() => setShowCompareModal(false)}
+          onRemoveQuote={handleRemoveFromCompare}
+          onClearAll={handleClearSelection}
+        />
+      )}
+
+      {/* Floating Action Pill when quotes are selected */}
+      {selectedQuotes.length > 0 && (
+        <div className="product-compare-floating-bar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              background: '#2563eb',
+              color: '#ffffff',
+              borderRadius: '50%',
+              width: 22,
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.75rem',
+              fontWeight: 700
+            }}>
+              {selectedQuotes.length}
+            </span>
+            <span style={{ fontWeight: 500 }}>
+              quote{selectedQuotes.length > 1 ? 's' : ''} selected
+            </span>
+          </div>
+
+          <div style={{ width: 1, height: 18, background: '#334155' }} />
+
+          {selectedQuotes.length >= 2 ? (
+            <button
+              onClick={() => setShowCompareModal(true)}
+              style={{
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                padding: '6px 16px',
+                borderRadius: 20,
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.4)',
+                transition: 'all 0.15s'
+              }}
+            >
+              <ArrowLeftRight size={14} /> Compare Quotes
+            </button>
+          ) : (
+            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+              Select 1 more quote to compare
+            </span>
+          )}
+
+          <button
+            onClick={handleClearSelection}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              textDecoration: 'underline'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#ffffff' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8' }}
+          >
+            Deselect all
+          </button>
+        </div>
       )}
 
       <ConfirmModal

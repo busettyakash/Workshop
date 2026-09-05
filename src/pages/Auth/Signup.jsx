@@ -101,7 +101,7 @@ export default function Signup() {
     e.preventDefault()
     clearNotif()
     const newErrors = {}
-    if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) newErrors.email = 'Valid email is required.'
+    if (!form.email || !/^[^\s@]+@[^\s@.]+\.[^\s@.]+$/.test(form.email)) newErrors.email = 'Valid email is required.'
     if (!form.password || form.password.length < 8)       newErrors.password = 'Password must be at least 8 characters.'
     if (score < 3)                                         newErrors.password = 'Password is too weak. Please meet more criteria below.'
     if (form.password !== form.confirmPassword)           newErrors.confirmPassword = 'Passwords do not match.'
@@ -144,7 +144,7 @@ export default function Signup() {
     e.preventDefault()
     clearNotif()
     const newErrors = {}
-    if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) newErrors.email = 'Valid email is required.'
+    if (!form.email || !/^[^\s@]+@[^\s@.]+\.[^\s@.]+$/.test(form.email)) newErrors.email = 'Valid email is required.'
     if (!form.password || form.password.length < 8)       newErrors.password = 'Password must be at least 8 characters.'
     if (score < 3)                                         newErrors.password = 'Password is too weak. Please meet more criteria below.'
     if (form.password !== form.confirmPassword)           newErrors.confirmPassword = 'Passwords do not match.'

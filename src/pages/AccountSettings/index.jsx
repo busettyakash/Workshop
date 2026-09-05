@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router'
-import Sidebar from '../../components/layout/Sidebar'
-import { useAppDispatch, useAppSelector } from '../../redux/hooks'
-import { selectSidebarOpen, addToast, setActiveNav } from '../../redux/slices/uiSlice'
+import { useAppDispatch } from '../../redux/hooks'
+import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
 import { useAuth } from '../../hooks/useAuth'
 import { 
   ArrowLeft, Search, User, Palette, Mail, PhoneCall, HardDrive, Share2, Bell, MessageSquare, Plug,
@@ -13,10 +12,12 @@ import '../Dashboard/Dashboard.css'
 function getSanitizedImageUrl(url) {
   if (!url || typeof url !== 'string') return ''
   const trimmed = url.trim()
-  const isSafeProtocol = /^(blob:|data:image\/(png|jpeg|jpg|gif|webp);base64,|https?:\/\/)/i.test(trimmed)
-  if (!isSafeProtocol) return ''
+  if (!trimmed) return ''
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('data:image/')) {
+    return trimmed
+  }
   try {
-    return encodeURI(decodeURI(trimmed))
+    return encodeURI(`https://${trimmed}`)
   } catch {
     return encodeURI(trimmed)
   }
@@ -25,8 +26,7 @@ function getSanitizedImageUrl(url) {
 export default function AccountSettings() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
-  const sidebarOpen = useAppSelector(selectSidebarOpen)
-  const { user, shopName } = useAuth()
+  const { user } = useAuth()
 
   useEffect(() => {
     dispatch(setActiveNav('Settings'))

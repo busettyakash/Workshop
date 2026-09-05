@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
+import { getCached, setCached } from '../lib/fastCache.js'
 
 const TZ = `'UTC' AT TIME ZONE 'Asia/Kolkata'`
 
@@ -56,7 +57,7 @@ router.get('/top-products', async (req, res) => {
   const userId = req.workspaceId
   const cacheKey = `reports:top-products:${userId}`
   try {
-    const cached = await redis.get(cacheKey).catch(() => null)
+    const cached = await getCached(redis, cacheKey, 200)
     if (cached) return res.json(cached)
 
     const { rows } = await query(
@@ -69,7 +70,7 @@ router.get('/top-products', async (req, res) => {
        GROUP BY p.id, p.name, p.category, p.unit ORDER BY revenue DESC LIMIT 15`,
       [userId]
     )
-    await redis.set(cacheKey, rows, { ex: 30 }).catch(() => {})
+    setCached(redis, cacheKey, rows, 120)
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -81,7 +82,7 @@ router.get('/top-customers', async (req, res) => {
   const userId = req.workspaceId
   const cacheKey = `reports:top-customers:${userId}`
   try {
-    const cached = await redis.get(cacheKey).catch(() => null)
+    const cached = await getCached(redis, cacheKey, 200)
     if (cached) return res.json(cached)
 
     const { rows } = await query(
@@ -97,7 +98,7 @@ router.get('/top-customers', async (req, res) => {
        ORDER BY total_spent DESC LIMIT 15`,
       [userId]
     )
-    await redis.set(cacheKey, rows, { ex: 30 }).catch(() => {})
+    setCached(redis, cacheKey, rows, 120)
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -224,6 +225,10 @@ function buildTimeBuckets(dayFilter, anchorDate = new Date(), startDate = '', en
 }
 
 async function getDistinctCategories(userId) {
+  const catCacheKey = `reports:categories:${userId}`
+  const cached = await getCached(redis, catCacheKey, 150)
+  if (cached) return cached
+
   const catRes = await query(
     `SELECT DISTINCT TRIM(p.category) AS category
      FROM products p
@@ -245,11 +250,21 @@ async function getDistinctCategories(userId) {
     color: categoryColors[cat] || '#10b981'
   }))
 
-  return { cats, categoryColors, series }
+  const result = { cats, categoryColors, series }
+  setCached(redis, catCacheKey, result, 300)
+  return result
 }
 
-async function queryBarData({ timeConfig, series, customerCondition, params }) {
+async function queryBarData({ timeConfig, series, customerCondition, params, hasCustomerFilter }) {
   const { buckets, dateCondition, groupBy } = timeConfig
+
+  const joins = hasCustomerFilter
+    ? `JOIN bill_items bi ON bi.bill_id = b.id
+       LEFT JOIN products p ON bi.product_id = p.id
+       LEFT JOIN people c ON b.customer_id = c.id
+       LEFT JOIN customers cust ON b.customer_id = cust.id`
+    : `JOIN bill_items bi ON bi.bill_id = b.id
+       LEFT JOIN products p ON bi.product_id = p.id`
 
   let barQuery = ''
   if (groupBy === 'day') {
@@ -259,10 +274,7 @@ async function queryBarData({ timeConfig, series, customerCondition, params }) {
         COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category,
         COALESCE(SUM(bi.quantity * bi.price), 0) AS category_revenue
       FROM bills b
-      JOIN bill_items bi ON bi.bill_id = b.id
-      LEFT JOIN products p ON bi.product_id = p.id
-      LEFT JOIN people c ON b.customer_id = c.id
-      LEFT JOIN customers cust ON b.customer_id = cust.id
+      ${joins}
       WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
         ${dateCondition} ${customerCondition}
       GROUP BY (b.created_at AT TIME ZONE 'Asia/Kolkata')::date, COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
@@ -275,10 +287,7 @@ async function queryBarData({ timeConfig, series, customerCondition, params }) {
         COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category,
         COALESCE(SUM(bi.quantity * bi.price), 0) AS category_revenue
       FROM bills b
-      JOIN bill_items bi ON bi.bill_id = b.id
-      LEFT JOIN products p ON bi.product_id = p.id
-      LEFT JOIN people c ON b.customer_id = c.id
-      LEFT JOIN customers cust ON b.customer_id = cust.id
+      ${joins}
       WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
         ${dateCondition} ${customerCondition}
       GROUP BY EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')), EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')), COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
@@ -332,17 +341,22 @@ async function queryBarData({ timeConfig, series, customerCondition, params }) {
   }
 }
 
-async function queryDonutData({ dateCondition, customerCondition, params, categoryColors }) {
+async function queryDonutData({ dateCondition, customerCondition, params, categoryColors, hasCustomerFilter }) {
+  const joins = hasCustomerFilter
+    ? `JOIN bill_items bi ON bi.bill_id = b.id
+       LEFT JOIN products p ON bi.product_id = p.id
+       LEFT JOIN people c ON b.customer_id = c.id
+       LEFT JOIN customers cust ON b.customer_id = cust.id`
+    : `JOIN bill_items bi ON bi.bill_id = b.id
+       LEFT JOIN products p ON bi.product_id = p.id`
+
   const donutQuery = `
     SELECT 
       COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS label,
       COUNT(DISTINCT b.id) AS count,
       COALESCE(SUM(bi.quantity * bi.price), 0) AS total_revenue
     FROM bills b
-    JOIN bill_items bi ON bi.bill_id = b.id
-    LEFT JOIN products p ON bi.product_id = p.id
-    LEFT JOIN people c ON b.customer_id = c.id
-    LEFT JOIN customers cust ON b.customer_id = cust.id
+    ${joins}
     WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
       ${dateCondition} ${customerCondition}
     GROUP BY COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
@@ -417,14 +431,15 @@ router.get('/business-metrics', async (req, res) => {
   const cacheKey = `reports:bm:${userId}:${dayFilter}:${customerFilter}:${productFilter}:${startDate}:${endDate}`
 
   try {
-    const cached = await redis.get(cacheKey).catch(() => null)
+    const cached = await getCached(redis, cacheKey, 200)
     if (cached) return res.json(cached)
 
     const timeConfig = buildTimeBuckets(dayFilter, new Date(), startDate, endDate)
 
     const params = [userId]
     let customerCondition = ''
-    if (customerFilter && customerFilter !== 'All Customers') {
+    const hasCustomerFilter = Boolean(customerFilter && customerFilter !== 'All Customers')
+    if (hasCustomerFilter) {
       if (customerFilter.toLowerCase().includes('walk') || customerFilter.toLowerCase().includes('general')) {
         customerCondition = `AND (b.customer_id IS NULL OR c.name ILIKE '%walk%' OR cust.name ILIKE '%walk%' OR c.name IS NULL)`
       } else {
@@ -441,14 +456,14 @@ router.get('/business-metrics', async (req, res) => {
     const { categoryColors, series } = await getDistinctCategories(userId)
 
     const [{ barData }, donutData] = await Promise.all([
-      queryBarData({ timeConfig, series, customerCondition, params }),
-      queryDonutData({ dateCondition: timeConfig.dateCondition, customerCondition, params, categoryColors })
+      queryBarData({ timeConfig, series, customerCondition, params, hasCustomerFilter }),
+      queryDonutData({ dateCondition: timeConfig.dateCondition, customerCondition, params, categoryColors, hasCustomerFilter })
     ])
 
     const tooltipData = computeTooltipData(timeConfig.buckets, barData, series)
     const result = { series, barData, donutData, tooltipData }
 
-    await redis.set(cacheKey, result, { ex: 15 }).catch(() => {})
+    setCached(redis, cacheKey, result, 120)
     res.json(result)
   } catch (err) {
     console.error('[BUSINESS METRICS ERROR]', err)
@@ -645,7 +660,7 @@ router.get('/category-breakdown', async (req, res) => {
   const cacheKey = `reports:cat-breakdown:${userId}:${category}:${dayFilter}:${customerFilter}:${productFilter}:${startDate}:${endDate}`
 
   try {
-    const cached = await redis.get(cacheKey).catch(() => null)
+    const cached = await getCached(redis, cacheKey, 200)
     if (cached) return res.json(cached)
 
     const timeConfig = buildTimeBuckets(dayFilter, new Date(), startDate, endDate)
@@ -684,7 +699,7 @@ router.get('/category-breakdown', async (req, res) => {
       totalProductsCount: allCategoryProducts.length
     }
 
-    await redis.set(cacheKey, result, { ex: 15 }).catch(() => {})
+    setCached(redis, cacheKey, result, 120)
     res.json(result)
   } catch (err) {
     console.error('[CATEGORY BREAKDOWN ERROR]', err)

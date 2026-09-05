@@ -20,6 +20,9 @@ async function ensureBillingSchema() {
   ).catch(() => { })
   await query(`ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => { })
   await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50)`).catch(() => { })
+  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(255)`).catch(() => { })
+  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255)`).catch(() => { })
+  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50)`).catch(() => { })
   await query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => { })
   await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => { })
 }
@@ -107,6 +110,9 @@ async function fetchBillsWithCursor({ where, params, cursor, limit, orderCol }) 
     `SELECT b.*,
        COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
        COALESCE(p.phone, cust.phone, '') AS customer_phone,
+       COALESCE(b.created_by_name, sp.first_name || ' ' || sp.last_name, sp.shop_name, 'Admin') AS created_by_name,
+       COALESCE(b.created_by_role, 'Admin') AS created_by_role,
+       COALESCE(b.created_by_email, sp.email, '') AS created_by_email,
        sp.shop_name,
        sp.gstin AS shop_gstin,
        sp.phone AS shop_phone
@@ -144,6 +150,9 @@ async function fetchBillsWithOffset({ where, params, page, limit, offset, orderC
     `SELECT b.*,
        COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
        COALESCE(p.phone, cust.phone, '') AS customer_phone,
+       COALESCE(b.created_by_name, sp.first_name || ' ' || sp.last_name, sp.shop_name, 'Admin') AS created_by_name,
+       COALESCE(b.created_by_role, 'Admin') AS created_by_role,
+       COALESCE(b.created_by_email, sp.email, '') AS created_by_email,
        sp.shop_name,
        sp.gstin AS shop_gstin,
        sp.phone AS shop_phone
@@ -312,11 +321,24 @@ async function generateUniqueBillNumber(customBillNum) {
   return billNumber
 }
 
-async function insertBillRecord({ parsedCustomerId, billNumber, finalItemsJson, finalAmount, discount, due_date, notes, status, userId }) {
+async function insertBillRecord({
+  parsedCustomerId,
+  billNumber,
+  finalItemsJson,
+  finalAmount,
+  discount,
+  due_date,
+  notes,
+  status,
+  userId,
+  createdByName,
+  createdByEmail,
+  createdByRole
+}) {
   try {
     const resDb = await query(
-      `INSERT INTO bills (customer_id, bill_number, items, amount, discount, due_date, notes, status, user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      `INSERT INTO bills (customer_id, bill_number, items, amount, discount, due_date, notes, status, user_id, created_by_name, created_by_email, created_by_role, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
        RETURNING *`,
       [
         parsedCustomerId,
@@ -327,7 +349,10 @@ async function insertBillRecord({ parsedCustomerId, billNumber, finalItemsJson, 
         due_date || null,
         notes || '',
         status || 'unpaid',
-        userId
+        userId,
+        createdByName || null,
+        createdByEmail || null,
+        createdByRole || null
       ]
     )
     return resDb.rows
@@ -478,6 +503,12 @@ router.post('/', async (req, res) => {
   const enrichedItems = enrichItemsWithCache(items || [], catalogMap)
   const finalItemsJson = JSON.stringify(enrichedItems)
 
+  const creatorName = (req.user?.firstName || req.user?.first_name)
+    ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
+    : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
+  const creatorEmail = req.user?.email || ''
+  const creatorRole = req.memberRole || (String(req.workspaceId) === String(req.user?.id) ? 'Owner' : 'Member')
+
   try {
     const insertedRows = await insertBillRecord({
       parsedCustomerId,
@@ -488,7 +519,10 @@ router.post('/', async (req, res) => {
       due_date,
       notes,
       status,
-      userId
+      userId,
+      createdByName: creatorName,
+      createdByEmail: creatorEmail,
+      createdByRole: creatorRole
     })
 
     const billRecord = insertedRows[0]

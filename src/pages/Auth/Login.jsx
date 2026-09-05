@@ -38,6 +38,7 @@ export default function Login() {
         showError(resultAction.payload || 'Invalid email or password. Please try again.')
       }
     } catch (err) {
+      console.error(err)
       showError('Something went wrong. Please try again.')
     } finally {
       setLoading(false)

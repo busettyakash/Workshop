@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Info, Check, User, Package, DollarSign, FileText, ArrowRight } from 'lucide-react'
 import api from '../../api/client'
-import { getRandomCode, getRandomInt } from '../../utils/cryptoUtils'
+import { getRandomInt } from '../../utils/cryptoUtils'
 import { usePermissions, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import '../Dashboard/Dashboard.css'
 
@@ -167,16 +167,6 @@ export default function ImportStockForm() {
     }
   }
 
-  const generateSKU = () => {
-    return `SKU-${getRandomCode(8)}`
-  }
-
-  const handleGenerateMainSKU = () => {
-    const code = generateSKU()
-    setForm(prev => ({ ...prev, sku: code }))
-    dispatch(addToast({ message: `Generated SKU: ${code}`, type: 'info' }))
-  }
-
   const currentUomObj = React.useMemo(() => {
     return uomRecords.find(u => u.code?.toLowerCase() === String(form.unit || '').toLowerCase().trim())
   }, [uomRecords, form.unit])
@@ -314,12 +304,11 @@ Pack Size: ${form.bag_weight} ${unitShort} / pack
 Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleString('en-IN')} ${unitShort}`
 
       const payload = { ...form, note: noteBody }
-      let res
       if (id) {
-        res = await api.put(`/import-stock/${id}`, payload)
+        await api.put(`/import-stock/${id}`, payload)
         dispatch(addToast({ message: 'Stock product updated successfully!', type: 'success' }))
       } else {
-        res = await api.post('/import-stock', payload)
+        await api.post('/import-stock', payload)
         dispatch(addToast({ message: 'Stock product added successfully!', type: 'success' }))
       }
 

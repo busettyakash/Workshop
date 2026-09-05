@@ -27,7 +27,7 @@ function dateText(value) {
   return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function QuotePreviewModal({ quote, onClose, onEdit, onStatusChange }) {
+export default function QuotePreviewModal({ quote, onClose, _onEdit, _onStatusChange }) {
   const items = parseItems(quote?.line_items)
 
   return (

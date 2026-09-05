@@ -6,7 +6,7 @@ import { ExpandSidebarIcon } from '../icons/SidebarIcons'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { toggleSidebar, selectActiveNav, selectSidebarOpen, setSidebarTriggerHovered, toggleConfigure } from '../../redux/slices/uiSlice'
 import { useAuth } from '../../hooks/useAuth'
-import { isOwnerOrAdmin, canCreateModule, NAV_MODULE_MAP, usePermissions } from '../../utils/permissionUtils'
+import { isOwnerOrAdmin, NAV_MODULE_MAP, usePermissions } from '../../utils/permissionUtils'
 import './Topbar.css'
 
 let topbarLeaveTimer = null

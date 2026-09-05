@@ -191,7 +191,7 @@ export const getBulkUnitDetails = (unit) => {
 };
 
 // Calculates accurate per-kg and per-pack pricing regardless of bulk lot input size
-export const calculateUnitPricing = (price, basePrice, bagWeight = 1, unit = '') => {
+export const calculateUnitPricing = (price, basePrice, bagWeight = 1, _unit = '') => {
   const p = Number.parseFloat(price || 0);
   const bp = Number.parseFloat(basePrice || price || 0);
   const bw = Number.parseFloat(bagWeight || 1);

@@ -855,6 +855,7 @@ export default function Billing() {
                         <th>INVOICE ID</th>
                         <th>QUOTE / ORDER #</th>
                         <th>CUSTOMER</th>
+                        <th>CREATED BY</th>
                         <th>TOTAL</th>
                         <th>INVOICE DATE</th>
                         <th>DUE DATE</th>
@@ -904,6 +905,22 @@ export default function Billing() {
                                   {getSingleLetter(name)}
                                 </div>
                                 <span className="ws-table-name-text">{name}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                <span style={{ fontWeight: 600, fontSize: '0.80rem', color: '#1e293b' }}>
+                                  {bill.created_by_name || 'Admin'}
+                                </span>
+                                {(bill.created_by_name || 'Admin').toLowerCase().trim() !== (bill.created_by_role || 'Admin').toLowerCase().trim() && (
+                                  <span style={{
+                                    fontSize: '0.70rem',
+                                    fontWeight: 500,
+                                    color: bill.created_by_role === 'Member' ? '#2563eb' : '#64748b'
+                                  }}>
+                                    ({bill.created_by_role || 'Admin'})
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="ws-td-price">{formatCurrency(bill.amount)}</td>

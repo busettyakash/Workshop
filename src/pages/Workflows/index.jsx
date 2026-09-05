@@ -2251,7 +2251,7 @@ function WorkflowEditor({
   currentWf,
   wfName, setWfName, isPublished,
   activeTab, setActiveTab,
-  triggerSearch, setTriggerSearch: _setTriggerSearch,
+  triggerSearch: _triggerSearch, setTriggerSearch: _setTriggerSearch,
   selectedTrigger: _selectedTrigger, setSelectedTrigger: _setSelectedTrigger, filteredCategories: _filteredCategories,
   zoom, setZoom, initials, initialRun, workflows = [],
   onBack, onToggleLive, onSaveName

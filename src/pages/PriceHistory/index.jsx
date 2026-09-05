@@ -5,7 +5,7 @@ import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { Filter, ArrowUpDown, X, Loader2, Search, ArrowLeft, TrendingUp, TrendingDown } from 'lucide-react'
-import { getAvatarColor, getSingleLetter, getCategoryTagStyle, getPillStyle } from '../../utils/tableHelpers'
+import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
 import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
@@ -81,11 +81,6 @@ const getDisplayPrice = (rawP, bw, pc) => {
   return p
 }
 
-const getBagPrice = (rawP) => {
-  const p = Number.parseFloat(rawP)
-  if (!rawP || Number.isNaN(p) || p <= 0) return 0
-  return p
-}
 
 const getItemPriceDetails = (rawP, bw, pc) => {
   if (rawP === null || rawP === undefined || rawP === '') return null
@@ -465,7 +460,6 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                       const diff100 = (currDetails && prevDetails) ? (currDetails.price100 - prevDetails.price100) : 0
                       const diffPack = (currDetails && prevDetails) ? (currDetails.packPrice - prevDetails.packPrice) : 0
                       const isUp = diff100 > 0
-                      const isDrop = diff100 < 0
                       const dateStr = formatIndianDateTime(row.created_at || row.effective_date)
 
                       return (
@@ -665,7 +659,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                         </td>
                         <td>
                           <span style={{ color: '#475467', fontSize: '0.8125rem' }}>
-                            {(s.notes || 'Automated stock deduction on quotation acceptance').replace(/(\d+)\.00(?=[^\d]|$)/g, '$1')}
+                            {(s.notes || 'Automated stock deduction on quotation acceptance').replace(/\.00\b/g, '')}
                           </span>
                         </td>
                       </tr>
@@ -886,9 +880,6 @@ export default function PriceHistory() {
                         </thead>
                         <tbody>
                           {products.map(row => {
-                            const bulkUnit = getBulkUnitDetails(row.unit)
-                            const bagWeight = Number.parseFloat(row.bag_weight || 1)
-                            const updatedDateFormatted = row.updated_price ? formatIndianDateOnly(row.updated_price_date || row.updated_at) : ''
                             const catStyle = getCategoryTagStyle(row.category)
 
                             return (

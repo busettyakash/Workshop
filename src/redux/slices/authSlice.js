@@ -19,7 +19,7 @@ export const loginThunk = createAsyncThunk(
       sessionStorage.setItem('ws_user', JSON.stringify(userObj))
       sessionStorage.setItem('ws_active_workspace_id', data.activeWorkspaceId || data.user.id)
       sessionStorage.setItem('ws_active_workspace_name', data.activeWorkspaceName || data.user.shopName)
-      sessionStorage.setItem('ws_active_role', data.activeRole || 'Owner')
+      sessionStorage.setItem('ws_active_role', data.activeRole || 'Member')
       if (data.activePermissions) {
         sessionStorage.setItem('ws_active_permissions', JSON.stringify(data.activePermissions))
       } else {
@@ -58,7 +58,7 @@ export const registerThunk = createAsyncThunk(
       }
 
       // Set role & permissions so PrivateRoute and Sidebar read correct values immediately
-      sessionStorage.setItem('ws_active_role', data.activeRole || 'Owner')
+      sessionStorage.setItem('ws_active_role', data.activeRole || 'Member')
       if (data.activePermissions) {
         sessionStorage.setItem('ws_active_permissions', JSON.stringify(data.activePermissions))
       } else {

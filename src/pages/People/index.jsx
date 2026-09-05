@@ -10,7 +10,7 @@ import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/table
 import { useNavigate, useLocation } from 'react-router'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import TablePagination from '../../components/ui/TablePagination'
-import { hasModulePermission, canEditModule, canDeleteModule, canCreateModule, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
+import { getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 export default function People() {
   const dispatch = useAppDispatch()
@@ -91,7 +91,7 @@ export default function People() {
   }
 
   const handleConfirmDelete = async () => {
-    const { id, name } = confirmDelete
+    const { id } = confirmDelete
     setConfirmDelete({ isOpen: false, id: null, name: '' })
     try {
       await api.delete(`/people/${id}`)

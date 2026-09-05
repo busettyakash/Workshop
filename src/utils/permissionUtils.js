@@ -47,7 +47,10 @@ export const ORDERED_NAV_ITEMS = [
  * Check if the active role is Owner or Admin.
  */
 export function isOwnerOrAdmin(role) {
-  const rawRole = role || (typeof window !== 'undefined' ? sessionStorage.getItem('ws_active_role') : null) || 'Owner'
+  const rawRole = role !== undefined && role !== null
+    ? role
+    : (typeof window !== 'undefined' ? sessionStorage.getItem('ws_active_role') : null)
+  if (!rawRole) return false
   const currentRole = String(rawRole).trim().toLowerCase()
   return currentRole === 'owner' || currentRole === 'admin'
 }
@@ -77,9 +80,9 @@ export function hasModulePermission(moduleName, permissions, role) {
   if (isOwnerOrAdmin(role)) return true
 
   const currentPermissions = getActivePermissions(permissions)
-  // If no permissions configured, default to true for general modules, but false for profit_margin
+  // If no permissions configured or loaded yet, only allow access to dashboard for non-owners
   if (!currentPermissions || typeof currentPermissions !== 'object' || Object.keys(currentPermissions).length === 0) {
-    return moduleName !== 'profit_margin'
+    return moduleName === 'dashboard'
   }
 
   const perm = currentPermissions[moduleName]
@@ -94,7 +97,7 @@ export function canEditModule(moduleName, permissions, role) {
 
   const currentPermissions = getActivePermissions(permissions)
   if (!currentPermissions || typeof currentPermissions !== 'object' || Object.keys(currentPermissions).length === 0) {
-    return true
+    return false
   }
 
   const perm = currentPermissions[moduleName]
@@ -116,7 +119,7 @@ export function canDeleteModule(moduleName, permissions, role) {
 
   const currentPermissions = getActivePermissions(permissions)
   if (!currentPermissions || typeof currentPermissions !== 'object' || Object.keys(currentPermissions).length === 0) {
-    return true
+    return false
   }
 
   const perm = currentPermissions[moduleName]
@@ -158,7 +161,7 @@ export function getFirstAccessibleRoute(permissions, role) {
  */
 export function usePermissions(moduleName) {
   const [role, setRole] = useState(() => {
-    return typeof window !== 'undefined' ? (sessionStorage.getItem('ws_active_role') || 'Owner') : 'Owner'
+    return typeof window !== 'undefined' ? (sessionStorage.getItem('ws_active_role') || 'Member') : 'Member'
   })
 
   const [permissions, setPermissions] = useState(() => {
@@ -192,7 +195,7 @@ export function usePermissions(moduleName) {
         }
       }
 
-      const newRole = e.detail?.role || (typeof window !== 'undefined' ? (sessionStorage.getItem('ws_active_role') || 'Owner') : 'Owner')
+      const newRole = e.detail?.role || (typeof window !== 'undefined' ? (sessionStorage.getItem('ws_active_role') || 'Member') : 'Member')
       let newPerms = e.detail?.perms
       if (!newPerms && typeof window !== 'undefined') {
         try {

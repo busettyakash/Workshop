@@ -421,9 +421,23 @@ async function resolveInvitedWorkspace(email) {
   }
 }
 
+async function hasRealOwnedWorkspace(userId) {
+  if (!userId) return false
+  const { rows } = await query(
+    `SELECT (
+       EXISTS (SELECT 1 FROM products WHERE user_id::text = $1::text LIMIT 1)
+       OR EXISTS (SELECT 1 FROM bills WHERE user_id::text = $1::text LIMIT 1)
+       OR EXISTS (SELECT 1 FROM workspace_members WHERE workspace_owner_id::text = $1::text LIMIT 1)
+     ) AS has_activity`,
+    [userId]
+  ).catch(() => ({ rows: [] }))
+  return rows[0]?.has_activity === true
+}
+
 /**
  * Resolve the active workspace role/permissions for a user at login time.
- * Returns workspace metadata from user's own workspace if owned, or first invited workspace.
+ * If the user has active business in their own workspace, returns own workspace.
+ * If invited to a team workspace and has no owned business activity, returns invited workspace immediately.
  */
 async function resolveLoginWorkspace(email, userId, shopName) {
   const safeShopName = (shopName && String(shopName).trim() !== 'null' && String(shopName).trim() !== '')
@@ -431,11 +445,20 @@ async function resolveLoginWorkspace(email, userId, shopName) {
     : `${email.split('@')[0]}'s Workshop`
 
   try {
+    const invitedWorkspace = await resolveInvitedWorkspace(email)
+    const hasOwnActivity = await hasRealOwnedWorkspace(userId)
+
+    if (hasOwnActivity) {
+      const ownWorkspace = await resolveOwnWorkspace(email, userId, safeShopName)
+      if (ownWorkspace) return ownWorkspace
+    }
+
+    if (invitedWorkspace) {
+      return invitedWorkspace
+    }
+
     const ownWorkspace = await resolveOwnWorkspace(email, userId, safeShopName)
     if (ownWorkspace) return ownWorkspace
-
-    const invitedWorkspace = await resolveInvitedWorkspace(email)
-    if (invitedWorkspace) return invitedWorkspace
   } catch (err) {
     console.error('[Login] Error resolving initial workspace role:', err.message)
   }
@@ -1027,43 +1050,48 @@ router.post('/invite', apiLimiter, requireAuth, async (req, res) => {
   }
 })
 
+function formatInvitedWorkspace(row) {
+  const rawShop = row.shop_name
+  const safeShop = (rawShop && String(rawShop).trim() !== 'null' && String(rawShop).trim() !== '')
+    ? rawShop
+    : `${row.owner_email || 'Owner'}'s Shop`
+
+  return {
+    id:          row.user_id || row.owner_email,
+    shopName:    safeShop,
+    ownerEmail:  row.owner_email,
+    isOwner:     false,
+    role:        row.role || 'Member',
+    permissions: row.permissions || {},
+  }
+}
+
+function formatOwnWorkspace(own, ownUserId, fallbackShopName, email) {
+  const safeOwnShop = (own?.shop_name && String(own.shop_name).trim() !== 'null' && String(own.shop_name).trim() !== '')
+    ? own.shop_name
+    : fallbackShopName
+
+  return {
+    id:         own?.user_id || ownUserId,
+    shopName:   safeOwnShop,
+    ownerEmail: own?.email || email,
+    isOwner:    true,
+    role:       'Owner',
+  }
+}
+
 /* GET /api/auth/workspaces — Fetch all workspaces accessible by the current user */
 router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
   const email = normalizeEmail(req.user.email)
   try {
-    const workspaces = []
-
-    // 1. Own workspace (always prioritized first)
+    const ownUserId = req.user.id || req.workspaceId
     const ownWs = await query(
       'SELECT user_id, shop_name, email FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
       [email]
-    )
+    ).catch(() => ({ rows: [] }))
 
-    if (ownWs.rows.length > 0) {
-      const own = ownWs.rows[0]
-      const ownUserId = own.user_id || req.workspaceId
-      const safeOwnShop = (own.shop_name && String(own.shop_name).trim() !== 'null' && String(own.shop_name).trim() !== '')
-        ? own.shop_name
-        : (req.user?.shopName || 'My Shop')
+    const ownEntry = formatOwnWorkspace(ownWs.rows[0], ownUserId, req.user?.shopName || 'My Shop', email)
 
-      workspaces.push({
-        id:         ownUserId,
-        shopName:   safeOwnShop,
-        ownerEmail: own.email || email,
-        isOwner:    true,
-        role:       'Owner',
-      })
-    } else {
-      workspaces.push({
-        id:         req.workspaceId,
-        shopName:   req.user?.shopName || 'My Shop',
-        ownerEmail: email,
-        isOwner:    true,
-        role:       'Owner',
-      })
-    }
-
-    // 2. Invited workspaces
     const { rows: invitedRows } = await query(
       `SELECT p.user_id, p.shop_name, p.email AS owner_email, m.role, m.permissions
        FROM workspace_members m
@@ -1071,23 +1099,14 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
        WHERE LOWER(m.member_email) = LOWER($1)
        ORDER BY m.created_at ASC`,
       [email]
-    )
+    ).catch(() => ({ rows: [] }))
 
-    for (const row of invitedRows) {
-      const rawShop = row.shop_name
-      const safeShop = (rawShop && String(rawShop).trim() !== 'null' && String(rawShop).trim() !== '')
-        ? rawShop
-        : `${row.owner_email || 'Owner'}'s Shop`
+    const invitedEntries = invitedRows.map(formatInvitedWorkspace)
+    const hasOwnActivity = await hasRealOwnedWorkspace(ownUserId)
 
-      workspaces.push({
-        id:          row.user_id || row.owner_email,
-        shopName:    safeShop,
-        ownerEmail:  row.owner_email,
-        isOwner:     false,
-        role:        row.role || 'Member',
-        permissions: row.permissions || {},
-      })
-    }
+    const workspaces = (hasOwnActivity || invitedEntries.length === 0)
+      ? [ownEntry, ...invitedEntries]
+      : [...invitedEntries, ownEntry]
 
     res.json(workspaces)
   } catch (err) {

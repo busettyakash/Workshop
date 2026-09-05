@@ -6,7 +6,8 @@ import {
   Users, UserCheck, GitBranch, Building2,
   Search, ChevronDown, ChevronRight, LogOut, UserPlus, Zap, Menu, X, Plus,
   Briefcase, User, CheckSquare, FileText, Mail, Phone, Send, Folder, LayoutGrid, Play, Star,
-  MessageSquare, Upload, UserRound, ScrollText, DollarSign, History, ShoppingBag, PanelLeftClose, PanelLeftOpen, MoreHorizontal
+  MessageSquare, Upload, UserRound, ScrollText, DollarSign, History, ShoppingBag, PanelLeftClose, PanelLeftOpen, MoreHorizontal,
+  Trash2
 } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import {
@@ -890,7 +891,7 @@ export default function Sidebar() {
   const { shopName } = useAuth()
 
   const [activeRole, setActiveRole] = useState(() => {
-    return sessionStorage.getItem('ws_active_role') || 'Owner'
+    return sessionStorage.getItem('ws_active_role') || 'Member'
   })
   const [activePermissions, setActivePermissions] = useState(() => {
     try {
@@ -1269,6 +1270,69 @@ export default function Sidebar() {
     sessionStorage.setItem('ws_favorites', JSON.stringify(updated))
   }
 
+  const handleStartNewChat = (e) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    setChatsOpen(true)
+    sessionStorage.setItem('ws_chats_open', 'true')
+    setShowAllChatsPanel(false)
+    handleNav('Home')
+    navigate(`/dashboard?chat=true&new=${Date.now()}`)
+  }
+
+  const handleDeleteChat = async (chatId, e) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    const targetChat = chats.find(c => String(c.id) === String(chatId))
+    try {
+      await api.delete(`/chat/sessions/${chatId}`)
+      setChats(prev => {
+        const next = prev.filter(c => String(c.id) !== String(chatId))
+        sessionStorage.setItem('ws_cached_chats', JSON.stringify(next))
+        return next
+      })
+      dispatch(addToast({ message: 'Chat deleted', type: 'success' }))
+      window.dispatchEvent(new CustomEvent('ws-chats-updated', { 
+        detail: { 
+          deletedId: chatId,
+          deletedConvId: targetChat?.conversation_id
+        } 
+      }))
+      const searchParams = new URLSearchParams(window.location.search)
+      const currentSessionParam = searchParams.get('session')
+      if (
+        (currentSessionParam && String(currentSessionParam) === String(chatId)) ||
+        (!currentSessionParam && searchParams.get('chat') === 'true')
+      ) {
+        navigate('/dashboard')
+      }
+    } catch (err) {
+      console.error(err)
+      dispatch(addToast({ message: 'Failed to delete chat', type: 'error' }))
+    }
+  }
+
+  useEffect(() => {
+    const handleChatsUpdated = () => {
+      const token = sessionStorage.getItem('ws_token')
+      if (token) {
+        api.get('/chat/sessions')
+          .then(res => {
+            const data = res.data || []
+            setChats(data)
+            sessionStorage.setItem('ws_cached_chats', JSON.stringify(data))
+          })
+          .catch(() => {})
+      }
+    }
+    window.addEventListener('ws-chats-updated', handleChatsUpdated)
+    return () => window.removeEventListener('ws-chats-updated', handleChatsUpdated)
+  }, [])
+
   const handleNav = (label) => {
     dispatch(setActiveNav(label))
     dispatch(clearSidebarHover())
@@ -1549,13 +1613,24 @@ export default function Sidebar() {
           {/* Collapsible Chats Section */}
           {canAccessNav('Chats') && (
             <div className="ws-sb-section">
-              <button
-                className="ws-sb-section-header"
-                onClick={toggleChats}
-              >
-                <ChevronRight size={12} className={`ws-sb-arrow ${chatsOpen ? 'rotated' : ''}`} />
-                <span>Chats</span>
-              </button>
+              <div className="ws-sb-section-header-wrap">
+                <button
+                  className="ws-sb-section-header"
+                  onClick={toggleChats}
+                >
+                  <ChevronRight size={12} className={`ws-sb-arrow ${chatsOpen ? 'rotated' : ''}`} />
+                  <span>Chats</span>
+                </button>
+                <button
+                  type="button"
+                  className="ws-sb-section-add-btn"
+                  onClick={handleStartNewChat}
+                  title="New chat"
+                  aria-label="New chat"
+                >
+                  <Plus size={13} />
+                </button>
+              </div>
 
               {chatsOpen && (
                 <div className="ws-sb-section-body">
@@ -1566,19 +1641,26 @@ export default function Sidebar() {
                       {chats.slice(0, 5).map(chat => {
                         const isActive = activeSessionId && (String(activeSessionId) === String(chat.id) || String(activeSessionId) === String(chat.conversation_id))
                         return (
-                          <Link
-                            to={`/dashboard?session=${chat.id}`}
-                            key={chat.id}
-                            style={{ textDecoration: 'none' }}
-                            onClick={() => handleNav('Home')}
-                          >
-                            <div className={`ws-sb-subitem ${isActive ? 'active' : ''}`}>
-                              <MessageSquare size={13} style={{ flexShrink: 0, color: '#6b7280' }} />
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {chat.title || 'Untitled chat'}
-                              </span>
-                            </div>
-                          </Link>
+                          <div key={chat.id} className="ws-sb-chat-item-wrap">
+                            <Link
+                              to={`/dashboard?session=${chat.id}`}
+                              className={`ws-sb-subitem ws-sb-chat-subitem ${isActive ? 'active' : ''}`}
+                              onClick={() => handleNav('Home')}
+                              title={chat.title || 'Untitled chat'}
+                            >
+                              <MessageSquare size={13} style={{ flexShrink: 0, color: isActive ? '#2563eb' : '#6b7280' }} />
+                              <span>{chat.title || 'Untitled chat'}</span>
+                            </Link>
+                            <button
+                              type="button"
+                              className="ws-sb-chat-delete-btn"
+                              title="Delete chat"
+                              aria-label="Delete chat"
+                              onClick={(e) => handleDeleteChat(chat.id, e)}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         )
                       })}
 
@@ -1643,11 +1725,7 @@ export default function Sidebar() {
             <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a', margin: 0 }}>Chats</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <button
-                onClick={() => {
-                  setShowAllChatsPanel(false)
-                  handleNav('Home')
-                  navigate('/dashboard?chat=true')
-                }}
+                onClick={handleStartNewChat}
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 title="New chat"
               >
@@ -1688,6 +1766,7 @@ export default function Sidebar() {
                   return (
                     <div
                       key={chat.id}
+                      className="ws-sb-allchats-item"
                       role="button"
                       tabIndex={0}
                       onClick={() => {
@@ -1713,13 +1792,24 @@ export default function Sidebar() {
                         color: isActive ? '#2563eb' : '#334155',
                         fontSize: '0.84rem',
                         fontWeight: isActive ? 500 : 400,
-                        transition: 'background 0.12s ease'
+                        transition: 'background 0.12s ease',
+                        position: 'relative'
                       }}
                     >
                       <MessageSquare size={14} style={{ flexShrink: 0, color: isActive ? '#2563eb' : '#64748b' }} />
-                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, paddingRight: 24 }}>
                         {chat.title || 'Untitled chat'}
                       </span>
+                      <button
+                        type="button"
+                        className="ws-sb-chat-delete-btn"
+                        title="Delete chat"
+                        aria-label="Delete chat"
+                        onClick={(e) => handleDeleteChat(chat.id, e)}
+                        style={{ right: 8 }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   )
                 })

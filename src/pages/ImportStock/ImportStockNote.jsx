@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { ArrowLeft, Loader2, Edit3, Trash2, Copy, Check, FileText, X, Wallet, CheckCircle2 } from 'lucide-react'
 import api from '../../api/client'
-import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
+import { getBulkUnitDetails } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import { usePermissions, getFirstAccessibleRoute } from '../../utils/permissionUtils'
@@ -17,14 +17,11 @@ export default function ImportStockNote() {
   const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
 
-  const { canRead, canEdit, canDelete } = usePermissions('import_stock')
+  const { canRead } = usePermissions('import_stock')
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [editing, setEditing] = useState(false)
   const [stockItem, setStockItem] = useState(null)
-  const [noteText, setNoteText] = useState('')
-  const [copied, setCopied] = useState(false)
   const [paidAmt, setPaidAmt] = useState('')
   const [payMode, setPayMode] = useState('')
   const [payments, setPayments] = useState([])
@@ -63,7 +60,6 @@ export default function ImportStockNote() {
       const item = res.data?.data
       if (item) {
         setStockItem(item)
-        setNoteText(item.note || '')
         setPayments(item.payments || [])
         setPaidAmt('')
         setPayMode('')
@@ -78,14 +74,6 @@ export default function ImportStockNote() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleCopy = () => {
-    if (!noteText) return
-    navigator.clipboard.writeText(noteText)
-    setCopied(true)
-    dispatch(addToast({ message: 'Note copied to clipboard!', type: 'success' }))
-    setTimeout(() => setCopied(false), 2000)
   }
 
   const handleSavePayment = async () => {
@@ -127,6 +115,7 @@ export default function ImportStockNote() {
       dispatch(addToast({ message: 'Payment log deleted successfully!', type: 'success' }))
       setPayments(prev => prev.filter(p => p.id !== paymentId))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete payment log', type: 'error' }))
     } finally {
       setConfirmDelete({ isOpen: false, id: null })

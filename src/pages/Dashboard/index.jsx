@@ -32,19 +32,21 @@ export default function Dashboard() {
 
   // ── If user does not have permission for Dashboard, redirect to first allowed route ──
   useEffect(() => {
-    if (!hasModulePermission('dashboard')) {
+    if (!canAccessDashboard) {
       const searchParams = new URLSearchParams(location.search)
       const isChatMode = searchParams.get('chat') || searchParams.get('session')
       // If user has chat permission and is in chat mode, allow chat view
-      if (isChatMode && hasModulePermission('chats')) {
+      if (isChatMode && canAccessChats) {
         return
       }
-      const targetRoute = getFirstAccessibleRoute()
+      const activeRole = sessionStorage.getItem('ws_active_role') || 'Member'
+      const perms = JSON.parse(sessionStorage.getItem('ws_active_permissions') || 'null')
+      const targetRoute = getFirstAccessibleRoute(perms, activeRole)
       if (targetRoute && targetRoute !== '/dashboard') {
         navigate(targetRoute, { replace: true })
       }
     }
-  }, [navigate, location.search])
+  }, [location.search, navigate, canAccessDashboard, canAccessChats])
 
   // ── Chat State ──
   const [messages, setMessages] = useState([])
@@ -57,6 +59,7 @@ export default function Dashboard() {
   const [chatTitle, setChatTitle] = useState('Untitled chat')
   const [sessions, setSessions] = useState([])
   const [showHistory, setShowHistory] = useState(false)
+  const [showMoreOptions, setShowMoreOptions] = useState(false)
   const [favorited, setFavorited] = useState(false)
 
   // ── Home section data ──
@@ -104,8 +107,6 @@ export default function Dashboard() {
     }
   }, [dispatch])
 
-  const processedPromptRef = useRef(null)
-
   // Scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -116,11 +117,21 @@ export default function Dashboard() {
     const searchParams = new URLSearchParams(location.search)
     const sessionId = searchParams.get('session')
     const chatActive = searchParams.get('chat')
+    const isNew = searchParams.get('new')
 
     if (sessionId) {
       fetchSessionById(sessionId)
     } else if (chatActive) {
       setView('chat')
+      if (isNew) {
+        const freshConvId = `conv_${Date.now()}_${getRandomString(6)}`
+        setMessages([])
+        setInputText('')
+        setCurrentSessionId(null)
+        setConversationId(freshConvId)
+        setChatTitle('Untitled chat')
+        setFavorited(false)
+      }
     } else {
       setView('home')
       // Clean slate for Home view
@@ -139,6 +150,41 @@ export default function Dashboard() {
       console.error('Failed to fetch sessions', err)
     }
   }
+
+  useEffect(() => {
+    const handleChatsUpdated = async (e) => {
+      try {
+        const res = await api.get('/chat/sessions')
+        const latestSessions = res.data || []
+        setSessions(latestSessions)
+
+        const deletedId = e?.detail?.deletedId
+        const deletedConvId = e?.detail?.deletedConvId
+
+        const currentUrlParam = new URLSearchParams(window.location.search).get('session')
+        const isCurrentDeleted = 
+          (deletedId && (String(deletedId) === String(currentSessionId) || String(deletedId) === String(currentUrlParam))) ||
+          (deletedConvId && String(deletedConvId) === String(conversationId)) ||
+          (currentSessionId && !latestSessions.some(s => String(s.id) === String(currentSessionId))) ||
+          (conversationId && messages.length > 0 && !latestSessions.some(s => String(s.conversation_id) === String(conversationId)))
+
+        if (isCurrentDeleted) {
+          setMessages([])
+          setInputText('')
+          setCurrentSessionId(null)
+          setConversationId(`conv_${Date.now()}_${getRandomString(6)}`)
+          setChatTitle('Untitled chat')
+          setFavorited(false)
+          setView('home')
+          navigate('/dashboard')
+        }
+      } catch (err) {
+        console.error('Failed to sync sessions', err)
+      }
+    }
+    window.addEventListener('ws-chats-updated', handleChatsUpdated)
+    return () => window.removeEventListener('ws-chats-updated', handleChatsUpdated)
+  }, [currentSessionId, conversationId, messages.length])
 
   const fetchRecentNotes = async () => {
     setNotesLoading(true)
@@ -198,6 +244,7 @@ export default function Dashboard() {
       if (data.title) setChatTitle(data.title)
       if (data.conversation_id) setConversationId(data.conversation_id)
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Could not load chat session', type: 'error' }))
     } finally {
       setSessionLoading(false)
@@ -205,16 +252,48 @@ export default function Dashboard() {
   }
 
   const deleteSession = async (id, e) => {
-    e.stopPropagation()
+    if (e) e.stopPropagation()
     try {
       await api.delete(`/chat/sessions/${id}`)
       dispatch(addToast({ message: 'Chat session deleted', type: 'success' }))
-      fetchSessions()
-      if (currentSessionId === id) {
+      const res = await api.get('/chat/sessions')
+      const updated = res.data || []
+      setSessions(updated)
+      window.dispatchEvent(new CustomEvent('ws-chats-updated', { detail: { deletedId: id } }))
+      if (String(currentSessionId) === String(id) || !updated.some(s => String(s.id) === String(currentSessionId))) {
+        setMessages([])
+        setInputText('')
+        setCurrentSessionId(null)
+        setConversationId(`conv_${Date.now()}_${getRandomString(6)}`)
+        setChatTitle('Untitled chat')
+        setFavorited(false)
+        setView('home')
         navigate('/dashboard')
       }
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete chat session', type: 'error' }))
+    }
+  }
+
+  const handleDeleteActiveChat = async () => {
+    setShowMoreOptions(false)
+    let idToDelete = currentSessionId
+    if (!idToDelete && conversationId) {
+      const found = sessions.find(s => s.conversation_id === conversationId)
+      if (found) idToDelete = found.id
+    }
+    if (idToDelete) {
+      await deleteSession(idToDelete)
+    } else {
+      setMessages([])
+      setInputText('')
+      setCurrentSessionId(null)
+      setConversationId(`conv_${Date.now()}_${getRandomString(6)}`)
+      setChatTitle('Untitled chat')
+      setFavorited(false)
+      setView('home')
+      navigate('/dashboard')
     }
   }
 
@@ -280,8 +359,16 @@ export default function Dashboard() {
         cached: res.data.cached
       }
       setMessages(prev => [...prev, aiMsg])
-      fetchSessions()
+      const sRes = await api.get('/chat/sessions')
+      const latestSessions = sRes.data || []
+      setSessions(latestSessions)
+      const matched = latestSessions.find(s => s.conversation_id === activeConvId)
+      if (matched) {
+        setCurrentSessionId(matched.id)
+      }
+      window.dispatchEvent(new CustomEvent('ws-chats-updated'))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'AI response failed. Please try again.', type: 'error' }))
     } finally {
       setIsLoading(false)
@@ -709,13 +796,78 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <button 
-                  onClick={handleNewChatClick}
-                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 5, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  title="More options"
-                >
-                  <MoreVertical size={16} />
-                </button>
+                <div style={{ position: 'relative' }}>
+                  <button 
+                    onClick={() => setShowMoreOptions(prev => !prev)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 5, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    title="More options"
+                  >
+                    <MoreVertical size={16} />
+                  </button>
+                  {showMoreOptions && (
+                    <div style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: '100%',
+                      marginTop: 4,
+                      background: '#ffffff',
+                      borderRadius: 8,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                      border: '1px solid #e2e8f0',
+                      padding: '4px',
+                      minWidth: 140,
+                      zIndex: 100
+                    }}>
+                      <button
+                        onClick={() => {
+                          setShowMoreOptions(false)
+                          handleNewChatClick()
+                        }}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '6px 10px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#334155',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          borderRadius: 6,
+                          textAlign: 'left'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Plus size={13} />
+                        <span>New chat</span>
+                      </button>
+                      <button
+                        onClick={handleDeleteActiveChat}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '6px 10px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#ef4444',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          borderRadius: 6,
+                          textAlign: 'left'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#fee2e2'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Trash2 size={13} />
+                        <span>Delete chat</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

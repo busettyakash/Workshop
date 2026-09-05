@@ -584,3 +584,95 @@
   color: #0f172a;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
+
+/* Product Comparison Modal & Floating Bar */
+.product-compare-floating-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #ffffff;
+  padding: 10px 20px;
+  border-radius: 50px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 100;
+  font-size: 0.85rem;
+  animation: slideUpFade 0.25s ease-out;
+}
+
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 15px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.compare-modal-card {
+  max-width: 980px !important;
+  width: 95% !important;
+  max-height: 88vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.compare-matrix-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.82rem;
+}
+
+.compare-matrix-table th,
+.compare-matrix-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.compare-matrix-table th.attr-col {
+  width: 160px;
+  min-width: 150px;
+  max-width: 180px;
+  background: #f8fafc;
+  color: #475467;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  border-right: 1px solid #e2e8f0;
+}
+
+.compare-matrix-table td.attr-cell {
+  background: #f8fafc;
+  color: #475467;
+  font-size: 0.75rem;
+  font-weight: 600;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  border-right: 1px solid #e2e8f0;
+}
+
+.compare-matrix-table .product-col {
+  min-width: 220px;
+  border-right: 1px solid #f1f5f9;
+}
+
+.compare-matrix-table tr:hover td {
+  background-color: #fafbfc;
+}
+
+.compare-matrix-table tr:hover td.attr-cell {
+  background-color: #f1f5f9;
+}

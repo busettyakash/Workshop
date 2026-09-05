@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router'
-import { useAppDispatch, useAppSelector } from '../../redux/hooks'
+import { useAppDispatch } from '../../redux/hooks'
 import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
 import { updateUser } from '../../redux/slices/authSlice'
 import { useAuth } from '../../hooks/useAuth'
@@ -121,7 +121,6 @@ export default function Settings() {
     }
     return user?.email || ''
   })
-  const [timezone, setTimezone] = useState('Asia/Kolkata')
   const [avatarUrl, setAvatarUrl] = useState(() => {
     return localStorage.getItem('ws_avatar_url') || ''
   })

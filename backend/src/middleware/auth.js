@@ -174,6 +174,69 @@ async function resolveWorkspaceMembership(req, res, requestedWorkspaceId, user) 
   }
 }
 
+/**
+ * Resolve user object from local JWT or fallback to InsForge auth.
+ */
+async function resolveUserFromToken(token) {
+  const localUser = resolveLocalJwt(token)
+  if (localUser) return { user: localUser }
+
+  try {
+    const insforgeUser = await resolveInsForgeToken(token)
+    return { user: insforgeUser }
+  } catch (err) {
+    const status = err.statusCode || 500
+    const msg    = status === 401 ? 'Unauthorized' : 'Token validation failed'
+    console.error('[Auth Middleware] Exception:', err.message)
+    return { error: msg, status }
+  }
+}
+
+/**
+ * Determine whether request is for own workspace or open workspace route.
+ */
+function isOwnOrPublicWorkspace(req, requestedWorkspaceId, user) {
+  const isWorkspacesRoute =
+    req.path === '/workspaces' ||
+    Boolean(req.originalUrl && req.originalUrl.includes('/auth/workspaces'))
+
+  return (
+    isWorkspacesRoute ||
+    !requestedWorkspaceId ||
+    requestedWorkspaceId === 'undefined' ||
+    requestedWorkspaceId === 'null' ||
+    requestedWorkspaceId === user.id ||
+    requestedWorkspaceId === user.email
+  )
+}
+
+/**
+ * Handle cross-workspace access check and route fallback.
+ */
+async function handleCrossWorkspaceAccess(req, res, next, requestedWorkspaceId, user) {
+  try {
+    const { granted, resolvedOwnerId } = await resolveWorkspaceMembership(
+      req, res, requestedWorkspaceId, user
+    )
+    if (granted) {
+      return dbLocalStorage.run(resolvedOwnerId, () => next())
+    }
+
+    if (user.id) {
+      req.workspaceId = user.id
+      return dbLocalStorage.run(user.id, () => next())
+    }
+
+    return res.status(403).json({ error: 'Forbidden: You do not have access to this workspace' })
+  } catch {
+    if (user.id) {
+      req.workspaceId = user.id
+      return dbLocalStorage.run(user.id, () => next())
+    }
+    return res.status(500).json({ error: 'Internal server error checking workspace membership' })
+  }
+}
+
 // ─────────────────────────────────────────────
 //  Middleware
 // ─────────────────────────────────────────────
@@ -195,16 +258,9 @@ export async function requireAuth(req, res, next) {
   }
 
   // ── Token resolution: local JWT → InsForge fallback ──
-  let user = resolveLocalJwt(token)
-  if (!user) {
-    try {
-      user = await resolveInsForgeToken(token)
-    } catch (err) {
-      const status = err.statusCode || 500
-      const msg    = status === 401 ? 'Unauthorized' : 'Token validation failed'
-      console.error('[Auth Middleware] Exception:', err.message)
-      return res.status(status).json({ error: msg })
-    }
+  const { user, error, status } = await resolveUserFromToken(token)
+  if (error) {
+    return res.status(status).json({ error })
   }
 
   // ── Map to local user ID ──
@@ -221,44 +277,10 @@ export async function requireAuth(req, res, next) {
 
   // ── Workspace isolation ──
   const requestedWorkspaceId = req.headers['x-workspace-id']
-  const isWorkspacesRoute    =
-    req.path === '/workspaces' ||
-    (req.originalUrl && req.originalUrl.includes('/auth/workspaces'))
-
-  // Own workspace or listing workspaces — no further check needed
-  if (
-    isWorkspacesRoute ||
-    !requestedWorkspaceId ||
-    requestedWorkspaceId === 'undefined' ||
-    requestedWorkspaceId === 'null' ||
-    requestedWorkspaceId === user.id ||
-    requestedWorkspaceId === user.email
-  ) {
+  if (isOwnOrPublicWorkspace(req, requestedWorkspaceId, user)) {
     req.workspaceId = user.id
     return dbLocalStorage.run(user.id, () => next())
   }
 
-  // Cross-workspace membership check
-  try {
-    const { granted, resolvedOwnerId } = await resolveWorkspaceMembership(
-      req, res, requestedWorkspaceId, user
-    )
-    if (granted) {
-      return dbLocalStorage.run(resolvedOwnerId, () => next())
-    }
-
-    // Fallback for owner/admin: if requestedWorkspaceId is stale or not found, route to own workspace
-    if (user.id) {
-      req.workspaceId = user.id
-      return dbLocalStorage.run(user.id, () => next())
-    }
-
-    return res.status(403).json({ error: 'Forbidden: You do not have access to this workspace' })
-  } catch {
-    if (user.id) {
-      req.workspaceId = user.id
-      return dbLocalStorage.run(user.id, () => next())
-    }
-    return res.status(500).json({ error: 'Internal server error checking workspace membership' })
-  }
+  return handleCrossWorkspaceAccess(req, res, next, requestedWorkspaceId, user)
 }

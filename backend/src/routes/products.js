@@ -264,6 +264,66 @@ router.get('/:id/price-history', async (req, res) => {
   }
 })
 
+function resolveInitialStockMeta(prod, impItem, initialQty) {
+  const isImport = Boolean(impItem)
+  let unitLabel = prod.unit || 'pcs'
+  if (Number(prod.bag_weight || 1) > 1) {
+    unitLabel = initialQty === 1 ? 'Bag' : 'Bags'
+  }
+  const initialSource = isImport ? 'Stock Import' : 'Initial Base Stock'
+  const supplierName = impItem?.buyer_name
+  const supplierText = supplierName ? ` from ${supplierName}` : ''
+  const initialNotes = isImport
+    ? `Initial imported stock of ${initialQty} ${unitLabel}${supplierText}`
+    : `Initial base stock of ${initialQty} ${unitLabel}`
+  const createdAt = impItem?.created_at || prod.created_at || new Date().toISOString()
+
+  return { initialSource, initialNotes, createdAt }
+}
+
+async function backfillInitialStockHistory(productId, userId) {
+  const prodRes = await query('SELECT * FROM products WHERE id = $1 AND (user_id = $2 OR user_id = \'default-user\')', [productId, userId])
+  if (prodRes.rows.length === 0) return []
+
+  const prod = prodRes.rows[0]
+  const impRes = await query(
+    `SELECT * FROM import_stock 
+     WHERE (user_id = $1 OR user_id = 'default-user') 
+       AND ((sku IS NOT NULL AND sku <> '' AND sku <> 'N/A' AND sku = $2) OR LOWER(TRIM(name)) = LOWER(TRIM($3)))
+     ORDER BY id DESC LIMIT 1`,
+    [userId, prod.sku || 'N/A', prod.name]
+  )
+
+  const impItem = impRes.rows[0]
+  const initialQty = Number.parseFloat(impItem?.stock || prod.stock || 0)
+  if (initialQty <= 0) return []
+
+  const { initialSource, initialNotes, createdAt } = resolveInitialStockMeta(prod, impItem, initialQty)
+
+  const insRes = await query(
+    `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+     VALUES ($1, $2, 'added', $3, 0, $4, $5, $6, $7) RETURNING *`,
+    [productId, userId, initialQty, initialQty, initialSource, initialNotes, createdAt]
+  ).catch(() => ({ rows: [] }))
+
+  if (insRes.rows.length > 0) {
+    return insRes.rows
+  }
+
+  return [{
+    id: 'init-stock',
+    product_id: Number(productId),
+    user_id: userId,
+    change_type: 'added',
+    qty_change: initialQty,
+    stock_before: 0,
+    stock_after: initialQty,
+    source: initialSource,
+    notes: initialNotes,
+    created_at: createdAt
+  }]
+}
+
 /* GET /api/products/:id/stock-history */
 router.get('/:id/stock-history', async (req, res) => {
   const userId = req.workspaceId
@@ -275,56 +335,7 @@ router.get('/:id/stock-history', async (req, res) => {
     )
 
     if (rows.length === 0) {
-      // Find matching product and import_stock to record initial stock event
-      const prodRes = await query('SELECT * FROM products WHERE id = $1 AND (user_id = $2 OR user_id = \'default-user\')', [productId, userId])
-      if (prodRes.rows.length > 0) {
-        const prod = prodRes.rows[0]
-        const impRes = await query(
-          `SELECT * FROM import_stock 
-           WHERE (user_id = $1 OR user_id = 'default-user') 
-             AND ((sku IS NOT NULL AND sku <> '' AND sku <> 'N/A' AND sku = $2) OR LOWER(TRIM(name)) = LOWER(TRIM($3)))
-           ORDER BY id DESC LIMIT 1`,
-          [userId, prod.sku || 'N/A', prod.name]
-        )
-
-        const initialQty = Number.parseFloat(impRes.rows[0]?.stock || prod.stock || 0)
-        if (initialQty > 0) {
-          const isImport = impRes.rows.length > 0
-          let unitLabel = prod.unit || 'pcs'
-          if (Number(prod.bag_weight || 1) > 1) {
-            unitLabel = initialQty === 1 ? 'Bag' : 'Bags'
-          }
-          const initialSource = isImport ? 'Stock Import' : 'Initial Base Stock'
-          const supplierName = impRes.rows[0]?.buyer_name
-          const supplierText = supplierName ? ` from ${supplierName}` : ''
-          const initialNotes = isImport
-            ? `Initial imported stock of ${initialQty} ${unitLabel}${supplierText}`
-            : `Initial base stock of ${initialQty} ${unitLabel}`
-
-          const insRes = await query(
-            `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
-             VALUES ($1, $2, 'added', $3, 0, $4, $5, $6, $7) RETURNING *`,
-            [productId, userId, initialQty, initialQty, initialSource, initialNotes, impRes.rows[0]?.created_at || prod.created_at || new Date().toISOString()]
-          ).catch(() => ({ rows: [] }))
-
-          if (insRes.rows.length > 0) {
-            rows = insRes.rows
-          } else {
-            rows = [{
-              id: 'init-stock',
-              product_id: Number(productId),
-              user_id: userId,
-              change_type: 'added',
-              qty_change: initialQty,
-              stock_before: 0,
-              stock_after: initialQty,
-              source: initialSource,
-              notes: initialNotes,
-              created_at: impRes.rows[0]?.created_at || prod.created_at || new Date().toISOString()
-            }]
-          }
-        }
-      }
+      rows = await backfillInitialStockHistory(productId, userId)
     }
 
     return res.json(rows)

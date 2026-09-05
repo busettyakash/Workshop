@@ -85,6 +85,94 @@ function buildBillingWhere(queryObj, userId, includeStatus = true) {
   return { where: `WHERE ${conditions.join(' AND ')}`, params }
 }
 
+function resolveBillingSort(sort) {
+  if (sort === 'id_asc') return 'b.id ASC'
+  if (sort === 'id_desc') return 'b.id DESC'
+  if (sort === 'amount_asc') return 'b.amount ASC, b.id DESC'
+  if (sort === 'amount_desc') return 'b.amount DESC, b.id DESC'
+  return 'b.created_at DESC, b.id DESC'
+}
+
+async function fetchBillsWithCursor({ where, params, cursor, limit, orderCol }) {
+  const cursorParams = [...params]
+  const cursorConditions = [where ? where.replace(/^WHERE /, '') : '']
+  if (cursor.created_at && cursor.id) {
+    cursorParams.push(cursor.created_at, cursor.id)
+    cursorConditions.push(`(b.created_at, b.id) < ($${cursorParams.length - 1}, $${cursorParams.length})`)
+  }
+  const cursorWhere = `WHERE ${cursorConditions.filter(Boolean).join(' AND ')}`
+  cursorParams.push(limit + 1)
+
+  const { rows } = await query(
+    `SELECT b.*,
+       COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
+       COALESCE(p.phone, cust.phone, '') AS customer_phone,
+       sp.shop_name,
+       sp.gstin AS shop_gstin,
+       sp.phone AS shop_phone
+     FROM bills b
+     LEFT JOIN people p ON b.customer_id = p.id
+     LEFT JOIN customers cust ON b.customer_id = cust.id
+     LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
+     ${cursorWhere} ORDER BY ${orderCol}
+     LIMIT $${cursorParams.length}`,
+    cursorParams
+  )
+
+  const hasNextPage = rows.length > limit
+  if (hasNextPage) rows.pop()
+  const nextCursor = (hasNextPage && rows.length > 0)
+    ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
+    : null
+
+  return { data: rows, limit, hasNextPage, nextCursor }
+}
+
+async function fetchBillsWithOffset({ where, params, page, limit, offset, orderCol }) {
+  const count = await query(
+    `SELECT COUNT(*) FROM bills b 
+     LEFT JOIN people p ON b.customer_id = p.id
+     LEFT JOIN customers cust ON b.customer_id = cust.id
+     ${where}`,
+    params
+  )
+  const total = Number.parseInt(count.rows[0].count, 10) || 0
+  const totalPages = Math.ceil(total / limit) || 1
+
+  const listParams = [...params, limit, offset]
+  const { rows } = await query(
+    `SELECT b.*,
+       COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
+       COALESCE(p.phone, cust.phone, '') AS customer_phone,
+       sp.shop_name,
+       sp.gstin AS shop_gstin,
+       sp.phone AS shop_phone
+     FROM bills b
+     LEFT JOIN people p ON b.customer_id = p.id
+     LEFT JOIN customers cust ON b.customer_id = cust.id
+     LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
+     ${where} ORDER BY ${orderCol}
+     LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+    listParams
+  )
+
+  const hasNextPage = page < totalPages
+  const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+  const nextCursor = (hasNextPage && lastRow)
+    ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
+    : null
+
+  return {
+    data: rows,
+    total,
+    page,
+    limit,
+    totalPages,
+    hasNextPage,
+    nextCursor
+  }
+}
+
 /* GET /api/billing?status=paid|unpaid&date=YYYY-MM-DD&month=1-12&year=2026 */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
@@ -92,91 +180,17 @@ router.get('/', async (req, res) => {
   const { sort } = req.query
 
   const { where, params } = buildBillingWhere(req.query, userId, true)
-
-  let orderCol = 'b.created_at DESC, b.id DESC'
-  if (sort === 'id_asc') orderCol = 'b.id ASC'
-  else if (sort === 'id_desc') orderCol = 'b.id DESC'
-  else if (sort === 'amount_asc') orderCol = 'b.amount ASC, b.id DESC'
-  else if (sort === 'amount_desc') orderCol = 'b.amount DESC, b.id DESC'
+  const orderCol = resolveBillingSort(sort)
 
   try {
     if (cursor) {
-      const cursorParams = [...params]
-      const cursorConditions = [where ? where.replace(/^WHERE /, '') : '']
-      if (cursor.created_at && cursor.id) {
-        cursorParams.push(cursor.created_at, cursor.id)
-        cursorConditions.push(`(b.created_at, b.id) < ($${cursorParams.length - 1}, $${cursorParams.length})`)
-      }
-      const cursorWhere = `WHERE ${cursorConditions.filter(Boolean).join(' AND ')}`
-      cursorParams.push(limit + 1)
-      const { rows } = await query(
-        `SELECT b.*,
-           COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
-           COALESCE(p.phone, cust.phone, '') AS customer_phone,
-           sp.shop_name,
-           sp.gstin AS shop_gstin,
-           sp.phone AS shop_phone
-         FROM bills b
-         LEFT JOIN people p ON b.customer_id = p.id
-         LEFT JOIN customers cust ON b.customer_id = cust.id
-         LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
-         ${cursorWhere} ORDER BY ${orderCol}
-         LIMIT $${cursorParams.length}`,
-        cursorParams
-      )
-      const hasNextPage = rows.length > limit
-      if (hasNextPage) rows.pop()
-      const nextCursor = (hasNextPage && rows.length > 0)
-        ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
-        : null
-
-      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+      const cursorResult = await fetchBillsWithCursor({ where, params, cursor, limit, orderCol })
+      return res.json(cursorResult)
     }
 
-    const count = await query(
-      `SELECT COUNT(*) FROM bills b 
-       LEFT JOIN people p ON b.customer_id = p.id
-       LEFT JOIN customers cust ON b.customer_id = cust.id
-       ${where}`,
-      params
-    )
-    const total = Number.parseInt(count.rows[0].count, 10) || 0
-    const totalPages = Math.ceil(total / limit) || 1
-
-    const listParams = [...params, limit, offset]
-    const { rows } = await query(
-      `SELECT b.*,
-         COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
-         COALESCE(p.phone, cust.phone, '') AS customer_phone,
-         sp.shop_name,
-         sp.gstin AS shop_gstin,
-         sp.phone AS shop_phone
-       FROM bills b
-       LEFT JOIN people p ON b.customer_id = p.id
-       LEFT JOIN customers cust ON b.customer_id = cust.id
-       LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
-       ${where} ORDER BY ${orderCol}
-       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
-      listParams
-    )
-
-    const hasNextPage = page < totalPages
-    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
-    const nextCursor = (hasNextPage && lastRow)
-      ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
-      : null
-
-    res.json({
-      data: rows,
-      total,
-      page,
-      limit,
-      totalPages,
-      hasNextPage,
-      nextCursor
-    })
+    const offsetResult = await fetchBillsWithOffset({ where, params, page, limit, offset, orderCol })
+    res.json(offsetResult)
   } catch (err) {
-    console.error('[Billing GET Error]', err)
     res.status(500).json({ error: err.message })
   }
 })

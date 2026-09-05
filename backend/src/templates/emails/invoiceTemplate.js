@@ -99,7 +99,7 @@ function computeInvoiceTax({ grossSubtotalVal, totalDiscountVal, totalAmount, bi
   return { netTaxableVal, realTaxAmt, halfRate }
 }
 
-export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}, catalogMap = {} }) => {
+function resolveInvoiceParties(shop = {}, quote, bill) {
   const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || (shop.first_name ? `${shop.first_name}'s Store` : 'Store')
   const sellerPhone = shop.phone || bill?.shop_phone || ''
   const sellerGstin = shop.gstin || bill?.shop_gstin || ''
@@ -110,6 +110,69 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const customerAddress = quote?.customer_address || bill?.customer_address || ''
   const customerPhone = quote?.customer_phone || bill?.customer_phone || ''
   const customerCompany = quote?.customer_company || bill?.customer_company || ''
+
+  return {
+    sellerName, sellerPhone, sellerGstin, sellerAddress,
+    customerName, customerGstin, customerAddress, customerPhone, customerCompany
+  }
+}
+
+function buildInvoiceItemRow(item, catalogMap, isQuoteFlow, realTaxAmt, halfRate) {
+  const qty = Number.parseFloat(item.quantity || item.qty || 1)
+  const rate = Number.parseFloat(item.price || item.rate || 0)
+  const itemDisc = getExplicitLineDiscount(item)
+  const lineTotalGross = rate * qty
+  const prodName = item.product_name || item.name || item.productName || 'Product Item'
+  
+  const catMap = catalogMap || {}
+  const catProd = (item.product_id && catMap[String(item.product_id)])
+    || (item.id && catMap[String(item.id)])
+    || (prodName && catMap[prodName.toLowerCase().trim()])
+  const bw = Number.parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? catProd?.bag_weight ?? 1)
+
+  const rawUnit = item.unit || item.unitLabel || ''
+  const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw, isQuoteFlow)
+
+  const rawHsn = item.hsn_code || item.hsn || item.sku || ''
+  const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
+    ? `1006${String(item.product_id || item.id || 1001).padStart(4, '0')}`
+    : rawHsn
+
+  return `
+    <tr>
+      <td style="padding:10px 12px; font-size:11px; font-family:monospace; color:#475569; border:1px solid #cbd5e1;">${escapeHtml(hsnCode)}</td>
+      <td style="padding:10px 12px; font-size:12.5px; border:1px solid #cbd5e1;">
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(prodName)}</div>
+        ${subtext ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
+      </td>
+      <td align="center" style="padding:10px 12px; font-size:12px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center;">
+        <div>${escapeHtml(displayQty ? `${displayQty} ${displayUnit}` : displayUnit)}</div>
+      </td>
+      <td align="right" style="padding:10px 12px; font-size:12.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right;">₹${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+      <td align="right" style="padding:10px 12px; font-size:12px; font-weight:700; color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}; border:1px solid #cbd5e1; text-align:right;">
+        ${itemDisc > 0.01 ? `-₹${itemDisc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+      </td>
+      <td align="right" style="padding:10px 12px; font-size:11.5px; color:#475569; border:1px solid #cbd5e1; text-align:right;">${realTaxAmt > 0 ? `CGST (${halfRate}%) + SGST (${halfRate}%)` : '0.00% + 0.00%'}</td>
+    </tr>
+  `
+}
+
+function buildInvoiceTableRows(itemsList, catalogMap, isQuoteFlow, realTaxAmt, halfRate) {
+  if (itemsList.length === 0) {
+    return `
+      <tr>
+        <td colspan="6" align="center" style="padding:20px; text-align:center; color:#94a3b8; border:1px solid #cbd5e1;">No line items found</td>
+      </tr>
+    `
+  }
+  return itemsList.map(item => buildInvoiceItemRow(item, catalogMap, isQuoteFlow, realTaxAmt, halfRate)).join('')
+}
+
+export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}, catalogMap = {} }) => {
+  const {
+    sellerName, sellerPhone, sellerGstin, sellerAddress,
+    customerName, customerGstin, customerAddress, customerPhone, customerCompany
+  } = resolveInvoiceParties(shop, quote, bill)
 
   const invNum = bill?.bill_number || quote?.quote_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill?.id || 1) * 899999))}`
   const orderNum = bill?.order_number || quote?.order_number || ''
@@ -143,49 +206,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const diffDisc = grossTotal > totalAmount ? (grossTotal - totalAmount) : 0
   const lineDiscountsVal = itemsList.reduce((s, it) => s + getExplicitLineDiscount(it), 0)
 
-  const rowsHtml = itemsList.length > 0 ? itemsList.map(item => {
-    const qty = Number.parseFloat(item.quantity || item.qty || 1)
-    const rate = Number.parseFloat(item.price || item.rate || 0)
-    const itemDisc = getExplicitLineDiscount(item)
-    const lineTotalGross = rate * qty
-    const prodName = item.product_name || item.name || item.productName || 'Product Item'
-    
-    const catMap = catalogMap || {}
-    const catProd = (item.product_id && catMap[String(item.product_id)])
-      || (item.id && catMap[String(item.id)])
-      || (prodName && catMap[prodName.toLowerCase().trim()])
-    const bw = Number.parseFloat(item.bag_weight ?? item.bagWeight ?? item.pack_weight ?? item.packWeight ?? catProd?.bag_weight ?? 1)
-
-    const rawUnit = item.unit || item.unitLabel || ''
-    const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw, isQuoteFlow)
-
-    const rawHsn = item.hsn_code || item.hsn || item.sku || ''
-    const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
-      ? `1006${String(item.product_id || item.id || 1001).padStart(4, '0')}`
-      : rawHsn
-
-    return `
-      <tr>
-        <td style="padding:10px 12px; font-size:11px; font-family:monospace; color:#475569; border:1px solid #cbd5e1;">${escapeHtml(hsnCode)}</td>
-        <td style="padding:10px 12px; font-size:12.5px; border:1px solid #cbd5e1;">
-          <div style="font-weight:700; color:#0f172a;">${escapeHtml(prodName)}</div>
-          ${subtext ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
-        </td>
-        <td align="center" style="padding:10px 12px; font-size:12px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center;">
-          <div>${escapeHtml(displayQty ? `${displayQty} ${displayUnit}` : displayUnit)}</div>
-        </td>
-        <td align="right" style="padding:10px 12px; font-size:12.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right;">₹${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td align="right" style="padding:10px 12px; font-size:12px; font-weight:700; color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}; border:1px solid #cbd5e1; text-align:right;">
-          ${itemDisc > 0.01 ? `-₹${itemDisc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
-        </td>
-        <td align="right" style="padding:10px 12px; font-size:11.5px; color:#475569; border:1px solid #cbd5e1; text-align:right;">${realTaxAmt > 0 ? `CGST (${halfRate}%) + SGST (${halfRate}%)` : '0.00% + 0.00%'}</td>
-      </tr>
-    `
-  }).join('') : `
-    <tr>
-      <td colspan="6" align="center" style="padding:20px; text-align:center; color:#94a3b8; border:1px solid #cbd5e1;">No line items found</td>
-    </tr>
-  `
+  const rowsHtml = buildInvoiceTableRows(itemsList, catalogMap, isQuoteFlow, realTaxAmt, halfRate)
 
   const discountAmt = Math.max(lineDiscountsVal, billDisc, quoteDisc, diffDisc)
   const subtotal = grossTotal > 0 ? grossTotal : (totalAmount + discountAmt - realTaxAmt)

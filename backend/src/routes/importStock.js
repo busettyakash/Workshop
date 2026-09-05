@@ -362,6 +362,29 @@ router.post('/', async (req, res) => {
   }
 })
 
+async function logImportStockDelta(prodId, userId, totalStockDelta, currentLiveStock, finalProductStock, unit) {
+  if (totalStockDelta === 0) return
+  const changeType = totalStockDelta > 0 ? 'added' : 'deducted'
+  const changeNotes = totalStockDelta > 0
+    ? `Stock updated via Import Stock edit (+${totalStockDelta} ${unit || 'bags'})`
+    : `Stock updated via Import Stock edit (${totalStockDelta} ${unit || 'bags'})`
+
+  await query(
+    `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+    [prodId, userId, changeType, totalStockDelta, currentLiveStock, finalProductStock, 'Import Stock Update', changeNotes]
+  ).catch(() => {})
+}
+
+async function logImportPriceChange(prodId, userId, oldEffective, newEffective, finalPriceDate) {
+  if (newEffective === oldEffective) return
+  await query(
+    `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+    [prodId, userId, oldEffective, newEffective, finalPriceDate, 'Import Stock Update']
+  ).catch(() => console.warn('%s Price history log error', LOG_PREFIX))
+}
+
 async function syncProductStockFromImportEdit(userId, oldRec, body, finalUpdatedPrice, finalPriceDate, importId) {
   const existingProduct = await query(
     `SELECT id, stock, price, updated_price FROM products WHERE user_id=$1 AND (sku=$2 OR name=$3) LIMIT 1`,
@@ -403,30 +426,13 @@ async function syncProductStockFromImportEdit(userId, oldRec, body, finalUpdated
     ]
   )
 
-  if (totalStockDelta !== 0) {
-    const changeType = totalStockDelta > 0 ? 'added' : 'deducted'
-    const changeNotes = totalStockDelta > 0
-      ? `Stock updated via Import Stock edit (+${totalStockDelta} ${body.unit || 'bags'})`
-      : `Stock updated via Import Stock edit (${totalStockDelta} ${body.unit || 'bags'})`
-
-    await query(
-      `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-      [prod.id, userId, changeType, totalStockDelta, currentLiveStock, finalProductStock, 'Import Stock Update', changeNotes]
-    ).catch(() => {})
-  }
+  await logImportStockDelta(prod.id, userId, totalStockDelta, currentLiveStock, finalProductStock, body.unit)
 
   const newEffective = finalUpdatedPrice !== null && finalUpdatedPrice !== undefined
     ? finalUpdatedPrice
     : Number.parseFloat(body.price)
 
-  if (newEffective !== oldEffective) {
-    await query(
-      `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [prod.id, userId, oldEffective, newEffective, finalPriceDate, 'Import Stock Update']
-    ).catch(() => console.warn('%s Price history log error', LOG_PREFIX))
-  }
+  await logImportPriceChange(prod.id, userId, oldEffective, newEffective, finalPriceDate)
 }
 
 /* PUT /api/import-stock/:id */
@@ -572,54 +578,49 @@ router.delete('/:id/payments/:paymentId', async (req, res) => {
   }
 })
 
-async function syncOrInsertProductFromImportItem(item, userId) {
-  const existing = await query(
-    `SELECT id, price, updated_price FROM products WHERE user_id = $1 AND (sku = $2 OR name = $3) LIMIT 1`,
-    [userId, item.sku || 'N/A', item.name]
+function getImportUnitLabel(item, importedQty) {
+  if (Number(item.bag_weight || 1) > 1) {
+    return importedQty === 1 ? 'Bag' : 'Bags'
+  }
+  return item.unit || 'pcs'
+}
+
+async function updateExistingProductFromImport(existingProduct, item, userId, dateStr, looseKg, priceCovers) {
+  const targetId = existingProduct.id
+  const prevP = existingProduct.updated_price || existingProduct.price
+  const newP = item.updated_price || item.price
+  const currentStock = Number.parseFloat(existingProduct.stock || 0)
+  const importedQty = Number.parseFloat(item.stock || 0)
+  const newStock = currentStock + importedQty
+  const unitLabel = getImportUnitLabel(item, importedQty)
+
+  await query(
+    `UPDATE products SET stock = stock + $1, loose_kg = COALESCE(loose_kg, 0) + $2, price = $3, price_covers = $4, updated_price = $5, updated_price_date = $6, bag_weight = $7, status = 'active', updated_at = NOW() WHERE id = $8`,
+    [item.stock, looseKg, item.price, priceCovers, item.updated_price || null, dateStr, item.bag_weight || 1, targetId]
   )
 
-  const dateStr = item.updated_price_date || new Date().toISOString().split('T')[0]
-  const looseKg = Number.parseFloat(item.loose_kg || 0)
-  const priceCovers = item.price_covers ? Number.parseFloat(item.price_covers) : null
+  await query(
+    `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+    [targetId, userId, prevP, newP, dateStr, 'Import Stock Restock']
+  ).catch(() => {})
 
-  if (existing.rows.length > 0) {
-    const targetId = existing.rows[0].id
-    const prevP = existing.rows[0].updated_price || existing.rows[0].price
-    const newP = item.updated_price || item.price
-    const currentStock = Number.parseFloat(existing.rows[0].stock || 0)
-    const importedQty = Number.parseFloat(item.stock || 0)
-    const newStock = currentStock + importedQty
-    let unitLabel = item.unit || 'pcs'
-    if (Number(item.bag_weight || 1) > 1) {
-      unitLabel = importedQty === 1 ? 'Bag' : 'Bags'
-    }
-
+  if (importedQty > 0) {
+    const supplierSuffix = item.buyer_name ? ` (Supplier: ${item.buyer_name})` : ''
     await query(
-      `UPDATE products SET stock = stock + $1, loose_kg = COALESCE(loose_kg, 0) + $2, price = $3, price_covers = $4, updated_price = $5, updated_price_date = $6, bag_weight = $7, status = 'active', updated_at = NOW() WHERE id = $8`,
-      [item.stock, looseKg, item.price, priceCovers, item.updated_price || null, dateStr, item.bag_weight || 1, targetId]
-    )
-
-    await query(
-      `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [targetId, userId, prevP, newP, dateStr, 'Import Stock Restock']
+      `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+       VALUES ($1, $2, 'added', $3, $4, $5, 'Stock Import', $6, NOW())`,
+      [
+        targetId, userId, importedQty, currentStock, newStock,
+        `Restocked +${importedQty} ${unitLabel} via Stock Import${supplierSuffix}`
+      ]
     ).catch(() => {})
-
-    if (importedQty > 0) {
-      const supplierSuffix = item.buyer_name ? ` (Supplier: ${item.buyer_name})` : ''
-      await query(
-        `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
-         VALUES ($1, $2, 'added', $3, $4, $5, 'Stock Import', $6, NOW())`,
-        [
-          targetId, userId, importedQty, currentStock, newStock,
-          `Restocked +${importedQty} ${unitLabel} via Stock Import${supplierSuffix}`
-        ]
-      ).catch(() => {})
-    }
-
-    return targetId
   }
 
+  return targetId
+}
+
+async function insertNewProductFromImport(item, userId, dateStr, looseKg, priceCovers) {
   const newProd = await query(
     `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, unit, status, description, user_id, bag_weight, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, NOW(), NOW()) RETURNING id`,
@@ -627,10 +628,7 @@ async function syncOrInsertProductFromImportItem(item, userId) {
   )
   const targetId = newProd.rows[0].id
   const importedQty = Number.parseFloat(item.stock || 0)
-  let unitLabel = item.unit || 'pcs'
-  if (Number(item.bag_weight || 1) > 1) {
-    unitLabel = importedQty === 1 ? 'Bag' : 'Bags'
-  }
+  const unitLabel = getImportUnitLabel(item, importedQty)
 
   await query(
     `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
@@ -656,6 +654,23 @@ async function syncOrInsertProductFromImportItem(item, userId) {
     ).catch(() => {})
   }
   return targetId
+}
+
+async function syncOrInsertProductFromImportItem(item, userId) {
+  const existing = await query(
+    `SELECT id, price, updated_price, stock FROM products WHERE user_id = $1 AND (sku = $2 OR name = $3) LIMIT 1`,
+    [userId, item.sku || 'N/A', item.name]
+  )
+
+  const dateStr = item.updated_price_date || new Date().toISOString().split('T')[0]
+  const looseKg = Number.parseFloat(item.loose_kg || 0)
+  const priceCovers = item.price_covers ? Number.parseFloat(item.price_covers) : null
+
+  if (existing.rows.length > 0) {
+    return updateExistingProductFromImport(existing.rows[0], item, userId, dateStr, looseKg, priceCovers)
+  }
+
+  return insertNewProductFromImport(item, userId, dateStr, looseKg, priceCovers)
 }
 
 /* POST /api/import-stock/bulk-add-to-products */

@@ -367,6 +367,60 @@ function resolvePermissions(role, permissions) {
 //  Login helpers
 // ─────────────────────────────────────────────
 
+async function resolveOwnWorkspace(email, userId, safeShopName) {
+  const ownCheck = await query(
+    'SELECT user_id, shop_name FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
+    [email]
+  ).catch(() => ({ rows: [] }))
+
+  if (!ownCheck.rows.length) return null
+
+  const row = ownCheck.rows[0]
+  const activeWorkspaceName = (row.shop_name && String(row.shop_name).trim() !== 'null' && String(row.shop_name).trim() !== '')
+    ? row.shop_name
+    : safeShopName
+
+  return {
+    activeRole: 'Owner',
+    activePermissions: null,
+    activeWorkspaceId: row.user_id || userId,
+    activeWorkspaceName
+  }
+}
+
+async function resolveInvitedWorkspace(email) {
+  const { rows } = await query(
+    `SELECT m.workspace_owner_id, m.role, m.permissions, p.shop_name, p.email AS owner_email
+     FROM workspace_members m
+     LEFT JOIN shop_profiles p
+       ON (p.user_id::text = m.workspace_owner_id OR LOWER(p.email) = LOWER(m.workspace_owner_id))
+     WHERE LOWER(m.member_email) = LOWER($1)
+     ORDER BY m.created_at ASC
+     LIMIT 1`,
+    [email]
+  ).catch(() => ({ rows: [] }))
+
+  if (!rows.length) return null
+
+  const row = rows[0]
+  let mPerms = row.permissions
+  if (typeof mPerms === 'string') {
+    try { mPerms = JSON.parse(mPerms) } catch { mPerms = {} }
+  }
+
+  const rawShop = row.shop_name
+  const activeWorkspaceName = (rawShop && String(rawShop).trim() !== 'null' && String(rawShop).trim() !== '')
+    ? rawShop
+    : `${row.owner_email || 'Owner'}'s Shop`
+
+  return {
+    activeRole: row.role || 'Member',
+    activePermissions: (mPerms && Object.keys(mPerms).length > 0) ? mPerms : DEFAULT_MEMBER_PERMISSIONS,
+    activeWorkspaceId: row.workspace_owner_id,
+    activeWorkspaceName
+  }
+}
+
 /**
  * Resolve the active workspace role/permissions for a user at login time.
  * Returns workspace metadata from user's own workspace if owned, or first invited workspace.
@@ -376,58 +430,22 @@ async function resolveLoginWorkspace(email, userId, shopName) {
     ? shopName
     : `${email.split('@')[0]}'s Workshop`
 
-  let activeRole        = 'Owner'
-  let activePermissions = null
-  let activeWorkspaceId = userId
-  let activeWorkspaceName = safeShopName
-
   try {
-    // 1. If user has their own shop profile, prioritize their own Owner workspace
-    const ownCheck = await query(
-      'SELECT user_id, shop_name FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
-      [email]
-    ).catch(() => ({ rows: [] }))
+    const ownWorkspace = await resolveOwnWorkspace(email, userId, safeShopName)
+    if (ownWorkspace) return ownWorkspace
 
-    if (ownCheck.rows.length > 0) {
-      const row = ownCheck.rows[0]
-      activeWorkspaceId = row.user_id || userId
-      activeWorkspaceName = (row.shop_name && String(row.shop_name).trim() !== 'null' && String(row.shop_name).trim() !== '')
-        ? row.shop_name
-        : safeShopName
-      return { activeRole, activePermissions, activeWorkspaceId, activeWorkspaceName }
-    }
-
-    // 2. Otherwise check for invited workspace memberships
-    const { rows } = await query(
-      `SELECT m.workspace_owner_id, m.role, m.permissions, p.shop_name, p.email AS owner_email
-       FROM workspace_members m
-       LEFT JOIN shop_profiles p
-         ON (p.user_id::text = m.workspace_owner_id OR LOWER(p.email) = LOWER(m.workspace_owner_id))
-       WHERE LOWER(m.member_email) = LOWER($1)
-       ORDER BY m.created_at ASC
-       LIMIT 1`,
-      [email]
-    )
-
-    if (rows.length > 0) {
-      const row   = rows[0]
-      let mPerms  = row.permissions
-      if (typeof mPerms === 'string') {
-        try { mPerms = JSON.parse(mPerms) } catch { mPerms = {} }
-      }
-      activeRole          = row.role || 'Member'
-      activePermissions   = (mPerms && Object.keys(mPerms).length > 0) ? mPerms : DEFAULT_MEMBER_PERMISSIONS
-      activeWorkspaceId   = row.workspace_owner_id
-      const rawShop = row.shop_name
-      activeWorkspaceName = (rawShop && String(rawShop).trim() !== 'null' && String(rawShop).trim() !== '')
-        ? rawShop
-        : `${row.owner_email || 'Owner'}'s Shop`
-    }
+    const invitedWorkspace = await resolveInvitedWorkspace(email)
+    if (invitedWorkspace) return invitedWorkspace
   } catch (err) {
     console.error('[Login] Error resolving initial workspace role:', err.message)
   }
 
-  return { activeRole, activePermissions, activeWorkspaceId, activeWorkspaceName }
+  return {
+    activeRole: 'Owner',
+    activePermissions: null,
+    activeWorkspaceId: userId,
+    activeWorkspaceName: safeShopName
+  }
 }
 
 // ─────────────────────────────────────────────

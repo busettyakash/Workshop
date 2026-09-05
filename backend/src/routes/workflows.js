@@ -367,6 +367,119 @@ async function executeCustomerDeclineEmailAction(currentAction, run, companyName
   return `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
 }
 
+async function executeStep1Condition(run, branchSteps, isDeclinedBranch, logKey) {
+  const quoteVal = Number(run.test_value || 0)
+  const logText = isDeclinedBranch
+    ? `Check Condition: Evaluated quotation status ('Declined') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Routing to Declined Branch.`
+    : `Check Condition: Evaluated quotation status ('Accepted') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Condition Met (Accepted).`
+
+  await redis.rpush(logKey, JSON.stringify({
+    time: new Date().toISOString(),
+    step: 1,
+    text: logText
+  })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
+
+  await query(`UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`, [run.id])
+
+  if (branchSteps.length > 0) {
+    setTimeout(() => {
+      executeWorkflowStep({
+        runId: run.id,
+        workflowId: run.workflow_id,
+        step: 2,
+        branch: isDeclinedBranch ? 'declined' : 'accepted'
+      }).catch(e => console.error('[Step 2 Auto-Advance Error]', e.message))
+    }, 500)
+  }
+
+  return {
+    success: true,
+    runId: run.id,
+    step: 1,
+    message: 'Step 1 (Condition Check) executed. Next step scheduled.'
+  }
+}
+
+async function resolveStepActionLogText(currentAction, run, companyName, logKey, step, isDeclinedBranch) {
+  const tag = String(currentAction.tag || '').toLowerCase()
+  const title = String(currentAction.title || '').toLowerCase()
+
+  if (tag === 'multi-contact' || title.includes('multiple') || currentAction.id === 'act-multi-recipient') {
+    return executeMultiContactAction(currentAction, run, companyName, logKey, step)
+  }
+  if (title.includes('rejection') || title.includes('decline') || (isDeclinedBranch && (tag === 'email' || currentAction.iconType === 'mail'))) {
+    return executeCustomerDeclineEmailAction(currentAction, run, companyName, logKey, step)
+  }
+  if (tag === 'email' || currentAction.id === 'step-email' || title.includes('send invoice email') || title.includes('invoice email')) {
+    return executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step)
+  }
+  return resolveActionLogText(currentAction, companyName, isDeclinedBranch)
+}
+
+async function finalizeWorkflowRun(run, step, branchSteps, logKey) {
+  const durationStr = formatWorkflowDuration(run.created_at)
+
+  await redis.rpush(logKey, JSON.stringify({
+    time: new Date().toISOString(),
+    step: step + 1,
+    text: `Workflow completed: All ${branchSteps.length + 1} steps finished successfully. (duration: ${durationStr})`
+  })).catch(() => {})
+
+  await query(
+    `UPDATE workflow_runs SET current_step = $1, status = 'Completed', duration = $2 WHERE id = $3`,
+    [step, durationStr, run.id]
+  )
+
+  return {
+    success: true,
+    runId: run.id,
+    step,
+    duration: durationStr,
+    status: 'Completed',
+    message: `Workflow completed successfully (${step} steps).`
+  }
+}
+
+async function advanceWorkflowStep(run, step, isDeclinedBranch) {
+  await query(
+    `UPDATE workflow_runs SET current_step = $1, status = 'Executing' WHERE id = $2`,
+    [step, run.id]
+  )
+
+  setTimeout(() => {
+    executeWorkflowStep({
+      runId: run.id,
+      workflowId: run.workflow_id,
+      step: step + 1,
+      branch: isDeclinedBranch ? 'declined' : 'accepted'
+    }).catch(e => console.error('[Next Step Auto-Advance Error]', e.message))
+  }, 700)
+
+  return {
+    success: true,
+    runId: run.id,
+    step,
+    message: `Step ${step} executed. Next step scheduled.`
+  }
+}
+
+async function executeActionNodeStep({ run, step, actionIndex, branchSteps, companyName, isDeclinedBranch, logKey }) {
+  const currentAction = branchSteps[actionIndex]
+  const logText = await resolveStepActionLogText(currentAction, run, companyName, logKey, step, isDeclinedBranch)
+
+  await redis.rpush(logKey, JSON.stringify({
+    time: new Date().toISOString(),
+    step,
+    text: logText
+  })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
+
+  const isLastStep = actionIndex === branchSteps.length - 1
+  if (isLastStep) {
+    return finalizeWorkflowRun(run, step, branchSteps, logKey)
+  }
+  return advanceWorkflowStep(run, step, isDeclinedBranch)
+}
+
 /**
  * Execute a single step in the workflow pipeline and schedule next step.
  * Used by both the QStash Webhook receiver (production) and the local runner (dev).
@@ -404,107 +517,13 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
 
   // STEP 1: Condition Evaluation
   if (step === 1) {
-    const quoteVal = Number(run.test_value || 0)
-    const logText = isDeclinedBranch
-      ? `Check Condition: Evaluated quotation status ('Declined') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Routing to Declined Branch.`
-      : `Check Condition: Evaluated quotation status ('Accepted') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Condition Met (Accepted).`
-
-    await redis.rpush(logKey, JSON.stringify({
-      time: new Date().toISOString(),
-      step: 1,
-      text: logText
-    })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
-
-    await query(`UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`, [run.id])
-
-    if (branchSteps.length > 0) {
-      setTimeout(() => {
-        executeWorkflowStep({
-          runId: run.id,
-          workflowId: run.workflow_id,
-          step: 2,
-          branch: isDeclinedBranch ? 'declined' : 'accepted'
-        }).catch(e => console.error('[Step 2 Auto-Advance Error]', e.message))
-      }, 500)
-    }
-
-    return {
-      success: true,
-      runId: run.id,
-      step: 1,
-      message: 'Step 1 (Condition Check) executed. Next step scheduled.'
-    }
+    return executeStep1Condition(run, branchSteps, isDeclinedBranch, logKey)
   }
 
   // STEP 2+: Execute subsequent Action nodes
   const actionIndex = step - 2
   if (actionIndex >= 0 && actionIndex < branchSteps.length) {
-    const currentAction = branchSteps[actionIndex]
-    const tag = String(currentAction.tag || '').toLowerCase()
-    const title = String(currentAction.title || '').toLowerCase()
-
-    let logText = ''
-    if (tag === 'multi-contact' || title.includes('multiple') || currentAction.id === 'act-multi-recipient') {
-      logText = await executeMultiContactAction(currentAction, run, companyName, logKey, step)
-    } else if (title.includes('rejection') || title.includes('decline') || (isDeclinedBranch && (tag === 'email' || currentAction.iconType === 'mail'))) {
-      logText = await executeCustomerDeclineEmailAction(currentAction, run, companyName, logKey, step)
-    } else if (tag === 'email' || currentAction.id === 'step-email' || title.includes('send invoice email') || title.includes('invoice email')) {
-      logText = await executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step)
-    } else {
-      logText = resolveActionLogText(currentAction, companyName, isDeclinedBranch)
-    }
-
-    await redis.rpush(logKey, JSON.stringify({
-      time: new Date().toISOString(),
-      step,
-      text: logText
-    })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
-
-    const isLastStep = actionIndex === branchSteps.length - 1
-    if (isLastStep) {
-      const durationStr = formatWorkflowDuration(run.created_at)
-
-      await redis.rpush(logKey, JSON.stringify({
-        time: new Date().toISOString(),
-        step: step + 1,
-        text: `Workflow completed: All ${branchSteps.length + 1} steps finished successfully. (duration: ${durationStr})`
-      })).catch(() => {})
-
-      await query(
-        `UPDATE workflow_runs SET current_step = $1, status = 'Completed', duration = $2 WHERE id = $3`,
-        [step, durationStr, run.id]
-      )
-
-      return {
-        success: true,
-        runId: run.id,
-        step,
-        duration: durationStr,
-        status: 'Completed',
-        message: `Workflow completed successfully (${step} steps).`
-      }
-    } else {
-      await query(
-        `UPDATE workflow_runs SET current_step = $1, status = 'Executing' WHERE id = $2`,
-        [step, run.id]
-      )
-
-      setTimeout(() => {
-        executeWorkflowStep({
-          runId: run.id,
-          workflowId: run.workflow_id,
-          step: step + 1,
-          branch: isDeclinedBranch ? 'declined' : 'accepted'
-        }).catch(e => console.error('[Next Step Auto-Advance Error]', e.message))
-      }, 700)
-
-      return {
-        success: true,
-        runId: run.id,
-        step,
-        message: `Step ${step} executed. Next step scheduled.`
-      }
-    }
+    return executeActionNodeStep({ run, step, actionIndex, branchSteps, companyName, isDeclinedBranch, logKey })
   }
 
   return { status: 'noop', reason: 'No matching action for step index' }
@@ -959,6 +978,22 @@ router.get('/:id/runs', async (req, res) => {
   }
 })
 
+function extractWorkflowLogText(parsed) {
+  if (typeof parsed !== 'object' || parsed === null) {
+    return String(parsed || '')
+  }
+  if (typeof parsed.text === 'string') {
+    return parsed.text
+  }
+  if (typeof parsed.text === 'object' && parsed.text !== null) {
+    return parsed.text.text || JSON.stringify(parsed.text)
+  }
+  if (typeof parsed.message === 'string') {
+    return parsed.message
+  }
+  return JSON.stringify(parsed)
+}
+
 function parseWorkflowLogEntry(l) {
   let parsed = l
   if (typeof l === 'string') {
@@ -969,25 +1004,11 @@ function parseWorkflowLogEntry(l) {
     }
   }
 
-  let text = ''
-  if (typeof parsed === 'object' && parsed !== null) {
-    if (typeof parsed.text === 'string') {
-      text = parsed.text
-    } else if (typeof parsed.text === 'object' && parsed.text !== null) {
-      text = parsed.text.text || JSON.stringify(parsed.text)
-    } else if (typeof parsed.message === 'string') {
-      text = parsed.message
-    } else {
-      text = JSON.stringify(parsed)
-    }
-  } else {
-    text = String(parsed || '')
-  }
-
+  const isObj = typeof parsed === 'object' && parsed !== null
   return {
-    time: (typeof parsed === 'object' && parsed?.time) ? parsed.time : new Date().toISOString(),
-    step: (typeof parsed === 'object' && parsed?.step !== undefined) ? parsed.step : 0,
-    text
+    time: (isObj && parsed.time) ? parsed.time : new Date().toISOString(),
+    step: (isObj && parsed.step !== undefined) ? parsed.step : 0,
+    text: extractWorkflowLogText(parsed)
   }
 }
 

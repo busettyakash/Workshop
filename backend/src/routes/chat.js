@@ -196,145 +196,62 @@ async function callOpenRouterWithFallback(apiMessages) {
   return { ok: false, error: lastErrText }
 }
 
+const DATASET_HANDLERS = {
+  products: async (userId, searchPattern, status, limit) => {
+    if (searchPattern && status) {
+      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 AND (name ILIKE $3 OR sku ILIKE $3) ORDER BY id DESC LIMIT $4', [userId, status, searchPattern, limit])
+    }
+    if (searchPattern) {
+      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
+    }
+    if (status) {
+      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3', [userId, status, limit])
+    }
+    return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+  },
+  import_stock: async (userId, searchPattern, _status, limit) => {
+    if (searchPattern) {
+      return query('SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
+    }
+    return query('SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+  },
+  bills: async (userId, _searchPattern, status, limit) => {
+    if (status) {
+      return query('SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 AND b.status = $2 ORDER BY b.id DESC LIMIT $3', [userId, status, limit])
+    }
+    return query('SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 ORDER BY b.id DESC LIMIT $2', [userId, limit])
+  },
+  quotes: async (userId, _searchPattern, status, limit) => {
+    if (status) {
+      return query('SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3', [userId, status, limit])
+    }
+    return query('SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+  },
+  people: async (userId, searchPattern, _status, limit) => {
+    if (searchPattern) {
+      return query('SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 AND (name ILIKE $2 OR email ILIKE $2 OR company ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
+    }
+    return query('SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+  },
+  notes: async (userId, _sp, _st, limit) => query('SELECT title, content, created_at FROM notes WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit]),
+  deals: async (userId, _sp, _st, limit) => query('SELECT title, value, stage, owner, close_date, status FROM deals WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit]),
+  revenue_summary: async (userId, _sp, _st, limit) => query(`SELECT (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = $1 GROUP BY day ORDER BY day DESC LIMIT $2`, [userId, limit]),
+  top_products: async (userId, _sp, _st, limit) => query('SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = $1 GROUP BY bi.name ORDER BY total_qty DESC LIMIT $2', [userId, limit]),
+  quotes_summary: async (userId) => query('SELECT status, COUNT(*) AS count, SUM(total_amount) AS total_value FROM quotes WHERE user_id = $1 GROUP BY status', [userId]),
+}
+
 async function queryBusinessData(args, userId) {
   const { dataset, search, status, limit: rawLimit } = args || {}
   const limit = Math.min(Math.max(Number.parseInt(rawLimit, 10) || 20, 1), 50)
   const searchPattern = search ? `%${search.trim()}%` : null
 
-  switch (dataset) {
-    case 'products': {
-      let res
-      if (searchPattern && status) {
-        res = await query(
-          'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 AND (name ILIKE $3 OR sku ILIKE $3) ORDER BY id DESC LIMIT $4',
-          [userId, status, searchPattern, limit]
-        )
-      } else if (searchPattern) {
-        res = await query(
-          'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3',
-          [userId, searchPattern, limit]
-        )
-      } else if (status) {
-        res = await query(
-          'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3',
-          [userId, status, limit]
-        )
-      } else {
-        res = await query(
-          'SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-          [userId, limit]
-        )
-      }
-      return { success: true, count: res.rows.length, data: res.rows }
-    }
-
-    case 'import_stock': {
-      let res
-      if (searchPattern) {
-        res = await query(
-          'SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3',
-          [userId, searchPattern, limit]
-        )
-      } else {
-        res = await query(
-          'SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-          [userId, limit]
-        )
-      }
-      return { success: true, count: res.rows.length, data: res.rows }
-    }
-
-    case 'bills': {
-      let res
-      if (status) {
-        res = await query(
-          'SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 AND b.status = $2 ORDER BY b.id DESC LIMIT $3',
-          [userId, status, limit]
-        )
-      } else {
-        res = await query(
-          'SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 ORDER BY b.id DESC LIMIT $2',
-          [userId, limit]
-        )
-      }
-      return { success: true, count: res.rows.length, data: res.rows }
-    }
-
-    case 'quotes': {
-      let res
-      if (status) {
-        res = await query(
-          'SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3',
-          [userId, status, limit]
-        )
-      } else {
-        res = await query(
-          'SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-          [userId, limit]
-        )
-      }
-      return { success: true, count: res.rows.length, data: res.rows }
-    }
-
-    case 'people': {
-      let res
-      if (searchPattern) {
-        res = await query(
-          'SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 AND (name ILIKE $2 OR email ILIKE $2 OR company ILIKE $2) ORDER BY id DESC LIMIT $3',
-          [userId, searchPattern, limit]
-        )
-      } else {
-        res = await query(
-          'SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-          [userId, limit]
-        )
-      }
-      return { success: true, count: res.rows.length, data: res.rows }
-    }
-
-    case 'notes': {
-      const res = await query(
-        'SELECT title, content, created_at FROM notes WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-        [userId, limit]
-      )
-      return { success: true, count: res.rows.length, data: res.rows }
-    }
-
-    case 'deals': {
-      const res = await query(
-        'SELECT title, value, stage, owner, close_date, status FROM deals WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-        [userId, limit]
-      )
-      return { success: true, count: res.rows.length, data: res.rows }
-    }
-
-    case 'revenue_summary': {
-      const res = await query(
-        `SELECT (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = $1 GROUP BY day ORDER BY day DESC LIMIT $2`,
-        [userId, limit]
-      )
-      return { success: true, data: res.rows }
-    }
-
-    case 'top_products': {
-      const res = await query(
-        'SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = $1 GROUP BY bi.name ORDER BY total_qty DESC LIMIT $2',
-        [userId, limit]
-      )
-      return { success: true, data: res.rows }
-    }
-
-    case 'quotes_summary': {
-      const res = await query(
-        'SELECT status, COUNT(*) AS count, SUM(total_amount) AS total_value FROM quotes WHERE user_id = $1 GROUP BY status',
-        [userId]
-      )
-      return { success: true, data: res.rows }
-    }
-
-    default:
-      return { error: `Unsupported dataset: ${dataset}` }
+  const handler = DATASET_HANDLERS[dataset]
+  if (!handler) {
+    return { error: `Unsupported dataset: ${dataset}` }
   }
+
+  const res = await handler(userId, searchPattern, status, limit)
+  return { success: true, count: res.rows?.length, data: res.rows }
 }
 
 async function sendEmailTool(args, userId, reqUser) {
@@ -390,64 +307,68 @@ async function sendEmailTool(args, userId, reqUser) {
   return { success: true, email: rows[0], message: 'Email sent successfully via SMTP' }
 }
 
+async function handleAddImportStock(args, userId) {
+  const { name, sku, category, price, stock, status, unit, description } = args
+  if (!name || price === undefined) {
+    return { error: 'name and price are required' }
+  }
+  const { rows } = await query(
+    `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *`,
+    [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null, userId]
+  )
+  await redis.del(`import_stock:${userId}`).catch(() => {})
+  return { success: true, product: rows[0] }
+}
+
+async function handleAddNote(args, userId) {
+  const { title, body = '' } = args
+  if (!title) return { error: 'title is required' }
+  const { rows } = await query(
+    `INSERT INTO notes (title, body, user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *`,
+    [title.trim(), body, userId]
+  )
+  try {
+    const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
+    for (const key of keys) { await redis.del(key).catch(() => {}) }
+  } catch { }
+  return { success: true, note: rows[0] }
+}
+
+async function handleCreatePerson(args, userId) {
+  const { name, email = '', phone = '', company = '', persona = 'Lead', notes = '' } = args
+  if (!name) return { error: 'name is required' }
+  const validPersonas = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
+  const matchedPersona = validPersonas.find(p => p.toLowerCase() === String(persona).toLowerCase()) || persona || 'Lead'
+  const compVal = company && company.trim() ? company.trim() : null
+
+  const { rows } = await query(
+    `INSERT INTO people (name, email, phone, company, company_name, persona, notes, user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING *`,
+    [name.trim(), email.trim(), phone.trim(), compVal, compVal, matchedPersona, notes, userId]
+  )
+  try {
+    const pKeys = await redis.keys(`people:${userId}:*`).catch(() => [])
+    for (const key of pKeys) { await redis.del(key).catch(() => {}) }
+  } catch { }
+  return { success: true, person: rows[0] }
+}
+
+const TOOL_HANDLERS = {
+  add_to_import_stock: (args, userId) => handleAddImportStock(args, userId),
+  query_business_data: (args, userId) => queryBusinessData(args, userId),
+  send_email: (args, userId, reqUser) => sendEmailTool(args, userId, reqUser),
+  add_note: (args, userId) => handleAddNote(args, userId),
+  create_person: (args, userId) => handleCreatePerson(args, userId),
+}
+
 async function executeToolCall(toolName, args, userId, reqUser) {
-  if (toolName === 'add_to_import_stock') {
-    const { name, sku, category, price, stock, status, unit, description } = args
-    if (!name || price === undefined) {
-      return { error: 'name and price are required' }
-    }
-    const { rows } = await query(
-      `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *`,
-      [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null, userId]
-    )
-    await redis.del(`import_stock:${userId}`).catch(() => {})
-    return { success: true, product: rows[0] }
+  const handler = TOOL_HANDLERS[toolName]
+  if (!handler) {
+    return { error: `Unknown tool: ${toolName}` }
   }
-
-  if (toolName === 'query_business_data') {
-    return await queryBusinessData(args, userId)
-  }
-
-  if (toolName === 'send_email') {
-    return await sendEmailTool(args, userId, reqUser)
-  }
-
-  if (toolName === 'add_note') {
-    const { title, body = '' } = args
-    if (!title) return { error: 'title is required' }
-    const { rows } = await query(
-      `INSERT INTO notes (title, body, user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *`,
-      [title.trim(), body, userId]
-    )
-    try {
-      const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
-      for (const key of keys) { await redis.del(key).catch(() => {}) }
-    } catch { }
-    return { success: true, note: rows[0] }
-  }
-
-  if (toolName === 'create_person') {
-    const { name, email = '', phone = '', company = '', persona = 'Lead', notes = '' } = args
-    if (!name) return { error: 'name is required' }
-    const validPersonas = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
-    const matchedPersona = validPersonas.find(p => p.toLowerCase() === String(persona).toLowerCase()) || persona || 'Lead'
-    const compVal = company && company.trim() ? company.trim() : null
-
-    const { rows } = await query(
-      `INSERT INTO people (name, email, phone, company, company_name, persona, notes, user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING *`,
-      [name.trim(), email.trim(), phone.trim(), compVal, compVal, matchedPersona, notes, userId]
-    )
-    try {
-      const pKeys = await redis.keys(`people:${userId}:*`).catch(() => [])
-      for (const key of pKeys) { await redis.del(key).catch(() => {}) }
-    } catch { }
-    return { success: true, person: rows[0] }
-  }
-
-  return { error: `Unknown tool: ${toolName}` }
+  return await handler(args, userId, reqUser)
 }
 
 /* POST /api/chat — send a message and get AI response */

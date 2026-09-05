@@ -6,6 +6,84 @@ const router = express.Router()
 
 router.use(requireAuth)
 
+function calculateBuyRatePerUnit(buyerPrice, pc, bw) {
+  if (buyerPrice <= 0) return 0
+  if (pc > 0) return buyerPrice / pc
+  if (bw > 0) return buyerPrice / bw
+  return buyerPrice
+}
+
+function calculateSellRatePerUnit(sellerPrice, bw, pc) {
+  if (sellerPrice <= 0) return 0
+  if (bw > 0) return sellerPrice / bw
+  if (pc > 0) return sellerPrice / pc
+  return sellerPrice
+}
+
+function calculateMargin(buyRate, sellRate, buyerPrice, sellerPrice) {
+  if (buyRate > 0 && sellRate > 0) {
+    const marginPerUnit = sellRate - buyRate
+    const marginPct = sellRate > 0 ? (marginPerUnit / sellRate) * 100 : 0
+    return { marginPerUnit, marginPct }
+  }
+  if (buyerPrice > 0 && sellerPrice > 0) {
+    const marginPerUnit = sellerPrice - buyerPrice
+    const marginPct = sellerPrice > 0 ? (marginPerUnit / sellerPrice) * 100 : 0
+    return { marginPerUnit, marginPct }
+  }
+  return { marginPerUnit: 0, marginPct: 0 }
+}
+
+function computeItemProfitMargin(r) {
+  const buyerPrice = Number.parseFloat(r.buyer_price) || 0
+  const sellerPrice = Number.parseFloat(r.seller_price) || 0
+  const stock = Number.parseFloat(r.stock) || 0
+  const looseKg = Number.parseFloat(r.loose_kg) || 0
+  const bw = Number.parseFloat(r.bag_weight) || 1
+  const pc = Number.parseFloat(r.price_covers) || 1
+
+  const buyRatePerUnit = calculateBuyRatePerUnit(buyerPrice, pc, bw)
+  const sellRatePerUnit = calculateSellRatePerUnit(sellerPrice, bw, pc)
+  const { marginPerUnit, marginPct } = calculateMargin(buyRatePerUnit, sellRatePerUnit, buyerPrice, sellerPrice)
+
+  // Present stock remaining (reduces as sales happen in Billing)
+  const fullBagUnits = stock * (bw > 1 ? bw : 1)
+  const presentUnits = fullBagUnits + looseKg
+  const presentProfit = Math.round(marginPerUnit * presentUnits)
+
+  // Full stock imported lot (initial total batch)
+  const fullLotStock = Number.parseFloat(r.initial_full_stock) || stock
+  const fullUnits = fullLotStock * (bw > 1 ? bw : 1)
+  const fullStockProfit = Math.round(marginPerUnit * fullUnits)
+
+  return {
+    id: r.id,
+    name: r.name,
+    sku: r.sku,
+    category: r.category,
+    unit: r.unit,
+    stock,
+    loose_kg: looseKg,
+    bag_weight: bw,
+    price_covers: pc,
+    buyer_price: buyerPrice,
+    seller_price: sellerPrice,
+    buy_rate_per_unit: Number(buyRatePerUnit.toFixed(2)),
+    sell_rate_per_unit: Number(sellRatePerUnit.toFixed(2)),
+    margin_per_unit: Number(marginPerUnit.toFixed(2)),
+    margin_pct: Number(marginPct.toFixed(1)),
+    present_units: presentUnits,
+    present_profit: presentProfit,
+    full_lot_stock: fullLotStock,
+    full_units: fullUnits,
+    full_stock_profit: fullStockProfit,
+    total_units_in_stock: presentUnits,
+    total_potential_profit: presentProfit,
+    buyer_name: r.buyer_name,
+    is_loss: marginPerUnit < 0
+  }
+}
+
 /**
  * GET /api/profit-margin
  * Calculates product procurement cost, active retail prices, unit margins, and inventory profit potentials.
@@ -47,76 +125,7 @@ router.get(['/', '/profit-margins'], async (req, res) => {
       [userId]
     )
 
-    const processed = rows.map(r => {
-      const buyerPrice = Number.parseFloat(r.buyer_price) || 0
-      const sellerPrice = Number.parseFloat(r.seller_price) || 0
-      const stock = Number.parseFloat(r.stock) || 0
-      const looseKg = Number.parseFloat(r.loose_kg) || 0
-      const bw = Number.parseFloat(r.bag_weight) || 1
-      const pc = Number.parseFloat(r.price_covers) || 1
-
-      let buyRatePerUnit = 0
-      if (buyerPrice > 0) {
-        if (pc > 0) buyRatePerUnit = buyerPrice / pc
-        else if (bw > 0) buyRatePerUnit = buyerPrice / bw
-        else buyRatePerUnit = buyerPrice
-      }
-
-      let sellRatePerUnit = 0
-      if (sellerPrice > 0) {
-        if (bw > 0) sellRatePerUnit = sellerPrice / bw
-        else if (pc > 0) sellRatePerUnit = sellerPrice / pc
-        else sellRatePerUnit = sellerPrice
-      }
-
-      let marginPerUnit = 0
-      let marginPct = 0
-
-      if (buyRatePerUnit > 0 && sellRatePerUnit > 0) {
-        marginPerUnit = sellRatePerUnit - buyRatePerUnit
-        marginPct = sellRatePerUnit > 0 ? (marginPerUnit / sellRatePerUnit) * 100 : 0
-      } else if (buyerPrice > 0 && sellerPrice > 0) {
-        marginPerUnit = sellerPrice - buyerPrice
-        marginPct = sellerPrice > 0 ? (marginPerUnit / sellerPrice) * 100 : 0
-      }
-
-      // Present stock remaining (reduces as sales happen in Billing)
-      const fullBagUnits = stock * (bw > 1 ? bw : 1)
-      const presentUnits = fullBagUnits + looseKg
-      const presentProfit = Math.round(marginPerUnit * presentUnits)
-
-      // Full stock imported lot (initial total batch)
-      const fullLotStock = Number.parseFloat(r.initial_full_stock) || stock
-      const fullUnits = fullLotStock * (bw > 1 ? bw : 1)
-      const fullStockProfit = Math.round(marginPerUnit * fullUnits)
-
-      return {
-        id: r.id,
-        name: r.name,
-        sku: r.sku,
-        category: r.category,
-        unit: r.unit,
-        stock,
-        loose_kg: looseKg,
-        bag_weight: bw,
-        price_covers: pc,
-        buyer_price: buyerPrice,
-        seller_price: sellerPrice,
-        buy_rate_per_unit: Number(buyRatePerUnit.toFixed(2)),
-        sell_rate_per_unit: Number(sellRatePerUnit.toFixed(2)),
-        margin_per_unit: Number(marginPerUnit.toFixed(2)),
-        margin_pct: Number(marginPct.toFixed(1)),
-        present_units: presentUnits,
-        present_profit: presentProfit,
-        full_lot_stock: fullLotStock,
-        full_units: fullUnits,
-        full_stock_profit: fullStockProfit,
-        total_units_in_stock: presentUnits,
-        total_potential_profit: presentProfit,
-        buyer_name: r.buyer_name,
-        is_loss: marginPerUnit < 0
-      }
-    })
+    const processed = rows.map(computeItemProfitMargin)
 
     res.json(processed)
   } catch (err) {

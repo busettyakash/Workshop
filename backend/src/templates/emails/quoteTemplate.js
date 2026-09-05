@@ -82,14 +82,7 @@ function resolvePackDisplay(rawUnit, qty, bagWeight) {
     { displayQty: qty, displayUnit: uRaw || u || 'unit', subtext: uRaw || u || 'unit' }
 }
 
-export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt, catalogMap = {} }) => {
-  let items = []
-  if (Array.isArray(quote.line_items)) {
-    items = quote.line_items
-  } else if (typeof quote.line_items === 'string') {
-    try { items = JSON.parse(quote.line_items) } catch { }
-  }
-
+function computeQuoteTotals(quote, items) {
   const grossSubtotal = items.reduce((s, li) => {
     const q = Number.parseFloat(li.quantity || li.qty || 1)
     const p = Number.parseFloat(li.rate || li.price || 0)
@@ -108,11 +101,6 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
   const diffDiscount = (grossTotalWithTax > 0 && totalAmount > 0 && grossTotalWithTax > totalAmount + 0.01) ? (grossTotalWithTax - totalAmount) : 0
   const totalDiscount = Math.max(explicitDiscount, lineDiscounts, diffDiscount)
 
-  const quoteId = quote.quote_number || `QT-${quote.id}`
-
-  const companyName = quote.shop_name || ''
-  const customerName = quote.customer_name || ''
-
   const explicitTaxRate = (quote?.tax_rate !== undefined && quote?.tax_rate !== null && quote?.tax_rate !== '')
     ? Number.parseFloat(quote.tax_rate)
     : null
@@ -126,54 +114,101 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
 
   const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
 
-  // Generate table rows matching PDF layout
-  const rowsHtml = items.length > 0 ? items.map(li => {
-    const qty = Number.parseFloat(li.quantity || li.qty || 1)
-    const rate = Number.parseFloat(li.rate || li.price || 0)
-    const disc = getExplicitLineDiscount(li)
-    const lineTotalGross = rate * qty
-    let itemDisc = disc
-    if (itemDisc === 0 && lineDiscounts === 0 && totalDiscount > 0) {
-      itemDisc = items.length === 1
-        ? totalDiscount
-        : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
-    }
-    const prodName = li.name || li.product_name || li.productName || 'Product Item'
-    const catMap = catalogMap || {}
-    const catProd = (li.product_id && catMap[String(li.product_id)])
-      || (li.id && catMap[String(li.id)])
-      || (prodName && catMap[prodName.toLowerCase().trim()])
-    const bw = Number.parseFloat(li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? catProd?.bag_weight ?? 1)
-    const rawUnit = li.unit || li.unitLabel || ''
-    const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw)
+  return {
+    grossSubtotal,
+    lineDiscounts,
+    subtotal,
+    totalAmount,
+    taxAmt,
+    totalDiscount,
+    halfTaxRate,
+    cgst,
+    sgst
+  }
+}
 
-    const rawHsn = li.hsn_code || li.hsn || li.sku || ''
-    const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
-      ? `1006${String(li.product_id || li.id || 1001).padStart(4, '0')}`
-      : rawHsn
+function buildQuoteItemRow(li, catalogMap, lineDiscounts, totalDiscount, grossSubtotal, taxAmt, halfTaxRate, totalItems) {
+  const qty = Number.parseFloat(li.quantity || li.qty || 1)
+  const rate = Number.parseFloat(li.rate || li.price || 0)
+  const disc = getExplicitLineDiscount(li)
+  const lineTotalGross = rate * qty
+  let itemDisc = disc
+  if (itemDisc === 0 && lineDiscounts === 0 && totalDiscount > 0) {
+    itemDisc = totalItems === 1
+      ? totalDiscount
+      : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
+  }
+  const prodName = li.name || li.product_name || li.productName || 'Product Item'
+  const catMap = catalogMap || {}
+  const catProd = (li.product_id && catMap[String(li.product_id)])
+    || (li.id && catMap[String(li.id)])
+    || (prodName && catMap[prodName.toLowerCase().trim()])
+  const bw = Number.parseFloat(li.bag_weight ?? li.bagWeight ?? li.pack_weight ?? catProd?.bag_weight ?? 1)
+  const rawUnit = li.unit || li.unitLabel || ''
+  const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bw)
 
-    return `
-      <tr>
-        <td style="padding:10px 12px; font-size:10.5px; font-weight:600; color:#475569; border:1px solid #cbd5e1; font-family:monospace; line-height:1.4;">${escapeHtml(hsnCode)}</td>
-        <td style="padding:10px 12px; font-size:11.5px; border:1px solid #cbd5e1; line-height:1.4;">
-          <div style="font-weight:700; color:#0f172a;">${escapeHtml(prodName)}</div>
-          ${subtext ? `<div style="font-size:10.5px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
-        </td>
-        <td align="center" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center; line-height:1.4;">
-          ${displayQty ? `${displayQty} ${displayUnit}` : displayUnit}
-        </td>
-        <td align="right" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">₹${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td align="right" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">
-          ${itemDisc > 0.01 ? `-₹${itemDisc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
-        </td>
-        <td align="right" style="padding:10px 12px; font-size:10.5px; color:#475569; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">${taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : '0.00% + 0.00%'}</td>
-      </tr>
-    `
-  }).join('') : `
+  const rawHsn = li.hsn_code || li.hsn || li.sku || ''
+  const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
+    ? `1006${String(li.product_id || li.id || 1001).padStart(4, '0')}`
+    : rawHsn
+
+  return `
     <tr>
-      <td colspan="6" align="center" style="padding:20px; text-align:center; color:#94a3b8; border:1px solid #cbd5e1;">No line items found</td>
+      <td style="padding:10px 12px; font-size:10.5px; font-weight:600; color:#475569; border:1px solid #cbd5e1; font-family:monospace; line-height:1.4;">${escapeHtml(hsnCode)}</td>
+      <td style="padding:10px 12px; font-size:11.5px; border:1px solid #cbd5e1; line-height:1.4;">
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(prodName)}</div>
+        ${subtext ? `<div style="font-size:10.5px; color:#64748b; margin-top:2px;">${escapeHtml(subtext)}</div>` : ''}
+      </td>
+      <td align="center" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center; line-height:1.4;">
+        ${displayQty ? `${displayQty} ${displayUnit}` : displayUnit}
+      </td>
+      <td align="right" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">₹${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+      <td align="right" style="padding:10px 12px; font-size:11.5px; font-weight:700; color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">
+        ${itemDisc > 0.01 ? `-₹${itemDisc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+      </td>
+      <td align="right" style="padding:10px 12px; font-size:10.5px; color:#475569; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">${taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : '0.00% + 0.00%'}</td>
     </tr>
   `
+}
+
+function buildQuoteItemRows(items, catalogMap, lineDiscounts, totalDiscount, grossSubtotal, taxAmt, halfTaxRate) {
+  if (items.length === 0) {
+    return `
+      <tr>
+        <td colspan="6" align="center" style="padding:20px; text-align:center; color:#94a3b8; border:1px solid #cbd5e1;">No line items found</td>
+      </tr>
+    `
+  }
+  return items.map(li => buildQuoteItemRow(li, catalogMap, lineDiscounts, totalDiscount, grossSubtotal, taxAmt, halfTaxRate, items.length)).join('')
+}
+
+export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt, catalogMap = {} }) => {
+  let items = []
+  if (Array.isArray(quote.line_items)) {
+    items = quote.line_items
+  } else if (typeof quote.line_items === 'string') {
+    try { items = JSON.parse(quote.line_items) } catch { }
+  }
+
+  const {
+    grossSubtotal,
+    lineDiscounts,
+    subtotal,
+    totalAmount,
+    taxAmt,
+    totalDiscount,
+    halfTaxRate,
+    cgst,
+    sgst
+  } = computeQuoteTotals(quote, items)
+
+  const quoteId = quote.quote_number || `QT-${quote.id}`
+
+  const companyName = quote.shop_name || ''
+  const customerName = quote.customer_name || ''
+
+  // Generate table rows matching PDF layout
+  const rowsHtml = buildQuoteItemRows(items, catalogMap, lineDiscounts, totalDiscount, grossSubtotal, taxAmt, halfTaxRate)
 
   return `
     <!DOCTYPE html>

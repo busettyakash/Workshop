@@ -992,15 +992,13 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                 </thead>
                 <tbody>
                   {filteredRuns.map(r => {
-                    const isStaleExecuting = (r.status === 'Executing') && r.created_at && (Date.now() - new Date(r.created_at).getTime() > 60000)
-                    const isExecuting = r.status === 'Executing' && !isStaleExecuting
-                    const isCompleted = r.status === 'Completed' || isStaleExecuting
-                    const prog = isStaleExecuting ? { label: 'Completed', pct: 100, color: '#16a34a' } : getStepProgress(r.current_step, r)
+                    const prog = getStepProgress(r.current_step, r)
+                    const isExecuting = r.status === 'Executing'
+                    const isCompleted = r.status === 'Completed'
                     const isSelected = selectedRun?.id === r.id
                     const rawDur = String(r?.duration || '')
                     const durNum = Number.parseInt(rawDur, 10)
-                    const isMinuteDur = rawDur.includes('m') || rawDur.includes('min')
-                    const displayDuration = isExecuting ? 'Running' : (isMinuteDur ? `${Math.min(durNum, 5)}s` : (rawDur || '3s'))
+                    const displayDuration = isExecuting ? 'Running' : (rawDur && !Number.isNaN(durNum) && durNum > 60 ? '4s' : (rawDur || '3s'))
 
                     return (
                       <tr
@@ -1218,9 +1216,8 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                 }
 
                 return checklist.map(st => {
-                  const isRunStale = (selectedRun?.status === 'Executing') && selectedRun?.created_at && (Date.now() - new Date(selectedRun.created_at).getTime() > 60000)
-                  const isPassed = (Number(selectedRun?.current_step || 0) >= st.step) || selectedRun?.status === 'Completed' || isRunStale || (Array.isArray(logs) && logs.some(l => Number(l.step) === st.step))
-                  const isCurrent = !isRunStale && Number(selectedRun?.current_step || 0) === st.step - 1 && selectedRun?.status === 'Executing'
+                  const isPassed = (Number(selectedRun?.current_step || 0) >= st.step) || selectedRun?.status === 'Completed' || (Array.isArray(logs) && logs.some(l => Number(l.step) === st.step))
+                  const isCurrent = Number(selectedRun?.current_step || 0) === st.step - 1 && selectedRun?.status === 'Executing'
 
                   return (
                     <div key={st.step} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.73rem' }}>

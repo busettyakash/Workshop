@@ -35,7 +35,7 @@ if (!isServerless) {
   })
 }
 
-export const sendEmail = async ({ to, subject, html, attachments = [] }, retriesLeft = (isServerless ? 0 : 1)) => {
+export const sendEmail = async ({ to, subject, html, attachments = [] }, retriesLeft = 2) => {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     const missing = [
       !process.env.SMTP_HOST && 'SMTP_HOST',
@@ -47,19 +47,13 @@ export const sendEmail = async ({ to, subject, html, attachments = [] }, retries
   }
 
   try {
-    const sendPromise = transporter.sendMail({
+    const info = await transporter.sendMail({
       from: `"Workshop" <${process.env.SMTP_USER}>`,
       to,
       subject,
       html,
       attachments,
     })
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('SMTP send timed out after 6 seconds')), 6000)
-    )
-
-    const info = await Promise.race([sendPromise, timeoutPromise])
     console.log('[SMTP] Email sent ✅ id:', info.messageId)
     return { data: { id: info.messageId }, error: null }
   } catch (err) {
@@ -80,7 +74,7 @@ export const sendEmail = async ({ to, subject, html, attachments = [] }, retries
         // ignore close errors
       }
       transporter = createTransporter()
-      await new Promise(r => setTimeout(r, 400))
+      await new Promise(r => setTimeout(r, 600))
       return sendEmail({ to, subject, html, attachments }, retriesLeft - 1)
     }
 

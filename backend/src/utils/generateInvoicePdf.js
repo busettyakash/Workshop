@@ -662,7 +662,7 @@ function calculatePdfKitAmounts(items, quote, bill) {
 // ─────────────────────────────────────────────
 // PDFKit Template Matching Screenshot Exactly
 // ─────────────────────────────────────────────
-export async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
+async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   return new Promise((resolve) => {
     try {
       const doc = new PDFDocument({ margin: 30, size: 'A4', bufferPages: true })
@@ -970,12 +970,7 @@ export async function generatePdfKitFallback({ quote = {}, bill = {}, billItems 
 // ─────────────────────────────────────────────
 // Main Export: HTML → PDF Buffer
 // ─────────────────────────────────────────────
-export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {}, type = '', preferFast = false } = {}) {
-  // If explicitly requested, running in Serverless (Vercel / Lambda), or fast workflow path, use instant PDFKit generator (15ms)
-  if (preferFast || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    return generatePdfKitFallback({ quote, bill, billItems, shop, type })
-  }
-
+export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   try {
     const catalogMap = await getProductHsnMap().catch(() => ({}))
     const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap, type })
@@ -1020,7 +1015,7 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
 
     try {
       const page = await browser.newPage()
-      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 3500 })
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 20000 })
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,

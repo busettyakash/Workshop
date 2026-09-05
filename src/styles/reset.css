@@ -47,6 +47,18 @@ input, textarea, select {
   outline: none;
 }
 
+/* Hide native number input spinners (up/down arrows) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Lists */
 ul, ol { list-style: none; }
 
@@ -64,3 +76,34 @@ table { border-collapse: collapse; }
   border-radius: var(--radius-pill);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-gray-400); }
+
+/* ─── Global Blue Primary Button ─────────────────────────────────────────── */
+.btn-blue {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 6px 16px !important;
+  font-size: 0.8125rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2) !important;
+  font-family: inherit !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  line-height: 1.4 !important;
+  transition: none !important;
+}
+
+.btn-blue:hover,
+.btn-blue:active,
+.btn-blue:focus {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2) !important;
+  outline: none !important;
+}

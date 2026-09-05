@@ -1,14 +1,30 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Filter, ArrowUpDown, Package, X, Edit2, Trash2, Loader2, Search } from 'lucide-react'
+import { Plus, Filter, ArrowUpDown, Package, X, Edit2, Trash2, Loader2, Search, Eye, ArrowLeftRight } from 'lucide-react'
 import { drawBarcode } from '../../utils/barcode'
-import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
+import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
+import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
+import './Products.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import TablePagination from '../../components/ui/TablePagination'
+import { hasModulePermission, getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
+
+
+const getStockBadgeClass = (stock, looseKg = 0, bagWeight = 1) => {
+  const s = Number.parseFloat(stock || 0)
+  const l = Number.parseFloat(looseKg || 0)
+  const bw = Number.parseFloat(bagWeight || 1)
+  const totalBase = (bw > 1 ? s * bw : s) + l
+  if (totalBase > 10) return 'attio-stock-high'
+  if (totalBase > 0) return 'attio-stock-low'
+  return 'attio-stock-out'
+}
 
 function ProductBarcode({ sku }) {
   const canvasRef = useRef(null)
@@ -56,8 +72,8 @@ function BarcodeModal({ sku, onClose }) {
   }
 
   return (
-    <div className="ws-modal-backdrop" onClick={onClose}>
-      <div className="ws-modal-card" style={{ maxWidth: 360 }} onClick={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card" style={{ maxWidth: 360 }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
           <h3 className="ws-modal-title">Product Barcode</h3>
           <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
@@ -88,19 +104,532 @@ function BarcodeModal({ sku, onClose }) {
   )
 }
 
-// ProductFormModal has been moved to a separate page component
+function PricingModal({ product, onClose }) {
+  const [history, setHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
 
-import { useNavigate } from 'react-router-dom'
+  const targetId = product?.product_id || product?.id
+  const bulkUnit = getBulkUnitDetails(product?.unit)
+  const bagWeight = Number.parseFloat(product?.bag_weight || 1)
+
+  const calcBagPrice = (rawVal) => {
+    const p = Number.parseFloat(rawVal || 0)
+    if (p <= 0) return 0
+    return p
+  }
+
+  const basePriceVal = calcBagPrice(product?.price)
+  const activeBagPrice = product?.updated_price ? calcBagPrice(product.updated_price) : basePriceVal
+
+  const unitPrice = (bagWeight > 0 ? (activeBagPrice / bagWeight) : activeBagPrice).toFixed(2)
+  const updatedDateStr = product?.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
+
+  useEffect(() => {
+    let isMounted = true
+    if (!targetId) {
+      setLoadingHistory(false)
+      return
+    }
+    api.get(`/products/${targetId}/price-history`)
+      .then(res => {
+        if (isMounted) setHistory(res.data || [])
+      })
+      .catch(() => {
+        if (isMounted) {
+          const defaultItems = []
+          if (product?.updated_price) {
+            defaultItems.push({
+              id: 'h2',
+              old_price: product.price,
+              new_price: product.updated_price,
+              effective_date: updatedDateStr || new Date().toISOString().split('T')[0],
+              notes: 'Updated Price'
+            })
+          }
+          if (product?.price) {
+            defaultItems.push({
+              id: 'h1',
+              old_price: null,
+              new_price: product.price,
+              effective_date: product.created_at ? String(product.created_at).split('T')[0] : new Date().toISOString().split('T')[0],
+              notes: 'Initial Base Price'
+            })
+          }
+          setHistory(defaultItems)
+        }
+      })
+      .finally(() => {
+        if (isMounted) setLoadingHistory(false)
+      })
+    return () => { isMounted = false }
+  }, [targetId])
+
+  if (!product) return null
+
+  return (
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <div className="ws-modal-header">
+          <div>
+            <h3 className="ws-modal-title" style={{ margin: 0 }}>Pricing & Price History</h3>
+            <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#64748b' }}>{product.name} ({product.sku || 'No SKU'})</p>
+          </div>
+          <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="ws-modal-body" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Current Pricing Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
+              <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+                ₹{basePriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
+              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
+              <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
+                ₹{activeBagPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+
+          {bulkUnit && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Package Breakdown: {bulkUnit.name} ({bagWeight}{bulkUnit.short})</span>
+              </div>
+              <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#2563eb' }}>
+                ₹{Number.parseFloat(unitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
+              </span>
+            </div>
+          )}
+
+          {/* Price History Timeline */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+              <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>Price History Log</h4>
+              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{history.length} record{history.length === 1 ? '' : 's'}</span>
+            </div>
+
+            {loadingHistory ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '0.8125rem' }}>Loading price history...</div>
+            ) : history.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '0.8125rem' }}>No historical price records found</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
+                {history.map((item, idx) => {
+                  const newRaw = Number.parseFloat(item.new_price || 0)
+                  const oldRaw = item.old_price !== null && item.old_price !== undefined ? Number.parseFloat(item.old_price) : null
+
+                  const newBagP = calcBagPrice(newRaw)
+                  const oldBagP = oldRaw !== null ? calcBagPrice(oldRaw) : null
+
+                  const diff = oldBagP !== null ? (newBagP - oldBagP) : 0
+                  const isUp = diff > 0
+                  const itemUnitPrice = bulkUnit ? (newBagP / bagWeight).toFixed(2) : null
+
+                  return (
+                    <div key={item.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newBagP.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          {bagWeight > 1 && (
+                            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                              ({bagWeight} {bulkUnit?.short || product?.unit || 'kgs'} price)
+                            </span>
+                          )}
+                          {diff !== 0 && (
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: isUp ? '#16a34a' : '#dc2626', background: isUp ? '#dcfce7' : '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
+                              {isUp ? `+₹${diff.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          {item.notes || 'Price change'} • <span style={{ color: '#475467' }}>{item.effective_date ? String(item.effective_date).split('T')[0] : 'N/A'}</span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        {itemUnitPrice && (
+                          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#2563eb' }}>
+                            ₹{Number.parseFloat(itemUnitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
+                          </div>
+                        )}
+                        {oldBagP !== null && (
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                            Prev: ₹{oldBagP.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="ws-modal-footer">
+          <button className="ws-modal-btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProductComparisonModal({ products, onClose, onRemoveProduct, onClearAll }) {
+  if (!products || products.length === 0) return null
+
+  const productData = products.map(p => {
+    const bulkUnit = getBulkUnitDetails(p.unit)
+    const uomShort = (bulkUnit?.short || p.unit || 'kg').toLowerCase().replace(/s$/, '')
+    const pc = Number.parseFloat(p.price_covers || 0)
+    const bw = Number.parseFloat(p.bag_weight || 1)
+    const rawP = Number.parseFloat(p.price || 0)
+    const rawUP = Number.parseFloat(p.updated_price || 0)
+
+    let priceVal = rawP
+    if (pc > 0 && bw > 0 && pc !== bw) {
+      priceVal = (rawP / bw) * pc
+    }
+
+    let updatedPriceVal = rawUP
+    if (rawUP > 0 && pc > 0 && bw > 0 && pc !== bw) {
+      updatedPriceVal = (rawUP / bw) * pc
+    }
+
+    const priceSubtext = pc > 0 ? `${pc} ${uomShort}` : (bw > 1 ? `${bw} ${uomShort}` : `1 ${uomShort}`)
+    const effectiveUnitPrice = bw > 0 ? (rawP / bw) : rawP
+    const effectiveUpdatedUnitPrice = (rawUP > 0 && bw > 0) ? (rawUP / bw) : (rawUP > 0 ? rawUP : null)
+
+    const stockQty = Number.parseFloat(p.stock || 0)
+    const looseQty = Number.parseFloat(p.loose_kg || 0)
+    const totalBaseUnits = (bw > 1 ? stockQty * bw : stockQty) + looseQty
+    const activeRate = effectiveUpdatedUnitPrice !== null ? effectiveUpdatedUnitPrice : effectiveUnitPrice
+    const stockValuation = totalBaseUnits * activeRate
+
+    return {
+      ...p,
+      bulkUnit,
+      uomShort,
+      bw,
+      pc,
+      priceVal,
+      priceSubtext,
+      effectiveUnitPrice,
+      effectiveUpdatedUnitPrice,
+      updatedPriceVal,
+      totalBaseUnits,
+      stockValuation
+    }
+  })
+
+  const allSameUnit = productData.length > 1 && productData.every(p => p.uomShort === productData[0].uomShort)
+  const minEffectiveRate = allSameUnit ? Math.min(...productData.map(p => (p.effectiveUpdatedUnitPrice || p.effectiveUnitPrice))) : null
+
+  return (
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card compare-modal-card" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="ws-modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ background: '#eff6ff', color: '#2563eb', padding: '6px', borderRadius: 8, display: 'flex', alignItems: 'center' }}>
+                <ArrowLeftRight size={18} />
+              </div>
+              <div>
+                <h3 className="ws-modal-title" style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
+                  Product Comparison
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                  Comparing {products.length} product{products.length > 1 ? 's' : ''} side-by-side
+                </p>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {products.length > 0 && (
+              <button
+                onClick={onClearAll}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                Clear all
+              </button>
+            )}
+            <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="ws-modal-body" style={{ padding: 0, overflowX: 'auto', overflowY: 'auto', flex: 1 }}>
+          {products.length < 2 ? (
+            <div style={{ padding: '48px 24px', textAlign: 'center', color: '#64748b' }}>
+              <div style={{ background: '#f1f5f9', width: 44, height: 44, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, color: '#475467' }}>
+                <ArrowLeftRight size={22} />
+              </div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '0.95rem', color: '#1e293b' }}>Select at least 2 products</h4>
+              <p style={{ margin: 0, fontSize: '0.82rem', maxWidth: 360, marginInline: 'auto' }}>
+                You have removed products from comparison. Please select at least 2 products from the product table to compare them side-by-side.
+              </p>
+            </div>
+          ) : (
+            <table className="compare-matrix-table">
+              <thead>
+                <tr>
+                  <th className="attr-col">Product Details</th>
+                  {productData.map(p => {
+                    const catStyle = getCategoryTagStyle(p.category)
+                    return (
+                      <th key={p.id} className="product-col" style={{ background: '#ffffff', position: 'relative' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div className="attio-avatar" style={{ background: getAvatarColor(p.name), width: 26, height: 26, minWidth: 26, fontSize: '0.82rem' }}>
+                              {getSingleLetter(p.name)}
+                            </div>
+                            <div style={{ textAlign: 'left' }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a', lineHeight: 1.2 }}>
+                                {p.name}
+                              </div>
+                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                HSN: {p.hsn_code || p.sku || '—'}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => onRemoveProduct(p.id)}
+                            style={{
+                              background: '#f1f5f9',
+                              border: 'none',
+                              borderRadius: '50%',
+                              width: 22,
+                              height: 22,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#64748b',
+                              cursor: 'pointer',
+                              flexShrink: 0
+                            }}
+                            title="Remove from comparison"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                        <div style={{ marginTop: 8, textAlign: 'left' }}>
+                          <span style={{ background: catStyle.bg, color: catStyle.text, border: `1px solid ${catStyle.border}`, borderRadius: 5, padding: '2px 8px', fontSize: '0.7rem', fontWeight: 600, display: 'inline-block' }}>
+                            {p.category || 'Unassigned'}
+                          </span>
+                        </div>
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Row: Base Price */}
+                <tr>
+                  <td className="attr-cell">Base Price</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>
+                        ₹{p.priceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                        per {p.priceSubtext}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Updated Price */}
+                <tr>
+                  <td className="attr-cell">Updated Price</td>
+                  {productData.map(p => {
+                    if (!p.updated_price) {
+                      return (
+                        <td key={p.id} className="product-col" style={{ color: '#94a3b8' }}>
+                          — (No update)
+                        </td>
+                      )
+                    }
+                    const diff = p.updatedPriceVal - p.priceVal
+                    const isLower = diff < 0
+                    return (
+                      <td key={p.id} className="product-col">
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#2563eb' }}>
+                          ₹{p.updatedPriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: isLower ? '#16a34a' : '#dc2626', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {isLower ? `↓ Savings of ₹${Math.abs(diff).toFixed(2)}` : `↑ Higher by ₹${diff.toFixed(2)}`}
+                        </div>
+                      </td>
+                    )
+                  })}
+                </tr>
+
+                {/* Row: Effective Rate */}
+                <tr>
+                  <td className="attr-cell">Effective Rate</td>
+                  {productData.map(p => {
+                    const activeRate = p.effectiveUpdatedUnitPrice !== null ? p.effectiveUpdatedUnitPrice : p.effectiveUnitPrice
+                    const isBest = minEffectiveRate !== null && activeRate === minEffectiveRate
+                    return (
+                      <td key={p.id} className="product-col">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: isBest ? '#15803d' : '#334155' }}>
+                            ₹{activeRate.toFixed(2)} / {p.uomShort}
+                          </span>
+                          {isBest && (
+                            <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px', fontSize: '0.68rem', fontWeight: 700 }}>
+                              Best Value
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          Standard base unit rate
+                        </div>
+                      </td>
+                    )
+                  })}
+                </tr>
+
+                {/* Row: Stock Available */}
+                <tr>
+                  <td className="attr-cell">Stock on Hand</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <span className={`attio-stock-badge ${getStockBadgeClass(p.stock, p.loose_kg, p.bag_weight)}`}>
+                        {formatStockDisplay(p.stock, p.bag_weight, p.unit, p.loose_kg)}
+                      </span>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 4 }}>
+                        Total: {p.totalBaseUnits.toLocaleString('en-IN')} {p.uomShort}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Estimated Stock Valuation */}
+                <tr>
+                  <td className="attr-cell">Stock Valuation</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <div style={{ fontWeight: 600, fontSize: '0.86rem', color: '#0f172a' }}>
+                        ₹{p.stockValuation.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                        Qty × Effective Rate
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Packaging & Unit */}
+                <tr>
+                  <td className="attr-cell">Packaging Specs</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <div style={{ fontSize: '0.82rem', color: '#1e293b', fontWeight: 500 }}>
+                        {p.unit || 'Standard'} ({p.bw} {p.uomShort})
+                      </div>
+                      {p.pc > 0 && (
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          Price covers: {p.pc} {p.uomShort}
+                        </div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Status */}
+                <tr>
+                  <td className="attr-cell">Status</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <span className={`attio-status-badge ${p.status === 'active' ? 'attio-status-active' : 'attio-status-inactive'}`}>
+                        {p.status || 'active'}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Next Restock */}
+                <tr>
+                  <td className="attr-cell">Next Restock</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      <span style={{ fontSize: '0.82rem', color: p.next_restock_time ? '#0f172a' : '#94a3b8' }}>
+                        {p.next_restock_time || '—'}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Row: Barcode / SKU */}
+                <tr>
+                  <td className="attr-cell">Barcode (SKU)</td>
+                  {productData.map(p => (
+                    <td key={p.id} className="product-col">
+                      {p.sku ? (
+                        <div style={{ display: 'inline-block' }}>
+                          <ProductBarcode sku={p.sku} />
+                          <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 4, fontFamily: 'monospace' }}>
+                            {p.sku}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>—</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="ws-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+            Tip: Click the <strong style={{ color: '#0f172a' }}>✕</strong> next to any product name to remove it from comparison.
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="ws-modal-btn ws-modal-btn--primary" onClick={onClose}>
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function Products() {
   const dispatch  = useAppDispatch()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const navigate = useNavigate()
+
+  const { canRead, canDelete, hasModulePermission: checkModPerm } = usePermissions('products')
+  const canAccessImportStock = checkModPerm ? checkModPerm('import_stock') : hasModulePermission('import_stock')
   
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedSku, setSelectedSku] = useState(null)
+  const [selectedPricing, setSelectedPricing] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' })
+
+  const [selectedProducts, setSelectedProducts] = useState([])
+  const [showCompareModal, setShowCompareModal] = useState(false)
 
   const [page, setPage] = useState(1)
   const [limit] = useState(20) // fixed limit to remove dropdown
@@ -136,6 +665,7 @@ export default function Products() {
       setProducts(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to load products', type: 'error' }))
     } finally {
       setLoading(false)
@@ -143,20 +673,25 @@ export default function Products() {
   }
 
   useEffect(() => { 
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Products')) 
     fetchProducts(page)
-  }, [dispatch, page, search, sort, filterCategory, filterStatus])
+  }, [dispatch, page, search, sort, filterCategory, filterStatus, canRead])
 
 
 
   const handleConfirmDelete = async () => {
-    const { id, name } = confirmDelete
+    const { id } = confirmDelete
     setConfirmDelete({ isOpen: false, id: null, name: '' })
     try {
       await api.delete(`/products/${id}`)
       setProducts(prev => prev.filter(p => p.id !== id))
       dispatch(addToast({ message: 'Product deleted successfully', type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete product', type: 'error' }))
     }
   }
@@ -168,19 +703,40 @@ export default function Products() {
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, next_restock_time: value } : p))
       dispatch(addToast({ message: 'Restock time updated', type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to update restock time', type: 'error' }))
     }
   }
 
-  const getStatusStyle = (status) => {
-    switch (status) {
-      case 'active':
-        return { background: '#dcfce7', color: '#166534' }
-      case 'inactive':
-        return { background: '#fee2e2', color: '#991b1b' }
-      default:
-        return { background: '#f3f4f6', color: '#4b5563' }
+  const allSelectedOnPage = products.length > 0 && products.every(p => selectedProducts.some(sp => sp.id === p.id))
+
+  const handleToggleSelectAll = () => {
+    if (allSelectedOnPage) {
+      const pageIds = new Set(products.map(p => p.id))
+      setSelectedProducts(prev => prev.filter(p => !pageIds.has(p.id)))
+    } else {
+      setSelectedProducts(prev => {
+        const map = new Map(prev.map(p => [p.id, p]))
+        products.forEach(p => map.set(p.id, p))
+        return Array.from(map.values())
+      })
     }
+  }
+
+  const handleToggleSelectRow = (product) => {
+    setSelectedProducts(prev => {
+      const exists = prev.some(p => p.id === product.id)
+      if (exists) return prev.filter(p => p.id !== product.id)
+      return [...prev, product]
+    })
+  }
+
+  const handleRemoveFromCompare = (productId) => {
+    setSelectedProducts(prev => prev.filter(p => p.id !== productId))
+  }
+
+  const handleClearSelection = () => {
+    setSelectedProducts([])
   }
 
   return (
@@ -189,334 +745,328 @@ export default function Products() {
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
         <main className="ws-dash-body">
-          <div className="ws-dash-greeting">Products</div>
-          <div className="ws-table-section" style={{ minHeight: 'calc(100vh - 240px)', display: 'flex', flexDirection: 'column' }}>
-            <div className="ws-table-header" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div className="ws-table-header-left">
-                  <h2 className="ws-table-title">All Products</h2>
-                  <p className="ws-table-sub">{total} products</p>
-                </div>
-                <div className="ws-table-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {/* Search box */}
-                  <div style={{ position: 'relative' }}>
-                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                    <input
-                      type="text"
-                      placeholder="Search products..."
-                      value={search}
-                      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                      style={{
-                        padding: '8px 12px 8px 30px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        fontSize: '0.8125rem',
-                        outline: 'none',
-                        width: '180px',
-                        background: '#fff',
-                        color: '#374151'
-                      }}
-                    />
-                  </div>
-
-                  {/* Sort button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => {
-                      setSort(prev => prev === 'name_asc' ? 'name_desc' : prev === 'name_desc' ? '' : 'name_asc');
-                      setPage(1);
-                    }}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: sort ? '#111827' : '#d1d5db',
-                      background: sort ? '#f3f4f6' : '#fff',
-                      fontWeight: sort ? 600 : 500
-                    }}
-                  >
-                    <ArrowUpDown size={13} /> 
-                    Sort {sort === 'name_asc' ? 'A-Z' : sort === 'name_desc' ? 'Z-A' : ''}
-                  </button>
-
-                  {/* Filter button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => setShowFilterBar(prev => !prev)}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: showFilterBar || filterCategory || filterStatus !== 'active' ? '#111827' : '#d1d5db',
-                      background: showFilterBar || filterCategory || filterStatus !== 'active' ? '#f3f4f6' : '#fff',
-                      fontWeight: showFilterBar || filterCategory || filterStatus !== 'active' ? 600 : 500
-                    }}
-                  >
-                    <Filter size={13} /> Filter
-                  </button>
-
-                  <button className="ws-table-btn" onClick={() => navigate('/import-stock')}>
-                    <Package size={13} style={{ marginRight: 6 }} /> Return to Import Stock
-                  </button>
-                </div>
+          <div className="attio-products-container">
+            {/* Top Toolbar */}
+            <div className="ws-unified-page-header">
+              <div className="ws-unified-header-left">
+                <span className="ws-unified-header-title">Products</span>
+                <span className="ws-unified-header-badge">{total} products</span>
               </div>
-
-              {/* Expandable Filter Bar */}
-              {showFilterBar && (
-                <div style={{ display: 'flex', gap: 12, padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#4b5563' }}>
-                    <span>Category:</span>
-                    <select
-                      value={filterCategory}
-                      onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}
-                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none', background: '#fff', fontSize: '0.8125rem', cursor: 'pointer' }}
-                    >
-                      <option value="">All Categories</option>
-                      <option value="Food">Food</option>
-                      <option value="Electronics">Electronics</option>
-                      <option value="Grocery">Grocery</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#4b5563' }}>
-                    <span>Status:</span>
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
-                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none', background: '#fff', fontSize: '0.8125rem', cursor: 'pointer' }}
-                    >
-                      <option value="all">All Statuses</option>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                    </select>
-                  </div>
-
-                  {(filterCategory || filterStatus !== 'active') && (
-                    <button 
-                      onClick={() => { setFilterCategory(''); setFilterStatus('active'); setPage(1); }}
-                      style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#3d68f5', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
-                    >
-                      Reset Filters
-                    </button>
-                  )}
+              <div className="ws-unified-header-actions">
+                {/* Search box */}
+                <div className="attio-search-box">
+                  <Search size={14} className="attio-search-icon" />
+                  <input
+                    type="text"
+                    className="attio-input-search"
+                    placeholder="Search products..."
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                  />
                 </div>
-              )}
+
+                {/* Sort button */}
+                <button 
+                  className="attio-btn"
+                  onClick={() => {
+                    setSort(prev => prev === 'name_asc' ? 'name_desc' : prev === 'name_desc' ? '' : 'name_asc');
+                    setPage(1);
+                  }}
+                  style={{
+                    background: sort ? '#f1f5f9' : '#ffffff',
+                    borderColor: sort ? '#0f172a' : '#cbd5e1',
+                    fontWeight: sort ? 600 : 500
+                  }}
+                >
+                  <ArrowUpDown size={13} /> 
+                  Sort {sort === 'name_asc' ? 'A-Z' : sort === 'name_desc' ? 'Z-A' : ''}
+                </button>
+
+                {/* Filter button */}
+                <button 
+                  className="attio-btn"
+                  onClick={() => setShowFilterBar(prev => !prev)}
+                  style={{
+                    background: showFilterBar || filterCategory || filterStatus !== 'active' ? '#f1f5f9' : '#ffffff',
+                    borderColor: showFilterBar || filterCategory || filterStatus !== 'active' ? '#0f172a' : '#cbd5e1',
+                    fontWeight: showFilterBar || filterCategory || filterStatus !== 'active' ? 600 : 500
+                  }}
+                >
+                  <Filter size={13} /> Filter
+                </button>
+
+                {canAccessImportStock && (
+                  <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock')}>
+                    Return to Import Stock
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="ws-table-wrap" style={{ flex: 1 }}>
-              {loading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-                  <Loader2 size={24} className="ws-chat-loader-spin" />
-                </div>
-              ) : products.length === 0 ? (
-                <div style={{ padding: 40, textTheme: 'center', textAlign: 'center', color: '#9ca3af' }}>
-                  No products found. Click "Add Product" to create one.
-                </div>
-              ) : (
-                <table className="ws-table-styled">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 40 }}><input type="checkbox" className="ws-table-checkbox" readOnly /></th>
-                      <th>Product Name</th>
-                      <th>SKU</th>
-                      <th>Category</th>
-                      <th>Price</th>
-                      <th>Stock</th>
-                      <th>Status</th>
-                      <th>Next Restock</th>
-                      <th>Barcode</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {products.map(row => {
-                      const catStyle = getPillStyle(row.category || 'default')
-                      const statusStyle = getPillStyle(row.status)
-                      const stockStatus = row.stock > 10 ? 'in stock' : row.stock > 0 ? 'low stock' : 'out of stock'
-                      const stockStyle = getPillStyle(stockStatus)
-                      
-                      const restockOpts = ['TBD', 'In 30 mins', 'Tomorrow', 'Next week', 'Next month']
-                      const restock = row.next_restock_time || 'TBD'
-                      const getRestockStyle = (val) => {
-                        if (val === 'In 30 mins') return { bg: '#fee2e2', text: '#991b1b', border: '#fecaca' }
-                        if (val === 'Tomorrow') return { bg: '#fef3c7', text: '#92400e', border: '#fde68a' }
-                        if (val === 'Next week') return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }
-                        if (val === 'Next month') return { bg: '#dcfce7', text: '#166534', border: '#bbf7d0' }
-                        return { bg: '#f3f4f6', text: '#4b5563', border: '#e5e7eb' }
-                      }
-                      const restockStyle = getRestockStyle(restock)
 
-                      return (
-                        <tr key={row.id}>
-                          <td>
-                            <input type="checkbox" className="ws-table-checkbox" readOnly />
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div className="ws-table-avatar" style={{ background: getAvatarColor(row.name) }}>
-                                {getSingleLetter(row.name)}
+            {/* Expandable Filter Box */}
+            {showFilterBar && (
+              <div className="attio-filter-box">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Category:</span>
+                  <select
+                    className="attio-select"
+                    value={filterCategory}
+                    onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}
+                  >
+                    <option value="">All Categories</option>
+                    <option value="Food">Food</option>
+                    <option value="Electronics">Electronics</option>
+                    <option value="Grocery">Grocery</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Status:</span>
+                  <select
+                    className="attio-select"
+                    value={filterStatus}
+                    onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+
+                {(filterCategory || filterStatus !== 'active') && (
+                  <button 
+                    onClick={() => { setFilterCategory(''); setFilterStatus('active'); setPage(1); }}
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    Reset Filters
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* CRM Table Card Box */}
+            <div className="attio-table-card">
+              <div className="attio-table-wrap">
+                {loading ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
+                    <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
+                  </div>
+                ) : products.length === 0 ? (
+                  <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
+                    No products found.
+                  </div>
+                ) : (
+                  <table className="attio-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 28, textAlign: 'left', paddingLeft: 4 }}>
+                          <input 
+                            type="checkbox" 
+                            className="attio-chk" 
+                            checked={allSelectedOnPage}
+                            onChange={handleToggleSelectAll}
+                            title="Select all on this page"
+                          />
+                        </th>
+                        <th>PRODUCT NAME</th>
+                        <th>HSN CODE</th>
+                        <th>CATEGORY</th>
+                        <th>PRICE</th>
+                        <th>UPDATED PRICE</th>
+                        <th>STOCK</th>
+                        <th>STATUS</th>
+                        <th>NEXT RESTOCK</th>
+                        <th>BARCODE</th>
+                        <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products.map(row => {
+                        const restockOpts = ['TBD', 'In 30 mins', 'Tomorrow', 'Next week', 'Next month']
+                        const restock = row.next_restock_time || 'TBD'
+                        const isSelected = selectedProducts.some(sp => sp.id === row.id)
+
+                        return (
+                          <tr key={row.id} style={{ background: isSelected ? '#f0f5ff' : undefined }}>
+                            <td style={{ textAlign: 'left', paddingLeft: 4 }}>
+                              <input 
+                                type="checkbox" 
+                                className="attio-chk" 
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectRow(row)}
+                                title="Select product"
+                              />
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
+                                  {getSingleLetter(row.name)}
+                                </div>
+                                <span style={{ fontWeight: 535, fontSize: '0.89rem', color: '#1e293b' }}>
+                                  {row.name}
+                                </span>
                               </div>
-                              <span className="ws-table-name-text">
-                                {row.name}
+                            </td>
+                             <td>
+                               <span style={{ color: '#1e293b', fontWeight: 600, fontSize: '0.85rem' }}>
+                                 {row.hsn_code || row.sku || '10064000'}
+                               </span>
+                             </td>
+                             <td>
+                               {(() => {
+                                 const catStyle = getCategoryTagStyle(row.category)
+                                 return (
+                                   <span className="attio-category-tag" style={{ background: catStyle.bg, color: catStyle.text, border: `1px solid ${catStyle.border}`, borderRadius: 6, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>
+                                     {row.category || 'Unassigned'}
+                                   </span>
+                                 )
+                               })()}
+                              </td>
+                              <td>
+                                {(() => {
+                                  const bulkUnit = getBulkUnitDetails(row.unit)
+                                  const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
+                                  const pc = Number.parseFloat(row.price_covers || 0)
+                                  const bw = Number.parseFloat(row.bag_weight || 1)
+                                  const rawP = Number.parseFloat(row.price || 0)
+
+                                  let priceVal = rawP
+                                  if (pc > 0 && bw > 0 && pc !== bw) {
+                                    priceVal = (rawP / bw) * pc
+                                  }
+
+                                  const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                        ₹{priceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                      <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                        {subtext}
+                                      </span>
+                                    </div>
+                                  )
+                                })()}
+                              </td>
+                              <td>
+                                {(() => {
+                                  if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
+                                  const bulkUnit = getBulkUnitDetails(row.unit)
+                                  const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
+                                  const pc = Number.parseFloat(row.price_covers || 0)
+                                  const bw = Number.parseFloat(row.bag_weight || 1)
+                                  const rawUP = Number.parseFloat(row.updated_price || 0)
+
+                                  let updatedPriceVal = rawUP
+                                  if (pc > 0 && bw > 0 && pc !== bw) {
+                                    updatedPriceVal = (rawUP / bw) * pc
+                                  }
+
+                                  const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontWeight: 600, color: '#2563eb' }}>
+                                        ₹{updatedPriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                      <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                        {subtext}
+                                      </span>
+                                    </div>
+                                  )
+                                })()}
+                              </td>
+                            <td>
+                              <span className={`attio-stock-badge ${getStockBadgeClass(row.stock, row.loose_kg, row.bag_weight)}`}>
+                                {formatStockDisplay(row.stock, row.bag_weight, row.unit, row.loose_kg)}
                               </span>
-                            </div>
-                          </td>
-                          <td className="ws-td-mono">{row.sku || '—'}</td>
-                          <td>
-                            <span className="ws-pill-topic" style={{ background: catStyle.bg, color: catStyle.text, borderColor: catStyle.border }}>
-                              {row.category || 'Unassigned'}
-                            </span>
-                          </td>
-                          <td className="ws-td-price">₹{row.price}</td>
-                          <td>
-                            <span className="ws-pill-topic" style={{ background: stockStyle.bg, color: stockStyle.text, borderColor: stockStyle.border }}>
-                              Qty {row.stock}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="ws-pill-topic" style={{ background: statusStyle.bg, color: statusStyle.text, borderColor: statusStyle.border }}>
-                              {row.status}
-                            </span>
-                          </td>
-                          <td>
-                            {row.stock <= 0 ? (
-                              <select 
-                                value={restock}
-                                onChange={(e) => handleUpdateRestock(row, e.target.value)}
-                                style={{ 
-                                  appearance: 'none',
-                                  background: restockStyle.bg, 
-                                  color: restockStyle.text, 
-                                  border: `1px solid ${restockStyle.border}`,
-                                  borderRadius: '16px',
-                                  padding: '2px 8px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 500,
-                                  cursor: 'pointer',
-                                  outline: 'none'
-                                }}
-                              >
-                                {restockOpts.map(opt => (
-                                  <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span style={{ color: '#9ca3af' }}>—</span>
-                            )}
-                          </td>
-                          <td>
-                            {row.sku ? (
-                              <div onClick={() => setSelectedSku(row.sku)}>
-                                <ProductBarcode sku={row.sku} />
+                            </td>
+                            <td>
+                              <span className={`attio-status-badge ${row.status === 'active' ? 'attio-status-active' : 'attio-status-inactive'}`}>
+                                {row.status}
+                              </span>
+                            </td>
+                            <td>
+                              {((Number.parseFloat(row.stock || 0) * (Number.parseFloat(row.bag_weight || 1) > 1 ? Number.parseFloat(row.bag_weight || 1) : 1)) + Number.parseFloat(row.loose_kg || 0)) <= 0 ? (
+                                <select 
+                                  value={restock}
+                                  onChange={(e) => handleUpdateRestock(row, e.target.value)}
+                                  className="attio-select"
+                                  style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                                >
+                                  {restockOpts.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span style={{ color: '#9ca3af' }}>—</span>
+                              )}
+                            </td>
+                            <td>
+                              {row.sku ? (
+                                <div role="button" tabIndex={0} onClick={() => setSelectedSku(row.sku)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedSku(row.sku) }}>
+                                  <ProductBarcode sku={row.sku} />
+                                </div>
+                              ) : <span style={{ color: '#9ca3af' }}>—</span>}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
+                                <button 
+                                  onClick={() => setSelectedPricing(row)}
+                                  style={{
+                                    background: '#eff6ff',
+                                    border: '1px solid #bfdbfe',
+                                    color: '#2563eb',
+                                    cursor: 'pointer',
+                                    padding: '2px 8px',
+                                    borderRadius: 4,
+                                    fontSize: '0.72rem',
+                                    fontWeight: 500,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    transition: 'all 0.15s'
+                                  }}
+                                  title="View pricing details"
+                                >
+                                  <Eye size={12} /> View
+                                </button>
+                                {canDelete && (
+                                  <button 
+                                    onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
+                                    style={{
+                                      background: 'none', border: 'none', color: '#9ca3af',
+                                      cursor: 'pointer', padding: 4, borderRadius: 4,
+                                      transition: 'color 0.15s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                    onMouseLeave={(e) => e.currentTarget.style.color = '#9ca3af'}
+                                    title="Delete Product"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
                               </div>
-                            ) : '—'}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                              <button 
-                                className="ws-chat-history-delete-btn" 
-                                style={{ padding: 6 }} 
-                                onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
-                                title="Delete Product"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
 
-            {/* Pagination component outside ws-table-wrap at bottom of card */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid #f3f4f6', background: '#fff', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', marginTop: 'auto' }}>
-              <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
-                Showing <span style={{ fontWeight: 600, color: '#111827' }}>{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{Math.min(page * limit, total)}</span> of{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{total}</span> entries
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page <= 1 ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &lt;
-                </button>
-                {getPageNumbers().map((p, idx) => {
-                  if (p === '...') {
-                    return (
-                      <span key={`dots-${idx}`} style={{ color: '#9ca3af', padding: '0 8px', fontSize: '0.875rem' }}>
-                        ...
-                      </span>
-                    )
-                  }
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                        background: page === p ? '#111827' : '#fff',
-                        color: page === p ? '#fff' : '#374151',
-                        border: page === p ? '1px solid #111827' : '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      {p}
-                    </button>
-                  )
-                })}
-                <button
-                  type="button"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(page + 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page >= totalPages ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &gt;
-                </button>
-              </div>
+              {/* Table Pagination */}
+              <TablePagination
+                page={page}
+                setPage={setPage}
+                total={total}
+                limit={limit}
+                getPageNumbers={getPageNumbers}
+                totalPages={totalPages}
+              />
             </div>
           </div>
         </main>
@@ -524,6 +1074,90 @@ export default function Products() {
 
       {selectedSku && (
         <BarcodeModal sku={selectedSku} onClose={() => setSelectedSku(null)} />
+      )}
+
+      {selectedPricing && (
+        <PricingModal product={selectedPricing} onClose={() => setSelectedPricing(null)} />
+      )}
+
+      {showCompareModal && (
+        <ProductComparisonModal
+          products={selectedProducts}
+          onClose={() => setShowCompareModal(false)}
+          onRemoveProduct={handleRemoveFromCompare}
+          onClearAll={handleClearSelection}
+        />
+      )}
+
+      {/* Floating Action Pill when items are selected */}
+      {selectedProducts.length > 0 && (
+        <div className="product-compare-floating-bar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              background: '#2563eb',
+              color: '#ffffff',
+              borderRadius: '50%',
+              width: 22,
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.75rem',
+              fontWeight: 700
+            }}>
+              {selectedProducts.length}
+            </span>
+            <span style={{ fontWeight: 500 }}>
+              product{selectedProducts.length > 1 ? 's' : ''} selected
+            </span>
+          </div>
+
+          <div style={{ width: 1, height: 18, background: '#334155' }} />
+
+          {selectedProducts.length >= 2 ? (
+            <button
+              onClick={() => setShowCompareModal(true)}
+              style={{
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                padding: '6px 16px',
+                borderRadius: 20,
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.4)',
+                transition: 'all 0.15s'
+              }}
+            >
+              <ArrowLeftRight size={14} /> Compare Products
+            </button>
+          ) : (
+            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+              Select 1 more product to compare
+            </span>
+          )}
+
+          <button
+            onClick={handleClearSelection}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              textDecoration: 'underline'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#ffffff' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8' }}
+          >
+            Deselect all
+          </button>
+        </div>
       )}
 
       <ConfirmModal

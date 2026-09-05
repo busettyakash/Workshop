@@ -11,17 +11,25 @@ export const authApi = {
 
   register: async (data) => {
     const res = await apiClient.post('/auth/register', {
-      email:        normalizeEmail(data.email),
-      password:     data.password,
-      shopName:     data.shopName || data.companyName,
-      phone:        data.phone || data.mobileNumber,
-      mobileNumber: data.phone || data.mobileNumber,
-      gstin:        data.gstin,
+      email:           normalizeEmail(data.email),
+      password:        data.password,
+      firstName:       data.firstName || data.first_name,
+      lastName:        data.lastName || data.last_name,
+      first_name:      data.firstName || data.first_name,
+      last_name:       data.lastName || data.last_name,
+      shopName:        data.shopName || data.companyName,
+      companyName:     data.shopName || data.companyName,
+      phone:           data.phone || data.mobileNumber,
+      mobileNumber:    data.phone || data.mobileNumber,
+      gstin:           data.gstin,
       workspaceHandle: data.workspaceHandle,
-      billingCountry: data.billingCountry,
-      referralSource: data.referralSource,
-      usageType:    data.usageType,
-      inviteEmail:  data.inviteEmail,
+      billingCountry:  data.billingCountry,
+      referralSource:  data.referralSource,
+      usageType:       data.usageType,
+      inviteEmail:     data.inviteEmail,
+      isInvite:        data.isInvite,
+      inviteFrom:      data.inviteFrom,
+      workspace:       data.workspace,
     })
     return res.data
   },
@@ -40,9 +48,19 @@ export const authApi = {
     return res.data
   },
 
-  // For LOGIN: checks if email is registered first, then sends OTP
-  sendLoginOtp: async (email) => {
-    const res = await apiClient.post('/auth/send-login-otp', { email: normalizeEmail(email) })
+
+  // For FORGOT PASSWORD: checks if email is registered first, then sends OTP
+  sendResetOtp: async (email) => {
+    const res = await apiClient.post('/auth/send-reset-otp', { email: normalizeEmail(email) })
+    return res.data
+  },
+
+  resetPassword: async ({ email, otp, newPassword }) => {
+    const res = await apiClient.post('/auth/reset-password', {
+      email: normalizeEmail(email),
+      otp: normalizeOtp(otp),
+      newPassword
+    })
     return res.data
   },
 
@@ -51,8 +69,8 @@ export const authApi = {
     return res.data
   },
 
-  invite: async ({ email, role }) => {
-    const res = await apiClient.post('/auth/invite', { email, role })
+  invite: async ({ email, role, permissions }) => {
+    const res = await apiClient.post('/auth/invite', { email, role, permissions })
     return res.data
   },
 
@@ -63,6 +81,16 @@ export const authApi = {
 
   getMembers: async () => {
     const res = await apiClient.get('/auth/members')
+    return res.data
+  },
+
+  updateMemberPermissions: async (memberId, { role, permissions }) => {
+    const res = await apiClient.put(`/auth/members/${memberId}/permissions`, { role, permissions })
+    return res.data
+  },
+
+  deleteMember: async (memberId) => {
+    const res = await apiClient.delete(`/auth/members/${memberId}`)
     return res.data
   },
 }

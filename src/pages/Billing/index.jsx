@@ -6,18 +6,20 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import {
   Plus, Receipt, TrendingUp, Clock, CheckCircle,
   Trash2, Loader2, Check, Eye, Download, Upload,
-  FileText, Star, X, ChevronDown, Search, Filter, ArrowUpDown
+  FileText, Star, X, ChevronDown, ChevronLeft, ChevronRight, Calendar, Search, Filter, ArrowUpDown, BarChart2
 } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import TablePagination from '../../components/ui/TablePagination'
 import BillPreview from './BillPreview'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
+import { getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 const STATUS_MAP = {
-  paid:      { bg: '#dcfce7', text: '#166534', label: 'Paid' },
-  unpaid:    { bg: '#fef3c7', text: '#92400e', label: 'Pending' },
+  paid: { bg: '#dcfce7', text: '#166534', label: 'Paid' },
+  unpaid: { bg: '#fef3c7', text: '#92400e', label: 'Pending' },
   cancelled: { bg: '#fee2e2', text: '#991b1b', label: 'Cancelled' },
 }
 
@@ -30,7 +32,9 @@ function TemplateManagerModal({ onClose }) {
   const [uploading, setUploading] = useState(false)
   const [templateName, setTemplateName] = useState('')
 
-  useEffect(() => { fetchTemplates() }, [])
+  useEffect(() => {
+    fetchTemplates()
+  }, [])
 
   const fetchTemplates = async () => {
     setLoading(true)
@@ -45,13 +49,13 @@ function TemplateManagerModal({ onClose }) {
   }
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0]
+    const file = e.target.files?.[0]
     if (!file) return
-    if (!file.name.endsWith('.html') && !file.name.endsWith('.htm')) {
-      dispatch(addToast({ message: 'Only HTML files are supported', type: 'warning' }))
+    if (!file.name.endsWith('.html') && !file.name.endsWith('.htm') && !file.name.endsWith('.hbs')) {
+      dispatch(addToast({ message: 'Only HTML or HBS files are supported', type: 'warning' }))
       return
     }
-    const name = templateName.trim() || file.name.replace(/\.(html|htm)$/, '')
+    const name = templateName.trim() || file.name.replace(/\.(html|htm|hbs)$/, '')
     setUploading(true)
     try {
       const html = await file.text()
@@ -63,7 +67,7 @@ function TemplateManagerModal({ onClose }) {
       dispatch(addToast({ message: 'Failed to upload template', type: 'error' }))
     } finally {
       setUploading(false)
-      e.target.value = ''
+      if (fileRef.current) fileRef.current.value = ''
     }
   }
 
@@ -88,8 +92,8 @@ function TemplateManagerModal({ onClose }) {
   }
 
   return (
-    <div className="ws-modal-backdrop" onClick={onClose} style={{ zIndex: 1100 }}>
-      <div className="ws-modal-card" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }} style={{ zIndex: 1100 }}>
+      <div className="ws-modal-card" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
         <div className="ws-modal-header">
           <h3 className="ws-modal-title">Bill Templates</h3>
           <button className="ws-modal-close-x" onClick={onClose}><X size={16} /></button>
@@ -111,7 +115,7 @@ function TemplateManagerModal({ onClose }) {
               onChange={e => setTemplateName(e.target.value)}
               style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem', fontFamily: 'inherit', outline: 'none', marginBottom: 10, boxSizing: 'border-box' }}
             />
-            <input ref={fileRef} type="file" accept=".html,.htm" onChange={handleFileUpload} style={{ display: 'none' }} />
+            <input ref={fileRef} type="file" accept=".html,.htm,.hbs" onChange={handleFileUpload} style={{ display: 'none' }} />
             <button
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
@@ -147,7 +151,7 @@ function TemplateManagerModal({ onClose }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>{t.name}</div>
                       <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
-                        {new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {new Date(t.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })}
                         {t.is_default && <span style={{ marginLeft: 6, color: '#2563eb', fontWeight: 700 }}>· Default</span>}
                       </div>
                     </div>
@@ -188,6 +192,8 @@ export default function Billing() {
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const navigate = useNavigate()
 
+  const { canRead, canCreate, canEdit, canDelete } = usePermissions('billing')
+
   const [bills, setBills] = useState([])
   const [summary, setSummary] = useState({ revenue: 0, count: 0, pending: 0, paid: 0 })
   const [loading, setLoading] = useState(true)
@@ -200,10 +206,93 @@ export default function Billing() {
   const [limit] = useState(20) // fixed limit to remove dropdown
   const [total, setTotal] = useState(0)
 
+  const getTodayStr = () => {
+    const d = new Date()
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const todayStr = getTodayStr()
+
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState('') // '' (default), 'id_asc', 'id_desc', 'amount_asc', 'amount_desc'
   const [filterStatus, setFilterStatus] = useState('all') // default all
+  const [filterMonth, setFilterMonth] = useState('')
+  const [filterYear, setFilterYear] = useState('')
+  const [filterDate, setFilterDate] = useState(todayStr) // default to today
   const [showFilterBar, setShowFilterBar] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [showDailyBreakdown, setShowDailyBreakdown] = useState(false)
+  const [dailyStats, setDailyStats] = useState([])
+  const [dailyLoading, setDailyLoading] = useState(false)
+  const [dailyRangeMonth, setDailyRangeMonth] = useState('')
+  const [dailyRangeYear, setDailyRangeYear] = useState('')
+
+  const handlePrevDay = () => {
+    const baseDateStr = filterDate || todayStr
+    const [y, m, d] = baseDateStr.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    dt.setDate(dt.getDate() - 1)
+    const ny = dt.getFullYear()
+    const nm = String(dt.getMonth() + 1).padStart(2, '0')
+    const nd = String(dt.getDate()).padStart(2, '0')
+    setFilterDate(`${ny}-${nm}-${nd}`)
+    setPage(1)
+  }
+
+  const handleNextDay = () => {
+    const baseDateStr = filterDate || todayStr
+    const [y, m, d] = baseDateStr.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    dt.setDate(dt.getDate() + 1)
+    const ny = dt.getFullYear()
+    const nm = String(dt.getMonth() + 1).padStart(2, '0')
+    const nd = String(dt.getDate()).padStart(2, '0')
+    setFilterDate(`${ny}-${nm}-${nd}`)
+    setPage(1)
+  }
+
+  const handleSelectToday = () => {
+    setFilterDate(todayStr)
+    setPage(1)
+  }
+
+  const handleClearFilters = () => {
+    setFilterStatus('all')
+    setFilterMonth('')
+    setFilterYear('')
+    setFilterDate(todayStr) // reset to today, not all bills
+    setPage(1)
+  }
+
+  const getDateNavLabel = () => {
+    if (!filterDate || filterDate === todayStr) return 'Today'
+    try {
+      const [y, m, d] = filterDate.split('-').map(Number)
+      const dt = new Date(y, m - 1, d)
+      const isToday = filterDate === todayStr
+      return isToday ? 'Today' : dt.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
+    } catch {
+      return filterDate
+    }
+  }
+
+  const isAllSelected = bills.length > 0 && selectedIds.length === bills.length
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedIds(bills.map(b => b.id))
+    } else {
+      setSelectedIds([])
+    }
+  }
+
+  const handleSelectRow = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    )
+  }
 
   const totalPages = Math.ceil(total / limit) || 1
   const getPageNumbers = () => {
@@ -223,29 +312,68 @@ export default function Billing() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Billing'))
     fetchData(page)
     // Load shop info from sessionStorage
     try {
       const u = JSON.parse(sessionStorage.getItem('ws_user') || '{}')
       setShopInfo({ shopName: u.shopName || '', gstin: u.gstin || '', phone: u.phone || '', address: u.address || '' })
-    } catch {}
-  }, [dispatch, page, search, sort, filterStatus])
+    } catch { }
+  }, [dispatch, page, search, sort, filterStatus, filterMonth, filterYear, filterDate, canRead])
+
+  useEffect(() => {
+    if (showDailyBreakdown) fetchDailyStats()
+  }, [showDailyBreakdown, dailyRangeMonth, dailyRangeYear])
+
+  const fetchDailyStats = async () => {
+    setDailyLoading(true)
+    try {
+      const p = new URLSearchParams()
+      if (dailyRangeMonth) p.set('month', dailyRangeMonth)
+      if (dailyRangeYear) p.set('year', dailyRangeYear)
+      const res = await api.get(`/billing/daily-stats?${p.toString()}`)
+      setDailyStats(res.data || [])
+    } catch {
+      dispatch(addToast({ message: 'Failed to load daily billing stats', type: 'error' }))
+    } finally {
+      setDailyLoading(false)
+    }
+  }
 
   const fetchData = async (currentPage = page) => {
     setLoading(true)
     try {
       const statusParam = filterStatus === 'all' ? '' : filterStatus
+      const queryParams = new URLSearchParams()
+      queryParams.set('page', currentPage)
+      queryParams.set('limit', limit)
+      if (statusParam) queryParams.set('status', statusParam)
+      if (search.trim()) queryParams.set('search', search.trim())
+      if (sort) queryParams.set('sort', sort)
+      if (filterDate) queryParams.set('date', filterDate)
+      if (filterMonth) queryParams.set('month', filterMonth)
+      if (filterYear) queryParams.set('year', filterYear)
+
+      const summaryParams = new URLSearchParams()
+      if (filterDate) summaryParams.set('date', filterDate)
+      if (filterMonth) summaryParams.set('month', filterMonth)
+      if (filterYear) summaryParams.set('year', filterYear)
+      if (search.trim()) summaryParams.set('search', search.trim())
+
       const [billsRes, summaryRes] = await Promise.all([
-        api.get(`/billing?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}&status=${statusParam}`),
-        api.get('/billing/summary')
+        api.get(`/billing?${queryParams.toString()}`),
+        api.get(`/billing/summary?${summaryParams.toString()}`)
       ])
       setBills(billsRes.data?.data || [])
       setTotal(billsRes.data?.total || 0)
       let rev = 0, totalCount = 0, pendingCount = 0, paidCount = 0
       summaryRes.data?.forEach(s => {
-        const val = parseFloat(s.total) || 0
-        const cnt = parseInt(s.count) || 0
+        const val = Number.parseFloat(s.total) || 0
+        const cnt = Number.parseInt(s.count) || 0
         totalCount += cnt
         if (s.status === 'paid') { rev = val; paidCount = cnt }
         else if (s.status === 'unpaid') { pendingCount = cnt }
@@ -278,11 +406,12 @@ export default function Billing() {
   }
 
   const handleConfirmDelete = async () => {
-    const { id } = confirmDelete
+    const { id, displayId } = confirmDelete
     setConfirmDelete({ isOpen: false, id: null, displayId: '' })
     try {
-      await api.delete(`/billing/${id}`)
-      dispatch(addToast({ message: 'Bill deleted', type: 'success' }))
+      const res = await api.delete(`/billing/${id}`)
+      const deletedNum = res.data?.bill_number || displayId || `INV-${String(id).padStart(5, '0')}`
+      dispatch(addToast({ message: `Invoice ${deletedNum} deleted successfully`, type: 'success' }))
       fetchData()
     } catch {
       dispatch(addToast({ message: 'Failed to delete bill', type: 'error' }))
@@ -290,12 +419,20 @@ export default function Billing() {
   }
 
   const formatCurrency = (val) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val)
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.parseFloat(val) || 0)
 
   const formatDate = (d) => {
     if (!d) return '—'
-    return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    let s = String(d).trim()
+    if (!s.endsWith('Z') && !/[+-]\d{2}(:?\d{2})?$/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+      s = s.replace(' ', 'T') + 'Z'
+    }
+    const parsed = new Date(s)
+    const validDate = Number.isNaN(parsed.getTime()) ? new Date(d) : parsed
+    return validDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
   }
+
+  const hasActiveFilters = filterStatus !== 'all' || filterMonth !== '' || filterYear !== '' || (filterDate !== '' && filterDate !== todayStr)
 
   return (
     <div className="ws-dash-layout">
@@ -303,308 +440,548 @@ export default function Billing() {
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
         <main className="ws-dash-body">
-          <div className="ws-dash-greeting">Billing</div>
-
-          {/* Stats */}
-          <div className="ws-stats-grid" style={{ marginBottom: 28 }}>
-            {[
-              { label: 'Total Revenue',  value: formatCurrency(summary.revenue), icon: <TrendingUp size={16} color="#059669" />, change: 'Paid' },
-              { label: 'Bills Generated', value: String(summary.count),          icon: <Receipt size={16} color="#3d68f5" />,    change: 'Invoices' },
-              { label: 'Pending Bills',   value: String(summary.pending),        icon: <Clock size={16} color="#d97706" />,      change: 'Action needed' },
-              { label: 'Paid Bills',      value: String(summary.paid),           icon: <CheckCircle size={16} color="#059669" />,change: 'Completed' },
-            ].map(s => (
-              <div className="ws-stat-card" key={s.label}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <div className="ws-stat-card-label">{s.label}</div>
-                  {s.icon}
-                </div>
-                <div className="ws-stat-card-value">{s.value}</div>
-                <div className="ws-stat-card-change up">{s.change}</div>
+          <div className="attio-products-container">
+            {/* Top Toolbar */}
+            <div className="ws-unified-page-header">
+              <div className="ws-unified-header-left" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="ws-unified-header-title">Billing</span>
+                <span className="ws-unified-header-badge">{total} invoices</span>
+                {filterDate && (
+                  <span className="attio-badge attio-badge-blue" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                    {filterDate === todayStr ? 'Today' : formatDate(filterDate)}
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
-
-          {/* Bills Table */}
-          <div className="ws-table-section" style={{ minHeight: 'calc(100vh - 240px)', display: 'flex', flexDirection: 'column' }}>
-            <div className="ws-table-header" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h2 className="ws-table-title">Recent Bills</h2>
-                  <p className="ws-table-sub">GST-compliant invoices</p>
+              <div className="ws-unified-header-actions">
+                {/* Search box */}
+                <div className="attio-search-box">
+                  <Search size={14} className="attio-search-icon" />
+                  <input
+                    type="text"
+                    className="attio-input-search"
+                    placeholder="Search bills..."
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                  />
                 </div>
-                <div className="ws-table-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {/* Search box */}
-                  <div style={{ position: 'relative' }}>
-                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                    <input
-                      type="text"
-                      placeholder="Search bills..."
-                      value={search}
-                      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                      style={{
-                        padding: '8px 12px 8px 30px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        fontSize: '0.8125rem',
-                        outline: 'none',
-                        width: '180px',
-                        background: '#fff',
-                        color: '#374151'
-                      }}
-                    />
-                  </div>
 
-                  {/* Sort button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => {
-                      setSort(prev => prev === 'id_asc' ? 'id_desc' : prev === 'id_desc' ? 'amount_asc' : prev === 'amount_asc' ? 'amount_desc' : prev === 'amount_desc' ? '' : 'id_asc');
-                      setPage(1);
-                    }}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: sort ? '#111827' : '#d1d5db',
-                      background: sort ? '#f3f4f6' : '#fff',
-                      fontWeight: sort ? 600 : 500
-                    }}
-                  >
-                    <ArrowUpDown size={13} /> 
-                    Sort {sort === 'id_asc' ? 'ID Asc' : sort === 'id_desc' ? 'ID Desc' : sort === 'amount_asc' ? 'Min Amt' : sort === 'amount_desc' ? 'Max Amt' : ''}
-                  </button>
-
-                  {/* Filter button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => setShowFilterBar(prev => !prev)}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: showFilterBar || filterStatus !== 'all' ? '#111827' : '#d1d5db',
-                      background: showFilterBar || filterStatus !== 'all' ? '#f3f4f6' : '#fff',
-                      fontWeight: showFilterBar || filterStatus !== 'all' ? 600 : 500
-                    }}
-                  >
-                    <Filter size={13} /> Filter
-                  </button>
-
+                {/* < Today / Date > Date Navigator */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '2px', gap: 2 }}>
                   <button
-                    className="ws-table-btn"
-                    onClick={() => setShowTemplates(true)}
-                    title="Manage bill templates"
-                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    type="button"
+                    className="attio-btn"
+                    onClick={handlePrevDay}
+                    title="Previous Day"
+                    style={{ height: 26, width: 26, padding: 0, border: 'none', background: 'transparent', justifyContent: 'center', cursor: 'pointer' }}
                   >
-                    <FileText size={13} /> Templates
+                    <ChevronLeft size={14} />
                   </button>
-                  <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/billing/add')}>
-                    <Plus size={13} /> New Bill
+                  <button
+                    type="button"
+                    className="attio-btn"
+                    onClick={handleSelectToday}
+                    title="Click to reset to Today"
+                    style={{
+                      height: 26,
+                      padding: '0 10px',
+                      border: 'none',
+                      background: (filterDate === todayStr || !filterDate) ? '#eff6ff' : '#f8fafc',
+                      color: (filterDate === todayStr || !filterDate) ? '#2563eb' : '#0f172a',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {getDateNavLabel()}
                   </button>
-                </div>
-              </div>
-
-              {/* Expandable Filter Bar */}
-              {showFilterBar && (
-                <div style={{ display: 'flex', gap: 12, padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#4b5563' }}>
-                    <span>Status:</span>
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
-                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none', background: '#fff', fontSize: '0.8125rem', cursor: 'pointer' }}
+                  <button
+                    type="button"
+                    className="attio-btn"
+                    onClick={handleNextDay}
+                    title="Next Day"
+                    style={{ height: 26, width: 26, padding: 0, border: 'none', background: 'transparent', justifyContent: 'center', cursor: 'pointer' }}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                  {filterDate && filterDate !== todayStr && (
+                    <button
+                      type="button"
+                      onClick={handleSelectToday}
+                      title="Reset to Today"
+                      style={{
+                        height: 22,
+                        padding: '0 6px',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: 4,
+                        background: '#eff6ff',
+                        color: '#2563eb',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        marginLeft: 2
+                      }}
                     >
-                      <option value="all">All Invoices</option>
-                      <option value="paid">Paid</option>
-                      <option value="unpaid">Pending</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-
-                  {filterStatus !== 'all' && (
-                    <button 
-                      onClick={() => { setFilterStatus('all'); setPage(1); }}
-                      style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#3d68f5', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
-                    >
-                      Reset Filters
+                      Today
                     </button>
                   )}
                 </div>
-              )}
+
+                {/* Sort button */}
+                <button
+                  className="attio-btn"
+                  onClick={() => {
+                    setSort(prev => prev === 'id_asc' ? 'id_desc' : prev === 'id_desc' ? 'amount_asc' : prev === 'amount_asc' ? 'amount_desc' : prev === 'amount_desc' ? '' : 'id_asc');
+                    setPage(1);
+                  }}
+                  style={{
+                    background: sort ? '#f1f5f9' : '#ffffff',
+                    borderColor: sort ? '#0f172a' : '#cbd5e1',
+                    fontWeight: sort ? 600 : 500
+                  }}
+                >
+                  <ArrowUpDown size={13} />
+                  Sort {sort === 'id_asc' ? 'ID Asc' : sort === 'id_desc' ? 'ID Desc' : sort === 'amount_asc' ? 'Min Amt' : sort === 'amount_desc' ? 'Max Amt' : ''}
+                </button>
+
+                {/* Filter button */}
+                <button
+                  className="attio-btn"
+                  onClick={() => setShowFilterBar(prev => !prev)}
+                  style={{
+                    background: showFilterBar || hasActiveFilters ? '#f1f5f9' : '#ffffff',
+                    borderColor: showFilterBar || hasActiveFilters ? '#0f172a' : '#cbd5e1',
+                    fontWeight: showFilterBar || hasActiveFilters ? 600 : 500
+                  }}
+                >
+                  <Filter size={13} /> Filter
+                </button>
+
+                <button
+                  className="attio-btn"
+                  onClick={() => setShowTemplates(true)}
+                  title="Manage bill templates"
+                >
+                  <FileText size={13} /> Templates
+                </button>
+
+                <button
+                  className="attio-btn"
+                  onClick={() => setShowDailyBreakdown(prev => !prev)}
+                  title="View bills per day breakdown"
+                  style={{
+                    background: showDailyBreakdown ? '#f1f5f9' : '#ffffff',
+                    borderColor: showDailyBreakdown ? '#0f172a' : '#cbd5e1',
+                    fontWeight: showDailyBreakdown ? 600 : 500
+                  }}
+                >
+                  <BarChart2 size={13} /> Daily
+                </button>
+
+                {canCreate && (
+                  <button className="attio-btn attio-btn-primary" onClick={() => navigate('/billing/new')}>
+                    <Plus size={13} style={{ marginRight: '4px' }} /> New Bill
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="ws-table-wrap" style={{ flex: 1 }}>
-              {loading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-                  <Loader2 size={24} className="ws-chat-loader-spin" />
+            {/* Stats */}
+            <div className="ws-stats-grid" style={{ marginBottom: 20 }}>
+              {[
+                { label: 'Total Revenue', value: formatCurrency(summary.revenue), icon: <TrendingUp size={16} color="#059669" />, change: 'Paid' },
+                { label: 'Bills Generated', value: String(summary.count), icon: <Receipt size={16} color="#3d68f5" />, change: 'Invoices' },
+                { label: 'Pending Bills', value: String(summary.pending), icon: <Clock size={16} color="#d97706" />, change: 'Action needed' },
+                { label: 'Paid Bills', value: String(summary.paid), icon: <CheckCircle size={16} color="#059669" />, change: 'Completed' },
+              ].map(s => (
+                <div className="ws-stat-card" key={s.label}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div className="ws-stat-card-label">{s.label}</div>
+                    {s.icon}
+                  </div>
+                  <div className="ws-stat-card-value">{s.value}</div>
+                  <div className="ws-stat-card-change up">{s.change}</div>
                 </div>
-              ) : bills.length === 0 ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
-                  No bills generated yet. Click "New Bill" to create one.
+              ))}
+            </div>
+
+            {/* Daily Breakdown Panel */}
+            {showDailyBreakdown && (
+              <div style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: 10,
+                padding: '16px 20px',
+                marginBottom: 16
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <BarChart2 size={15} color="#3d68f5" />
+                    <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#0f172a' }}>Bills Per Day</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: 12 }}>
+                      {dailyStats.length} days
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <select
+                      className="attio-select"
+                      value={dailyRangeMonth}
+                      onChange={e => setDailyRangeMonth(e.target.value)}
+                      style={{ fontSize: '0.78rem', padding: '3px 8px' }}
+                    >
+                      <option value="">All Months</option>
+                      {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m,i) => (
+                        <option key={i+1} value={i+1}>{m}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="attio-select"
+                      value={dailyRangeYear}
+                      onChange={e => setDailyRangeYear(e.target.value)}
+                      style={{ fontSize: '0.78rem', padding: '3px 8px' }}
+                    >
+                      <option value="">Last 30 Days</option>
+                      {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <button
+                      className="attio-btn"
+                      onClick={fetchDailyStats}
+                      style={{ fontSize: '0.78rem', padding: '3px 10px' }}
+                      disabled={dailyLoading}
+                    >
+                      {dailyLoading ? 'Loading…' : 'Refresh'}
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <table className="ws-table-styled">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 40 }}><input type="checkbox" className="ws-table-checkbox" readOnly /></th>
-                      <th>Invoice ID</th>
-                      <th>Customer</th>
-                      <th>Total</th>
-                      <th>Due Date</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bills.map(bill => {
-                      const name = bill.customer_name || 'General Customer'
-                      const colors = getPillStyle(bill.status === 'paid' ? 'Paid' : 'Pending')
-                      return (
-                        <tr key={bill.id}>
-                          <td><input type="checkbox" className="ws-table-checkbox" readOnly /></td>
-                          <td className="ws-td-mono">INV-{String(bill.id).padStart(3, '0')}</td>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div className="ws-table-avatar" style={{ background: getAvatarColor(name) }}>
-                                {getSingleLetter(name)}
+                {dailyLoading ? (
+                  <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', fontSize: '0.82rem' }}>Loading…</div>
+                ) : dailyStats.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', fontSize: '0.82rem' }}>No billing data found for selected period.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ textAlign: 'left', padding: '7px 12px', color: '#64748b', fontWeight: 600 }}>Date</th>
+                          <th style={{ textAlign: 'center', padding: '7px 12px', color: '#64748b', fontWeight: 600 }}>Bills</th>
+                          <th style={{ textAlign: 'right', padding: '7px 12px', color: '#64748b', fontWeight: 600 }}>Total Revenue</th>
+                          <th style={{ textAlign: 'center', padding: '7px 12px', color: '#059669', fontWeight: 600 }}>Paid</th>
+                          <th style={{ textAlign: 'right', padding: '7px 12px', color: '#059669', fontWeight: 600 }}>Paid Revenue</th>
+                          <th style={{ textAlign: 'center', padding: '7px 12px', color: '#d97706', fontWeight: 600 }}>Pending</th>
+                          <th style={{ textAlign: 'right', padding: '7px 12px', color: '#d97706', fontWeight: 600 }}>Pending Revenue</th>
+                          <th style={{ textAlign: 'center', padding: '7px 12px', color: '#64748b', fontWeight: 600 }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dailyStats.map((row, i) => {
+                          const isToday = row.day === todayStr
+                          return (
+                            <tr
+                              key={row.day}
+                              style={{
+                                borderBottom: '1px solid #f1f5f9',
+                                background: isToday ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#fafafa',
+                                transition: 'background 0.15s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                              onMouseLeave={e => e.currentTarget.style.background = isToday ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#fafafa'}
+                            >
+                              <td style={{ padding: '8px 12px', fontWeight: isToday ? 700 : 500, color: isToday ? '#2563eb' : '#0f172a' }}>
+                                {isToday ? '📅 Today' : new Date(row.day + 'T00:00:00').toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', weekday: 'short' })}
+                              </td>
+                              <td style={{ textAlign: 'center', padding: '8px 12px' }}>
+                                <span style={{ background: '#e0e7ff', color: '#3730a3', borderRadius: 12, padding: '2px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
+                                  {row.total_bills}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600, color: '#0f172a' }}>{formatCurrency(Number.parseFloat(row.total_revenue))}</td>
+                              <td style={{ textAlign: 'center', padding: '8px 12px', color: '#059669', fontWeight: 600 }}>{row.paid_count}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', color: '#059669' }}>{formatCurrency(Number.parseFloat(row.paid_revenue))}</td>
+                              <td style={{ textAlign: 'center', padding: '8px 12px', color: '#d97706', fontWeight: 600 }}>{row.pending_count}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 12px', color: '#d97706' }}>{formatCurrency(Number.parseFloat(row.pending_revenue))}</td>
+                              <td style={{ textAlign: 'center', padding: '8px 12px' }}>
+                                <button
+                                  className="attio-btn"
+                                  style={{ fontSize: '0.72rem', padding: '2px 10px' }}
+                                  onClick={() => { setFilterDate(row.day); setFilterMonth(''); setFilterYear(''); setPage(1); setShowDailyBreakdown(false); }}
+                                >
+                                  View Bills
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Expandable Filter Box */}
+            {showFilterBar && (
+              <div className="attio-filter-box" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                {/* Status Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Status:</span>
+                  <select
+                    className="attio-select"
+                    value={filterStatus}
+                    onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+                  >
+                    <option value="all">All Invoices</option>
+                    <option value="paid">Paid</option>
+                    <option value="unpaid">Pending</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                {/* Month Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Month:</span>
+                  <select
+                    className="attio-select"
+                    value={filterMonth}
+                    onChange={(e) => { setFilterMonth(e.target.value); setFilterDate(''); setPage(1); }}
+                  >
+                    <option value="">All Months</option>
+                    <option value="1">January</option>
+                    <option value="2">February</option>
+                    <option value="3">March</option>
+                    <option value="4">April</option>
+                    <option value="5">May</option>
+                    <option value="6">June</option>
+                    <option value="7">July</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">October</option>
+                    <option value="11">November</option>
+                    <option value="12">December</option>
+                  </select>
+                </div>
+
+                {/* Year Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Year:</span>
+                  <select
+                    className="attio-select"
+                    value={filterYear}
+                    onChange={(e) => { setFilterYear(e.target.value); setFilterDate(''); setPage(1); }}
+                  >
+                    <option value="">All Years</option>
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                    <option value="2023">2023</option>
+                    <option value="2022">2022</option>
+                  </select>
+                </div>
+
+                {/* OR divider */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8',
+                    background: '#f1f5f9', border: '1px solid #e2e8f0',
+                    borderRadius: 20, padding: '2px 8px', letterSpacing: 1
+                  }}>OR</span>
+                </div>
+
+                {/* Specific Date Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Date:</span>
+                  <input
+                    type="date"
+                    className="attio-select"
+                    style={{
+                      height: 32,
+                      padding: '4px 10px',
+                      fontSize: '0.8125rem',
+                      borderRadius: 6,
+                      border: `1px solid ${filterDate ? '#3d68f5' : '#d1d5db'}`,
+                      background: filterDate ? '#eff6ff' : '#ffffff',
+                      color: '#111827',
+                      fontFamily: 'inherit',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                    value={filterDate}
+                    onChange={(e) => { setFilterDate(e.target.value); setFilterMonth(''); setFilterYear(''); setPage(1); }}
+                  />
+                  {filterDate && (
+                    <button
+                      onClick={() => { setFilterDate(''); setPage(1); }}
+                      title="Clear date filter"
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem', padding: '0 2px', lineHeight: 1 }}
+                    >✕</button>
+                  )}
+                </div>
+
+                {/* Reset Filters */}
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleClearFilters}
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Reset Filters
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Table Card Shell */}
+            <div className="attio-table-card">
+
+              <div className="attio-table-wrap" style={{ flex: 1 }}>
+                {loading ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                    <Loader2 size={24} className="ws-chat-loader-spin" />
+                  </div>
+                ) : bills.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
+                    No bills generated yet. Click "New Bill" to create one.
+                  </div>
+                ) : (
+                  <table className="attio-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 28, textAlign: 'left', paddingLeft: 4 }}>
+                          <input
+                            type="checkbox"
+                            className="attio-chk"
+                            checked={isAllSelected}
+                            onChange={handleSelectAll}
+                          />
+                        </th>
+                        <th>INVOICE ID</th>
+                        <th>QUOTE / ORDER #</th>
+                        <th>CUSTOMER</th>
+                        <th>CREATED BY</th>
+                        <th>TOTAL</th>
+                        <th>INVOICE DATE</th>
+                        <th>DUE DATE</th>
+                        <th>STATUS</th>
+                        <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bills.map(bill => {
+                        const name = bill.customer_name || 'General Customer'
+                        const colors = getPillStyle(bill.status === 'paid' ? 'Paid' : 'Pending')
+                        const isRowSelected = selectedIds.includes(bill.id)
+                        const invNum = bill.bill_number || (bill.id ? `INV-${String(bill.id).padStart(5, '0')}` : '—')
+
+                        const orderMatch = bill.order_number || (bill.notes && (bill.notes.match(/ORD-\w+/i)?.[0]))
+                        const quoteMatch = bill.notes && (bill.notes.match(/QT-\w+/i)?.[0])
+
+                        return (
+                          <tr key={bill.id} style={{ background: isRowSelected ? '#f0f5ff' : undefined }}>
+                            <td style={{ textAlign: 'left', paddingLeft: 4 }}>
+                              <input
+                                type="checkbox"
+                                className="attio-chk"
+                                checked={isRowSelected}
+                                onChange={() => handleSelectRow(bill.id)}
+                              />
+                            </td>
+                            <td className="ws-td-mono" style={{ fontWeight: 700, color: '#1e293b' }}>{invNum}</td>
+                            <td>
+                              {orderMatch ? (
+                                <span style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                  {orderMatch}
+                                </span>
+                              ) : quoteMatch ? (
+                                <span style={{ color: '#475569', fontWeight: 600, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                  {quoteMatch}
+                                </span>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
+                                  Direct Bill
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div className="attio-avatar" style={{ background: getAvatarColor(name) }}>
+                                  {getSingleLetter(name)}
+                                </div>
+                                <span className="ws-table-name-text">{name}</span>
                               </div>
-                              <span className="ws-table-name-text">{name}</span>
-                            </div>
-                          </td>
-                          <td className="ws-td-price">{formatCurrency(bill.amount)}</td>
-                          <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.due_date)}</td>
-                          <td>
-                            <span className="ws-pill-topic" style={{ background: colors.bg, color: colors.text, borderColor: colors.border }}>
-                              {bill.status === 'paid' ? 'Paid' : 'Pending'}
-                            </span>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                              {/* Preview */}
-                              <button
-                                className="ws-chat-history-delete-btn"
-                                style={{ color: '#3d68f5', padding: 6, backgroundColor: '#eff6ff' }}
-                                onClick={() => handlePreview(bill)}
-                                title="Preview Invoice"
-                              >
-                                <Eye size={13} />
-                              </button>
-                              {/* Mark Paid */}
-                              {bill.status === 'unpaid' && (
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                <span style={{ fontWeight: 600, fontSize: '0.80rem', color: '#1e293b' }}>
+                                  {bill.created_by_name || 'Admin'}
+                                </span>
+                                {(bill.created_by_name || 'Admin').toLowerCase().trim() !== (bill.created_by_role || 'Admin').toLowerCase().trim() && (
+                                  <span style={{
+                                    fontSize: '0.70rem',
+                                    fontWeight: 500,
+                                    color: bill.created_by_role === 'Member' ? '#2563eb' : '#64748b'
+                                  }}>
+                                    ({bill.created_by_role || 'Admin'})
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="ws-td-price">{formatCurrency(bill.amount)}</td>
+                            <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.created_at)}</td>
+                            <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.due_date)}</td>
+                            <td>
+                              <span className="ws-pill-topic" style={{ background: colors.bg, color: colors.text, borderColor: colors.border }}>
+                                {bill.status === 'paid' ? 'Paid' : 'Pending'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                                {/* Preview */}
                                 <button
                                   className="ws-chat-history-delete-btn"
-                                  style={{ color: '#10b981', padding: 6, backgroundColor: '#ecfdf5' }}
-                                  onClick={() => handleMarkPaid(bill.id)}
-                                  title="Mark as Paid"
+                                  style={{ color: '#3d68f5', padding: 6, backgroundColor: '#eff6ff' }}
+                                  onClick={() => handlePreview(bill)}
+                                  title="Preview Invoice"
                                 >
-                                  <Check size={13} />
+                                  <Eye size={13} />
                                 </button>
-                              )}
-                              {/* Delete */}
-                              <button
-                                className="ws-chat-history-delete-btn"
-                                style={{ padding: 6 }}
-                                onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: 'INV-' + String(bill.id).padStart(3, '0') })}
-                                title="Delete Bill"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                                {/* Mark Paid */}
+                                {canEdit && bill.status === 'unpaid' && (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ color: '#10b981', padding: 6, backgroundColor: '#ecfdf5' }}
+                                    onClick={() => handleMarkPaid(bill.id)}
+                                    title="Mark as Paid"
+                                  >
+                                    <Check size={13} />
+                                  </button>
+                                )}
+                                {/* Delete */}
+                                {canDelete && (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ padding: 6 }}
+                                    onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: bill.bill_number || `INV-${String(bill.id).padStart(5, '0')}` })}
+                                    title="Delete Bill"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
 
-            {/* Pagination component outside ws-table-wrap at bottom of card */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid #f3f4f6', background: '#fff', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', marginTop: 'auto' }}>
-              <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
-                Showing <span style={{ fontWeight: 600, color: '#111827' }}>{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{Math.min(page * limit, total)}</span> of{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{total}</span> entries
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page <= 1 ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &lt;
-                </button>
-                {getPageNumbers().map((p, idx) => {
-                  if (p === '...') {
-                    return (
-                      <span key={`dots-${idx}`} style={{ color: '#9ca3af', padding: '0 8px', fontSize: '0.875rem' }}>
-                        ...
-                      </span>
-                    )
-                  }
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                        background: page === p ? '#111827' : '#fff',
-                        color: page === p ? '#fff' : '#374151',
-                        border: page === p ? '1px solid #111827' : '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      {p}
-                    </button>
-                  )
-                })}
-                <button
-                  type="button"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(page + 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page >= totalPages ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &gt;
-                </button>
-              </div>
+              <TablePagination
+                page={page}
+                setPage={setPage}
+                total={total}
+                limit={limit}
+                getPageNumbers={getPageNumbers}
+                totalPages={totalPages}
+              />
             </div>
           </div>
         </main>
@@ -614,6 +991,7 @@ export default function Billing() {
       {previewBill && (
         <BillPreview
           bill={previewBill}
+          type="invoice"
           shopName={shopInfo.shopName}
           shopGstin={shopInfo.gstin}
           shopPhone={shopInfo.phone}

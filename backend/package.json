@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@insforge/sdk": "latest",
+    "@sparticuz/chromium": "^148.0.0",
     "@upstash/qstash": "^2.11.1",
     "@upstash/redis": "^1.38.0",
     "cors": "^2.8.6",
@@ -23,17 +24,26 @@
     "imapflow": "^1.4.7",
     "jsonwebtoken": "^9.0.3",
     "mailparser": "^3.9.14",
-    "nodemailer": "^9.0.1",
+    "nodemailer": "^9.0.3",
+    "pdfkit": "^0.19.1",
     "pg": "^8.12.0",
+    "puppeteer": "^25.4.0",
+    "puppeteer-core": "^25.5.0",
     "resend": "^6.12.3"
   },
   "devDependencies": {
     "eslint": "^9.39.5",
+    "eslint-plugin-sonarjs": "^4.2.0",
     "globals": "^17.7.0"
   },
   "overrides": {
     "qs": "6.15.2",
-    "ws": "8.21.0"
+    "ws": "8.21.0",
+    "brace-expansion": "^2.0.1",
+    "ip-address": "^10.4.0",
+    "socket.io-parser": "^4.2.7",
+    "body-parser": "^1.20.3",
+    "deepmerge-ts": "^8.0.0"
   },
   "engines": {
     "node": ">=18.x"

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import WorkshopLogo from '../../components/WorkshopLogo'
 import HeroSection from './HeroSection'
 import AutomateSection from './AutomateSection'

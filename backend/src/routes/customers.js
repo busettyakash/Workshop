@@ -7,27 +7,69 @@ router.use(requireAuth)
 
 
 
+import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
+
 /* GET /api/customers */
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
-  const { page = 1, limit = 20, search } = req.query
-  const offset = (page - 1) * limit
+  const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
+  const { search } = req.query
+
   const params = [userId]
   const conditions = ['user_id = $1']
   if (search) {
     params.push(`%${search}%`)
     conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length} OR phone ILIKE $${params.length})`)
   }
-  const where = `WHERE ${conditions.join(' AND ')}`
-  params.push(limit, offset)
+
   try {
+    if (cursor) {
+      if (cursor.created_at && cursor.id) {
+        params.push(cursor.created_at, cursor.id)
+        conditions.push(`(created_at, id) < ($${params.length - 1}, $${params.length})`)
+      }
+      const where = `WHERE ${conditions.join(' AND ')}`
+      params.push(limit + 1)
+      const { rows } = await query(
+        `SELECT * FROM customers ${where} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
+        params
+      )
+      const hasNextPage = rows.length > limit
+      if (hasNextPage) rows.pop()
+      const nextCursor = (hasNextPage && rows.length > 0)
+        ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
+        : null
+
+      return res.json({ data: rows, limit, hasNextPage, nextCursor })
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    const count = await query(`SELECT COUNT(*) FROM customers ${where}`, params)
+    const total = Number.parseInt(count.rows[0].count, 10) || 0
+    const totalPages = Math.ceil(total / limit) || 1
+
+    params.push(limit, offset)
     const { rows } = await query(
-      `SELECT * FROM customers ${where} ORDER BY created_at DESC
+      `SELECT * FROM customers ${where} ORDER BY created_at DESC, id DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
-    const count = await query(`SELECT COUNT(*) FROM customers ${where}`, params.slice(0, -2))
-    res.json({ data: rows, total: parseInt(count.rows[0].count) })
+
+    const hasNextPage = page < totalPages
+    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+    const nextCursor = (hasNextPage && lastRow)
+      ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
+      : null
+
+    res.json({
+      data: rows,
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNextPage,
+      nextCursor
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

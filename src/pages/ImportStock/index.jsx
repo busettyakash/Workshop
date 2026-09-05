@@ -1,26 +1,205 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown } from 'lucide-react'
-import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
+import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown, Eye, FileText } from 'lucide-react'
+import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
+import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
-
-// Form component moved to a separate page
-
-import { useNavigate } from 'react-router-dom'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import TablePagination from '../../components/ui/TablePagination'
+import { getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
+
+function PricingModal({ product, onClose }) {
+  const [history, setHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
+
+  const targetId = product?.product_id || product?.id
+  const bulkUnit = getBulkUnitDetails(product?.unit)
+  const bagWeight = Number.parseFloat(product?.bag_weight || 1)
+
+  const calcBagPrice = (rawVal) => {
+    const p = Number.parseFloat(rawVal || 0)
+    if (p <= 0) return 0
+    return p
+  }
+
+  const basePriceVal = calcBagPrice(product?.price)
+  const activeBagPrice = product?.updated_price ? calcBagPrice(product.updated_price) : basePriceVal
+
+  const unitPrice = (bagWeight > 0 ? (activeBagPrice / bagWeight) : activeBagPrice).toFixed(2)
+  const updatedDateStr = product?.updated_price_date ? String(product.updated_price_date).split('T')[0] : ''
+
+  useEffect(() => {
+    let isMounted = true
+    if (!targetId) {
+      setLoadingHistory(false)
+      return
+    }
+    api.get(`/products/${targetId}/price-history`)
+      .then(res => {
+        if (isMounted) setHistory(res.data || [])
+      })
+      .catch(() => {
+        if (isMounted) {
+          const defaultItems = []
+          if (product?.updated_price) {
+            defaultItems.push({
+              id: 'h2',
+              old_price: product.price,
+              new_price: product.updated_price,
+              effective_date: updatedDateStr || new Date().toISOString().split('T')[0],
+              notes: 'Updated Price'
+            })
+          }
+          if (product?.price) {
+            defaultItems.push({
+              id: 'h1',
+              old_price: null,
+              new_price: product.price,
+              effective_date: product.created_at ? String(product.created_at).split('T')[0] : new Date().toISOString().split('T')[0],
+              notes: 'Initial Base Price'
+            })
+          }
+          setHistory(defaultItems)
+        }
+      })
+      .finally(() => {
+        if (isMounted) setLoadingHistory(false)
+      })
+    return () => { isMounted = false }
+  }, [targetId])
+
+  if (!product) return null
+
+  return (
+    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <div className="ws-modal-header">
+          <div>
+            <h3 className="ws-modal-title" style={{ margin: 0 }}>Pricing & Price History</h3>
+            <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#64748b' }}>{product.name} {product.hsn_code || product.sku ? `(HSN: ${product.hsn_code || product.sku})` : ''}</p>
+          </div>
+          <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="ws-modal-body" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Current Pricing Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price {bagWeight > 1 ? `(${bagWeight} ${bulkUnit?.short || product.unit || 'kgs'})` : ''}</span>
+              <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+                ₹{basePriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
+              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price {bagWeight > 1 ? `(${bagWeight} ${bulkUnit?.short || product.unit || 'kgs'})` : ''}</span>
+              <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
+                ₹{activeBagPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+
+          {bulkUnit && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Package Breakdown: {bulkUnit.name} ({bagWeight}{bulkUnit.short})</span>
+              </div>
+              <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#2563eb' }}>
+                ₹{Number.parseFloat(unitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
+              </span>
+            </div>
+          )}
+
+          {/* Price History Timeline */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+              <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>Price History Log</h4>
+              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{history.length} record{history.length === 1 ? '' : 's'}</span>
+            </div>
+
+            {loadingHistory ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '0.8125rem' }}>Loading price history...</div>
+            ) : history.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '0.8125rem' }}>No historical price records found</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
+                {history.map((item, idx) => {
+                  const newRaw = Number.parseFloat(item.new_price || 0)
+                  const oldRaw = item.old_price !== null && item.old_price !== undefined ? Number.parseFloat(item.old_price) : null
+
+                  const newBagP = calcBagPrice(newRaw)
+                  const oldBagP = oldRaw !== null ? calcBagPrice(oldRaw) : null
+
+                  const diff = oldBagP !== null ? (newBagP - oldBagP) : 0
+                  const isUp = diff > 0
+                  const itemUnitPrice = bulkUnit ? (newBagP / bagWeight).toFixed(2) : null
+
+                  return (
+                    <div key={item.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newBagP.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          {bagWeight > 1 && (
+                            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                              ({bagWeight} {bulkUnit?.short || product.unit || 'kgs'} price)
+                            </span>
+                          )}
+                          {diff !== 0 && (
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: isUp ? '#16a34a' : '#dc2626', background: isUp ? '#dcfce7' : '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
+                              {isUp ? `+₹${diff.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          {item.notes || 'Price change'} • <span style={{ color: '#475467' }}>{item.effective_date ? String(item.effective_date).split('T')[0] : 'N/A'}</span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        {itemUnitPrice && (
+                          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#2563eb' }}>
+                            ₹{Number.parseFloat(itemUnitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {bulkUnit.short}
+                          </div>
+                        )}
+                        {oldBagP !== null && (
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                            Prev: ₹{oldBagP.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="ws-modal-footer">
+          <button className="ws-modal-btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function ImportStock() {
   const dispatch = useAppDispatch()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const navigate = useNavigate()
+  const location = useLocation()
+
+  const { canRead, canCreate, canEdit, canDelete } = usePermissions('import_stock')
 
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState([])
+  const [selectedPricing, setSelectedPricing] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' })
 
   const [page, setPage] = useState(1)
@@ -50,9 +229,13 @@ export default function ImportStock() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Import Stock'))
     fetchProducts(page)
-  }, [dispatch, page, search, sort, filterStatus])
+  }, [dispatch, page, search, sort, filterStatus, location.key, canRead])
 
   const fetchProducts = async (currentPage = page) => {
     setLoading(true)
@@ -71,13 +254,14 @@ export default function ImportStock() {
 
 
   const handleConfirmDelete = async () => {
-    const { id, name } = confirmDelete
+    const { id } = confirmDelete
     setConfirmDelete({ isOpen: false, id: null, name: '' })
     try {
       await api.delete(`/import-stock/${id}`)
       setProducts(prev => prev.filter(p => p.id !== id))
       dispatch(addToast({ message: 'Item deleted successfully', type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete item', type: 'error' }))
     }
   }
@@ -89,6 +273,7 @@ export default function ImportStock() {
       setSelectedIds(prev => prev.filter(item => item !== id))
       dispatch(addToast({ message: `${name} successfully added to Products!`, type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to add to products', type: 'error' }))
     }
   }
@@ -101,26 +286,8 @@ export default function ImportStock() {
       dispatch(addToast({ message: `${selectedIds.length} items successfully added to Products!`, type: 'success' }))
       setSelectedIds([])
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to add items to products', type: 'error' }))
-    }
-  }
-
-  const getPillStyle = (status) => {
-    switch (status) {
-      case 'active':
-      case 'in stock':
-        return { bg: '#dcfce7', text: '#166534' }
-      case 'inactive':
-      case 'out of stock':
-        return { bg: '#fee2e2', text: '#991b1b' }
-      case 'pending':
-        return { bg: '#fef3c7', text: '#d97706' }
-      case 'added':
-        return { bg: '#e0e7ff', text: '#4338ca' }
-      case 'low stock':
-        return { bg: '#fef3c7', text: '#92400e' }
-      default:
-        return { bg: '#f3f4f6', text: '#4b5563' }
     }
   }
 
@@ -130,120 +297,110 @@ export default function ImportStock() {
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
         <main className="ws-dash-body">
-          <div className="ws-dash-greeting">Import Stock</div>
-          <div className="ws-table-section" style={{ minHeight: 'calc(100vh - 240px)', display: 'flex', flexDirection: 'column' }}>
-            <div className="ws-table-header" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div className="ws-table-header-left">
-                  <h2 className="ws-table-title">All Stock Items</h2>
-                  <p className="ws-table-sub">Stage products here before adding them to your live inventory.</p>
-                </div>
-                <div className="ws-table-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  {selectedIds.length > 0 && (
-                    <button 
-                      className="ws-table-btn ws-table-btn--primary" 
-                      onClick={handleBulkAddToProducts} 
-                      style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 600 }}
-                    >
-                      <Plus size={13} style={{ marginRight: '6px' }} /> Add Selected ({selectedIds.length})
-                    </button>
-                  )}
-
-                  {/* Search box */}
-                  <div style={{ position: 'relative' }}>
-                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                    <input
-                      type="text"
-                      placeholder="Search stock..."
-                      value={search}
-                      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                      style={{
-                        padding: '8px 12px 8px 30px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        fontSize: '0.8125rem',
-                        outline: 'none',
-                        width: '180px',
-                        background: '#fff',
-                        color: '#374151'
-                      }}
-                    />
-                  </div>
-
-                  {/* Sort button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => {
-                      setSort(prev => prev === 'name_asc' ? 'name_desc' : prev === 'name_desc' ? '' : 'name_asc');
-                      setPage(1);
-                    }}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: sort ? '#111827' : '#d1d5db',
-                      background: sort ? '#f3f4f6' : '#fff',
-                      fontWeight: sort ? 600 : 500
-                    }}
-                  >
-                    <ArrowUpDown size={13} /> 
-                    Sort {sort === 'name_asc' ? 'A-Z' : sort === 'name_desc' ? 'Z-A' : ''}
-                  </button>
-
-                  {/* Filter button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => setShowFilterBar(prev => !prev)}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: showFilterBar || filterStatus !== 'all' ? '#111827' : '#d1d5db',
-                      background: showFilterBar || filterStatus !== 'all' ? '#f3f4f6' : '#fff',
-                      fontWeight: showFilterBar || filterStatus !== 'all' ? 600 : 500
-                    }}
-                  >
-                    <Filter size={13} /> Filter
-                  </button>
-
-                  <button className="ws-table-btn">
-                    <Upload size={13} style={{ marginRight: '6px' }} /> Import CSV
-                  </button>
-                  <button className="ws-table-btn ws-table-btn--primary" onClick={() => navigate('/import-stock/add')}>
-                    <Plus size={13} /> Add Stock
-                  </button>
-                </div>
+          <div className="attio-products-container">
+            {/* Top Toolbar */}
+            <div className="ws-unified-page-header">
+              <div className="ws-unified-header-left">
+                <span className="ws-unified-header-title">Import Stock</span>
+                <span className="ws-unified-header-badge">{total} items</span>
               </div>
+              <div className="ws-unified-header-actions">
+                {selectedIds.length > 0 && (
+                  <button 
+                    className="attio-btn" 
+                    onClick={handleBulkAddToProducts} 
+                    style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 600 }}
+                  >
+                    <Plus size={13} style={{ marginRight: '4px' }} /> Add Selected ({selectedIds.length})
+                  </button>
+                )}
 
-              {/* Expandable Filter Bar */}
-              {showFilterBar && (
-                <div style={{ display: 'flex', gap: 12, padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: '#4b5563' }}>
-                    <span>Status:</span>
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
-                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none', background: '#fff', fontSize: '0.8125rem', cursor: 'pointer' }}
-                    >
-                      <option value="all">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="active">Active</option>
-                      <option value="added">Added</option>
-                    </select>
-                  </div>
-
-                  {filterStatus !== 'all' && (
-                    <button 
-                      onClick={() => { setFilterStatus('all'); setPage(1); }}
-                      style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#3d68f5', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
-                    >
-                      Reset Filters
-                    </button>
-                  )}
+                {/* Search box */}
+                <div className="attio-search-box">
+                  <Search size={14} className="attio-search-icon" />
+                  <input
+                    type="text"
+                    className="attio-input-search"
+                    placeholder="Search stock..."
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                  />
                 </div>
-              )}
+
+                {/* Sort button */}
+                <button 
+                  className="attio-btn"
+                  onClick={() => {
+                    setSort(prev => prev === 'name_asc' ? 'name_desc' : prev === 'name_desc' ? '' : 'name_asc');
+                    setPage(1);
+                  }}
+                  style={{
+                    background: sort ? '#f1f5f9' : '#ffffff',
+                    borderColor: sort ? '#0f172a' : '#cbd5e1',
+                    fontWeight: sort ? 600 : 500
+                  }}
+                >
+                  <ArrowUpDown size={13} /> 
+                  Sort {sort === 'name_asc' ? 'A-Z' : sort === 'name_desc' ? 'Z-A' : ''}
+                </button>
+
+                {/* Filter button */}
+                <button 
+                  className="attio-btn"
+                  onClick={() => setShowFilterBar(prev => !prev)}
+                  style={{
+                    background: showFilterBar || filterStatus !== 'all' ? '#f1f5f9' : '#ffffff',
+                    borderColor: showFilterBar || filterStatus !== 'all' ? '#0f172a' : '#cbd5e1',
+                    fontWeight: showFilterBar || filterStatus !== 'all' ? 600 : 500
+                  }}
+                >
+                  <Filter size={13} /> Filter
+                </button>
+
+                {canCreate && (
+                  <>
+                    <button className="attio-btn">
+                      <Upload size={13} style={{ marginRight: '4px' }} /> Import CSV
+                    </button>
+                    <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock/add')}>
+                      <Plus size={13} style={{ marginRight: '4px' }} /> Add Stock
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="ws-table-wrap" style={{ flex: 1 }}>
+
+            {/* Expandable Filter Box */}
+            {showFilterBar && (
+              <div className="attio-filter-box">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: '#475467' }}>
+                  <span>Status:</span>
+                  <select
+                    className="attio-select"
+                    value={filterStatus}
+                    onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="active">Active</option>
+                    <option value="added">Added</option>
+                  </select>
+                </div>
+
+                {filterStatus !== 'all' && (
+                  <button 
+                    onClick={() => { setFilterStatus('all'); setPage(1); }}
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    Reset Filters
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Table Card Shell */}
+            <div className="attio-table-card">
+              <div className="attio-table-wrap">
               {loading ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Loader2 size={24} className="ws-chat-loader-spin" />
@@ -253,13 +410,13 @@ export default function ImportStock() {
                   No pending stock found. Click "Add stock" to stage one.
                 </div>
               ) : (
-                <table className="ws-table-styled">
+                <table className="attio-table">
                   <thead>
                     <tr>
-                      <th style={{ width: 40 }}>
+                      <th style={{ width: 28, textAlign: 'left', paddingLeft: 4 }}>
                         <input 
                           type="checkbox" 
-                          className="ws-table-checkbox" 
+                          className="attio-chk" 
                           checked={products.filter(p => p.status === 'active').length > 0 && products.filter(p => p.status === 'active').every(p => selectedIds.includes(p.id))}
                           onChange={() => {
                             const selectables = products.filter(p => p.status === 'active')
@@ -272,28 +429,24 @@ export default function ImportStock() {
                           }}
                         />
                       </th>
-                      <th>Product Name</th>
-                      <th>SKU</th>
-                      <th>Category</th>
-                      <th>Price</th>
-                      <th>Stock</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
+                      <th>PRODUCT NAME</th>
+                      <th>HSN CODE</th>
+                      <th>CATEGORY</th>
+                      <th>PRICE</th>
+                      <th>UPDATED PRICE</th>
+                      <th>STOCK</th>
+                      <th>STATUS</th>
+                      <th style={{ textAlign: 'right' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {products.map(row => {
-                      const catStyle = getPillStyle(row.category || 'default')
-                      const statusStyle = getPillStyle(row.status || 'pending')
-                      const stockStatus = row.stock > 10 ? 'in stock' : row.stock > 0 ? 'low stock' : 'out of stock'
-                      const stockStyle = getPillStyle(stockStatus)
-                      return (
-                        <tr key={row.id}>
-                          <td>
+                    {products.map(row => (
+                      <tr key={row.id}>
+                          <td style={{ textAlign: 'left', paddingLeft: 4 }}>
                             {row.status === 'added' ? (
                               <input 
                                 type="checkbox" 
-                                className="ws-table-checkbox" 
+                                className="attio-chk" 
                                 disabled 
                                 checked={false} 
                                 style={{ opacity: 0.4, cursor: 'not-allowed' }}
@@ -301,7 +454,7 @@ export default function ImportStock() {
                             ) : row.status !== 'active' ? (
                               <input 
                                 type="checkbox" 
-                                className="ws-table-checkbox" 
+                                className="attio-chk" 
                                 disabled 
                                 checked={false} 
                                 style={{ opacity: 0.4, cursor: 'not-allowed' }}
@@ -310,7 +463,7 @@ export default function ImportStock() {
                             ) : (
                               <input 
                                 type="checkbox" 
-                                className="ws-table-checkbox" 
+                                className="attio-chk" 
                                 checked={selectedIds.includes(row.id)}
                                 onChange={() => {
                                   setSelectedIds(prev => 
@@ -321,177 +474,262 @@ export default function ImportStock() {
                             )}
                           </td>
                           <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div className="ws-table-avatar" style={{ background: getAvatarColor(row.name) }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
                                 {getSingleLetter(row.name)}
                               </div>
-                              <span className="ws-table-primary-text" onClick={() => navigate(`/import-stock/edit/${row.id}`)}>
+                              <span
+                                className="ws-table-primary-text"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => navigate(`/import-stock/edit/${row.id}`)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/import-stock/edit/${row.id}`) }}
+                                style={{ fontWeight: 535, fontSize: '0.89rem', color: '#1e293b', cursor: 'pointer' }}
+                              >
                                 {row.name}
                               </span>
                             </div>
                           </td>
-                          <td className="ws-td-mono">{row.sku || '—'}</td>
-                          <td>
-                            <span className="ws-pill-topic" style={{ background: catStyle.bg, color: catStyle.text, borderColor: catStyle.border }}>
-                              {row.category || 'Unassigned'}
-                            </span>
-                          </td>
-                          <td className="ws-td-price">₹{row.price}</td>
-                          <td>
-                            <span className="ws-pill-topic" style={{ background: stockStyle.bg, color: stockStyle.text, borderColor: stockStyle.border }}>
-                              Qty {row.stock}
-                            </span>
+                          <td style={{ color: '#1e293b', fontWeight: 600, fontSize: '0.85rem' }}>
+                            {row.hsn_code || row.sku || '—'}
                           </td>
                           <td>
-                            <span className="ws-pill-topic" style={{ background: statusStyle.bg, color: statusStyle.text, borderColor: statusStyle.border }}>
-                              {row.status || 'pending'}
+                            {(() => {
+                              const catStyle = getCategoryTagStyle(row.category)
+                              return (
+                                <span className="attio-category-tag" style={{ background: catStyle.bg, color: catStyle.text, border: `1px solid ${catStyle.border}`, borderRadius: 6, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>
+                                  {row.category || 'Unassigned'}
+                                </span>
+                              )
+                            })()}
+                          </td>
+                          <td className="ws-td-price">
+                            {(() => {
+                              const bulkUnit = getBulkUnitDetails(row.unit)
+                              const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
+                              const pc = Number.parseFloat(row.price_covers || 0)
+                              const bw = Number.parseFloat(row.bag_weight || 1)
+                              const rawP = Number.parseFloat(row.price || 0)
+
+                              let priceVal = rawP
+                              if (pc > 0 && bw > 0 && pc !== bw) {
+                                priceVal = (rawP / bw) * pc
+                              }
+
+                              const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    ₹{priceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                    {subtext}
+                                  </span>
+                                </div>
+                              )
+                            })()}
+                          </td>
+                          <td className="ws-td-price">
+                            {(() => {
+                              if (!row.updated_price) return <span style={{ color: '#9ca3af' }}>—</span>
+                              const bulkUnit = getBulkUnitDetails(row.unit)
+                              const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
+                              const pc = Number.parseFloat(row.price_covers || 0)
+                              const bw = Number.parseFloat(row.bag_weight || 1)
+                              const rawUP = Number.parseFloat(row.updated_price || 0)
+
+                              let updatedPriceVal = rawUP
+                              if (pc > 0 && bw > 0 && pc !== bw) {
+                                updatedPriceVal = (rawUP / bw) * pc
+                              }
+
+                              const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontWeight: 600, color: '#2563eb' }}>
+                                    ₹{updatedPriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                    {subtext}
+                                  </span>
+                                </div>
+                              )
+                            })()}
+                          </td>
+                          <td>
+                            {(() => {
+                              const s = Number.parseFloat(row.stock || 0)
+                              const l = Number.parseFloat(row.loose_kg || 0)
+                              const bw = Number.parseFloat(row.bag_weight || 1)
+                              const totalBase = (bw > 1 ? s * bw : s) + l
+                              const labelText = formatStockDisplay(row.stock, row.bag_weight, row.unit, row.loose_kg)
+
+                              const isOut = totalBase <= 0
+                              const isLow = totalBase > 0 && totalBase <= 10
+                              const bg = isOut ? '#fee2e2' : isLow ? '#fef3c7' : '#dcfce7'
+                              const textCol = isOut ? '#dc2626' : isLow ? '#d97706' : '#15803d'
+                              const borderCol = isOut ? '#fecaca' : isLow ? '#fde68a' : '#bbf7d0'
+
+                              return (
+                                <span 
+                                  style={{ 
+                                    background: bg, 
+                                    color: textCol, 
+                                    border: `1px solid ${borderCol}`, 
+                                    borderRadius: 6, 
+                                    padding: '2px 10px', 
+                                    height: 22,
+                                    fontSize: '0.75rem', 
+                                    fontWeight: 600, 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center' 
+                                  }}
+                                >
+                                  {labelText}
+                                </span>
+                              )
+                            })()}
+                          </td>
+                          <td>
+                            <span 
+                              style={{ 
+                                background: '#e0e7ff', 
+                                color: '#3730a3', 
+                                border: '1px solid #c7d2fe', 
+                                borderRadius: 6, 
+                                padding: '2px 10px', 
+                                height: 22,
+                                fontSize: '0.75rem', 
+                                fontWeight: 500, 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                minWidth: 52, 
+                                textAlign: 'center' 
+                              }}
+                            >
+                              active
                             </span>
                           </td>
                           <td>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                              {row.status === 'added' ? (
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
+                              <button 
+                                onClick={() => setSelectedPricing(row)}
+                                style={{
+                                  background: '#eff6ff',
+                                  border: '1px solid #bfdbfe',
+                                  color: '#2563eb',
+                                  cursor: 'pointer',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  fontSize: '0.72rem',
+                                  fontWeight: 500,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  transition: 'all 0.15s'
+                                }}
+                                title="View pricing details"
+                              >
+                                <Eye size={12} /> View
+                              </button>
+                              <button
+                                onClick={() => navigate(`/import-stock/${row.id}/note`)}
+                                style={{
+                                  background: '#f0fdf4',
+                                  border: '1px solid #bbf7d0',
+                                  color: '#166534',
+                                  cursor: 'pointer',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  fontSize: '0.72rem',
+                                  fontWeight: 500,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  transition: 'all 0.15s'
+                                }}
+                                title="View generated note"
+                              >
+                                <FileText size={12} /> Note
+                              </button>
+                              {canEdit && (
+                                row.status === 'added' ? (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ color: '#8b5cf6', padding: 6, fontWeight: 500, background: '#ede9fe', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+                                    disabled
+                                    title="Product is already added"
+                                  >
+                                    <Check size={13} /> Added
+                                  </button>
+                                ) : row.status !== 'active' ? (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ color: '#9ca3af', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'not-allowed', opacity: 0.6 }}
+                                    disabled
+                                    title="Only active items can be added to products"
+                                  >
+                                    <Plus size={13} /> Add to Products
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="ws-chat-history-delete-btn"
+                                    style={{ color: '#4b5563', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}
+                                    onClick={() => handleAddToProducts(row.id, row.name)}
+                                    title="Add to Live Products"
+                                  >
+                                    <Plus size={13} /> Add to Products
+                                  </button>
+                                )
+                              )}
+                              {canEdit && (
                                 <button
                                   className="ws-chat-history-delete-btn"
-                                  style={{ color: '#8b5cf6', padding: 6, fontWeight: 500, background: '#ede9fe', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
-                                  disabled
-                                  title="Product is already added"
+                                  style={{ color: '#4b5563', padding: 6 }}
+                                  onClick={() => navigate(`/import-stock/edit/${row.id}`)}
+                                  title="Edit Product"
                                 >
-                                  <Check size={13} /> Added
-                                </button>
-                              ) : row.status !== 'active' ? (
-                                <button
-                                  className="ws-chat-history-delete-btn"
-                                  style={{ color: '#9ca3af', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'not-allowed', opacity: 0.6 }}
-                                  disabled
-                                  title="Only active items can be added to products"
-                                >
-                                  <Plus size={13} /> Add to Products
-                                </button>
-                              ) : (
-                                <button
-                                  className="ws-chat-history-delete-btn"
-                                  style={{ color: '#4b5563', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}
-                                  onClick={() => handleAddToProducts(row.id, row.name)}
-                                  title="Add to Live Products"
-                                >
-                                  <Plus size={13} /> Add to Products
+                                  <Edit2 size={13} />
                                 </button>
                               )}
-                              <button
-                                className="ws-chat-history-delete-btn"
-                                style={{ color: '#4b5563', padding: 6 }}
-                                onClick={() => navigate(`/import-stock/edit/${row.id}`)}
-                                title="Edit Product"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              <button
-                                className="ws-chat-history-delete-btn"
-                                style={{ padding: 6 }}
-                                onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
-                                title="Delete Product"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              {canDelete && (
+                                <button
+                                  className="ws-chat-history-delete-btn"
+                                  style={{ padding: 6 }}
+                                  onClick={() => setConfirmDelete({ isOpen: true, id: row.id, name: row.name })}
+                                  title="Delete Product"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
-                      )
-                    })}
+                      ))}
                   </tbody>
                 </table>
               )}
             </div>
-            {/* Pagination component outside ws-table-wrap at bottom of card */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid #f3f4f6', background: '#fff', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', marginTop: 'auto' }}>
-              <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
-                Showing <span style={{ fontWeight: 600, color: '#111827' }}>{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{Math.min(page * limit, total)}</span> of{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{total}</span> entries
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page <= 1 ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &lt;
-                </button>
-                {getPageNumbers().map((p, idx) => {
-                  if (p === '...') {
-                    return (
-                      <span key={`dots-${idx}`} style={{ color: '#9ca3af', padding: '0 8px', fontSize: '0.875rem' }}>
-                        ...
-                      </span>
-                    )
-                  }
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                        background: page === p ? '#111827' : '#fff',
-                        color: page === p ? '#fff' : '#374151',
-                        border: page === p ? '1px solid #111827' : '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      {p}
-                    </button>
-                  )
-                })}
-                <button
-                  type="button"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(page + 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page >= totalPages ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &gt;
-                </button>
-              </div>
+            {/* Pagination component */}
+            <TablePagination
+              page={page}
+              setPage={setPage}
+              total={total}
+              limit={limit}
+              getPageNumbers={getPageNumbers}
+              totalPages={totalPages}
+            />
             </div>
           </div>
         </main>
       </div>
+
+      {selectedPricing && (
+        <PricingModal product={selectedPricing} onClose={() => setSelectedPricing(null)} />
+      )}
 
       <ConfirmModal
         isOpen={confirmDelete.isOpen}

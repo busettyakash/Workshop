@@ -1,31 +1,93 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-import pg from 'pg'
-
-const { Pool } = pg
-
-const dbUrl = process.env.DATABASE_URL
-
-const getPoolMax = () => {
-  if (process.env.NODE_ENV === 'development') return 5
-  if (process.env.NODE_ENV === 'production') return 10
-  return 3 // fallback for test/staging/unset NODE_ENV — stay conservative
+import fs from 'node:fs'
+import dotenv from 'dotenv'
+dotenv.config()
+if (fs.existsSync('.env.local')) {
+  dotenv.config({ path: '.env.local', override: true })
 }
 
-const pool = new Pool({
+import dns from 'node:dns'
+import pg from 'pg'
+
+try {
+  const defaultDns = (process.env.CUSTOM_DNS_SERVERS || '8.8.8.8,8.8.4.4').split(',')
+  dns.setServers(defaultDns)
+} catch {}
+
+const originalLookup = dns.lookup
+dns.lookup = function (hostname, options, callback) {
+  if (typeof options === 'function') {
+    callback = options
+    options = {}
+  }
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return originalLookup(hostname, options, callback)
+  }
+  dns.resolve4(hostname, (err, addresses) => {
+    if (err || !addresses || addresses.length === 0) {
+      return originalLookup(hostname, options, callback)
+    }
+    if (options && options.all) {
+      const results = addresses.map(addr => ({ address: addr, family: 4 }))
+      callback(null, results)
+    } else {
+      callback(null, addresses[0], 4)
+    }
+  })
+}
+
+const { Pool, types } = pg
+
+// Return PostgreSQL DATE columns (OID 1082) as plain YYYY-MM-DD strings without JS Date timezone shifts
+types.setTypeParser(1082, (val) => val)
+
+// Return PostgreSQL TIMESTAMP columns (OID 1114) as UTC ISO strings so JS Date and JSON serialization preserve true UTC
+types.setTypeParser(1114, (val) => (val ? val.replace(' ', 'T') + 'Z' : val))
+
+const dbUrl = process.env.DATABASE_URL
+const isDevelopment = process.env.NODE_ENV !== 'production' && !process.env.VERCEL
+
+const getPoolMax = () => {
+  const configuredMax = Number.parseInt(process.env.PG_POOL_MAX, 10)
+  if (Number.isInteger(configuredMax) && configuredMax > 0) return configuredMax
+  if (process.env.VERCEL) return 2
+  return 10
+}
+
+const createPool = () => new Pool({
   connectionString: dbUrl,
+  application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
   ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
+  min: 1,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000,
+  statement_timeout: 30000,
+  idle_in_transaction_session_timeout: 10000,
+  query_timeout: 30000,
+  allowExitOnIdle: false,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 5000,
+  maxUses: 1000,
 })
+
+const pool = globalThis.__workshopPgPool || createPool()
+globalThis.__workshopPgPool = pool
 
 pool.on('error', (err) => {
   console.error('[DB Pool Error]', err.message)
 })
 
 pool.on('connect', () => {
-  console.log('[DB] New client connected to pool')
+  if (isDevelopment) {
+    console.log('[DB] New client connected to pool')
+  }
+})
+
+// Warm up the pool immediately so queries never hit cold TLS handshake delay
+pool.query('SELECT 1').then(() => {
+  if (isDevelopment) console.log('[DB] Pool warm & ready ✅')
+}).catch(err => {
+  console.warn('[DB Warmup Warning]', err.message)
 })
 
 let poolClosed = false
@@ -55,11 +117,6 @@ process.once('SIGUSR2', async () => {
   process.kill(process.pid, 'SIGUSR2')
 })
 
-pool.query('SELECT NOW()').then(() => {
-  console.log('[DB] ✅ Database connection verified successfully')
-}).catch((err) => {
-  console.error('[DB] ❌ Database connection FAILED on startup:', err.message)
-})
 
 import { AsyncLocalStorage } from 'async_hooks'
 
@@ -87,7 +144,7 @@ export const query = async (text, params) => {
     const result = await client.query(text, params)
     const duration = Date.now() - start
 
-    if (process.env.NODE_ENV === 'development') {
+    if (isDevelopment) {
       const displayQuery = text.replace(/\s+/g, ' ').trim()
       console.log(`[DB Query] (${duration}ms) ${displayQuery.substring(0, 150)}${displayQuery.length > 150 ? '...' : ''}`)
       if (params && params.length > 0) {

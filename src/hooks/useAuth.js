@@ -9,6 +9,10 @@ export const useAuth = () => {
   const status = useSelector(selectAuthStatus)
   const error  = useSelector(selectAuthError)
 
+  const firstName = user?.firstName || user?.first_name || ''
+  const lastName  = user?.lastName || user?.last_name || ''
+  const fullName  = [firstName, lastName].filter(Boolean).join(' ')
+
   return {
     user,
     token,
@@ -17,6 +21,9 @@ export const useAuth = () => {
     error,
     shopName:        user?.shopName || 'My Shop',
     email:           user?.email || '',
-    initials:        getInitials(user?.shopName || 'WS'),
+    firstName,
+    lastName,
+    fullName,
+    initials:        getInitials(fullName || user?.shopName || 'WS'),
   }
 }

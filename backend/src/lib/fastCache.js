@@ -52,10 +52,10 @@ export async function getCached(redis, key, timeoutMs = 250) {
 
 export function setCached(redis, key, value, ttlSeconds = 300) {
   setMemoryCache(key, value, ttlSeconds)
-  redis.set(key, value, { ex: ttlSeconds }).catch(() => {})
+  redis.set(key, value, { ex: ttlSeconds }).catch(() => { })
 }
 
 export function deleteCached(redis, key) {
   deleteMemoryCache(key)
-  redis.del(key).catch(() => {})
+  redis.del(key).catch(() => { })
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect } from 'react'
 import { useSelector } from 'react-redux'
 import { useAppDispatch } from '../../redux/hooks'
 import { selectToasts, removeToast } from '../../redux/slices/uiSlice'
@@ -16,7 +16,7 @@ function Toast({ toast }) {
   const dispatch = useAppDispatch()
 
   useEffect(() => {
-    const timer = setTimeout(() => dispatch(removeToast(toast.id)), 4000)
+    const timer = setTimeout(() => dispatch(removeToast(toast.id)), 2500)
     return () => clearTimeout(timer)
   }, [dispatch, toast.id])
 

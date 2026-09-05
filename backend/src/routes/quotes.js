@@ -50,7 +50,7 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
     const dedupKey = `workflow:dedup:quote:${effectiveUserId}:${quoteId}:${actionName}`
     const alreadyTriggered = await redis.get(dedupKey).catch(() => null)
     if (alreadyTriggered) {
-      console.log('[Quote Workflow] Duplicate workflow runner prevented: Already dispatched.')
+      console.log(`[Quote Workflow] ⏸️ Duplicate workflow runner prevented for quote #${quoteId} (Event: ${actionName}). Already dispatched.`)
       return
     }
     // Set 10s cooldown lock to prevent duplicate runners
@@ -66,11 +66,11 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
     ).catch(e => { console.error('[Quote Workflow Fetch Error]', e.message); return { rows: [] } })
 
     if (wfRes.rows.length === 0) {
-      console.log('[Quote Workflow] Skipping automation: No LIVE workflow found')
+      console.log('[Quote Workflow] ⏸️ Skipping automation: No LIVE workflow found')
       return
     }
     if (!wfRes.rows[0].is_live) {
-      console.log('[Quote Workflow] Skipping automation: Workflow is in Draft mode')
+      console.log('[Quote Workflow] ⏸️ Skipping automation: Workflow is in Draft mode')
       return
     }
 
@@ -80,7 +80,7 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
     // 2. Check Redis live cache for immediate toggle state
     const cachedLive = await redis.get(`workflow:${wfId}:is_live`).catch(() => null)
     if (cachedLive === '0') {
-      console.log('[Quote Workflow] Workflow is paused in Redis. Skipping execution.')
+      console.log(`[Quote Workflow] ⏸️ Workflow #${wfId} is paused in Redis. Skipping execution.`)
       return
     }
 
@@ -125,7 +125,7 @@ const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record creat
           }).catch(e => console.error('[Step 1 Instant Execution Error]', e.message))
         }, 100)
 
-        console.log('[Quote Workflow Triggered] Run started for LIVE workflow.')
+        console.log(`[Quote Workflow Triggered] ✅ Run #${run.id} started for LIVE workflow #${wfId} (${actionName}, branch: ${isDeclined ? 'declined' : 'accepted'})`)
       }
     }
   } catch (err) {
@@ -304,13 +304,13 @@ const isEmailStepActiveInWorkflow = async (userId, branch = 'accepted') => {
     ).catch(e => { console.error('[Email Check Fetch Error]', e.message); return { rows: [] } })
 
     if (!wfRes.rows.length) {
-      console.log('[Email Check] No workflow found — skipping email')
+      console.log(`[Email Check] No workflow found for user ${userId} — skipping email`)
       return false
     }
     const wf = wfRes.rows[0]
 
     if (!wf.is_live) {
-      console.log('[Email Check] Workflow is in Draft mode — skipping email')
+      console.log(`[Email Check] Workflow "${wf.name}" is in Draft mode — skipping email`)
       return false
     }
 
@@ -322,7 +322,7 @@ const isEmailStepActiveInWorkflow = async (userId, branch = 'accepted') => {
     const stepsToCheck = extractWorkflowStepsToCheck(nodes, branch)
     const hasEmailStep = stepsToCheck.some(isWorkflowNodeEmailStep)
 
-    console.log('[Email Check] Evaluated workflow email step status.')
+    console.log(`[Email Check] Workflow "${wf.name}" (${branch}, live: ${wf.is_live}) — hasEmailStep: ${hasEmailStep}`)
     return hasEmailStep
   } catch (e) {
     console.warn('[Email Check Error]', e.message)
@@ -336,7 +336,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
   // Check if "Send Invoice Email" node is enabled in active workflow
   const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
   if (!isEmailEnabled) {
-    console.log('[Invoice Email] Skipping automatic invoice email: "Send Invoice Email" node is inactive in workflow.')
+    console.log(`[Invoice Email] ⏸️ Skipping automatic invoice email for quote #${quote.quote_number || quote.id}: "Send Invoice Email" node was removed from workflow.`)
     return
   }
 
@@ -344,7 +344,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
   const dedupKey = `email:dedup:order_confirmation:${orderNum}`
   const alreadySent = await redis.get(dedupKey).catch(() => null)
   if (alreadySent) {
-    console.log('[Invoice Email] Duplicate invoice email prevented: Already sent.')
+    console.log(`[Invoice Email] ⏸️ Duplicate invoice email prevented for order #${orderNum}. Already sent.`)
     return
   }
   await redis.set(dedupKey, '1', { ex: 300 }).catch(() => {})

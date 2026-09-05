@@ -6,6 +6,8 @@ import redis from '../lib/redis.js'
 import { verifyQStashSignature, setLocalStepRunner } from '../lib/qstash.js'
 import { sendEmail } from '../lib/smtp.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
+import { getOrderConfirmationTemplate, getQuoteDeclinedTemplate } from '../utils/emailTemplates.js'
+import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 
 const router = Router()
 
@@ -145,14 +147,21 @@ function resolveActionLogText(currentAction, companyName, isDeclinedBranch) {
 
 async function executeMultiContactAction(currentAction, run, companyName, logKey, step) {
   const recipients = Array.isArray(currentAction.recipients) ? currentAction.recipients : []
-  const shopProfileRes = await query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles LIMIT 1').catch(() => ({ rows: [] }))
+  const targetUserId = run.user_id || 'default-user'
+  const shopProfileRes = await query(
+    `SELECT shop_name, first_name, last_name, phone, gstin, email, address FROM shop_profiles 
+     WHERE user_id::text = $1::text 
+        OR user_id = (SELECT workspace_owner_id FROM workspace_members WHERE member_email = $1 LIMIT 1)
+     LIMIT 1`,
+    [targetUserId]
+  ).catch(() => ({ rows: [] }))
   const shop = shopProfileRes.rows[0] || {}
 
   const quote = await resolveWorkflowQuote(run, companyName)
   const { bill, billItems } = await resolveWorkflowBill(quote, run)
 
   const invNum = bill.bill_number || `INV-${String(bill.id || 1).padStart(4, '0')}`
-  const sellerName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
+  const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || (shop.first_name ? `${shop.first_name}'s Store` : 'Store')
   const totalValFormatted = Number.parseFloat(quote.total_amount || bill.amount || run.test_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const pdfBuffer = await generateInvoicePdfBuffer({
@@ -215,6 +224,147 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
   )
 
   return `Multi-Contact Summary: Configured Recipients (${sentCount}/${recipients.length}) processed successfully with attached Tax_Invoice_${invNum}.pdf.`
+}
+
+async function executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step) {
+  const quote = await resolveWorkflowQuote(run, companyName)
+  const { bill, billItems } = await resolveWorkflowBill(quote, run)
+  const targetUserId = run.user_id || quote?.user_id || 'default-user'
+
+  const shopProfileRes = await query(
+    `SELECT shop_name, first_name, last_name, phone, gstin, email, address FROM shop_profiles 
+     WHERE user_id::text = $1::text 
+        OR user_id = (SELECT workspace_owner_id FROM workspace_members WHERE member_email = $1 LIMIT 1)
+     LIMIT 1`,
+    [targetUserId]
+  ).catch(() => ({ rows: [] }))
+  const shop = shopProfileRes.rows[0] || {}
+
+  const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || 'Workshop'
+  const customerEmail = quote?.customer_email || bill?.customer_email
+  const customerName = quote?.customer_name || bill?.customer_name || companyName || 'Customer'
+  const invNum = bill?.bill_number || `INV-${String(bill?.id || 1).padStart(4, '0')}`
+  const orderNum = quote?.order_number || bill?.order_number || `ORD-${String(bill?.id || 1).padStart(4, '0')}`
+
+  if (!customerEmail) {
+    return `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${companyName}.`
+  }
+
+  const catalogMap = await getProductHsnMap().catch(() => ({}))
+  const enrichedBillItems = enrichItemsWithCache(billItems || [], catalogMap)
+
+  const dateObj = new Date()
+  const orderDateStr = `${dateObj.getDate()}-${dateObj.toLocaleString('en-US', { month: 'short' })}-${dateObj.getFullYear()}`
+  const totalAmount = Number.parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || run.test_value || 0)
+
+  const confirmationHtml = getOrderConfirmationTemplate({
+    customerName,
+    orderNumber: orderNum,
+    orderDate: orderDateStr,
+    totalAmount
+  })
+
+  const pdfBuffer = await generateInvoicePdfBuffer({
+    quote,
+    bill,
+    billItems: enrichedBillItems,
+    shop,
+    type: 'invoice'
+  }).catch(e => {
+    console.error('[Invoice PDF Generation Warning in Workflow]', e.message)
+    return null
+  })
+
+  const attachments = pdfBuffer ? [
+    {
+      filename: `Tax_Invoice_${invNum}.pdf`,
+      content: Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer),
+      contentType: 'application/pdf'
+    }
+  ] : []
+
+  const res = await sendEmail({
+    to: customerEmail,
+    subject: `Order Confirmation - ${orderNum}`,
+    html: confirmationHtml,
+    attachments
+  }).catch(err => ({ data: null, error: err }))
+
+  const senderEmail = shop.email || process.env.SMTP_USER
+  if (senderEmail && senderEmail !== customerEmail) {
+    sendEmail({
+      to: senderEmail,
+      subject: `[Sender Copy] TAX INVOICE ${invNum} issued to ${customerName}`,
+      html: confirmationHtml,
+      attachments
+    }).catch(() => {})
+  }
+
+  await query(
+    `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 'sent', $7, NOW(), NOW())`,
+    [
+      sellerName,
+      senderEmail || 'billing@workshop.app',
+      customerEmail,
+      `Order Confirmation - ${orderNum}`,
+      confirmationHtml,
+      `Order ${orderNum} confirmed for ${customerName} — Tax Invoice #${invNum}`,
+      targetUserId
+    ]
+  ).catch(e => console.error('[Workflow Customer Email Record Error]', e.message))
+
+  if (res?.data?.id || !res?.error) {
+    const logLine = `Email sent ✅ to ${customerName} <${customerEmail}>`
+    await redis.rpush(logKey, JSON.stringify({ time: new Date().toISOString(), step, text: logLine })).catch(() => {})
+  } else {
+    const errLine = `Email delivery failed ❌ to ${customerName} <${customerEmail}>: ${res?.error?.message || 'SMTP error'}`
+    await redis.rpush(logKey, JSON.stringify({ time: new Date().toISOString(), step, text: errLine })).catch(() => {})
+  }
+
+  return `Send Email: Delivered official Tax Invoice PDF & Order confirmation guidelines to ${companyName}.`
+}
+
+async function executeCustomerDeclineEmailAction(currentAction, run, companyName, logKey, step) {
+  const quote = await resolveWorkflowQuote(run, companyName)
+  const targetUserId = run.user_id || quote?.user_id || 'default-user'
+
+  const shopProfileRes = await query(
+    `SELECT shop_name, first_name, last_name, phone, gstin, email, address FROM shop_profiles 
+     WHERE user_id::text = $1::text 
+        OR user_id = (SELECT workspace_owner_id FROM workspace_members WHERE member_email = $1 LIMIT 1)
+     LIMIT 1`,
+    [targetUserId]
+  ).catch(() => ({ rows: [] }))
+  const shop = shopProfileRes.rows[0] || {}
+
+  const sellerName = shop.shop_name || quote?.shop_name || 'Workshop'
+  const customerEmail = quote?.customer_email
+  const customerName = quote?.customer_name || companyName || 'Customer'
+
+  if (!customerEmail) {
+    return `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
+  }
+
+  const declineHtml = getQuoteDeclinedTemplate({
+    quote: quote || { quote_number: 'QT-Declined', customer_name: customerName },
+    shopName: sellerName,
+    shopEmail: shop.email,
+    shopPhone: shop.phone
+  })
+
+  const res = await sendEmail({
+    to: customerEmail,
+    subject: `Update on Quotation #${quote?.quote_number || ''} from ${sellerName}`,
+    html: declineHtml
+  }).catch(err => ({ data: null, error: err }))
+
+  if (res?.data?.id || !res?.error) {
+    const logLine = `Email sent ✅ to ${customerName} <${customerEmail}>`
+    await redis.rpush(logKey, JSON.stringify({ time: new Date().toISOString(), step, text: logLine })).catch(() => {})
+  }
+
+  return `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
 }
 
 /**
@@ -296,6 +446,10 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
     let logText = ''
     if (tag === 'multi-contact' || title.includes('multiple') || currentAction.id === 'act-multi-recipient') {
       logText = await executeMultiContactAction(currentAction, run, companyName, logKey, step)
+    } else if (title.includes('rejection') || title.includes('decline') || (isDeclinedBranch && (tag === 'email' || currentAction.iconType === 'mail'))) {
+      logText = await executeCustomerDeclineEmailAction(currentAction, run, companyName, logKey, step)
+    } else if (tag === 'email' || currentAction.id === 'step-email' || title.includes('send invoice email') || title.includes('invoice email')) {
+      logText = await executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step)
     } else {
       logText = resolveActionLogText(currentAction, companyName, isDeclinedBranch)
     }
@@ -505,11 +659,23 @@ query(`
      OR nodes::text = '{}' 
      OR nodes::text = 'null'
      OR nodes->'acceptedSteps' IS NULL
-`, [JSON.stringify(DEFAULT_WORKFLOW_TEMPLATE)]).then(() => {
+`, [JSON.stringify(DEFAULT_WORKFLOW_TEMPLATE)]).catch(e => console.warn('[Workflow Migration Notice]', e.message))
+
+// Single-active workflow enforcement: de-duplicate any legacy rows so only the latest remains Live
+query(`
+  WITH ranked_live AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC, id DESC) as rn
+    FROM workflows
+    WHERE is_live = true
+  )
+  UPDATE workflows
+  SET is_live = false, updated_at = NOW()
+  WHERE id IN (SELECT id FROM ranked_live WHERE rn > 1)
+`).then(() => {
   redis.keys('workflows:list:*').then(keys => {
     if (keys && keys.length) redis.del(keys).catch(() => {})
   }).catch(() => {})
-}).catch(e => console.warn('[Workflow Migration Notice]', e.message))
+}).catch(e => console.warn('[Workflow Single-Live Migration Notice]', e.message))
 
 /* GET /api/workflows */
 router.get('/', async (req, res) => {
@@ -584,6 +750,23 @@ router.get('/', async (req, res) => {
       return { ...w, nodes: n }
     })
 
+    // Guarantee that ONLY ONE workflow can be live at a time in response
+    const liveWfs = resultRows.filter(w => Boolean(w.is_live))
+    if (liveWfs.length > 1) {
+      const primaryLiveId = liveWfs.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))[0].id
+      resultRows = resultRows.map(w => ({
+        ...w,
+        is_live: w.id === primaryLiveId
+      }))
+      // Sync DB in background
+      query(
+        `UPDATE workflows SET is_live = false, updated_at = NOW() 
+         WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user') 
+           AND id <> $2 AND is_live = true`,
+        [req.workspaceId, primaryLiveId]
+      ).catch(() => {})
+    }
+
     // Cache in Redis for fast access (TTL: 5 seconds)
     await redis.set(cacheKey, JSON.stringify(resultRows), { ex: 5 }).catch(() => {})
 
@@ -620,8 +803,20 @@ router.post('/', async (req, res) => {
 
 /* PUT /api/workflows/:id */
 router.put('/:id', async (req, res) => {
+  const userId = req.workspaceId
   const { name, is_live, nodes, is_starred } = req.body
   try {
+    if (is_live === true) {
+      // Deactivate all other workflows in this workspace so only ONE is Live
+      await query(
+        `UPDATE workflows 
+         SET is_live = false, updated_at = NOW() 
+         WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user') 
+           AND id <> $2`,
+        [userId, req.params.id]
+      ).catch(() => {})
+    }
+
     const { rows } = await query(
       `UPDATE workflows 
        SET name = COALESCE($1, name), 
@@ -643,7 +838,7 @@ router.put('/:id', async (req, res) => {
     if (is_live !== undefined) {
       await redis.set(`workflow:${req.params.id}:is_live`, is_live ? '1' : '0').catch(() => {})
     }
-    await redis.del(`workflows:list:${req.workspaceId}`).catch(() => {})
+    await redis.del(`workflows:list:${userId}`).catch(() => {})
 
     console.log('[WORKFLOW UPDATED] Workflow configuration updated')
     res.json(updated)
@@ -679,6 +874,7 @@ router.patch('/:id/toggle-star', async (req, res) => {
 
 /* PATCH /api/workflows/:id/toggle-live */
 router.patch('/:id/toggle-live', async (req, res) => {
+  const userId = req.workspaceId
   try {
     const wfRes = await query('SELECT * FROM workflows WHERE id = $1', [req.params.id])
     if (!wfRes.rows.length) {
@@ -688,6 +884,26 @@ router.patch('/:id/toggle-live', async (req, res) => {
     const currentLive = Boolean(wfRes.rows[0].is_live)
     const nextLive = req.body.is_live !== undefined ? Boolean(req.body.is_live) : !currentLive
 
+    if (nextLive) {
+      // Deactivate all other workflows for this workspace so only ONE is Live at any given time
+      await query(
+        `UPDATE workflows 
+         SET is_live = false, updated_at = NOW() 
+         WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user') 
+           AND id <> $2`,
+        [userId, req.params.id]
+      ).catch(() => {})
+
+      // Sync Redis keys for other workflows
+      const otherWfs = await query(
+        `SELECT id FROM workflows WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user') AND id <> $2`,
+        [userId, req.params.id]
+      ).catch(() => ({ rows: [] }))
+      for (const other of otherWfs.rows) {
+        await redis.set(`workflow:${other.id}:is_live`, '0').catch(() => {})
+      }
+    }
+
     const { rows } = await query(
       'UPDATE workflows SET is_live = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
       [nextLive, req.params.id]
@@ -695,9 +911,9 @@ router.patch('/:id/toggle-live', async (req, res) => {
 
     // Sync to Redis
     await redis.set(`workflow:${req.params.id}:is_live`, nextLive ? '1' : '0').catch(() => {})
-    await redis.del(`workflows:list:${req.workspaceId}`).catch(() => {})
+    await redis.del(`workflows:list:${userId}`).catch(() => {})
 
-    console.log('[WORKFLOW LIVE TOGGLE] Workflow live status toggled')
+    console.log('[WORKFLOW LIVE TOGGLE] Single Live workflow enforced. Switched workflow %s to %s', req.params.id, nextLive)
     res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })

@@ -648,7 +648,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                         </td>
                         <td>
                           <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                            {formatStockDisplay(s.stock_after ?? product.stock, product.bag_weight, product.unit, s.loose_kg_after !== undefined && s.loose_kg_after !== null ? s.loose_kg_after : product.loose_kg)}
+                            {formatStockDisplay(s.stock_after ?? product.stock, product.bag_weight, product.unit, s.loose_kg_after !== undefined && s.loose_kg_after !== null ? s.loose_kg_after : 0)}
                           </span>
                         </td>
                         <td>
@@ -665,7 +665,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                         </td>
                         <td>
                           <span style={{ color: '#475467', fontSize: '0.8125rem' }}>
-                            {s.notes || 'Automated stock deduction on quotation acceptance'}
+                            {(s.notes || 'Automated stock deduction on quotation acceptance').replace(/(\d+)\.00(\s+[a-zA-Z]+)/g, '$1$2')}
                           </span>
                         </td>
                       </tr>

@@ -4,11 +4,21 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { ArrowLeft, Loader2, Plus, Trash2, Search, UserPlus, AlertCircle, X, ChevronDown, PackagePlus, ArrowRight, Check } from 'lucide-react'
+import { ArrowLeft, Loader2, Plus, Minus, Trash2, Search, UserPlus, AlertCircle, X, ChevronDown, PackagePlus, ArrowRight, Check, User, ShoppingBag } from 'lucide-react'
 import api from '../../api/client'
 import { getBulkUnitDetails, ALL_UOM_OPTIONS, formatStockDisplay, formatStockDisplayFromBase } from '../../utils/unitHelpers'
 import { getRandomCode, getRandomInt } from '../../utils/cryptoUtils'
 import '../Dashboard/Dashboard.css'
+
+const getProductAvatarBg = (name = '') => {
+  const colors = [
+    '#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626',
+    '#0891b2', '#4f46e5', '#ca8a04', '#0d9488', '#e11d48'
+  ]
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  return colors[Math.abs(hash) % colors.length]
+}
 
 const S = {
   input: {
@@ -411,19 +421,71 @@ export default function BillForm() {
     const priceToUse = prices.perUnitRate > 0 ? prices.perUnitRate : (prod.price || 0)
     const bulkUnit = getBulkUnitDetails(prod.unit)
     const baseUnitStr = bulkUnit?.short || prod.unit || 'pcs'
-    setLineItems(prev => [...prev, {
-      product_id: prod.id,
-      name: prod.name,
-      product_name: prod.name,
-      productName: prod.name,
-      hsn_code: prod.hsn_code || prod.sku || '10064000',
-      hsn: prod.hsn_code || prod.sku || '10064000',
-      price: priceToUse,
-      qty: 1,
-      discount: 0,
-      unit: baseUnitStr
-    }])
+
+    const existingIdx = lineItems.findIndex(item => String(item.product_id) === String(prod.id))
+    if (existingIdx >= 0) {
+      const existingItem = lineItems[existingIdx]
+      const currentQty = parseFloat(existingItem.qty || 1)
+      const nextQty = currentQty + 1
+      const stockInfo = calcMaxStock(prod, existingItem.unit)
+      if (stockInfo && stockInfo.maxStock >= 0 && nextQty > stockInfo.maxStock) {
+        dispatch(addToast({
+          message: `Cannot add more: Max available stock is ${stockInfo.displayLabel} for ${prod.name}.`,
+          type: 'warning'
+        }))
+        return
+      }
+
+      setLineItems(prev => {
+        const idx = prev.findIndex(item => String(item.product_id) === String(prod.id))
+        if (idx === -1) return prev
+        const updated = [...prev]
+        updated[idx] = { ...updated[idx], qty: nextQty }
+        return updated
+      })
+
+      dispatch(addToast({
+        message: `Updated ${prod.name} quantity to ${nextQty} ${existingItem.unit || ''}`,
+        type: 'info'
+      }))
+    } else {
+      setLineItems(prev => [
+        ...prev,
+        {
+          product_id: prod.id,
+          name: prod.name,
+          product_name: prod.name,
+          productName: prod.name,
+          hsn_code: prod.hsn_code || prod.sku || '10064000',
+          hsn: prod.hsn_code || prod.sku || '10064000',
+          price: priceToUse,
+          qty: 1,
+          discount: 0,
+          unit: baseUnitStr
+        }
+      ])
+
+      dispatch(addToast({
+        message: `Added ${prod.name} to bill`,
+        type: 'success'
+      }))
+    }
+
     if (errors.items) setErrors(prev => ({ ...prev, items: '' }))
+  }
+
+  const decrementLineItem = (productId) => {
+    setLineItems(prev => {
+      const existingIdx = prev.findIndex(item => String(item.product_id) === String(productId))
+      if (existingIdx === -1) return prev
+      const currentQty = parseFloat(prev[existingIdx].qty || 1)
+      if (currentQty <= 1) {
+        return prev.filter((_, i) => i !== existingIdx)
+      }
+      const updated = [...prev]
+      updated[existingIdx] = { ...updated[existingIdx], qty: currentQty - 1 }
+      return updated
+    })
   }
 
   const removeLineItem = (index) => {
@@ -809,12 +871,18 @@ const calcMaxStock = (prod, itemUnit) => {
                               fontWeight: (selectedCustomer || form.customer_id === null) ? 600 : 400,
                               color: form.customer_id === null ? '#1d4ed8' : (selectedCustomer ? '#15803d' : '#64748b'),
                               textAlign: 'left',
+                              display: 'flex', alignItems: 'center', gap: 6
                             }}>
-                              {form.customer_id === null
-                                ? '🚶 Walk-in Customer Selected'
-                                : (selectedCustomer
-                                    ? `✓ ${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
-                                    : 'Search & select customer...')}
+                              {form.customer_id === null ? (
+                                <>
+                                  <User size={13} style={{ flexShrink: 0 }} />
+                                  <span>Walk-in Customer Selected</span>
+                                </>
+                              ) : (
+                                selectedCustomer
+                                  ? `✓ ${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
+                                  : 'Search & select customer...'
+                              )}
                             </span>
                             {(form.customer_id !== '' && form.customer_id !== undefined) ? (
                               <span
@@ -920,15 +988,15 @@ const calcMaxStock = (prod, itemUnit) => {
                               setShowCustDropdown(false)
                             }}
                             style={{
-                              flex: 1, height: 32, borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
+                              flex: 1, height: 34, borderRadius: '7px', fontSize: '0.8125rem', fontWeight: 600,
                               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                               background: form.customer_id === null ? '#2563eb' : '#f8fafc',
                               color: form.customer_id === null ? '#fff' : '#334155',
                               border: `1px solid ${form.customer_id === null ? '#2563eb' : '#cbd5e1'}`,
-                              transition: 'background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease'
+                              transition: 'all 0.15s ease'
                             }}
                           >
-                            🚶 Walk-in Customer
+                            <User size={13} /> Walk-in Customer
                           </button>
                         </div>
 
@@ -939,41 +1007,99 @@ const calcMaxStock = (prod, itemUnit) => {
                 </div>
 
                 {/* Product Catalog */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', height: 440, minHeight: 440 }}>
-                  <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', flexShrink: 0 }}>
-                    <p style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.925rem', margin: 0, fontFamily: 'inherit' }}>Product Catalog</p>
+                <div style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: 460,
+                  minHeight: 460
+                }}>
+                  {/* Header */}
+                  <div style={{
+                    padding: '12px 16px',
+                    borderBottom: '1px solid #f1f5f9',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: '#ffffff',
+                    flexShrink: 0
+                  }}>
+                    <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>Product Catalog</span>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      background: '#eff6ff',
+                      color: '#2563eb',
+                      padding: '2px 8px',
+                      borderRadius: 10,
+                      border: '1px solid #dbeafe'
+                    }}>
+                      {filteredProducts.length} Items
+                    </span>
                   </div>
 
                   {/* Search */}
-                  <div style={{ position: 'relative', padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', flexShrink: 0 }}>
-                    <Search size={15} color="#94a3b8" style={{ flexShrink: 0 }} />
+                  <div style={{
+                    position: 'relative',
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #f1f5f9',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: '#f8fafc',
+                    flexShrink: 0
+                  }}>
+                    <Search size={14} color="#94a3b8" style={{ flexShrink: 0 }} />
                     <input
                       type="text"
-                      placeholder="Search catalog..."
+                      placeholder="Search by name, SKU..."
                       value={productSearch}
                       onChange={e => setProductSearch(e.target.value)}
-                      style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.85rem', color: '#0f172a', width: '100%', padding: '2px 24px 2px 0', fontFamily: 'inherit' }}
+                      style={{
+                        border: 'none',
+                        background: 'none',
+                        outline: 'none',
+                        fontSize: '0.8125rem',
+                        color: '#0f172a',
+                        width: '100%',
+                        padding: '2px 24px 2px 0',
+                        fontFamily: 'inherit'
+                      }}
                     />
                     {productSearch && (
-                      <button 
-                        type="button" 
-                        onClick={() => setProductSearch('')} 
-                        style={{ position: 'absolute', right: 12, border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+                      <button
+                        type="button"
+                        onClick={() => setProductSearch('')}
+                        style={{
+                          position: 'absolute',
+                          right: 12,
+                          border: 'none',
+                          background: 'none',
+                          cursor: 'pointer',
+                          padding: 2,
+                          color: '#94a3b8',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
                       >
-                        <X size={14} />
+                        <X size={13} />
                       </button>
                     )}
                   </div>
 
-                  {/* List */}
-                  <div style={{ overflowY: 'scroll', flex: 1 }}>
+                  {/* Product List */}
+                  <div style={{ overflowY: 'auto', flex: 1 }}>
                     {loadingProds ? (
                       <div style={{ padding: '35px 16px', display: 'flex', justifyContent: 'center' }}>
                         <Loader2 size={22} className="ws-chat-loader-spin" style={{ color: '#94a3b8' }} />
                       </div>
                     ) : filteredProducts.length === 0 ? (
-                      <div style={{ padding: '28px 16px', fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center' }}>
-                        {productSearch ? 'No products match search' : 'No active products found'}
+                      <div style={{ padding: '35px 16px', fontSize: '0.8125rem', color: '#94a3b8', textAlign: 'center' }}>
+                        {productSearch ? 'No matching products' : 'No active products found'}
                       </div>
                     ) : (
                       filteredProducts.map(p => {
@@ -995,80 +1121,186 @@ const calcMaxStock = (prod, itemUnit) => {
 
                         const hasNoStock = totalAvailableBase <= 0
                         const isStockDepleted = remainingBaseQty <= 0
+                        const prices = calcProductPrices(p)
 
                         return (
-                          <button
+                          <div
                             key={p.id}
-                            type="button"
-                            onClick={() => {
-                              if (hasNoStock || (isStockDepleted && !alreadyAdded)) {
-                                if (!alreadyAdded) dispatch(addToast({ message: 'Product is out of stock', type: 'error' }))
-                                return
-                              }
-                              addLineItem(p)
-                            }}
-                            disabled={hasNoStock || (isStockDepleted && !alreadyAdded)}
                             style={{
-                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                              width: '100%', padding: '12px 16px', border: 'none', borderBottom: '1px solid #f1f5f9',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              width: '100%',
+                              padding: '10px 14px',
+                              borderBottom: '1px solid #f1f5f9',
                               background: alreadyAdded ? '#f0fdf4' : '#ffffff',
-                              cursor: (hasNoStock || (isStockDepleted && !alreadyAdded)) ? 'not-allowed' : 'pointer',
-                              textAlign: 'left', transition: 'all 0.15s ease', gap: 12,
-                              opacity: (hasNoStock || (isStockDepleted && !alreadyAdded)) ? 0.55 : 1
+                              transition: 'background-color 0.15s ease',
+                              gap: 10,
+                              boxSizing: 'border-box'
                             }}
-                            onMouseEnter={e => !alreadyAdded && !(hasNoStock || isStockDepleted) && (e.currentTarget.style.background = '#f8fafc')}
-                            onMouseLeave={e => !alreadyAdded && !(hasNoStock || isStockDepleted) && (e.currentTarget.style.background = '#ffffff')}
                           >
+                            {/* Product Info */}
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', marginBottom: 3, fontFamily: 'inherit' }}>
+                              <div style={{
+                                fontSize: '0.84rem',
+                                fontWeight: 600,
+                                color: '#0f172a',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}>
                                 {p.name}
                               </div>
-                              <div style={{ fontSize: '0.74rem', color: '#64748b', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                {(() => {
-                                  const prices = calcProductPrices(p)
-                                  if (bulkUnit && p.bag_weight > 1) {
-                                    return (
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: '0.74rem', color: '#64748b', lineHeight: 1.3 }}>
-                                        <span>{bulkUnit.name}: {INR(prices.perPackPrice)} ({p.bag_weight}{bulkUnit.short})</span>
-                                        <span style={{ color: '#cbd5e1' }}>•</span>
-                                        <span>{INR(prices.perUnitRate)}/{bulkUnit.short}</span>
-                                        {p.updated_price && (
-                                          <span style={{ color: '#10b981', fontWeight: 600 }}>(Updated)</span>
-                                        )}
-                                      </div>
-                                    )
-                                  }
-                                  return (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: '0.74rem', color: '#64748b', lineHeight: 1.3 }}>
-                                      <span>Price: {INR(prices.perUnitRate)}/{p.unit || 'pcs'}</span>
-                                      {p.updated_price && (
-                                        <span style={{ color: '#10b981', fontWeight: 600 }}>(Updated)</span>
-                                      )}
-                                    </div>
-                                  )
-                                })()}
+
+                                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
+                                  {bulkUnit && p.bag_weight > 1 ? (
+                                    <span>
+                                      {bulkUnit.name}: {INR(prices.perPackPrice)} ({p.bag_weight}{bulkUnit.short}) • <span style={{ fontWeight: 600, color: '#334155' }}>{INR(prices.perUnitRate)}/{bulkUnit.short}</span>
+                                    </span>
+                                  ) : (
+                                    <span>
+                                      Price: <span style={{ fontWeight: 600, color: '#334155' }}>{INR(prices.perUnitRate)}/{p.unit || 'pcs'}</span>
+                                    </span>
+                                  )}
+                                </div>
 
                                 <div style={{ marginTop: 3 }}>
                                   {hasNoStock || isStockDepleted ? (
-                                    <span style={{ color: '#b91c1c', fontWeight: 600, background: '#fee2e2', padding: '2px 7px', borderRadius: 5, fontSize: '0.7rem' }}>Out of Stock</span>
+                                    <span style={{
+                                      color: '#b91c1c',
+                                      fontWeight: 600,
+                                      background: '#fee2e2',
+                                      padding: '1px 6px',
+                                      borderRadius: 4,
+                                      fontSize: '0.68rem',
+                                      display: 'inline-block'
+                                    }}>
+                                      Out of Stock
+                                    </span>
                                   ) : (
-                                    <span style={{ color: '#475569', background: '#f1f5f9', padding: '2px 7px', borderRadius: 5, fontSize: '0.72rem', fontWeight: 500, display: 'inline-block' }}>
+                                    <span style={{
+                                      color: '#047857',
+                                      background: '#ecfdf5',
+                                      padding: '1px 6px',
+                                      borderRadius: 4,
+                                      fontSize: '0.68rem',
+                                      fontWeight: 600,
+                                      display: 'inline-block',
+                                      border: '1px solid #d1fae5'
+                                    }}>
                                       Stock: {formatStockDisplayFromBase(remainingBaseQty, p.bag_weight, p.unit)}
                                     </span>
                                   )}
                                 </div>
                               </div>
-                            </div>
+
+                            {/* Action Button / Quantity Controls */}
                             <div style={{ flexShrink: 0 }}>
                               {alreadyAdded ? (
-                                <span style={{ fontSize: '0.75rem', background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>Added</span>
-                              ) : (
-                                <div style={{ background: '#f1f5f9', width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', transition: 'all 0.15s ease' }}>
-                                  <Plus size={15} />
+                                <div style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  background: '#dcfce7',
+                                  border: '1px solid #bbf7d0',
+                                  borderRadius: 8,
+                                  padding: '2px 4px'
+                                }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => decrementLineItem(p.id)}
+                                    title="Decrease quantity"
+                                    style={{
+                                      width: 24,
+                                      height: 24,
+                                      borderRadius: 6,
+                                      border: 'none',
+                                      background: '#ffffff',
+                                      color: '#15803d',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: 'pointer',
+                                      fontWeight: 700,
+                                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                    }}
+                                  >
+                                    <Minus size={12} />
+                                  </button>
+
+                                  <span style={{
+                                    fontSize: '0.78rem',
+                                    fontWeight: 700,
+                                    color: '#15803d',
+                                    minWidth: 24,
+                                    textAlign: 'center'
+                                  }}>
+                                    {qtyAdded}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => addLineItem(p)}
+                                    disabled={hasNoStock || isStockDepleted}
+                                    title="Increase quantity"
+                                    style={{
+                                      width: 24,
+                                      height: 24,
+                                      borderRadius: 6,
+                                      border: 'none',
+                                      background: (hasNoStock || isStockDepleted) ? '#e2e8f0' : '#ffffff',
+                                      color: (hasNoStock || isStockDepleted) ? '#94a3b8' : '#15803d',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: (hasNoStock || isStockDepleted) ? 'not-allowed' : 'pointer',
+                                      fontWeight: 700,
+                                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                    }}
+                                  >
+                                    <Plus size={12} />
+                                  </button>
                                 </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => addLineItem(p)}
+                                  disabled={hasNoStock || isStockDepleted}
+                                  style={{
+                                    height: 28,
+                                    padding: '0 10px',
+                                    borderRadius: 6,
+                                    border: '1px solid #cbd5e1',
+                                    background: (hasNoStock || isStockDepleted) ? '#f1f5f9' : '#ffffff',
+                                    color: (hasNoStock || isStockDepleted) ? '#94a3b8' : '#2563eb',
+                                    cursor: (hasNoStock || isStockDepleted) ? 'not-allowed' : 'pointer',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  onMouseEnter={e => {
+                                    if (!(hasNoStock || isStockDepleted)) {
+                                      e.currentTarget.style.background = '#2563eb'
+                                      e.currentTarget.style.color = '#ffffff'
+                                      e.currentTarget.style.borderColor = '#2563eb'
+                                    }
+                                  }}
+                                  onMouseLeave={e => {
+                                    if (!(hasNoStock || isStockDepleted)) {
+                                      e.currentTarget.style.background = '#ffffff'
+                                      e.currentTarget.style.color = '#2563eb'
+                                      e.currentTarget.style.borderColor = '#cbd5e1'
+                                    }
+                                  }}
+                                >
+                                  <Plus size={12} /> Add
+                                </button>
                               )}
                             </div>
-                          </button>
+                          </div>
                         )
                       })
                     )}

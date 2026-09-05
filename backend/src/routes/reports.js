@@ -85,16 +85,15 @@ router.get('/top-customers', async (req, res) => {
     if (cached) return res.json(cached)
 
     const { rows } = await query(
-      `SELECT COALESCE(c.name, cust.name) AS name, 
-              MAX(COALESCE(c.email, cust.email, '')) AS email, 
+      `SELECT COALESCE(NULLIF(TRIM(c.name), ''), NULLIF(TRIM(cust.name), ''), 'Walking Customer') AS name, 
+              MAX(COALESCE(c.email, cust.email, '—')) AS email, 
               COUNT(DISTINCT b.id) AS orders, 
               COALESCE(SUM(b.amount), 0) AS total_spent
        FROM bills b
        LEFT JOIN people c ON b.customer_id = c.id
        LEFT JOIN customers cust ON b.customer_id = cust.id
        WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
-         AND (c.name IS NOT NULL OR cust.name IS NOT NULL)
-       GROUP BY COALESCE(c.name, cust.name)
+       GROUP BY COALESCE(NULLIF(TRIM(c.name), ''), NULLIF(TRIM(cust.name), ''), 'Walking Customer')
        ORDER BY total_spent DESC LIMIT 15`,
       [userId]
     )
@@ -116,48 +115,121 @@ const COLOR_PALETTE = [
   '#64748b', // slate
 ]
 
-function buildDateCondition(dayFilter, maxDateIso) {
-  if (dayFilter === 'Last 7 days') {
-    return `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '7 days'`
-  }
-  if (dayFilter === 'Last 30 days') {
-    return `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '30 days'`
-  }
-  if (dayFilter === 'Last 3 months') {
-    return `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '90 days'`
-  }
-  if (dayFilter === 'Last 6 months') {
-    return `AND (b.created_at AT TIME ZONE ${TZ}) >= (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}) - INTERVAL '180 days'`
-  }
-  if (dayFilter === 'This year') {
-    return `AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) = EXTRACT(YEAR FROM (CAST('${maxDateIso}' AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE ${TZ}))`
-  }
-  return ''
-}
-
-function buildMonthsWindow(anchorDate) {
+function buildTimeBuckets(dayFilter, anchorDate = new Date(), startDate = '', endDate = '') {
   const d = anchorDate instanceof Date && !Number.isNaN(anchorDate.getTime()) ? anchorDate : new Date()
-  const months = []
-  for (let i = 2; i >= 0; i--) {
-    const pastDate = new Date(d.getFullYear(), d.getMonth() - i, 1)
-    months.push({
-      num: pastDate.getMonth() + 1,
-      year: pastDate.getFullYear(),
-      label: pastDate.toLocaleString('default', { month: 'short' }) + ' ' + pastDate.getFullYear()
-    })
+
+  if (dayFilter === 'Last 7 days') {
+    const buckets = []
+    for (let i = 6; i >= 0; i--) {
+      const past = new Date(d)
+      past.setDate(past.getDate() - i)
+      const iso = past.toISOString().slice(0, 10)
+      const label = past.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+      buckets.push({ key: iso, label, type: 'day', dateStr: iso })
+    }
+    return {
+      buckets,
+      dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata') >= (NOW() AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '6 days'`,
+      groupBy: 'day'
+    }
   }
-  return months
+
+  if (dayFilter === 'Last 30 days') {
+    const buckets = []
+    for (let i = 4; i >= 0; i--) {
+      const startD = new Date(d)
+      startD.setDate(startD.getDate() - (i * 6 + 5))
+      const endD = new Date(d)
+      endD.setDate(endD.getDate() - (i * 6))
+      const label = startD.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' - ' + endD.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+      buckets.push({
+        key: `r_${i}`,
+        label,
+        type: 'range',
+        startDateStr: startD.toISOString().slice(0, 10),
+        endDateStr: endD.toISOString().slice(0, 10)
+      })
+    }
+    return {
+      buckets,
+      dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata') >= (NOW() AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '29 days'`,
+      groupBy: 'day'
+    }
+  }
+
+  if (dayFilter === 'Custom date' || dayFilter === 'Custom range' || dayFilter === 'Custom Date' || (startDate && endDate)) {
+    const s = startDate ? new Date(startDate) : new Date(d.getTime() - 6 * 86400000)
+    const e = endDate ? new Date(endDate) : new Date(d)
+    const startIso = s.toISOString().slice(0, 10)
+    const endIso = e.toISOString().slice(0, 10)
+    const diffDays = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+
+    if (diffDays <= 31) {
+      const buckets = []
+      const cur = new Date(s)
+      while (cur <= e) {
+        const iso = cur.toISOString().slice(0, 10)
+        const label = cur.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+        buckets.push({ key: iso, label, type: 'day', dateStr: iso })
+        cur.setDate(cur.getDate() + 1)
+      }
+      return {
+        buckets,
+        dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN '${startIso}'::date AND '${endIso}'::date`,
+        groupBy: 'day'
+      }
+    }
+
+    const buckets = []
+    const cur = new Date(s.getFullYear(), s.getMonth(), 1)
+    const endMonth = new Date(e.getFullYear(), e.getMonth(), 1)
+    while (cur <= endMonth) {
+      const num = cur.getMonth() + 1
+      const year = cur.getFullYear()
+      const label = cur.toLocaleString('default', { month: 'short' }) + ' ' + year
+      buckets.push({ key: `${year}-${num}`, label, num, year, type: 'month' })
+      cur.setMonth(cur.getMonth() + 1)
+    }
+    return {
+      buckets,
+      dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN '${startIso}'::date AND '${endIso}'::date`,
+      groupBy: 'month'
+    }
+  }
+
+  let count = d.getMonth() + 1
+  if (dayFilter === 'Last 3 months') {
+    count = 3
+  } else if (dayFilter === 'Last 6 months') {
+    count = 6
+  } else if (dayFilter === 'This year') {
+    count = d.getMonth() + 1
+  }
+  const buckets = []
+  for (let i = count - 1; i >= 0; i--) {
+    const past = new Date(d.getFullYear(), d.getMonth() - i, 1)
+    const num = past.getMonth() + 1
+    const year = past.getFullYear()
+    const label = past.toLocaleString('default', { month: 'short' }) + ' ' + year
+    buckets.push({ key: `${year}-${num}`, label, num, year, type: 'month' })
+  }
+  return {
+    buckets,
+    dateCondition: `AND (b.created_at AT TIME ZONE 'Asia/Kolkata') >= DATE_TRUNC('month', (NOW() AT TIME ZONE 'Asia/Kolkata') - INTERVAL '${count - 1} months')`,
+    groupBy: 'month'
+  }
 }
 
 async function getDistinctCategories(userId) {
   const catRes = await query(
-    `SELECT DISTINCT COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category
+    `SELECT DISTINCT TRIM(p.category) AS category
      FROM products p
-     WHERE (p.user_id::text = $1::text OR p.user_id = 'default-user' OR $1 = 'default-user')`,
+     WHERE (p.user_id::text = $1::text OR p.user_id = 'default-user' OR $1 = 'default-user')
+       AND p.category IS NOT NULL AND TRIM(p.category) != ''
+     ORDER BY TRIM(p.category) ASC`,
     [userId]
   )
   const cats = catRes.rows.map(r => r.category).filter(Boolean)
-  if (!cats.includes('Others')) cats.push('Others')
 
   const categoryColors = {}
   cats.forEach((cat, idx) => {
@@ -167,60 +239,92 @@ async function getDistinctCategories(userId) {
   const series = cats.map(cat => ({
     key: cat.toLowerCase().replace(/[^a-z0-9]/g, '_'),
     label: cat,
-    color: categoryColors[cat] || '#64748b'
+    color: categoryColors[cat] || '#10b981'
   }))
 
   return { cats, categoryColors, series }
 }
 
-async function queryBarData({ months, series, dateCondition, customerCondition, params }) {
-  const monthNums = months.map(m => m.num).join(',')
-  const yearNums = Array.from(new Set(months.map(m => m.year))).join(',')
+async function queryBarData({ timeConfig, series, customerCondition, params }) {
+  const { buckets, dateCondition, groupBy } = timeConfig
 
-  const barQuery = `
-    SELECT 
-      EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) AS month_num,
-      EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) AS year_num,
-      COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category,
-      COALESCE(SUM(bi.quantity * bi.price), 0) AS category_revenue
-    FROM bills b
-    JOIN bill_items bi ON bi.bill_id = b.id
-    LEFT JOIN products p ON bi.product_id = p.id
-    LEFT JOIN people c ON b.customer_id = c.id
-    LEFT JOIN customers cust ON b.customer_id = cust.id
-    WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
-      ${dateCondition} ${customerCondition}
-      AND EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})) IN (${monthNums})
-      AND EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})) IN (${yearNums})
-    GROUP BY EXTRACT(MONTH FROM (b.created_at AT TIME ZONE ${TZ})), EXTRACT(YEAR FROM (b.created_at AT TIME ZONE ${TZ})), COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
-  `
+  let barQuery = ''
+  if (groupBy === 'day') {
+    barQuery = `
+      SELECT 
+        (b.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS date_str,
+        COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category,
+        COALESCE(SUM(bi.quantity * bi.price), 0) AS category_revenue
+      FROM bills b
+      JOIN bill_items bi ON bi.bill_id = b.id
+      LEFT JOIN products p ON bi.product_id = p.id
+      LEFT JOIN people c ON b.customer_id = c.id
+      LEFT JOIN customers cust ON b.customer_id = cust.id
+      WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+        ${dateCondition} ${customerCondition}
+      GROUP BY (b.created_at AT TIME ZONE 'Asia/Kolkata')::date, COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
+    `
+  } else {
+    barQuery = `
+      SELECT 
+        EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')) AS month_num,
+        EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')) AS year_num,
+        COALESCE(NULLIF(TRIM(p.category), ''), 'Others') AS category,
+        COALESCE(SUM(bi.quantity * bi.price), 0) AS category_revenue
+      FROM bills b
+      JOIN bill_items bi ON bi.bill_id = b.id
+      LEFT JOIN products p ON bi.product_id = p.id
+      LEFT JOIN people c ON b.customer_id = c.id
+      LEFT JOIN customers cust ON b.customer_id = cust.id
+      WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+        ${dateCondition} ${customerCondition}
+      GROUP BY EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')), EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')), COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
+    `
+  }
+
   const barRes = await query(barQuery, params)
 
   const barDataMap = {}
-  months.forEach(m => {
-    const entry = { label: m.label }
+  buckets.forEach(b => {
+    const entry = { label: b.label }
     series.forEach(s => { entry[s.key] = 0 })
-    barDataMap[`${m.year}-${m.num}`] = entry
+    barDataMap[b.key] = entry
   })
 
   barRes.rows.forEach(r => {
-    const m = Number.parseInt(r.month_num, 10)
-    const y = Number.parseInt(r.year_num, 10)
-    const key = `${y}-${m}`
-    if (barDataMap[key]) {
-      const rawCat = r.category || 'Others'
-      const seriesKey = rawCat.toLowerCase().replace(/[^a-z0-9]/g, '_')
-      const rev = Number.parseFloat(r.category_revenue) || 0
-      if (barDataMap[key][seriesKey] !== undefined) {
-        barDataMap[key][seriesKey] += Math.round(rev)
-      } else {
-        barDataMap[key].others = (barDataMap[key].others || 0) + Math.round(rev)
+    const rawCat = r.category || 'Others'
+    const seriesKey = rawCat.toLowerCase().replace(/[^a-z0-9]/g, '_')
+    const rev = Number.parseFloat(r.category_revenue) || 0
+
+    if (groupBy === 'day') {
+      const rowDate = r.date_str
+      buckets.forEach(b => {
+        const matches = (b.type === 'day' && b.dateStr === rowDate) || (b.type === 'range' && rowDate >= b.startDateStr && rowDate <= b.endDateStr)
+
+        if (matches && barDataMap[b.key]) {
+          if (barDataMap[b.key][seriesKey] !== undefined) {
+            barDataMap[b.key][seriesKey] += Math.round(rev)
+          } else {
+            barDataMap[b.key].others = (barDataMap[b.key].others || 0) + Math.round(rev)
+          }
+        }
+      })
+    } else {
+      const m = Number.parseInt(r.month_num, 10)
+      const y = Number.parseInt(r.year_num, 10)
+      const key = `${y}-${m}`
+      if (barDataMap[key]) {
+        if (barDataMap[key][seriesKey] !== undefined) {
+          barDataMap[key][seriesKey] += Math.round(rev)
+        } else {
+          barDataMap[key].others = (barDataMap[key].others || 0) + Math.round(rev)
+        }
       }
     }
   })
 
   return {
-    barData: months.map(m => barDataMap[`${m.year}-${m.num}`]),
+    barData: buckets.map(b => barDataMap[b.key]),
     barRows: barRes.rows
   }
 }
@@ -257,23 +361,22 @@ async function queryDonutData({ dateCondition, customerCondition, params, catego
   })
 }
 
-function computeTooltipData(months, barRows) {
+function computeTooltipData(buckets, barData, series) {
   const tooltipData = []
-  for (let i = 0; i < months.length; i++) {
-    const m = months[i]
-    const monthRows = barRows.filter(
-      r => Number.parseInt(r.month_num, 10) === m.num && Number.parseInt(r.year_num, 10) === m.year
-    )
+  for (let i = 0; i < buckets.length; i++) {
+    const b = buckets[i]
+    const dataEntry = barData[i] || {}
+
     let topCategory = 'N/A'
     let maxRev = -1
     let revenueINR = 0
 
-    monthRows.forEach(r => {
-      const rev = Number.parseFloat(r.category_revenue) || 0
+    series.forEach(s => {
+      const rev = Number(dataEntry[s.key]) || 0
       revenueINR += rev
-      if (rev > maxRev) {
+      if (rev > maxRev && rev > 0) {
         maxRev = rev
-        topCategory = r.category || 'N/A'
+        topCategory = s.label
       }
     })
 
@@ -281,14 +384,11 @@ function computeTooltipData(months, barRows) {
 
     let change = '+0%'
     if (i > 0) {
-      const prevM = months[i - 1]
-      const prevMonthRows = barRows.filter(
-        r => Number.parseInt(r.month_num, 10) === prevM.num && Number.parseInt(r.year_num, 10) === prevM.year
-      )
-      const prevRevenue = prevMonthRows.reduce(
-        (sum, r) => sum + (Number.parseFloat(r.category_revenue) || 0),
-        0
-      )
+      const prevData = barData[i - 1] || {}
+      let prevRevenue = 0
+      series.forEach(s => {
+        prevRevenue += Number(prevData[s.key]) || 0
+      })
       if (prevRevenue > 0) {
         const diffPct = ((revenueINR - prevRevenue) / prevRevenue) * 100
         const sign = diffPct >= 0 ? '+' : ''
@@ -297,7 +397,7 @@ function computeTooltipData(months, barRows) {
     }
 
     tooltipData.push({
-      month: m.label,
+      month: b.label,
       product: topCategory,
       inr: '₹' + Math.round(revenueINR).toLocaleString('en-IN'),
       usd: 'USD ' + Math.round(revenueUSD).toLocaleString('en-US'),
@@ -310,37 +410,256 @@ function computeTooltipData(months, barRows) {
 /* GET /api/reports/business-metrics — Dynamic metrics for the charts */
 router.get('/business-metrics', async (req, res) => {
   const userId = req.workspaceId
-  const { dayFilter = 'Last 30 days', customerFilter = 'All Customers' } = req.query
-  const cacheKey = `reports:bm:${userId}:${dayFilter}:${customerFilter}`
+  const { dayFilter = 'Last 30 days', customerFilter = 'All Customers', productFilter = 'All Products', startDate = '', endDate = '' } = req.query
+  const cacheKey = `reports:bm:${userId}:${dayFilter}:${customerFilter}:${productFilter}:${startDate}:${endDate}`
 
   try {
     const cached = await redis.get(cacheKey).catch(() => null)
     if (cached) return res.json(cached)
 
-    const dateCondition = buildDateCondition(dayFilter, new Date().toISOString())
+    const timeConfig = buildTimeBuckets(dayFilter, new Date(), startDate, endDate)
 
     const params = [userId]
     let customerCondition = ''
     if (customerFilter && customerFilter !== 'All Customers') {
-      params.push(customerFilter)
-      customerCondition = `AND (c.name = $${params.length} OR c.name ILIKE $${params.length} OR cust.name = $${params.length} OR cust.name ILIKE $${params.length})`
+      if (customerFilter.toLowerCase().includes('walk') || customerFilter.toLowerCase().includes('general')) {
+        customerCondition = `AND (b.customer_id IS NULL OR c.name ILIKE '%walk%' OR cust.name ILIKE '%walk%' OR c.name IS NULL)`
+      } else {
+        params.push(customerFilter)
+        customerCondition = `AND (c.name = $${params.length} OR c.name ILIKE $${params.length} OR cust.name = $${params.length} OR cust.name ILIKE $${params.length})`
+      }
     }
 
-    const months = buildMonthsWindow(new Date())
+    if (productFilter && productFilter !== 'All Products') {
+      params.push(productFilter)
+      customerCondition += ` AND (p.name = $${params.length} OR p.name ILIKE $${params.length})`
+    }
+
     const { categoryColors, series } = await getDistinctCategories(userId)
 
-    const [{ barData, barRows }, donutData] = await Promise.all([
-      queryBarData({ months, series, dateCondition, customerCondition, params }),
-      queryDonutData({ dateCondition, customerCondition, params, categoryColors })
+    const [{ barData }, donutData] = await Promise.all([
+      queryBarData({ timeConfig, series, customerCondition, params }),
+      queryDonutData({ dateCondition: timeConfig.dateCondition, customerCondition, params, categoryColors })
     ])
 
-    const tooltipData = computeTooltipData(months, barRows)
+    const tooltipData = computeTooltipData(timeConfig.buckets, barData, series)
     const result = { series, barData, donutData, tooltipData }
 
-    await redis.set(cacheKey, result, { ex: 30 }).catch(() => {})
+    await redis.set(cacheKey, result, { ex: 15 }).catch(() => {})
     res.json(result)
   } catch (err) {
     console.error('[BUSINESS METRICS ERROR]', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* GET /api/reports/category-breakdown — Product-level breakdown for a specific category */
+router.get('/category-breakdown', async (req, res) => {
+  const userId = req.workspaceId
+  const { category = 'Grains', dayFilter = 'Last 7 days', customerFilter = 'All Customers', productFilter = 'All Products', startDate = '', endDate = '' } = req.query
+  const cacheKey = `reports:cat-breakdown:${userId}:${category}:${dayFilter}:${customerFilter}:${productFilter}:${startDate}:${endDate}`
+
+  try {
+    const cached = await redis.get(cacheKey).catch(() => null)
+    if (cached) return res.json(cached)
+
+    const timeConfig = buildTimeBuckets(dayFilter, new Date(), startDate, endDate)
+    const { buckets, dateCondition, groupBy } = timeConfig
+
+    // 1. Get ALL distinct products in this category (for dropdown & series color consistency)
+    const allProdRes = await query(
+      `SELECT DISTINCT p.id, p.name, COALESCE(NULLIF(TRIM(p.unit), ''), 'pcs') AS unit
+       FROM products p
+       WHERE (p.user_id::text = $1::text OR p.user_id = 'default-user' OR $1 = 'default-user')
+         AND COALESCE(NULLIF(TRIM(p.category), ''), 'Others') ILIKE $2
+       ORDER BY p.name ASC`,
+      [userId, category]
+    )
+
+    const allCategoryProducts = allProdRes.rows
+    const isProductFiltered = Boolean(productFilter && productFilter !== 'All Products')
+
+    const filteredProds = isProductFiltered
+      ? allCategoryProducts.filter(p => p.name.toLowerCase() === productFilter.toLowerCase())
+      : allCategoryProducts
+
+    // Series for bar chart
+    const series = (filteredProds.length > 0 ? filteredProds : allCategoryProducts).map((prod) => {
+      const originalIdx = allCategoryProducts.findIndex(p => p.id === prod.id)
+      return {
+        key: `prod_${prod.id}`,
+        id: prod.id,
+        label: prod.name,
+        unit: prod.unit,
+        color: COLOR_PALETTE[(originalIdx >= 0 ? originalIdx : 0) % COLOR_PALETTE.length]
+      }
+    })
+
+    // 2. Build query parameters for time-bucketed product sales and donut queries
+    const params = [userId, category]
+    let customerCondition = ''
+    if (customerFilter && customerFilter !== 'All Customers') {
+      if (customerFilter.toLowerCase().includes('walk') || customerFilter.toLowerCase().includes('general')) {
+        customerCondition = `AND (b.customer_id IS NULL OR c.name ILIKE '%walk%' OR cust.name ILIKE '%walk%' OR c.name IS NULL)`
+      } else {
+        params.push(customerFilter)
+        customerCondition = `AND (c.name = $${params.length} OR c.name ILIKE $${params.length} OR cust.name = $${params.length} OR cust.name ILIKE $${params.length})`
+      }
+    }
+
+    let prodFilterCondition = ''
+    if (isProductFiltered) {
+      params.push(productFilter)
+      prodFilterCondition = `AND (p.name = $${params.length} OR p.name ILIKE $${params.length})`
+    }
+
+    let barQuery = ''
+    if (groupBy === 'day') {
+      barQuery = `
+        SELECT 
+          (b.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS date_str,
+          p.id AS product_id,
+          p.name AS product_name,
+          COALESCE(SUM(bi.quantity), 0) AS units_sold,
+          COALESCE(SUM(bi.quantity * bi.price), 0) AS product_revenue
+        FROM bills b
+        JOIN bill_items bi ON bi.bill_id = b.id
+        JOIN products p ON bi.product_id = p.id
+        LEFT JOIN people c ON b.customer_id = c.id
+        LEFT JOIN customers cust ON b.customer_id = cust.id
+        WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+          AND COALESCE(NULLIF(TRIM(p.category), ''), 'Others') ILIKE $2
+          ${dateCondition} ${customerCondition} ${prodFilterCondition}
+        GROUP BY (b.created_at AT TIME ZONE 'Asia/Kolkata')::date, p.id, p.name
+      `
+    } else {
+      barQuery = `
+        SELECT 
+          EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')) AS month_num,
+          EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')) AS year_num,
+          p.id AS product_id,
+          p.name AS product_name,
+          COALESCE(SUM(bi.quantity), 0) AS units_sold,
+          COALESCE(SUM(bi.quantity * bi.price), 0) AS product_revenue
+        FROM bills b
+        JOIN bill_items bi ON bi.bill_id = b.id
+        JOIN products p ON bi.product_id = p.id
+        LEFT JOIN people c ON b.customer_id = c.id
+        LEFT JOIN customers cust ON b.customer_id = cust.id
+        WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+          AND COALESCE(NULLIF(TRIM(p.category), ''), 'Others') ILIKE $2
+          ${dateCondition} ${customerCondition} ${prodFilterCondition}
+        GROUP BY EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')), EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'Asia/Kolkata')), p.id, p.name
+      `
+    }
+
+    const barRes = await query(barQuery, params)
+
+    const barDataMap = {}
+    buckets.forEach(b => {
+      const entry = { label: b.label }
+      series.forEach(s => { entry[s.key] = 0 })
+      barDataMap[b.key] = entry
+    })
+
+    barRes.rows.forEach(r => {
+      const seriesKey = `prod_${r.product_id}`
+      const rev = Number.parseFloat(r.product_revenue) || 0
+
+      if (groupBy === 'day') {
+        const rowDate = r.date_str
+        buckets.forEach(b => {
+          const matches = (b.type === 'day' && b.dateStr === rowDate) || (b.type === 'range' && rowDate >= b.startDateStr && rowDate <= b.endDateStr)
+          if (matches && barDataMap[b.key] && barDataMap[b.key][seriesKey] !== undefined) {
+            barDataMap[b.key][seriesKey] = (barDataMap[b.key][seriesKey] || 0) + Math.round(rev)
+          }
+        })
+      } else {
+        const m = Number.parseInt(r.month_num, 10)
+        const y = Number.parseInt(r.year_num, 10)
+        const key = `${y}-${m}`
+        if (barDataMap[key] && barDataMap[key][seriesKey] !== undefined) {
+          barDataMap[key][seriesKey] = (barDataMap[key][seriesKey] || 0) + Math.round(rev)
+        }
+      }
+    })
+
+    const barData = buckets.map(b => barDataMap[b.key])
+
+    // 3. Product donut / share data in this category
+    const donutQuery = `
+      SELECT 
+        p.id AS product_id,
+        p.name AS label,
+        COALESCE(NULLIF(TRIM(p.unit), ''), 'pcs') AS unit,
+        COUNT(DISTINCT b.id) AS count,
+        COALESCE(SUM(bi.quantity), 0) AS total_units,
+        COALESCE(SUM(bi.quantity * bi.price), 0) AS total_revenue
+      FROM bills b
+      JOIN bill_items bi ON bi.bill_id = b.id
+      JOIN products p ON bi.product_id = p.id
+      LEFT JOIN people c ON b.customer_id = c.id
+      LEFT JOIN customers cust ON b.customer_id = cust.id
+      WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
+        AND COALESCE(NULLIF(TRIM(p.category), ''), 'Others') ILIKE $2
+        ${dateCondition} ${customerCondition} ${prodFilterCondition}
+      GROUP BY p.id, p.name, p.unit
+      ORDER BY total_revenue DESC
+    `
+    const donutRes = await query(donutQuery, params)
+    const totalRevAll = donutRes.rows.reduce((sum, r) => sum + Number.parseFloat(r.total_revenue || 0), 0)
+
+    let donutData = []
+    if (donutRes.rows.length === 0 && isProductFiltered && filteredProds.length > 0) {
+      const selProd = filteredProds[0]
+      const matchedSeries = series.find(s => String(s.id) === String(selProd.id))
+      donutData = [{
+        id: selProd.id,
+        label: selProd.name,
+        unit: selProd.unit,
+        count: 0,
+        units_sold: 0,
+        revenue: 0,
+        pct: 0,
+        color: matchedSeries ? matchedSeries.color : COLOR_PALETTE[0]
+      }]
+    } else {
+      donutData = donutRes.rows.map((r, idx) => {
+        const rev = Number.parseFloat(r.total_revenue) || 0
+        const pct = totalRevAll > 0 ? Math.round((rev / totalRevAll) * 100) : 0
+        const matchedSeries = series.find(s => String(s.id) === String(r.product_id))
+        return {
+          id: r.product_id,
+          label: r.label,
+          unit: r.unit,
+          count: Number.parseInt(r.count, 10),
+          units_sold: Number.parseFloat(r.total_units) || 0,
+          revenue: rev,
+          pct,
+          color: matchedSeries ? matchedSeries.color : COLOR_PALETTE[idx % COLOR_PALETTE.length]
+        }
+      })
+    }
+
+    const tooltipData = computeTooltipData(timeConfig.buckets, barData, series)
+
+    const result = {
+      category,
+      series,
+      allCategoryProducts: allCategoryProducts.map(p => p.name),
+      barData,
+      donutData,
+      tooltipData,
+      totalRevenue: totalRevAll,
+      totalOrders: donutRes.rows.reduce((sum, r) => sum + Number.parseInt(r.count, 10), 0),
+      totalUnits: donutRes.rows.reduce((sum, r) => sum + Number.parseFloat(r.total_units, 10), 0),
+      totalProductsCount: allCategoryProducts.length
+    }
+
+    await redis.set(cacheKey, result, { ex: 15 }).catch(() => {})
+    res.json(result)
+  } catch (err) {
+    console.error('[CATEGORY BREAKDOWN ERROR]', err)
     res.status(500).json({ error: err.message })
   }
 })

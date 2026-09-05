@@ -59,11 +59,12 @@ const uiSlice = createSlice({
       state.configureOpen = action.payload
     },
     addToast(state, action) {
-      state.toasts.push({
-        id:      Date.now(),
+      const newToast = {
+        id:      Date.now() + '-' + Math.random().toString(36).substr(2, 5),
         message: action.payload.message,
         type:    action.payload.type || 'info',
-      })
+      }
+      state.toasts = [...state.toasts.slice(-2), newToast]
     },
     removeToast(state, action) {
       state.toasts = state.toasts.filter(t => t.id !== action.payload)

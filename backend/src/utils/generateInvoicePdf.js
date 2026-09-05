@@ -83,30 +83,60 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   const pName = resolveProdName(prodName, dbUnit)
   const bw = inferBagWeight(Number.parseFloat(bagWeight || 1), pName.toLowerCase())
   const uClean = cleanUnitStr(rawUnit)
-  const dbUnitStr = (typeof dbUnit === 'string' && ['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) ? dbUnit : ''
+  const dbUnitStr = (typeof dbUnit === 'string' && ['kgs', 'kg', 'ltrs', 'ltr', 'pcs', 'pc', 'box', 'boxes', 'pack', 'doz', 'set', 'mtr', 'mtrs', 'bag', 'bags'].includes(dbUnit.toLowerCase())) ? dbUnit : ''
   const u = (uClean || dbUnitStr).toLowerCase().trim()
-  const isBagUnit = ['bag', 'bags'].includes(u)
 
-  if (isQuote || isBagUnit) {
-    if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'ltrs', subtext: 'ltrs' }
+  // 1. Box / Pack / Cartons
+  if (['box', 'boxes', 'carton', 'cartons', 'pkt', 'pack', 'packs'].includes(u)) {
+    let unitName = 'Pack'
+    if (u === 'box' || u === 'boxes') {
+      unitName = qty === 1 ? 'Box' : 'Boxes'
     }
-    if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-      return { displayQty: qty, displayUnit: 'mtrs', subtext: bw > 1 ? `${bw}m Roll` : 'mtrs' }
-    }
-    return { displayQty: qty, displayUnit: 'Bag', subtext: bw > 1 ? `${bw}kg Bag` : 'Bag' }
+    const sub = bw > 1 ? `${bw} pcs/${unitName}` : unitName
+    return { displayQty: qty, displayUnit: unitName, subtext: sub }
   }
 
-  let baseUnitLabel = uClean || u || 'kgs'
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
-  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
-  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
-
-  return {
-    displayQty: qty,
-    displayUnit: baseUnitLabel,
-    subtext: ''
+  // 2. Count / Pieces / Dozen / Set
+  if (['pcs', 'pc', 'piece', 'pieces'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'pcs', subtext: 'pcs' }
   }
+  if (['doz', 'dozen'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'doz', subtext: 'Dozen' }
+  }
+  if (['set', 'sets'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'set', subtext: 'Set' }
+  }
+
+  // 3. Length / Meters / Feet
+  if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
+    const sub = bw > 1 ? `${bw}m Roll` : 'mtrs'
+    return { displayQty: qty, displayUnit: 'mtrs', subtext: sub }
+  }
+  if (['ft', 'feet', 'foot'].includes(u)) {
+    const sub = bw > 1 ? `${bw}ft Bundle` : 'ft'
+    return { displayQty: qty, displayUnit: 'ft', subtext: sub }
+  }
+
+  // 4. Volume / Liters / Milliliters
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
+    const sub = bw > 1 ? `${bw}L Drum` : 'ltrs'
+    return { displayQty: qty, displayUnit: 'ltrs', subtext: sub }
+  }
+  if (['ml', 'milliliter', 'milliliters'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'ml', subtext: 'ml' }
+  }
+
+  // 5. Weight / Kilograms / Bags
+  if (['bag', 'bags'].includes(u) || (isQuote && ['kgs', 'kg', 'kilogram', 'kilograms'].includes(u))) {
+    const sub = bw > 1 ? `${bw}kg Bag` : 'Bag'
+    return { displayQty: qty, displayUnit: 'Bag', subtext: sub }
+  }
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'kgs', subtext: bw > 1 ? `${bw}kg Bag` : 'kgs' }
+  }
+
+  const fallbackUnit = uClean || dbUnitStr || 'unit'
+  return { displayQty: qty, displayUnit: fallbackUnit, subtext: fallbackUnit }
 }
 
 function resolveDocumentNumber({ quote, bill, isQuote }) {
@@ -638,7 +668,7 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
       const sectionTitle1 = isQuote ? '1. QUOTATION DETAILS' : '1. INVOICE DETAILS'
       const docTypeTitle = isQuote ? 'Commercial Quotation' : 'Tax Invoice'
 
-      const companyName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Akash Company'
+      const companyName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || (shop.first_name ? `${shop.first_name}'s Store` : 'Store')
       const companyGstin = shop.gstin || quote.shop_gstin || bill.shop_gstin || ''
       const companyPhone = shop.phone || quote.shop_phone || bill.shop_phone || ''
       const companyAddress = shop.address || quote.shop_address || bill.shop_address || ''

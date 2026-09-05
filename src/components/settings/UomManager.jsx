@@ -54,7 +54,7 @@ export default function UomManager() {
     setForm({
       code: '',
       name: '',
-      category: 'Count',
+      category: '',
       is_bulk: false,
       presets: '1, 10, 50',
       status: 'Active'
@@ -215,15 +215,13 @@ export default function UomManager() {
                       {/* Code */}
                       <td>
                         <span style={{
-                          fontFamily: 'monospace',
-                          fontWeight: 700,
-                          fontSize: '0.82rem',
+                          fontWeight: 600,
+                          fontSize: '0.84rem',
                           background: '#f1f5f9',
                           color: '#0f172a',
                           padding: '3px 9px',
                           borderRadius: 6,
-                          border: '1px solid #e2e8f0',
-                          letterSpacing: '0.02em'
+                          border: '1px solid #e2e8f0'
                         }}>
                           {item.code}
                         </span>
@@ -449,8 +447,7 @@ export default function UomManager() {
                       width: '100%',
                       padding: '8px 12px',
                       fontSize: '0.84rem',
-                      fontFamily: 'monospace',
-                      fontWeight: 700,
+                      fontWeight: 600,
                       border: '1.5px solid #e2e8f0',
                       borderRadius: 8,
                       outline: 'none'
@@ -487,26 +484,21 @@ export default function UomManager() {
                   <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 650, color: '#334155', marginBottom: 5 }}>
                     Category
                   </label>
-                  <select
+                  <input
+                    type="text"
+                    placeholder="e.g. Weight, Count, Volume, Package..."
                     value={form.category}
                     onChange={e => setForm({ ...form, category: e.target.value })}
                     style={{
                       width: '100%',
-                      padding: '8px 10px',
+                      padding: '8px 12px',
                       fontSize: '0.84rem',
                       border: '1.5px solid #e2e8f0',
                       borderRadius: 8,
                       outline: 'none',
                       background: '#ffffff'
                     }}
-                  >
-                    <option value="Count">Count (pcs, dozen, pack...)</option>
-                    <option value="Weight">Weight (kg, g, ton...)</option>
-                    <option value="Volume">Volume (L, ml...)</option>
-                    <option value="Package">Package (box, carton, bag...)</option>
-                    <option value="Length">Length (m, cm, ft...)</option>
-                    <option value="Other">Other Custom</option>
-                  </select>
+                  />
                 </div>
 
                 {/* Status */}

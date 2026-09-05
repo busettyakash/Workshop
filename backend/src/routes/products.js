@@ -269,10 +269,64 @@ router.get('/:id/stock-history', async (req, res) => {
   const userId = req.workspaceId
   const productId = req.params.id
   try {
-    const { rows } = await query(
+    let { rows } = await query(
       `SELECT * FROM product_stock_history WHERE product_id = $1 AND (user_id = $2 OR user_id = 'default-user' OR $2 = 'default-user') ORDER BY created_at DESC LIMIT 100`,
       [productId, userId]
     )
+
+    if (rows.length === 0) {
+      // Find matching product and import_stock to record initial stock event
+      const prodRes = await query('SELECT * FROM products WHERE id = $1 AND (user_id = $2 OR user_id = \'default-user\')', [productId, userId])
+      if (prodRes.rows.length > 0) {
+        const prod = prodRes.rows[0]
+        const impRes = await query(
+          `SELECT * FROM import_stock 
+           WHERE (user_id = $1 OR user_id = 'default-user') 
+             AND ((sku IS NOT NULL AND sku <> '' AND sku <> 'N/A' AND sku = $2) OR LOWER(TRIM(name)) = LOWER(TRIM($3)))
+           ORDER BY id DESC LIMIT 1`,
+          [userId, prod.sku || 'N/A', prod.name]
+        )
+
+        const initialQty = Number.parseFloat(impRes.rows[0]?.stock || prod.stock || 0)
+        if (initialQty > 0) {
+          const isImport = impRes.rows.length > 0
+          let unitLabel = prod.unit || 'pcs'
+          if (Number(prod.bag_weight || 1) > 1) {
+            unitLabel = initialQty === 1 ? 'Bag' : 'Bags'
+          }
+          const initialSource = isImport ? 'Stock Import' : 'Initial Base Stock'
+          const supplierName = impRes.rows[0]?.buyer_name
+          const supplierText = supplierName ? ` from ${supplierName}` : ''
+          const initialNotes = isImport
+            ? `Initial imported stock of ${initialQty} ${unitLabel}${supplierText}`
+            : `Initial base stock of ${initialQty} ${unitLabel}`
+
+          const insRes = await query(
+            `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+             VALUES ($1, $2, 'added', $3, 0, $4, $5, $6, $7) RETURNING *`,
+            [productId, userId, initialQty, initialQty, initialSource, initialNotes, impRes.rows[0]?.created_at || prod.created_at || new Date().toISOString()]
+          ).catch(() => ({ rows: [] }))
+
+          if (insRes.rows.length > 0) {
+            rows = insRes.rows
+          } else {
+            rows = [{
+              id: 'init-stock',
+              product_id: Number(productId),
+              user_id: userId,
+              change_type: 'added',
+              qty_change: initialQty,
+              stock_before: 0,
+              stock_after: initialQty,
+              source: initialSource,
+              notes: initialNotes,
+              created_at: impRes.rows[0]?.created_at || prod.created_at || new Date().toISOString()
+            }]
+          }
+        }
+      }
+    }
+
     return res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -314,6 +368,20 @@ router.post('/', async (req, res) => {
     await logPriceHistory(newProduct.id, userId, null, newProduct.price, new Date().toISOString().split('T')[0], 'Initial Base Price')
     if (newProduct.updated_price) {
       await logPriceHistory(newProduct.id, userId, newProduct.price, newProduct.updated_price, newProduct.updated_price_date, 'Updated Price')
+    }
+
+    if (Number.parseFloat(newProduct.stock || 0) > 0) {
+      const initialQty = Number.parseFloat(newProduct.stock)
+      const bagWeight = Number.parseFloat(newProduct.bag_weight || 1)
+      let unitName = newProduct.unit || 'pcs'
+      if (bagWeight > 1) {
+        unitName = initialQty === 1 ? 'Bag' : 'Bags'
+      }
+      await query(
+        `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+         VALUES ($1, $2, 'added', $3, 0, $4, 'Initial Base Stock', $5, NOW())`,
+        [newProduct.id, userId, initialQty, initialQty, `Initial base stock of ${initialQty} ${unitName}`]
+      ).catch(() => {})
     }
 
     res.status(201).json(newProduct)

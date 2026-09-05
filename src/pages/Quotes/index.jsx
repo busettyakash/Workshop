@@ -264,7 +264,7 @@ const calcMaxStock = (prod, itemUnit) => {
   } else {
     const label = (bulkUnit && bw > 1)
       ? `${bulkUnit.name || 'Bag'} (${bw}${bulkUnit.short || 'kg'})`
-      : (bulkUnit?.short || prod.unit || 'pcs')
+      : (prod.unit || 'pcs')
     return {
       maxStock: stockBags,
       displayLabel: looseKg > 0 ? `${stockBags} ${bulkUnit?.name || 'Bags'} ${looseKg} ${bulkUnit?.short || 'kgs'}` : `${stockBags} ${label}`
@@ -273,7 +273,8 @@ const calcMaxStock = (prod, itemUnit) => {
 }
 
 function FullPageQuoteStepper({ quote, onBack, onSaved }) {
-  const isEdit = Boolean(quote?.id)
+  const [currentQuoteId, setCurrentQuoteId] = useState(quote?.id || null)
+  const isEdit = Boolean(quote?.id || currentQuoteId)
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
 
@@ -412,14 +413,14 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
     const bagWeight = parseFloat(prod.bag_weight || 1)
 
     const isPack = bulkUnit && bagWeight > 1
-    const unitLabel = isPack ? (bulkUnit.name || 'Bag') : (bulkUnit?.short || prod.unit || 'pcs')
+    const unitLabel = isPack ? (bulkUnit.name || prod.unit || 'Bag') : (prod.unit || 'pcs')
     const itemRate = isPack ? prices.perPackPrice : (prices.perUnitRate > 0 ? prices.perUnitRate : (prod.price || 0))
 
     let subtext = ''
-    if (bulkUnit) {
-      subtext = bagWeight > 1
-        ? `${bulkUnit.name || 'Pack'}: ₹${prices.perPackPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
-        : `${bulkUnit.name || 'Unit'}: ₹${prices.perUnitRate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${bulkUnit.short}`
+    if (bulkUnit && bagWeight > 1) {
+      subtext = `${bulkUnit.name || 'Pack'}: ₹${prices.perPackPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
+    } else if (prod.unit) {
+      subtext = `${prod.unit}: ₹${(parseFloat(prod.updated_price || prod.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }
 
     setLineItems(prev => prev.map((item, i) => {
@@ -522,21 +523,27 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
   const saveQuoteAsync = async (overrideStatus = null) => {
     const custName = formData.customer_name?.trim() || 'Draft Customer'
+    const newStatus = overrideStatus || formData.status || 'Draft'
     const payload = {
       ...formData,
       customer_name: custName,
-      status: overrideStatus || formData.status || 'Draft',
+      status: newStatus,
       line_items: lineItems.map(it => ({
         ...it,
         discount: parseFloat(it.discount || 0),
         discount_amount: parseFloat(it.discount || 0)
       }))
     }
-    if (isEdit || quote?.id) {
-      const res = await api.put(`/quotes/${quote.id}`, payload)
+    const targetId = currentQuoteId || quote?.id
+    if (targetId) {
+      const res = await api.put(`/quotes/${targetId}`, payload)
+      if (res.data?.id) setCurrentQuoteId(res.data.id)
+      setFormData(prev => ({ ...prev, status: newStatus }))
       return res.data
     } else {
       const res = await api.post('/quotes', payload)
+      if (res.data?.id) setCurrentQuoteId(res.data.id)
+      setFormData(prev => ({ ...prev, status: newStatus }))
       return res.data
     }
   }
@@ -588,7 +595,8 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
   const handleBackToQuotes = async () => {
     const hasData = Boolean(formData.customer_name?.trim() || lineItems.some(it => it.name || it.product_id))
-    if (hasData) {
+    // Only auto-save as Draft if it has data and hasn't already been sent/accepted
+    if (hasData && (!formData.status || formData.status === 'Draft') && !currentQuoteId) {
       try {
         const saved = await saveQuoteAsync('Draft')
         if (onSaved) await onSaved(saved)
@@ -861,18 +869,18 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               {lineItems.map((item, index) => {
                 const selectedProd = products.find(p => String(p.id) === String(item.product_id))
                 const bw = parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
-                const rawUnit = selectedProd?.unit || item.unit || 'pcs'
-                const bulkUnit = getBulkUnitDetails(rawUnit)
-                const unitLabel = bw > 1
+                const rawUnit = item.unit || selectedProd?.unit || 'pcs'
+                const bulkUnit = getBulkUnitDetails(selectedProd?.unit || rawUnit)
+                const unitLabel = item.unit || (bw > 1
                   ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
-                  : (bulkUnit?.short || rawUnit)
+                  : (selectedProd?.unit || rawUnit))
 
                 const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? parseFloat(selectedProd.stock) : null
                 const isExceeded = maxStock !== null && maxStock >= 0 && (parseFloat(item.quantity) || 0) > maxStock
 
-                const baseSubtext = item.subtext || (selectedProd && bulkUnit && bw > 1
+                const baseSubtext = item.subtext || (selectedProd && bw > 1 && bulkUnit
                   ? `${bulkUnit.name || 'Bag'}: ₹${(parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
-                  : '')
+                  : (selectedProd ? `${selectedProd.unit || 'Unit'}: ₹${(parseFloat(selectedProd?.updated_price || selectedProd?.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}` : ''))
 
                 const stockSubtext = selectedProd ? `Available Stock: ${formatStockDisplay(selectedProd.stock, selectedProd.bag_weight, selectedProd.unit, selectedProd.loose_kg)}` : ''
                 const fullSubtext = [baseSubtext, stockSubtext].filter(Boolean).join(' • ')
@@ -969,7 +977,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                     const bw = parseFloat(selectedProd?.bag_weight || item.bag_weight || 1)
                     const unitLabel = (selectedProd && bw > 1)
                       ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
-                      : (bulkUnit?.short || item.unit || 'pcs')
+                      : (item.unit || selectedProd?.unit || 'pcs')
 
                     dispatch(addToast({
                       message: `Cannot proceed: We have only ${maxStock} ${unitLabel} available in stock for ${selectedProd?.name || 'this product'}.`,
@@ -1054,7 +1062,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                   <div key={idx} style={{ padding: '8px 12px', borderBottom: idx < lineItems.length - 1 ? '1px solid #f1f5f9' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.8rem' }}>{item.name || 'Selected Item'}</span>
-                      <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f8fafc', padding: '2px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>Qty: {item.quantity}</span>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f8fafc', padding: '2px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>Qty: {item.quantity} {item.unit || ''}</span>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

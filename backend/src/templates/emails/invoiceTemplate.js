@@ -24,31 +24,57 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, isQuoteFlow = false) {
   const uRaw = normalizeUnitRaw(rawUnit)
   const u = uRaw.toLowerCase().trim()
 
-  let baseUnitLabel = uRaw || u || 'pcs'
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) baseUnitLabel = 'kgs'
-  else if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) baseUnitLabel = 'ltrs'
-  else if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) baseUnitLabel = 'mtrs'
-
-  if (!isQuoteFlow) {
-    return { displayQty: qty, displayUnit: baseUnitLabel, subtext: baseUnitLabel }
+  // 1. Box / Pack / Cartons
+  if (['box', 'boxes', 'carton', 'cartons', 'pkt', 'pack', 'packs'].includes(u)) {
+    let unitName = 'Pack'
+    if (u === 'box' || u === 'boxes') {
+      unitName = qty === 1 ? 'Box' : 'Boxes'
+    }
+    const sub = bw > 1 ? `${bw} pcs/${unitName}` : unitName
+    return { displayQty: qty, displayUnit: unitName, subtext: sub }
   }
 
-  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'ltrs', subtext: 'ltrs' }
+  // 2. Count / Pieces / Dozen / Set
+  if (['pcs', 'pc', 'piece', 'pieces'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'pcs', subtext: 'pcs' }
+  }
+  if (['doz', 'dozen'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'doz', subtext: 'Dozen' }
+  }
+  if (['set', 'sets'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'set', subtext: 'Set' }
   }
 
+  // 3. Length / Meters / Feet
   if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'mtrs', subtext: bw > 1 ? `${bw}m Roll` : 'mtrs' }
+    const sub = bw > 1 ? `${bw}m Roll` : 'mtrs'
+    return { displayQty: qty, displayUnit: 'mtrs', subtext: sub }
+  }
+  if (['ft', 'feet', 'foot'].includes(u)) {
+    const sub = bw > 1 ? `${bw}ft Bundle` : 'ft'
+    return { displayQty: qty, displayUnit: 'ft', subtext: sub }
   }
 
-  const packName = bw > 1 ? 'Bag' : 'Pack'
-  const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
-
-  return {
-    displayQty: qty,
-    displayUnit: 'Bags',
-    subtext: packSubtext
+  // 4. Volume / Liters / Milliliters
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
+    const sub = bw > 1 ? `${bw}L Drum` : 'ltrs'
+    return { displayQty: qty, displayUnit: 'ltrs', subtext: sub }
   }
+  if (['ml', 'milliliter', 'milliliters'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'ml', subtext: 'ml' }
+  }
+
+  // 5. Weight / Kilograms / Bags
+  if (['bag', 'bags'].includes(u) || (isQuoteFlow && ['kgs', 'kg', 'kilogram', 'kilograms'].includes(u))) {
+    const sub = bw > 1 ? `${bw}kg Bag` : 'Bag'
+    return { displayQty: qty, displayUnit: 'Bag', subtext: sub }
+  }
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'kgs', subtext: bw > 1 ? `${bw}kg Bag` : 'kgs' }
+  }
+
+  let baseUnitLabel = uRaw || u || 'unit'
+  return { displayQty: qty, displayUnit: baseUnitLabel, subtext: baseUnitLabel }
 }
 
 function getExplicitLineDiscount(it) {
@@ -80,7 +106,7 @@ function computeInvoiceTax({ grossSubtotalVal, totalDiscountVal, totalAmount, bi
 }
 
 export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}, catalogMap = {} }) => {
-  const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || 'Shree Mahalakshmi Traders'
+  const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || (shop.first_name ? `${shop.first_name}'s Store` : 'Store')
   const sellerPhone = shop.phone || bill?.shop_phone || ''
   const sellerGstin = shop.gstin || bill?.shop_gstin || ''
   const sellerAddress = shop.address || bill?.shop_address || ''

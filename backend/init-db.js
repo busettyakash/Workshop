@@ -407,6 +407,31 @@ async function createTables() {
       console.log('ℹ️ Session timeout notice:', tErr.message);
     }
 
+    // Secure public.rls_auto_enable() if present so anon/authenticated cannot execute it via REST API
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_proc p 
+            JOIN pg_namespace n ON p.pronamespace = n.oid 
+            WHERE n.nspname = 'public' AND p.proname = 'rls_auto_enable'
+          ) THEN
+            EXECUTE 'REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC';
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+              EXECUTE 'REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon';
+            END IF;
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+              EXECUTE 'REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM authenticated';
+            END IF;
+          END IF;
+        END $$;
+      `);
+      console.log('✅ Verified rls_auto_enable security permissions');
+    } catch (secErr) {
+      console.log('ℹ️ Security hardening notice:', secErr.message);
+    }
+
     // ── Create missing foreign-key and search indexes for performance optimization ──
     const indexQueries = [
       "CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items(bill_id)",
@@ -436,6 +461,54 @@ async function createTables() {
       } catch (err) {
         console.warn(`⚠️ Could not create index (${q}):`, err.message);
       }
+    }
+
+    // ── Backfill initial & imported stock history for any existing products missing added event ──
+    try {
+      const backfillRes = await pool.query(`
+        INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, loose_kg_after, source, notes, created_at)
+        SELECT 
+          p.id AS product_id,
+          p.user_id,
+          'added' AS change_type,
+          orig.original_stock AS qty_change,
+          0 AS stock_before,
+          orig.original_stock AS stock_after,
+          0 AS loose_kg_after,
+          CASE WHEN i.id IS NOT NULL THEN 'Stock Import' ELSE 'Initial Base Stock' END AS source,
+          CASE 
+            WHEN i.id IS NOT NULL THEN CONCAT('Imported ', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM orig.original_stock::numeric::text)), ' ', CASE WHEN COALESCE(p.bag_weight, 1) > 1 THEN 'Bags' ELSE COALESCE(p.unit, 'pcs') END, ' via Stock Import', CASE WHEN i.buyer_name IS NOT NULL AND i.buyer_name <> '' THEN CONCAT(' (Supplier: ', i.buyer_name, ')') ELSE '' END)
+            ELSE CONCAT('Initial base stock of ', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM orig.original_stock::numeric::text)), ' ', CASE WHEN COALESCE(p.bag_weight, 1) > 1 THEN 'Bags' ELSE COALESCE(p.unit, 'pcs') END)
+          END AS notes,
+          COALESCE(i.created_at, p.created_at, NOW()) AS created_at
+        FROM products p
+        CROSS JOIN LATERAL (
+          SELECT COALESCE(
+            (SELECT MAX(psh.stock_before::numeric) FROM product_stock_history psh WHERE psh.product_id = p.id),
+            (SELECT i_sub.stock::numeric FROM import_stock i_sub WHERE (i_sub.user_id = p.user_id OR i_sub.user_id = 'default-user') AND (i_sub.sku = p.sku OR LOWER(TRIM(i_sub.name)) = LOWER(TRIM(p.name))) ORDER BY i_sub.id DESC LIMIT 1),
+            p.stock::numeric,
+            0
+          ) AS original_stock
+        ) orig
+        LEFT JOIN LATERAL (
+          SELECT id, buyer_name, created_at
+          FROM import_stock
+          WHERE (user_id = p.user_id OR user_id = 'default-user')
+            AND (sku = p.sku OR LOWER(TRIM(name)) = LOWER(TRIM(p.name)))
+          ORDER BY id DESC LIMIT 1
+        ) i ON true
+        WHERE orig.original_stock > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM product_stock_history psh 
+            WHERE psh.product_id = p.id AND psh.change_type = 'added'
+          )
+        RETURNING id;
+      `);
+      if (backfillRes.rows.length > 0) {
+        console.log(`✅ Backfilled initial/imported stock history for ${backfillRes.rows.length} existing products.`);
+      }
+    } catch (bfErr) {
+      console.warn('ℹ️ Stock history backfill notice:', bfErr.message);
     }
 
   } catch (error) {

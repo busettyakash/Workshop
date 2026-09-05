@@ -25,10 +25,10 @@ export default function WorkspaceSettings() {
 
   // Workspace Form
   const [workspaceForm, setWorkspaceForm] = useState({
-    shopName: shopName || 'Akash Traders',
-    phone: '+91 9876543210',
-    gstin: '36ABCDE1234F1Z5',
-    address: '123 Industrial Area, Tech Park, Hyderabad, Telangana'
+    shopName: shopName || 'My Workspace',
+    phone: '',
+    gstin: '',
+    address: ''
   })
 
   const handleSaveWorkspace = (e) => {

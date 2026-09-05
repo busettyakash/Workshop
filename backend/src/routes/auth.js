@@ -369,15 +369,35 @@ function resolvePermissions(role, permissions) {
 
 /**
  * Resolve the active workspace role/permissions for a user at login time.
- * Returns workspace metadata from the first invited workspace, if any.
+ * Returns workspace metadata from user's own workspace if owned, or first invited workspace.
  */
 async function resolveLoginWorkspace(email, userId, shopName) {
+  const safeShopName = (shopName && String(shopName).trim() !== 'null' && String(shopName).trim() !== '')
+    ? shopName
+    : `${email.split('@')[0]}'s Workshop`
+
   let activeRole        = 'Owner'
   let activePermissions = null
   let activeWorkspaceId = userId
-  let activeWorkspaceName = shopName
+  let activeWorkspaceName = safeShopName
 
   try {
+    // 1. If user has their own shop profile, prioritize their own Owner workspace
+    const ownCheck = await query(
+      'SELECT user_id, shop_name FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
+      [email]
+    ).catch(() => ({ rows: [] }))
+
+    if (ownCheck.rows.length > 0) {
+      const row = ownCheck.rows[0]
+      activeWorkspaceId = row.user_id || userId
+      activeWorkspaceName = (row.shop_name && String(row.shop_name).trim() !== 'null' && String(row.shop_name).trim() !== '')
+        ? row.shop_name
+        : safeShopName
+      return { activeRole, activePermissions, activeWorkspaceId, activeWorkspaceName }
+    }
+
+    // 2. Otherwise check for invited workspace memberships
     const { rows } = await query(
       `SELECT m.workspace_owner_id, m.role, m.permissions, p.shop_name, p.email AS owner_email
        FROM workspace_members m
@@ -396,9 +416,12 @@ async function resolveLoginWorkspace(email, userId, shopName) {
         try { mPerms = JSON.parse(mPerms) } catch { mPerms = {} }
       }
       activeRole          = row.role || 'Member'
-      activePermissions   = mPerms || {}
+      activePermissions   = (mPerms && Object.keys(mPerms).length > 0) ? mPerms : DEFAULT_MEMBER_PERMISSIONS
       activeWorkspaceId   = row.workspace_owner_id
-      activeWorkspaceName = row.shop_name || `${row.owner_email}'s Shop`
+      const rawShop = row.shop_name
+      activeWorkspaceName = (rawShop && String(rawShop).trim() !== 'null' && String(rawShop).trim() !== '')
+        ? rawShop
+        : `${row.owner_email || 'Owner'}'s Shop`
     }
   } catch (err) {
     console.error('[Login] Error resolving initial workspace role:', err.message)
@@ -807,6 +830,14 @@ router.post('/login', authLimiter, async (req, res) => {
         }
         userId = localUserId || data?.user?.id || getLocalUserId(email)
         token  = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
+
+        // Cache the verified password locally so all future logins skip the remote network trip
+        if (password) {
+          query(
+            'UPDATE shop_profiles SET password = $1 WHERE LOWER(email) = LOWER($2)',
+            [password, email]
+          ).catch(err => console.warn('[Auth Password Cache Notice]', err.message))
+        }
       } catch (authErr) {
         console.warn('[InsForge Auth SignIn Notice]', authErr.message)
         return res.status(401).json({ message: 'Invalid email or password.' })
@@ -982,7 +1013,39 @@ router.post('/invite', apiLimiter, requireAuth, async (req, res) => {
 router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
   const email = normalizeEmail(req.user.email)
   try {
-    // 1. Invited workspaces
+    const workspaces = []
+
+    // 1. Own workspace (always prioritized first)
+    const ownWs = await query(
+      'SELECT user_id, shop_name, email FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
+      [email]
+    )
+
+    if (ownWs.rows.length > 0) {
+      const own = ownWs.rows[0]
+      const ownUserId = own.user_id || req.workspaceId
+      const safeOwnShop = (own.shop_name && String(own.shop_name).trim() !== 'null' && String(own.shop_name).trim() !== '')
+        ? own.shop_name
+        : (req.user?.shopName || 'My Shop')
+
+      workspaces.push({
+        id:         ownUserId,
+        shopName:   safeOwnShop,
+        ownerEmail: own.email || email,
+        isOwner:    true,
+        role:       'Owner',
+      })
+    } else {
+      workspaces.push({
+        id:         req.workspaceId,
+        shopName:   req.user?.shopName || 'My Shop',
+        ownerEmail: email,
+        isOwner:    true,
+        role:       'Owner',
+      })
+    }
+
+    // 2. Invited workspaces
     const { rows: invitedRows } = await query(
       `SELECT p.user_id, p.shop_name, p.email AS owner_email, m.role, m.permissions
        FROM workspace_members m
@@ -992,60 +1055,19 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
       [email]
     )
 
-    const workspaces = []
     for (const row of invitedRows) {
+      const rawShop = row.shop_name
+      const safeShop = (rawShop && String(rawShop).trim() !== 'null' && String(rawShop).trim() !== '')
+        ? rawShop
+        : `${row.owner_email || 'Owner'}'s Shop`
+
       workspaces.push({
         id:          row.user_id || row.owner_email,
-        shopName:    row.shop_name || `${row.owner_email}'s Shop`,
+        shopName:    safeShop,
         ownerEmail:  row.owner_email,
         isOwner:     false,
-        role:        row.role,
+        role:        row.role || 'Member',
         permissions: row.permissions || {},
-      })
-    }
-
-    // 2. Own workspace
-    const ownWs = await query(
-      'SELECT user_id, shop_name, email FROM shop_profiles WHERE email = $1',
-      [email]
-    )
-
-    if (ownWs.rows.length > 0) {
-      const own = ownWs.rows[0]
-      const ownUserId = own.user_id || req.workspaceId
-
-      // If user is already part of an invited workspace, do NOT create a phantom duplicate workspace
-      // unless they have actually created data (products, bills) or invited their own members.
-      let shouldIncludeOwn = true
-      if (invitedRows.length > 0) {
-        const dataCheck = await query(
-          `SELECT 1 FROM products WHERE user_id = $1
-           UNION ALL
-           SELECT 1 FROM bills WHERE user_id = $1
-           UNION ALL
-           SELECT 1 FROM workspace_members WHERE workspace_owner_id = $1 OR LOWER(workspace_owner_id) = LOWER($2)
-           LIMIT 1`,
-          [String(ownUserId), String(own.email || '')]
-        ).catch(() => ({ rows: [] }))
-        shouldIncludeOwn = (dataCheck.rows?.length || 0) > 0
-      }
-
-      if (shouldIncludeOwn) {
-        workspaces.push({
-          id:         ownUserId,
-          shopName:   own.shop_name || 'My Shop',
-          ownerEmail: own.email,
-          isOwner:    true,
-          role:       'Owner',
-        })
-      }
-    } else if (invitedRows.length === 0) {
-      workspaces.push({
-        id:         req.workspaceId,
-        shopName:   req.user.shopName || 'My Shop',
-        ownerEmail: email,
-        isOwner:    true,
-        role:       'Owner',
       })
     }
 

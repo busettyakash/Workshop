@@ -37,21 +37,56 @@ function resolvePackDisplay(rawUnit, qty, bagWeight) {
   const uRaw = normalizeUnitRaw(rawUnit)
   const u = uRaw.toLowerCase().trim()
 
-  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l', 'ml'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'ltrs', subtext: 'ltrs' }
+  // 1. Box / Pack / Cartons
+  if (['box', 'boxes', 'carton', 'cartons', 'pkt', 'pack', 'packs'].includes(u)) {
+    let unitName = 'Pack'
+    if (u === 'box' || u === 'boxes') {
+      unitName = qty === 1 ? 'Box' : 'Boxes'
+    }
+    const sub = bw > 1 ? `${bw} pcs/${unitName}` : unitName
+    return { displayQty: qty, displayUnit: unitName, subtext: sub }
   }
 
+  // 2. Count / Pieces / Dozen / Set
+  if (['pcs', 'pc', 'piece', 'pieces'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'pcs', subtext: 'pcs' }
+  }
+  if (['doz', 'dozen'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'doz', subtext: 'Dozen' }
+  }
+  if (['set', 'sets'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'set', subtext: 'Set' }
+  }
+
+  // 3. Length / Meters / Feet
   if (['meters', 'meter', 'mtr', 'mtrs', 'm'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'mtrs', subtext: bw > 1 ? `${bw}m Roll` : 'mtrs' }
+    const sub = bw > 1 ? `${bw}m Roll` : 'mtrs'
+    return { displayQty: qty, displayUnit: 'mtrs', subtext: sub }
+  }
+  if (['ft', 'feet', 'foot'].includes(u)) {
+    const sub = bw > 1 ? `${bw}ft Bundle` : 'ft'
+    return { displayQty: qty, displayUnit: 'ft', subtext: sub }
   }
 
-  const packName = bw > 1 ? 'Bag' : 'Pack'
-  const packSubtext = bw > 1 ? `${bw}kg ${packName}` : 'Bags'
+  // 4. Volume / Liters / Milliliters
+  if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].includes(u)) {
+    const sub = bw > 1 ? `${bw}L Drum` : 'ltrs'
+    return { displayQty: qty, displayUnit: 'ltrs', subtext: sub }
+  }
+  if (['ml', 'milliliter', 'milliliters'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'ml', subtext: 'ml' }
+  }
+
+  // 5. Weight / Kilograms / Bags
+  if (['bag', 'bags', 'kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
+    const sub = bw > 1 ? `${bw}kg Bag` : 'Bag'
+    return { displayQty: qty, displayUnit: 'Bag', subtext: sub }
+  }
 
   return {
     displayQty: qty,
-    displayUnit: 'Bags',
-    subtext: packSubtext
+    displayUnit: uRaw || 'unit',
+    subtext: uRaw || 'unit'
   }
 }
 

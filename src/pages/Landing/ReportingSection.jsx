@@ -196,10 +196,7 @@ export default function ReportingSection() {
           <div className="ws-rpt-card">
             <div className="ws-rpt-card-header">
               <div className="ws-rpt-card-title-row">
-                <span className="ws-rpt-card-title">Closed deals by product category</span>
-                <span className="ws-rpt-entity-badge ws-rpt-entity-badge--deal">
-                  <Tag size={11} /> Deals
-                </span>
+                <span className="ws-rpt-card-title">Sales by product category</span>
               </div>
 
               {/* Legend */}

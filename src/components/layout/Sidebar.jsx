@@ -42,7 +42,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { ROUTES } from '../../constants'
 import api from '../../api/client'
 import { authApi } from '../../services/authApi'
-import { isOwnerOrAdmin } from '../../utils/permissionUtils'
+import { isOwnerOrAdmin, hasModulePermission } from '../../utils/permissionUtils'
 import './Sidebar.css'
 
 const ICON_MAP = {
@@ -211,16 +211,9 @@ export default function Sidebar() {
   const isOwnerAdmin = isOwnerOrAdmin(activeRole)
 
   const canAccessNav = (label) => {
-    if (isOwnerOrAdmin(activeRole)) {
-      return true
-    }
-    if (!activePermissions || typeof activePermissions !== 'object') {
-      return false
-    }
     const mod = NAV_MODULE_MAP[label]
     if (!mod) return true
-    const perm = activePermissions[mod]
-    return perm?.read === true
+    return hasModulePermission(mod, activePermissions, activeRole)
   }
 
   const filteredMainNav = MAIN_NAV.filter(item => canAccessNav(item.label))
@@ -419,9 +412,11 @@ export default function Sidebar() {
   const [inviting, setInviting] = useState(false)
 
   // Reactive workspace state
-  const [activeWorkspaceName, setActiveWorkspaceName] = useState(
-    () => sessionStorage.getItem('ws_active_workspace_name') || shopName
-  )
+  const cleanShopName = (shopName && String(shopName).trim() !== 'null' && String(shopName).trim() !== '') ? shopName : 'Workshop'
+  const [activeWorkspaceName, setActiveWorkspaceName] = useState(() => {
+    const stored = sessionStorage.getItem('ws_active_workspace_name')
+    return (stored && stored !== 'null' && stored !== 'undefined') ? stored : cleanShopName
+  })
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(
     () => sessionStorage.getItem('ws_active_workspace_id') || ''
   )
@@ -430,13 +425,21 @@ export default function Sidebar() {
     const handleOpenInvite = () => setInviteModalOpen(true)
     const handleWsUpdate = () => {
       const updated = sessionStorage.getItem('ws_active_workspace_name') || localStorage.getItem('ws_workspace_name')
-      if (updated) setActiveWorkspaceName(updated)
+      if (updated && updated !== 'null' && updated !== 'undefined') setActiveWorkspaceName(updated)
+    }
+    const handlePermsUpdate = (e) => {
+      if (e.detail?.role) setActiveRole(e.detail.role)
+      if (e.detail?.perms !== undefined) setActivePermissions(e.detail.perms)
+      const storedWs = sessionStorage.getItem('ws_active_workspace_name')
+      if (storedWs && storedWs !== 'null' && storedWs !== 'undefined') setActiveWorkspaceName(storedWs)
     }
     window.addEventListener('ws-open-invite', handleOpenInvite)
     window.addEventListener('workspace_updated', handleWsUpdate)
+    window.addEventListener('ws_permissions_updated', handlePermsUpdate)
     return () => {
       window.removeEventListener('ws-open-invite', handleOpenInvite)
       window.removeEventListener('workspace_updated', handleWsUpdate)
+      window.removeEventListener('ws_permissions_updated', handlePermsUpdate)
     }
   }, [])
 
@@ -603,7 +606,10 @@ export default function Sidebar() {
   }, [sidebarWidth])
 
 
-  const logoLetter = activeWorkspaceName ? activeWorkspaceName.charAt(0).toUpperCase() : 'W'
+  const displayWorkspaceName = (activeWorkspaceName && activeWorkspaceName !== 'null' && activeWorkspaceName !== 'undefined')
+    ? activeWorkspaceName
+    : cleanShopName
+  const logoLetter = displayWorkspaceName ? displayWorkspaceName.charAt(0).toUpperCase() : 'W'
 
   return (
     <>
@@ -622,12 +628,12 @@ export default function Sidebar() {
           <button
             className="ws-sb-workspace-btn"
             onClick={() => setWorkspaceDropdownOpen(!workspaceDropdownOpen)}
-            title={activeWorkspaceName}
+            title={displayWorkspaceName}
           >
             <div className="ws-sb-ws-icon" style={{ textTransform: 'uppercase', color: '#fff', fontWeight: '800', fontSize: '11px', fontFamily: 'sans-serif' }}>
               {logoLetter}
             </div>
-            <span className="ws-sb-ws-name" title={activeWorkspaceName}>{activeWorkspaceName}</span>
+            <span className="ws-sb-ws-name" title={displayWorkspaceName}>{displayWorkspaceName}</span>
             <ChevronDown size={13} className="ws-sb-chevron" />
           </button>
           <div className="ws-sb-collapse-wrapper">

@@ -300,7 +300,7 @@ const isEmailStepActiveInWorkflow = async (userId, branch = 'accepted') => {
     const wfRes = await pool.query(
       `SELECT nodes, is_live, name FROM workflows 
        WHERE (user_id::text = $1::text OR user_id::text = '00000000-0000-0000-0000-000000000000' OR $1::text = '00000000-0000-0000-0000-000000000000' OR user_id::text = 'default-user' OR $1::text = 'default-user')
-       ORDER BY updated_at DESC LIMIT 1`,
+       ORDER BY is_live DESC, updated_at DESC LIMIT 1`,
       [userId || 'default-user']
     ).catch(e => { console.error('[Email Check Fetch Error]', e.message); return { rows: [] } })
 
@@ -1116,28 +1116,68 @@ router.post('/', apiLimiter, async (req, res) => {
     const qNum = quote_number || `QT-${Date.now().toString().slice(-6)}`
     const itemsJson = JSON.stringify(line_items)
 
-    const result = await pool.query(
-      `INSERT INTO quotes (
-        quote_number, shop_name, customer_company, customer_name, customer_phone, customer_email, 
-        total_amount, tax_amount, tax_rate, status, issue_date, valid_until, 
-        notes, line_items, user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-      RETURNING *`,
-      [
-        qNum, finalShopName, customer_company, customer_name, customer_phone, customer_email,
-        Number.parseFloat(total_amount || 0), Number.parseFloat(tax_amount || 0), Number.parseFloat(tax_rate || 0),
-        status, issue_date, valid_until || null, notes, itemsJson, userId
-      ]
-    )
+    // Check if quote with this quote_number already exists for this user/workspace
+    const existingQuoteRes = await pool.query(
+      `SELECT * FROM quotes WHERE quote_number = $1 AND (user_id::text = $2::text OR user_id = 'default-user' OR $2::text = 'default-user') LIMIT 1`,
+      [qNum, userId]
+    ).catch(() => ({ rows: [] }))
 
-    const createdQuote = result.rows[0]
+    let quoteRecord
+    if (existingQuoteRes.rows.length > 0) {
+      const existingId = existingQuoteRes.rows[0].id
+      // If the quote was already Accepted, preserve its accepted status unless explicitly changing
+      const targetStatus = (existingQuoteRes.rows[0].status === 'Accepted' && status === 'Draft') 
+        ? 'Accepted' 
+        : (status || existingQuoteRes.rows[0].status)
 
-    // Trigger workflow automation only when quote is created as Accepted
-    if (createdQuote.status === 'Accepted') {
-      await triggerWorkflowForQuote(userId, createdQuote, 'Accepted')
+      const updateRes = await pool.query(
+        `UPDATE quotes SET
+          shop_name = COALESCE($1, shop_name),
+          customer_company = $2,
+          customer_name = $3,
+          customer_phone = $4,
+          customer_email = $5,
+          total_amount = $6,
+          tax_amount = $7,
+          tax_rate = $8,
+          status = $9,
+          issue_date = $10,
+          valid_until = $11,
+          notes = $12,
+          line_items = $13,
+          updated_at = NOW()
+        WHERE id = $14
+        RETURNING *`,
+        [
+          finalShopName, customer_company, customer_name, customer_phone, customer_email,
+          Number.parseFloat(total_amount || 0), Number.parseFloat(tax_amount || 0), Number.parseFloat(tax_rate || 0),
+          targetStatus, issue_date, valid_until || null, notes, itemsJson, existingId
+        ]
+      )
+      quoteRecord = updateRes.rows[0]
+    } else {
+      const result = await pool.query(
+        `INSERT INTO quotes (
+          quote_number, shop_name, customer_company, customer_name, customer_phone, customer_email, 
+          total_amount, tax_amount, tax_rate, status, issue_date, valid_until, 
+          notes, line_items, user_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING *`,
+        [
+          qNum, finalShopName, customer_company, customer_name, customer_phone, customer_email,
+          Number.parseFloat(total_amount || 0), Number.parseFloat(tax_amount || 0), Number.parseFloat(tax_rate || 0),
+          status, issue_date, valid_until || null, notes, itemsJson, userId
+        ]
+      )
+      quoteRecord = result.rows[0]
     }
 
-    res.status(201).json(createdQuote)
+    // Trigger workflow automation only when quote is marked Accepted
+    if (quoteRecord.status === 'Accepted' && existingQuoteRes.rows.length === 0) {
+      await triggerWorkflowForQuote(userId, quoteRecord, 'Accepted')
+    }
+
+    res.status(existingQuoteRes.rows.length > 0 ? 200 : 201).json(quoteRecord)
   } catch (err) {
     console.error('[Quotes POST Error]', err)
     res.status(500).json({ error: 'Failed to create quote' })

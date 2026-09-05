@@ -48,6 +48,12 @@ export default function Workflows() {
   const [currentWf,       setCurrentWf]       = useState(null)
   const [loading,         setLoading]         = useState(true)
   const [confirmDelete,   setConfirmDelete]   = useState({ isOpen: false, id: null, name: '' })
+  const [confirmToggleLive, setConfirmToggleLive] = useState({
+    isOpen: false,
+    targetState: false,
+    activeOtherWfName: '',
+    targetWf: null
+  })
   const [expandedWfs,     setExpandedWfs]     = useState({})
   const [initialRun,      setInitialRun]      = useState(null)
 
@@ -144,18 +150,37 @@ export default function Workflows() {
   }
 
   /* ── Toggle Live / Publish Status ── */
-  const handleToggleLive = async (targetState) => {
-    if (!currentWf) return
-    const nextLive = typeof targetState === 'boolean' ? targetState : !isPublished
+  const handleToggleLive = (targetState, customWf = null) => {
+    const target = customWf || currentWf
+    if (!target) return
+    const nextLive = typeof targetState === 'boolean' ? targetState : !(customWf ? customWf.is_live : isPublished)
+    const otherLiveWf = workflows.find(w => w.id !== target.id && w.is_live)
+    setConfirmToggleLive({
+      isOpen: true,
+      targetState: nextLive,
+      activeOtherWfName: otherLiveWf ? otherLiveWf.name : '',
+      targetWf: target
+    })
+  }
+
+  /* ── Confirm Toggle Live Execution ── */
+  const handleConfirmToggleLive = async () => {
+    const { targetState: nextLive, targetWf } = confirmToggleLive
+    const target = targetWf || currentWf
+    setConfirmToggleLive({ isOpen: false, targetState: false, activeOtherWfName: '', targetWf: null })
+    if (!target) return
+
     try {
-      await api.patch(`/workflows/${currentWf.id}/toggle-live`, { is_live: nextLive })
-      setIsPublished(nextLive)
-      setCurrentWf(prev => prev ? { ...prev, is_live: nextLive } : null)
-      setWorkflows(prev => prev.map(w => w.id === currentWf.id ? { ...w, is_live: nextLive } : w))
+      await api.patch(`/workflows/${target.id}/toggle-live`, { is_live: nextLive })
+      if (currentWf && currentWf.id === target.id) {
+        setIsPublished(nextLive)
+        setCurrentWf(prev => prev ? { ...prev, is_live: nextLive } : null)
+      }
+      setWorkflows(prev => prev.map(w => w.id === target.id ? { ...w, is_live: nextLive } : (nextLive ? { ...w, is_live: false } : w)))
       dispatch(addToast({
         message: nextLive
-          ? 'Workflow is now Live! Quotations will trigger automated runs.'
-          : 'Workflow paused (Draft mode). Quotations will not trigger runs.',
+          ? `Workflow "${target.name || 'Quotation Workflow'}" is now Live! Quotations will trigger automated runs.`
+          : `Workflow "${target.name || 'Quotation Workflow'}" paused (Draft mode). Quotations will not trigger runs.`,
         type: nextLive ? 'success' : 'info'
       }))
     } catch {
@@ -226,6 +251,46 @@ export default function Workflows() {
             onSaveName={saveName}
           />
         </div>
+        <ConfirmModal
+          isOpen={confirmToggleLive.isOpen}
+          title={confirmToggleLive.targetState ? 'Start Workflow?' : 'Draft Workflow?'}
+          icon={
+            confirmToggleLive.targetState ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#eff6ff', color: '#2563eb' }}>
+                <Play size={14} fill="#2563eb" />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#fef3c7', color: '#d97706' }}>
+                <Pause size={14} />
+              </div>
+            )
+          }
+          message={
+            confirmToggleLive.targetState ? (
+              confirmToggleLive.activeOtherWfName ? (
+                <span>
+                  Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and set it to <strong>Live</strong>?<br /><br />
+                  <span style={{ color: '#d97706', fontSize: '0.82rem' }}>
+                    ⚠️ Note: <strong>"{confirmToggleLive.activeOtherWfName}"</strong> is currently live and will automatically be switched to <strong>Draft</strong> so only one workflow is live at a time.
+                  </span>
+                </span>
+              ) : (
+                <span>
+                  Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and make it <strong>Live</strong>? When live, newly created and updated quotations will trigger automated execution steps.
+                </span>
+              )
+            ) : (
+              <span>
+                Do you want to stop and set <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> to <strong>Draft</strong>? When drafted, quotations will no longer trigger automatic runs.
+              </span>
+            )
+          }
+          confirmLabel={confirmToggleLive.targetState ? 'Start Workflow' : 'Draft Workflow'}
+          confirmBg={confirmToggleLive.targetState ? '#2563eb' : '#d97706'}
+          confirmHoverBg={confirmToggleLive.targetState ? '#1d4ed8' : '#b45309'}
+          onConfirm={handleConfirmToggleLive}
+          onCancel={() => setConfirmToggleLive({ isOpen: false, targetState: false, activeOtherWfName: '', targetWf: null })}
+        />
       </div>
     )
   }
@@ -468,19 +533,9 @@ export default function Workflows() {
                                   tabIndex={0}
                                   className={`ws-wfl-badge ws-wfl-badge--${badge.cls}`}
                                   style={{ cursor: 'pointer', userSelect: 'none' }}
-                                  onClick={async (e) => {
+                                  onClick={(e) => {
                                     e.stopPropagation()
-                                    const nextLive = !wf.is_live
-                                    try {
-                                      await api.patch(`/workflows/${wf.id}/toggle-live`, { is_live: nextLive })
-                                      setWorkflows(prev => prev.map(w => w.id === wf.id ? { ...w, is_live: nextLive } : w))
-                                      dispatch(addToast({
-                                        message: nextLive ? `"${wf.name}" is now Live!` : `"${wf.name}" turned OFF (Draft).`,
-                                        type: nextLive ? 'success' : 'info'
-                                      }))
-                                    } catch {
-                                      dispatch(addToast({ message: 'Failed to update live status', type: 'error' }))
-                                    }
+                                    handleToggleLive(!wf.is_live, wf)
                                   }}
                                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.currentTarget.click() }}
                                   title={`Click to switch to ${wf.is_live ? 'Draft (OFF)' : 'Live (ON)'}`}
@@ -681,6 +736,46 @@ export default function Workflows() {
         message={`Are you sure you want to delete workflow "${confirmDelete.name}"?`}
         onConfirm={handleConfirmDelete}
         onCancel={() => setConfirmDelete({ isOpen: false, id: null, name: '' })}
+      />
+      <ConfirmModal
+        isOpen={confirmToggleLive.isOpen}
+        title={confirmToggleLive.targetState ? 'Start Workflow?' : 'Draft Workflow?'}
+        icon={
+          confirmToggleLive.targetState ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#eff6ff', color: '#2563eb' }}>
+              <Play size={14} fill="#2563eb" />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#fef3c7', color: '#d97706' }}>
+              <Pause size={14} />
+            </div>
+          )
+        }
+        message={
+          confirmToggleLive.targetState ? (
+            confirmToggleLive.activeOtherWfName ? (
+              <span>
+                Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and set it to <strong>Live</strong>?<br /><br />
+                <span style={{ color: '#d97706', fontSize: '0.82rem' }}>
+                  ⚠️ Note: <strong>"{confirmToggleLive.activeOtherWfName}"</strong> is currently live and will automatically be switched to <strong>Draft</strong> so only one workflow is live at a time.
+                </span>
+              </span>
+            ) : (
+              <span>
+                Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and make it <strong>Live</strong>? When live, newly created and updated quotations will trigger automated execution steps.
+              </span>
+            )
+          ) : (
+            <span>
+              Do you want to stop and set <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> to <strong>Draft</strong>? When drafted, quotations will no longer trigger automatic runs.
+            </span>
+          )
+        }
+        confirmLabel={confirmToggleLive.targetState ? 'Start Workflow' : 'Draft Workflow'}
+        confirmBg={confirmToggleLive.targetState ? '#2563eb' : '#d97706'}
+        confirmHoverBg={confirmToggleLive.targetState ? '#1d4ed8' : '#b45309'}
+        onConfirm={handleConfirmToggleLive}
+        onCancel={() => setConfirmToggleLive({ isOpen: false, targetState: false, activeOtherWfName: '', targetWf: null })}
       />
     </div>
   )

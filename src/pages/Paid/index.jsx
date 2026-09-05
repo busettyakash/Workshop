@@ -106,7 +106,13 @@ export default function PaidBills() {
 
   const formatDate = (d) => {
     if (!d) return '—'
-    return new Date(d).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
+    let s = String(d).trim()
+    if (!s.endsWith('Z') && !/[+-]\d{2}(:?\d{2})?$/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+      s = s.replace(' ', 'T') + 'Z'
+    }
+    const parsed = new Date(s)
+    const validDate = isNaN(parsed.getTime()) ? new Date(d) : parsed
+    return validDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   return (
@@ -204,6 +210,7 @@ export default function PaidBills() {
                       <th>QUOTE / ORDER #</th>
                       <th>CUSTOMER</th>
                       <th>TOTAL AMOUNT</th>
+                      <th>INVOICE DATE</th>
                       <th>DUE DATE</th>
                       <th>STATUS</th>
                       <th style={{ textAlign: 'right' }}>ACTIONS</th>
@@ -255,6 +262,7 @@ export default function PaidBills() {
                             </div>
                           </td>
                           <td className="ws-td-price">{formatCurrency(bill.amount)}</td>
+                          <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.created_at || bill.date || bill.issue_date)}</td>
                           <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.due_date)}</td>
                           <td>
                             <span className="ws-pill-topic" style={{ background: colors.bg, color: colors.text, borderColor: colors.border }}>

@@ -1,21 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { Package, Tag, Filter, ChevronDown, RefreshCw, PlusSquare } from 'lucide-react'
+import { Filter, ChevronDown, RefreshCw } from 'lucide-react'
 import api from '../../api/client'
 import './Dashboard.css'
-
-const BAR_SERIES = [
-  { key: 'electronics', label: 'Electronics', color: '#f43f5e' },
-  { key: 'apparel',     label: 'Apparel',     color: '#38bdf8' },
-  { key: 'grocery',     label: 'Grocery',     color: '#10b981' },
-  { key: 'appliances',  label: 'Appliances',  color: '#a78bfa' },
-  { key: 'others',      label: 'Others',      color: '#fb923c' },
-]
 
 function buildDonutPaths(segments, cx, cy, r, gap = 2) {
   if (!segments || segments.length === 0) return []
   const paths = []
   let startAngle = -90
-  const total = segments.reduce((s, seg) => s + seg.pct, 0)
+  const total = segments.reduce((s, seg) => s + (seg.pct || 0), 0)
   if (total === 0) return []
   segments.forEach((seg) => {
     const angleDeg = (seg.pct / total) * 360 - gap
@@ -81,20 +73,45 @@ function getBarHeightPct(val, ticksAsc) {
   return 100
 }
 
-const DAY_OPTIONS      = ['Last 7 days', 'Last 30 days', 'Last 3 months', 'Last 6 months', 'This year']
+const DAY_OPTIONS = ['Last 7 days', 'Last 30 days', 'Last 3 months', 'Last 6 months', 'This year', 'Custom date']
 
-export default function BusinessMetrics() {
+export default function BusinessMetrics({
+  selectedCategory: propSelectedCategory,
+  setSelectedCategory: propSetSelectedCategory,
+  productFilter: propProductFilter,
+  setProductFilter: propSetProductFilter
+} = {}) {
   const [hoveredBar, setHoveredBar]             = useState(null)
   const [hoveredSeriesKey, setHoveredSeriesKey] = useState(null)
   const [pinnedBar, setPinnedBar]               = useState(null)
-  const [dayFilter, setDayFilter]               = useState('Last 30 days')
+  const [dayFilter, setDayFilter]               = useState('Last 7 days')
+  const [customStartDate, setCustomStartDate]   = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 7)
+    return d.toISOString().slice(0, 10)
+  })
+  const [customEndDate, setCustomEndDate]       = useState(() => new Date().toISOString().slice(0, 10))
+  const [showCustomPicker, setShowCustomPicker] = useState(false)
   const [customerFilter, setCustomerFilter]     = useState('All Customers')
+  const [localProductFilter, setLocalProductFilter] = useState('All Products')
   const [showDayDrop, setShowDayDrop]           = useState(false)
   const [showCustDrop, setShowCustDrop]         = useState(false)
+  const [showProdDrop, setShowProdDrop]         = useState(false)
   const [people, setPeople]                     = useState([])
+  const [allProducts, setAllProducts]           = useState([])
+
+  const productFilter = propProductFilter !== undefined ? propProductFilter : localProductFilter
+  const setProductFilter = propSetProductFilter || setLocalProductFilter
+
+  // Category drill-down state
+  const [localSelectedCategory, setLocalSelectedCategory] = useState(null)
+  const selectedCategory = propSelectedCategory !== undefined ? propSelectedCategory : localSelectedCategory
+  const setSelectedCategory = propSetSelectedCategory || setLocalSelectedCategory
+
+  const [categoryBreakdown, setCategoryBreakdown] = useState(null)
 
   // Real-time backend states
-  const [series, setSeries] = useState(BAR_SERIES)
+  const [series, setSeries] = useState([])
   const [barData, setBarData] = useState([])
   const [donutSegments, setDonutSegments] = useState([])
   const [tooltipData, setTooltipData] = useState([])
@@ -102,16 +119,20 @@ export default function BusinessMetrics() {
   const [_error, setError] = useState(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
 
+  // 1. Fetch Main Overview Metrics
   useEffect(() => {
     let active = true
     const fetchMetrics = async () => {
       try {
         setLoading(true)
-        const res = await api.get('/reports/business-metrics', {
-          params: { dayFilter, customerFilter }
-        })
+        const params = { dayFilter, customerFilter, productFilter }
+        if (dayFilter === 'Custom date') {
+          params.startDate = customStartDate
+          params.endDate = customEndDate
+        }
+        const res = await api.get('/reports/business-metrics', { params })
         if (active) {
-          if (res.data.series && res.data.series.length > 0) {
+          if (res.data.series) {
             setSeries(res.data.series)
           }
           setBarData(res.data.barData || [])
@@ -130,8 +151,38 @@ export default function BusinessMetrics() {
     }
     fetchMetrics()
     return () => { active = false }
-  }, [dayFilter, customerFilter, refreshTrigger])
+  }, [dayFilter, customerFilter, productFilter, customStartDate, customEndDate, refreshTrigger])
 
+  // 2. Fetch Category Breakdown when selectedCategory is set
+  useEffect(() => {
+    if (!selectedCategory) {
+      setCategoryBreakdown(null)
+      return
+    }
+    let active = true
+    const fetchCatBreakdown = async () => {
+      try {
+        setLoading(true)
+        const params = { category: selectedCategory, dayFilter, customerFilter, productFilter }
+        if (dayFilter === 'Custom date') {
+          params.startDate = customStartDate
+          params.endDate = customEndDate
+        }
+        const res = await api.get('/reports/category-breakdown', { params })
+        if (active) {
+          setCategoryBreakdown(res.data)
+        }
+      } catch (err) {
+        console.error('Error loading category breakdown:', err)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    fetchCatBreakdown()
+    return () => { active = false }
+  }, [selectedCategory, dayFilter, customerFilter, productFilter, customStartDate, customEndDate, refreshTrigger])
+
+  // Fetch People / Customers
   useEffect(() => {
     let active = true
     const fetchPeople = async () => {
@@ -148,24 +199,57 @@ export default function BusinessMetrics() {
     return () => { active = false }
   }, [refreshTrigger])
 
-  const customerOptions = ['All Customers', ...Array.from(new Set(people.map(p => p.name)))]
+  // Fetch All Products for dropdown
+  useEffect(() => {
+    let active = true
+    const fetchProducts = async () => {
+      try {
+        const res = await api.get('/products')
+        if (active && res.data) {
+          const list = Array.isArray(res.data) ? res.data : (res.data.data || [])
+          setAllProducts(list)
+        }
+      } catch (err) {
+        console.error('Error loading products for filter:', err)
+      }
+    }
+    fetchProducts()
+    return () => { active = false }
+  }, [refreshTrigger])
 
-  const activeSeries = series && series.length > 0 ? series : BAR_SERIES
+  const customerOptions = [
+    'All Customers',
+    'Walking Customer',
+    ...Array.from(new Set(people.map(p => p?.name).filter(Boolean))).filter(n => !n.toLowerCase().includes('walk'))
+  ]
+
+  // Compute product options based on current view
+  const isDrilldown = Boolean(selectedCategory && categoryBreakdown)
+  const productOptions = isDrilldown
+    ? ['All Products', ...(categoryBreakdown?.allCategoryProducts || categoryBreakdown?.series?.map(s => s.label) || [])]
+    : ['All Products', ...Array.from(new Set(allProducts.map(p => p.name)))]
+
+  // Compute active dataset
+  const displaySeries = isDrilldown ? (categoryBreakdown?.series || []) : series
+  const displayBarData = isDrilldown ? (categoryBreakdown?.barData || []) : barData
+  const displayDonutSegments = isDrilldown ? (categoryBreakdown?.donutData || []) : donutSegments
+  const displayTooltipData = isDrilldown ? (categoryBreakdown?.tooltipData || []) : tooltipData
+
   const maxRawRevenue = Math.max(
-    ...barData.flatMap(grp => activeSeries.map(s => Number(grp[s.key]) || 0)),
+    ...displayBarData.flatMap(grp => displaySeries.map(s => Number(grp[s.key]) || 0)),
     0
   )
   const ticksAsc = getScaleTicks(maxRawRevenue)
   const ticksDesc = [...ticksAsc].reverse()
   const yLabels = ticksDesc.map(formatYAxisLabel)
 
-  const donutPaths = buildDonutPaths(donutSegments, 90, 90, 75)
-  const donutInner = buildDonutPaths(donutSegments, 90, 90, 50)
-  const hasDonutData = donutSegments.length > 0 && donutSegments.some(s => (s.count || 0) > 0 || (s.pct || 0) > 0)
+  const donutPaths = buildDonutPaths(displayDonutSegments, 90, 90, 75)
+  const donutInner = buildDonutPaths(displayDonutSegments, 90, 90, 50)
+  const hasDonutData = displayDonutSegments.length > 0 && displayDonutSegments.some(s => (s.count || 0) > 0 || (s.pct || 0) > 0 || (s.revenue || 0) > 0)
 
-  const closeDrops = () => { setShowDayDrop(false); setShowCustDrop(false); setPinnedBar(null) }
+  const closeDrops = () => { setShowDayDrop(false); setShowCustDrop(false); setShowProdDrop(false); setPinnedBar(null) }
 
-  if (loading && barData.length === 0) {
+  if (loading && barData.length === 0 && !categoryBreakdown) {
     return (
       <div className="ws-bm-section" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '100px 20px' }}>
         <div style={{ color: '#3b82f6', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -176,73 +260,219 @@ export default function BusinessMetrics() {
   }
 
   return (
-    <div className="ws-bm-section" role="presentation" onClick={closeDrops} onKeyDown={(e) => { if (e.key === 'Escape') closeDrops() }} style={{ opacity: loading ? 0.7 : 1, transition: 'opacity 0.2s' }}>
+    <div className="ws-bm-section" role="presentation" onClick={closeDrops} onKeyDown={(e) => { if (e.key === 'Escape') closeDrops() }} style={{ opacity: loading ? 0.75 : 1, transition: 'opacity 0.2s' }}>
 
-      {/* ── Header ── */}
-      <div className="ws-bm-header">
+      {/* ── Header (Above all charts & cards) ── */}
+      <div className="ws-bm-header" style={{ marginBottom: isDrilldown ? 20 : 16 }}>
         <div className="ws-bm-header-left">
-          <h2 className="ws-bm-title">Business Metrics</h2>
-          <p className="ws-bm-sub">Overview of sales pipeline, revenue growth, product performance, and more.</p>
+          {isDrilldown ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <h2 className="ws-bm-title" style={{ margin: 0 }}>
+                  {selectedCategory}
+                </h2>
+                <span style={{ fontSize: '0.74rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                  Product Breakdown
+                </span>
+              </div>
+              <p className="ws-bm-sub" style={{ margin: 0 }}>Sales performance, volume and product growth for {selectedCategory}.</p>
+            </div>
+          ) : (
+            <div>
+              <h2 className="ws-bm-title">Business Metrics</h2>
+              <p className="ws-bm-sub">Overview of sales pipeline, revenue growth, product performance, and more.</p>
+            </div>
+          )}
         </div>
-        <div className="ws-bm-header-right" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+
+        <div className="ws-bm-header-right" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Filters */}
           <Filter size={13} style={{ color: '#9ca3af' }} />
 
+          {/* 1. Date Filter Dropdown */}
           <div className="ws-bm-filter-wrap">
             <button
               className="ws-bm-filter-btn"
-              onClick={() => { setShowDayDrop(v => !v); setShowCustDrop(false) }}
+              onClick={() => {
+                setShowDayDrop(v => !v)
+                setShowCustDrop(false)
+                setShowProdDrop(false)
+                if (dayFilter === 'Custom date') {
+                  setShowCustomPicker(true)
+                }
+              }}
             >
-              {dayFilter} <ChevronDown size={11} />
+              {dayFilter === 'Custom date' && customStartDate && customEndDate ? (
+                `${new Date(customStartDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${new Date(customEndDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`
+              ) : (
+                dayFilter
+              )}{' '}
+              <ChevronDown size={11} />
             </button>
             {showDayDrop && (
-              <div className="ws-bm-dropdown">
+              <div className="ws-bm-dropdown" style={{ minWidth: showCustomPicker ? 230 : 160, padding: 6 }}>
                 {DAY_OPTIONS.map(opt => (
                   <button
                     key={opt}
-                    className={`ws-bm-dropdown-item ${dayFilter === opt ? 'active' : ''}`}
-                    onClick={() => { setDayFilter(opt); setShowDayDrop(false) }}
+                    className={`ws-bm-dropdown-item ${dayFilter === opt && !showCustomPicker ? 'active' : ''}`}
+                    onClick={() => {
+                      if (opt === 'Custom date') {
+                        setShowCustomPicker(true)
+                      } else {
+                        setDayFilter(opt)
+                        setShowCustomPicker(false)
+                        setShowDayDrop(false)
+                      }
+                    }}
                   >
                     {opt}
                   </button>
                 ))}
-              </div>
-            )}
-          </div>
 
-          <div className="ws-bm-filter-wrap">
-            <button
-              className="ws-bm-filter-btn"
-              onClick={() => { setShowCustDrop(v => !v); setShowDayDrop(false) }}
-            >
-              {customerFilter} <ChevronDown size={11} />
-            </button>
-            {showCustDrop && (
-              <div className="ws-bm-dropdown">
-                {customerOptions.map(opt => (
-                  <button
-                    key={opt}
-                    className={`ws-bm-dropdown-item ${customerFilter === opt ? 'active' : ''}`}
-                    onClick={() => { setCustomerFilter(opt); setShowCustDrop(false) }}
+                {showCustomPicker && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      paddingTop: 8,
+                      borderTop: '1px solid #f1f5f9',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8
+                    }}
+                    onClick={e => e.stopPropagation()}
                   >
-                    {opt}
-                  </button>
-                ))}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.70rem', fontWeight: 600, color: '#64748b', marginBottom: 3 }}>
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={customStartDate}
+                        onChange={e => setCustomStartDate(e.target.value)}
+                        style={{
+                          width: '100%',
+                          fontSize: '0.78rem',
+                          padding: '5px 8px',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: 6,
+                          outline: 'none',
+                          color: '#0f172a'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.70rem', fontWeight: 600, color: '#64748b', marginBottom: 3 }}>
+                        End Date
+                      </label>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={e => setCustomEndDate(e.target.value)}
+                        style={{
+                          width: '100%',
+                          fontSize: '0.78rem',
+                          padding: '5px 8px',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: 6,
+                          outline: 'none',
+                          color: '#0f172a'
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customStartDate && customEndDate) {
+                          setDayFilter('Custom date')
+                          setShowDayDrop(false)
+                        }
+                      }}
+                      style={{
+                        marginTop: 4,
+                        padding: '6px 12px',
+                        background: '#2563eb',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 6,
+                        fontSize: '0.76rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Apply Range
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Action buttons — only in dashboard */}
+          {/* 2. Product Filter Dropdown (Only shown in Category Drilldown) */}
+          {isDrilldown && (
+            <div className="ws-bm-filter-wrap">
+              <button
+                className="ws-bm-filter-btn"
+                onClick={() => { setShowProdDrop(v => !v); setShowDayDrop(false); setShowCustDrop(false) }}
+              >
+                {productFilter} <ChevronDown size={11} />
+              </button>
+              {showProdDrop && (
+                <div className="ws-bm-dropdown" style={{ maxHeight: 240, overflowY: 'auto' }}>
+                  {productOptions.map(opt => (
+                    <button
+                      key={opt}
+                      className={`ws-bm-dropdown-item ${productFilter === opt ? 'active' : ''}`}
+                      onClick={() => { setProductFilter(opt); setShowProdDrop(false) }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Refresh button */}
           <div className="ws-bm-actions">
             <button className="ws-bm-btn-refresh" onClick={() => setRefreshTrigger(prev => prev + 1)} disabled={loading}>
               <RefreshCw size={12} className={loading ? 'ws-bm-spinner' : ''} /> Refresh data
             </button>
-            <button className="ws-bm-btn-add">
-              <PlusSquare size={13} /> Add report
-            </button>
           </div>
         </div>
       </div>
+
+      {/* ── Category KPI Summary Cards (When drilled down) ── */}
+      {isDrilldown && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Total Revenue</span>
+            <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+              ₹{(categoryBreakdown?.totalRevenue || 0).toLocaleString('en-IN')}
+            </span>
+          </div>
+
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Volume Sold</span>
+            <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+              {(categoryBreakdown?.totalUnits || 0).toLocaleString('en-IN')} units
+            </span>
+          </div>
+
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Total Orders</span>
+            <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+              {categoryBreakdown?.totalOrders || 0}
+            </span>
+          </div>
+
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Products in {selectedCategory}</span>
+            <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+              {categoryBreakdown?.totalProductsCount || displaySeries.length}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ── Charts row ── */}
       <div className="ws-bm-charts-row">
@@ -251,16 +481,25 @@ export default function BusinessMetrics() {
         <div className="ws-bm-card">
           <div className="ws-bm-card-header">
             <div className="ws-bm-card-title-row">
-              <span className="ws-bm-card-title">Revenue growth by category</span>
-              <span className="ws-bm-entity-badge ws-bm-entity-badge--ws">
-                <Package size={11} /> Products
+              <span className="ws-bm-card-title">
+                {isDrilldown ? `Revenue growth by product (${selectedCategory})` : 'Revenue growth by category'}
               </span>
             </div>
             <div className="ws-bm-legend">
-              {activeSeries.map(s => (
-                <div key={s.key} className="ws-bm-legend-item">
+              {displaySeries.map(s => (
+                <div 
+                  key={s.key} 
+                  className="ws-bm-legend-item"
+                  style={{
+                    cursor: 'default',
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    transition: 'all 0.15s ease',
+                    background: (!isDrilldown && hoveredSeriesKey === s.key) ? '#f1f5f9' : 'transparent'
+                  }}
+                >
                   <span className="ws-bm-legend-dot" style={{ background: s.color }} />
-                  {s.label}
+                  <span style={{ fontWeight: 500 }}>{s.label}</span>
                 </div>
               ))}
             </div>
@@ -281,10 +520,10 @@ export default function BusinessMetrics() {
               </div>
 
               <div className="ws-bm-bar-groups">
-                {barData.map((grp, gi) => {
-                  const tip = tooltipData[gi]
+                {displayBarData.map((grp, gi) => {
+                  const tip = displayTooltipData[gi]
                   const isVisible = hoveredBar === gi || pinnedBar === gi
-                  const monthTotal = activeSeries.reduce((sum, s) => sum + (Number(grp[s.key]) || 0), 0)
+                  const periodTotal = displaySeries.reduce((sum, s) => sum + (Number(grp[s.key]) || 0), 0)
 
                   return (
                     <div
@@ -307,7 +546,7 @@ export default function BusinessMetrics() {
                         }
                       }}
                     >
-                      {activeSeries.map(s => {
+                      {displaySeries.map(s => {
                         const val = Number(grp[s.key]) || 0
                         const heightPct = getBarHeightPct(val, ticksAsc)
                         const isThisBarHovered = hoveredSeriesKey === s.key
@@ -326,11 +565,18 @@ export default function BusinessMetrics() {
                               e.stopPropagation()
                               setHoveredSeriesKey(s.key)
                             }}
+                            onClick={(e) => {
+                              if (!isDrilldown) {
+                                e.stopPropagation()
+                                setSelectedCategory(s.label)
+                              }
+                            }}
                             style={{
                               height: `${heightPct}%`,
                               background: s.color,
                               opacity: barOpacity,
                               transform: isThisBarHovered ? 'scaleX(1.2)' : 'none',
+                              cursor: !isDrilldown ? 'pointer' : 'default',
                               transition: 'all 0.15s ease'
                             }}
                             title={`${s.label}: ₹${val.toLocaleString('en-IN')}`}
@@ -348,46 +594,56 @@ export default function BusinessMetrics() {
                           style={{
                             minWidth: 230,
                             zIndex: 100,
-                            left: gi === barData.length - 1 ? 'auto' : '50%',
-                            right: gi === barData.length - 1 ? '0px' : 'auto',
-                            transform: gi === barData.length - 1 ? 'none' : 'translateX(-50%)',
+                            left: gi === displayBarData.length - 1 ? 'auto' : '50%',
+                            right: gi === displayBarData.length - 1 ? '0px' : 'auto',
+                            transform: gi === displayBarData.length - 1 ? 'none' : 'translateX(-50%)',
                             pointerEvents: 'auto'
                           }}
                         >
                           <div className="ws-bm-tooltip-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                             <span>{grp.label}</span>
                             <span className="ws-bm-tooltip-badge">
-                              ₹{monthTotal.toLocaleString('en-IN')}
+                              ₹{periodTotal.toLocaleString('en-IN')}
                             </span>
                           </div>
 
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 6, borderTop: '1px solid #f1f5f9' }}>
-                            {activeSeries.map(s => {
+                            {displaySeries.map(s => {
                               const val = Number(grp[s.key]) || 0
-                              const pct = monthTotal > 0 ? Math.round((val / monthTotal) * 100) : 0
+                              const pct = periodTotal > 0 ? Math.round((val / periodTotal) * 100) : 0
                               const isHighlighted = hoveredSeriesKey === s.key
 
                               return (
                                 <div 
                                   key={s.key}
+                                  onClick={(e) => {
+                                    if (!isDrilldown) {
+                                      e.stopPropagation()
+                                      setSelectedCategory(s.label)
+                                    }
+                                  }}
                                   style={{
                                     display: 'flex',
                                     justifyContent: 'space-between',
                                     alignItems: 'center',
                                     fontSize: '0.75rem',
-                                    padding: '3px 6px',
-                                    borderRadius: 4,
-                                    background: isHighlighted ? '#f1f5f9' : 'transparent',
-                                    fontWeight: isHighlighted ? 700 : 500
+                                    padding: '5px 8px',
+                                    borderRadius: 6,
+                                    background: isHighlighted ? '#e2e8f0' : '#f8fafc',
+                                    fontWeight: isHighlighted ? 700 : 500,
+                                    cursor: !isDrilldown ? 'pointer' : 'default',
+                                    transition: 'all 0.15s ease',
+                                    border: '1px solid #e2e8f0'
                                   }}
+                                  title={!isDrilldown ? `Click to view ${s.label} products breakdown` : ''}
                                 >
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block' }} />
-                                    <span style={{ color: isHighlighted ? '#0f172a' : '#334155' }}>{s.label}</span>
+                                    <span style={{ color: '#0f172a', fontWeight: 600 }}>{s.label}</span>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <span style={{ color: '#0f172a', fontWeight: 600 }}>₹{val.toLocaleString('en-IN')}</span>
-                                    <span style={{ color: '#94a3b8', fontSize: '0.70rem', minWidth: 26, textAlign: 'right' }}>{pct}%</span>
+                                    <span style={{ color: '#64748b', fontSize: '0.70rem', minWidth: 26, textAlign: 'right' }}>{pct}%</span>
                                   </div>
                                 </div>
                               )
@@ -400,6 +656,31 @@ export default function BusinessMetrics() {
                               <span>USD: <strong>{tip.usd}</strong></span>
                             </div>
                           )}
+
+                          {!isDrilldown && (
+                            <div 
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const catToUse = (tip?.product && tip.product !== 'N/A') ? tip.product : (displaySeries[0]?.label || 'Grains')
+                                setSelectedCategory(catToUse)
+                              }}
+                              style={{
+                                marginTop: 6,
+                                paddingTop: 6,
+                                borderTop: '1px solid #e2e8f0',
+                                display: 'flex',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                color: '#2563eb',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Click to view product breakdown →
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -408,7 +689,7 @@ export default function BusinessMetrics() {
               </div>
 
               <div className="ws-bm-xaxis">
-                {barData.map(g => (
+                {displayBarData.map(g => (
                   <span key={g.label} className="ws-bm-xaxis-label">{g.label}</span>
                 ))}
               </div>
@@ -420,16 +701,26 @@ export default function BusinessMetrics() {
         <div className="ws-bm-card">
           <div className="ws-bm-card-header">
             <div className="ws-bm-card-title-row">
-              <span className="ws-bm-card-title">Closed deals by product category</span>
-              <span className="ws-bm-entity-badge ws-bm-entity-badge--deal">
-                <Tag size={11} /> Deals
+              <span className="ws-bm-card-title">
+                {isDrilldown ? `Product sales share (${selectedCategory})` : 'Sales by product category'}
               </span>
             </div>
             <div className="ws-bm-legend">
-              {donutSegments.map(s => (
-                <div key={s.label} className="ws-bm-legend-item">
+              {displayDonutSegments.map(s => (
+                <div 
+                  key={s.label} 
+                  className="ws-bm-legend-item"
+                  style={{
+                    cursor: 'default',
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    transition: 'all 0.15s ease'
+                  }}
+                >
                   <span className="ws-bm-legend-dot" style={{ background: s.color }} />
-                  {s.label} {s.pct > 0 ? `(${s.pct}%)` : ''}
+                  <span style={{ fontWeight: 500 }}>
+                    {s.label} {s.pct > 0 ? `(${s.pct}%)` : ''}
+                  </span>
                 </div>
               ))}
             </div>
@@ -439,7 +730,16 @@ export default function BusinessMetrics() {
             {hasDonutData ? (
               <svg viewBox="0 0 180 180" className="ws-bm-donut-svg">
                 {donutPaths.map((p, i) => (
-                  <path key={i} d={p.d} fill={p.color} opacity="0.9" />
+                  <path 
+                    key={i} 
+                    d={p.d} 
+                    fill={p.color} 
+                    opacity="0.9" 
+                    style={{ cursor: !isDrilldown ? 'pointer' : 'default', transition: 'transform 0.15s ease' }}
+                    onClick={() => {
+                      if (!isDrilldown) setSelectedCategory(p.label)
+                    }}
+                  />
                 ))}
                 {donutInner.map((p, i) => (
                   <path key={`inner-${i}`} d={p.d} fill={p.color} opacity="0.35" />
@@ -448,13 +748,63 @@ export default function BusinessMetrics() {
               </svg>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 180, color: '#94a3b8', fontSize: '0.84rem' }}>
-                <span>No deals recorded for this period</span>
+                <span>No sales recorded for this period</span>
               </div>
             )}
           </div>
         </div>
 
       </div>
+
+      {/* ── Product Performance Table (When inside category drilldown) ── */}
+      {isDrilldown && (
+        <div style={{ marginTop: 24, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+              {selectedCategory} — Individual Products Breakdown
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
+              {displayDonutSegments.length} Products
+            </span>
+          </div>
+          <table className="ws-table-styled" style={{ margin: 0, width: '100%' }}>
+            <thead>
+              <tr>
+                <th style={{ width: '50%' }}>Product Name</th>
+                <th style={{ width: '25%', textAlign: 'right' }}>Units Sold</th>
+                <th style={{ width: '25%', textAlign: 'right' }}>Total Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayDonutSegments.length === 0 ? (
+                <tr>
+                  <td colSpan={3} style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
+                    No sales recorded for {selectedCategory} in this period
+                  </td>
+                </tr>
+              ) : (
+                displayDonutSegments.map((prod, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: prod.color }} />
+                        <span style={{ fontWeight: 600, color: '#1e293b' }}>{prod.label}</span>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                      {Number(prod.units_sold || 0).toLocaleString('en-IN')} <span style={{ color: '#64748b', fontSize: '0.80rem' }}>{prod.unit || ''}</span>
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
+                      ₹{Number(prod.revenue || 0).toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
     </div>
   )
 }

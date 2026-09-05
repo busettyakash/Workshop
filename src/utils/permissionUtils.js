@@ -136,8 +136,8 @@ export function getFirstAccessibleRoute(permissions, role) {
     return '/dashboard'
   }
 
-  // If dashboard is permitted, return /dashboard
-  if (currentPermissions.dashboard?.read === true) {
+  // If dashboard is permitted or not explicitly set to false, return /dashboard
+  if (currentPermissions.dashboard?.read !== false) {
     return '/dashboard'
   }
 
@@ -148,8 +148,8 @@ export function getFirstAccessibleRoute(permissions, role) {
     }
   }
 
-  // Fallback to settings if nothing in the menu is accessible
-  return '/settings'
+  // Fallback to dashboard
+  return '/dashboard'
 }
 
 /**

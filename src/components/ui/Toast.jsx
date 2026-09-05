@@ -16,7 +16,7 @@ function Toast({ toast }) {
   const dispatch = useAppDispatch()
 
   useEffect(() => {
-    const timer = setTimeout(() => dispatch(removeToast(toast.id)), 4000)
+    const timer = setTimeout(() => dispatch(removeToast(toast.id)), 2500)
     return () => clearTimeout(timer)
   }, [dispatch, toast.id])
 

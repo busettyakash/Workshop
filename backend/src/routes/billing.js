@@ -435,6 +435,22 @@ async function deductStockForBillItems(items, userId, billId) {
   }
 }
 
+async function insertBillItems(billId, items) {
+  for (const item of (items || [])) {
+    const prodId = Number.parseInt(item.product_id || item.productId || item.id, 10) || null
+    const prodName = item.product_name || item.productName || item.name || 'Unknown Product'
+    const qty = Number.parseFloat(item.quantity || item.qty || 1)
+    const price = Number.parseFloat(item.price || item.rate || 0)
+    const lineTotal = Number.parseFloat(item.line_total || item.amount || (qty * price))
+
+    await query(
+      `INSERT INTO bill_items (bill_id, product_id, product_name, quantity, price, line_total, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [billId, prodId, prodName, qty, price, lineTotal]
+    ).catch(e => console.error('[Bill Items Insert Error]', e.message))
+  }
+}
+
 /* POST /api/billing */
 router.post('/', async (req, res) => {
   const userId = req.workspaceId
@@ -462,6 +478,9 @@ router.post('/', async (req, res) => {
     })
 
     const billRecord = insertedRows[0]
+    if (billRecord?.id) {
+      await insertBillItems(billRecord.id, enrichedItems)
+    }
     await deductStockForBillItems(enrichedItems, userId, billRecord?.id)
 
     try {

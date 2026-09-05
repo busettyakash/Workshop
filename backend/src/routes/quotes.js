@@ -340,6 +340,15 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
     return
   }
 
+  const orderNum = quote.order_number || bill?.order_number || `ORD-${quote.quote_number ? quote.quote_number.replace(/^QT-?/i, '') : quote.id}`
+  const dedupKey = `email:dedup:order_confirmation:${orderNum}`
+  const alreadySent = await redis.get(dedupKey).catch(() => null)
+  if (alreadySent) {
+    console.log(`[Invoice Email] ⏸️ Duplicate invoice email prevented for order #${orderNum}. Already sent.`)
+    return
+  }
+  await redis.set(dedupKey, '1', { ex: 300 }).catch(() => {})
+
   const shopProfileRes = await pool.query('SELECT shop_name, phone, gstin, email, address FROM shop_profiles WHERE user_id::text = $1::text LIMIT 1', [quote.user_id || 'default-user']).catch(() => ({ rows: [] }))
   const shop = shopProfileRes.rows[0] || {}
   const sellerName = shop.shop_name || shop.name || quote.shop_name || bill?.shop_name || 'Workshop'
@@ -353,7 +362,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
   // Generate Email HTML using external template file (invoiceTemplate.js)
   const invoiceHtml = getInvoiceEmailTemplate({ quote, bill, billItems: enrichedBillItems, shop })
 
-  const pdfBuffer = await generateInvoicePdfBuffer({ quote, bill, billItems: enrichedBillItems, shop, type: 'invoice' }).catch(e => {
+  const pdfBuffer = await generateInvoicePdfBuffer({ quote, bill, billItems: enrichedBillItems, shop, type: 'invoice', preferFast: true }).catch(e => {
     console.error('[Invoice PDF Generation Error]', e.message)
     return null
   })
@@ -366,24 +375,13 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
     }
   ] : []
 
-  // 1. Send invoice email to Customer
+  // 1. Send invoice email to Customer only
   await sendEmail({
     to: quote.customer_email,
     subject: `TAX INVOICE ${invNum} from ${sellerName}`,
     html: invoiceHtml,
     attachments
   }).catch(e => console.error('[Invoice Email Send Error Customer]', e.message))
-
-  // 2. Send invoice email copy to Sender (Shop / Workspace)
-  const senderEmail = shop.email || process.env.SMTP_USER
-  if (senderEmail && senderEmail !== quote.customer_email) {
-    await sendEmail({
-      to: senderEmail,
-      subject: `[Sender Copy] TAX INVOICE ${invNum} issued to ${quote.customer_name}`,
-      html: invoiceHtml,
-      attachments
-    }).catch(e => console.error('[Invoice Email Send Error Sender]', e.message))
-  }
 
   // 3. Save Email Log Record
   await pool.query(
@@ -818,7 +816,10 @@ async function convertQuoteToBillRecord(quote, userId) {
   await decreaseProductStockForQuote(items, userId, quote.quote_number || quote.id)
 
   const updatedQuote = { ...quote, status: 'Accepted', order_number: orderNum }
-  await sendInvoiceEmailToCustomer(updatedQuote, bill, createdItems.length > 0 ? createdItems : items)
+  const isWorkflowEmailActive = await isEmailStepActiveInWorkflow(userId, 'accepted')
+  if (!isWorkflowEmailActive) {
+    await sendInvoiceEmailToCustomer(updatedQuote, bill, createdItems.length > 0 ? createdItems : items)
+  }
   await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
 
   return bill

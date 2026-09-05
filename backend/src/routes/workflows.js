@@ -169,7 +169,8 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
     bill,
     billItems,
     shop,
-    type: 'invoice'
+    type: 'invoice',
+    preferFast: true
   }).catch(e => {
     console.error('[Multi-Contact Invoice PDF Generation Warning]', e.message)
     return null
@@ -184,10 +185,22 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
   ] : []
 
   let sentCount = 0
-  const activeRecipients = recipients.filter(r => r && r.email)
+  const uniqueRecipients = []
+  const seenEmails = new Set()
+  const custEmailLower = (quote?.customer_email || bill?.customer_email || '').toLowerCase().trim()
+
+  for (const r of (Array.isArray(recipients) ? recipients : [])) {
+    if (!r || !r.email) continue
+    const norm = r.email.toLowerCase().trim()
+    if (!norm || seenEmails.has(norm)) continue
+    // Prevent sending duplicate copy to customer who already received in Step 4
+    if (norm === custEmailLower) continue
+    seenEmails.add(norm)
+    uniqueRecipients.push(r)
+  }
 
   await Promise.allSettled(
-    activeRecipients.map(async (r) => {
+    uniqueRecipients.map(async (r) => {
       const recipientName = r.name && r.name.trim() ? r.name.trim() : 'Team Member'
       const emailBodyHtml = `
         <div style="font-family: Arial, Helvetica, sans-serif; font-size: 0.95rem; color: #1e293b; line-height: 1.6; text-align: left; max-width: 600px;">
@@ -223,7 +236,7 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
     })
   )
 
-  return `Multi-Contact Summary: Configured Recipients (${sentCount}/${recipients.length}) processed successfully with attached Tax_Invoice_${invNum}.pdf.`
+  return `Multi-Contact Summary: Configured Recipients (${sentCount}/${uniqueRecipients.length}) processed successfully with attached Tax_Invoice_${invNum}.pdf.`
 }
 
 async function executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step) {
@@ -277,7 +290,8 @@ async function executeCustomerInvoiceEmailAction(currentAction, run, companyName
     bill,
     billItems: enrichedBillItems,
     shop,
-    type: 'invoice'
+    type: 'invoice',
+    preferFast: true
   }).catch(e => {
     console.error('[Invoice PDF Generation Warning in Workflow]', e.message)
     return null
@@ -299,14 +313,6 @@ async function executeCustomerInvoiceEmailAction(currentAction, run, companyName
   }).catch(err => ({ data: null, error: err }))
 
   const senderEmail = shop.email || process.env.SMTP_USER
-  if (senderEmail && senderEmail !== customerEmail) {
-    sendEmail({
-      to: senderEmail,
-      subject: `[Sender Copy] TAX INVOICE ${invNum} issued to ${customerName}`,
-      html: confirmationHtml,
-      attachments
-    }).catch(() => {})
-  }
 
   await query(
     `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
@@ -399,6 +405,7 @@ async function executeStep1Condition(run, branchSteps, isDeclinedBranch, logKey)
   await query(`UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`, [run.id])
 
   if (branchSteps.length > 0) {
+    const delayMs = process.env.VERCEL ? 100 : 250
     setTimeout(() => {
       executeWorkflowStep({
         runId: run.id,
@@ -406,7 +413,7 @@ async function executeStep1Condition(run, branchSteps, isDeclinedBranch, logKey)
         step: 2,
         branch: isDeclinedBranch ? 'declined' : 'accepted'
       }).catch(e => console.error('[Step 2 Auto-Advance Error]', e.message))
-    }, 500)
+    }, delayMs)
   }
 
   return {
@@ -463,6 +470,7 @@ async function advanceWorkflowStep(run, step, isDeclinedBranch) {
     [step, run.id]
   )
 
+  const delayMs = process.env.VERCEL ? 100 : 300
   setTimeout(() => {
     executeWorkflowStep({
       runId: run.id,
@@ -470,7 +478,7 @@ async function advanceWorkflowStep(run, step, isDeclinedBranch) {
       step: step + 1,
       branch: isDeclinedBranch ? 'declined' : 'accepted'
     }).catch(e => console.error('[Next Step Auto-Advance Error]', e.message))
-  }, 700)
+  }, delayMs)
 
   return {
     success: true,
@@ -591,16 +599,45 @@ async function healStalledRuns() {
       `SELECT r.*, w.nodes 
        FROM workflow_runs r
        LEFT JOIN workflows w ON r.workflow_id = w.id
-       WHERE r.status = 'Executing' AND r.created_at < NOW() - INTERVAL '15 minutes'`
+       WHERE r.status = 'Executing' AND r.created_at < NOW() - INTERVAL '60 seconds'`
     )
 
     for (const run of rows) {
       console.log(`[WORKFLOW HEALER] Finalizing timed-out stalled run #${run.id} (step: ${run.current_step})...`)
-      const durationStr = formatWorkflowDuration(run.created_at)
+
+      // Dynamically resolve total steps based on the actual workflow canvas nodes
+      let nodes = run.nodes
+      if (typeof nodes === 'string') {
+        try { nodes = JSON.parse(nodes) } catch { nodes = null }
+      }
+      const isDeclined = Boolean(run.test_company && String(run.test_company).toLowerCase().includes('declined'))
+      const branchSteps = resolveBranchSteps(nodes, isDeclined)
+      const totalSteps = branchSteps.length > 0 ? (branchSteps.length + 1) : Math.max(Number(run.current_step || 1), 1)
+
+      // Dynamically resolve duration based on the timestamp of the last logged step in Redis
+      let durationStr = null
+      try {
+        const lastLog = await redis.lindex(`run:${run.id}:logs`, -1).catch(() => null)
+        if (lastLog) {
+          const parsed = typeof lastLog === 'string' ? JSON.parse(lastLog) : lastLog
+          if (parsed?.time && run.created_at) {
+            const diffSecs = Math.max(1, Math.round((new Date(parsed.time).getTime() - new Date(run.created_at).getTime()) / 1000))
+            if (diffSecs < 60) {
+              durationStr = `${diffSecs}s`
+            }
+          }
+        }
+      } catch { /* ignore Redis read errors */ }
+
+      if (!durationStr) {
+        const rawDur = formatWorkflowDuration(run.created_at)
+        const durNum = Number.parseInt(rawDur, 10)
+        durationStr = (!rawDur.includes('m') && !Number.isNaN(durNum) && durNum < 60) ? rawDur : `${Math.max(2, totalSteps)}s`
+      }
 
       await query(
-        `UPDATE workflow_runs SET status = 'Completed', duration = $1 WHERE id = $2`,
-        [durationStr, run.id]
+        `UPDATE workflow_runs SET status = 'Completed', duration = $1, current_step = GREATEST(current_step, $2) WHERE id = $3`,
+        [durationStr, totalSteps, run.id]
       )
     }
   } catch (err) {

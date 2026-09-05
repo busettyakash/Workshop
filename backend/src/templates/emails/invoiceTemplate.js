@@ -7,6 +7,13 @@ function escapeHtml(str) {
     .replaceAll("'", '&#39;')
 }
 
+function formatNonClickablePhone(phone) {
+  if (!phone) return ''
+  const escaped = escapeHtml(phone)
+  const unlinked = escaped.split('').join('&#8204;')
+  return `<span class="no-phone-link" style="color:#475569; text-decoration:none !important; pointer-events:none; cursor:default;">${unlinked}</span>`
+}
+
 function normalizeUnitRaw(rawUnit) {
   let uRaw = String(rawUnit || '').trim()
   if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
@@ -168,6 +175,53 @@ function buildInvoiceTableRows(itemsList, catalogMap, isQuoteFlow, realTaxAmt, h
   return itemsList.map(item => buildInvoiceItemRow(item, catalogMap, isQuoteFlow, realTaxAmt, halfRate)).join('')
 }
 
+function resolveSummaryCellWidth(hasTax, hasDisc) {
+  if (hasTax && hasDisc) return '20%'
+  if (hasTax || hasDisc) return '33.33%'
+  return '50%'
+}
+
+function buildInvoiceSummaryTable({ subtotal, taxAmt, cgst, sgst, discountAmt, totalAmount, isQuoteFlow }) {
+  const hasTax = taxAmt > 0
+  const hasDisc = discountAmt > 0
+  const w = resolveSummaryCellWidth(hasTax, hasDisc)
+
+  const taxCells = hasTax ? `
+    <td width="${w}" style="padding:10px 8px;">
+      <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">CGST AMT</div>
+      <div style="font-size:12.5px; font-weight:800; color:#0f172a; margin-top:2px;">₹${cgst.toFixed(2)}</div>
+    </td>
+    <td width="${w}" style="padding:10px 8px;">
+      <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">SGST AMT</div>
+      <div style="font-size:12.5px; font-weight:800; color:#0f172a; margin-top:2px;">₹${sgst.toFixed(2)}</div>
+    </td>
+  ` : ''
+
+  const discCell = hasDisc ? `
+    <td width="${w}" style="padding:10px 8px; background:#fef2f2;">
+      <div style="font-size:9.5px; font-weight:800; color:#991b1b; text-transform:uppercase;">TOTAL DISCOUNT</div>
+      <div style="font-size:12.5px; font-weight:800; color:#dc2626; margin-top:2px;">- ₹${discountAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    </td>
+  ` : ''
+
+  return `
+    <table class="summary-table" style="table-layout:fixed;">
+      <tr>
+        <td width="${w}" style="padding:10px 8px;">
+          <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">TOT. TAX'BLE AMT</div>
+          <div style="font-size:12.5px; font-weight:800; color:#0f172a; margin-top:2px;">₹${subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        </td>
+        ${taxCells}
+        ${discCell}
+        <td width="${w}" style="padding:10px 8px; background:#0f172a; color:#ffffff; border-right:none;">
+          <div style="font-size:9.5px; font-weight:800; color:#94a3b8; text-transform:uppercase;">TOTAL ${isQuoteFlow ? 'QUOTE' : 'INV'}.AMT</div>
+          <div style="font-size:13px; font-weight:900; color:#ffffff; margin-top:2px;">₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        </td>
+      </tr>
+    </table>
+  `
+}
+
 export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}, catalogMap = {} }) => {
   const {
     sellerName, sellerPhone, sellerGstin, sellerAddress,
@@ -229,8 +283,19 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
     <title>${escapeHtml(docLabel)} #${escapeHtml(invNum)}</title>
     <style>
+      a[href^="tel"], a[x-apple-data-detectors], .no-phone-link, .no-phone-link a {
+        color: inherit !important;
+        text-decoration: none !important;
+        font-size: inherit !important;
+        font-family: inherit !important;
+        font-weight: inherit !important;
+        line-height: inherit !important;
+        pointer-events: none !important;
+        cursor: default !important;
+      }
       body { margin: 0; padding: 20px 10px; background: #f1f5f9; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; text-align: left; }
       .invoice-card { max-width: 760px; margin: 0 auto; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; text-align: left; }
       .header-banner { background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3d68f5 100%); padding: 28px 32px; color: #ffffff; }
@@ -258,7 +323,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
               <div style="font-size:24px; font-weight:800; color:#ffffff; margin-bottom:4px; letter-spacing:-0.03em;">${escapeHtml(sellerName)}</div>
               <div style="font-size:12px; color:rgba(255,255,255,0.85); line-height:1.5;">
                 Official Supplier & Goods Provider<br />
-                ${sellerPhone ? `Phone: ${escapeHtml(sellerPhone)} ` : ''} ${sellerGstin ? `· GSTIN: ${escapeHtml(sellerGstin).toUpperCase()}` : ''}
+                ${sellerPhone ? `Phone: ${formatNonClickablePhone(sellerPhone)} ` : ''} ${sellerGstin ? `· GSTIN: ${escapeHtml(sellerGstin).toUpperCase()}` : ''}
               </div>
             </td>
             <td align="right" valign="top" style="text-align:right;">
@@ -310,7 +375,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
               <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px;">${escapeHtml(sellerName)}</div>
               ${sellerGstin ? `<div style="font-size:12px; color:#475569;">GSTIN: ${escapeHtml(sellerGstin).toUpperCase()}</div>` : ''}
               ${sellerAddress ? `<div style="font-size:12px; color:#475569; margin-top:2px;">${escapeHtml(sellerAddress)}</div>` : ''}
-              ${sellerPhone ? `<div style="font-size:12px; color:#475569; margin-top:2px;">Phone: ${escapeHtml(sellerPhone)}</div>` : ''}
+              ${sellerPhone ? `<div style="font-size:12px; color:#475569; margin-top:2px;">Phone: ${formatNonClickablePhone(sellerPhone)}</div>` : ''}
             </td>
             <td width="2%">&nbsp;</td>
             <td class="address-box">
@@ -319,7 +384,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
               ${customerCompany ? `<div style="font-size:12px; color:#475569;">${escapeHtml(customerCompany)}</div>` : ''}
               ${customerGstin ? `<div style="font-size:12px; color:#475569;">GSTIN: ${escapeHtml(customerGstin).toUpperCase()}</div>` : ''}
               ${customerAddress ? `<div style="font-size:12px; color:#475569; margin-top:2px;">${escapeHtml(customerAddress)}</div>` : ''}
-              ${customerPhone ? `<div style="font-size:12px; color:#475569; margin-top:2px;">Phone: ${escapeHtml(customerPhone)}</div>` : ''}
+              ${customerPhone ? `<div style="font-size:12px; color:#475569; margin-top:2px;">Phone: ${formatNonClickablePhone(customerPhone)}</div>` : ''}
             </td>
           </tr>
         </table>
@@ -343,44 +408,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
         </table>
 
         <!-- ── TOTALS SUMMARY ROW GRID ── -->
-        ${(() => {
-      const hasTax = taxAmt > 0
-      const hasDisc = discountAmt > 0
-      let w = '50%'
-      if (hasTax && hasDisc) w = '20%'
-      else if (hasTax || hasDisc) w = '33.33%'
-
-      return `
-          <table class="summary-table" style="table-layout:fixed;">
-            <tr>
-              <td width="${w}" style="padding:10px 8px;">
-                <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">TOT. TAX'BLE AMT</div>
-                <div style="font-size:12.5px; font-weight:800; color:#0f172a; margin-top:2px;">₹${subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-              </td>
-              ${hasTax ? `
-              <td width="${w}" style="padding:10px 8px;">
-                <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">CGST AMT</div>
-                <div style="font-size:12.5px; font-weight:800; color:#0f172a; margin-top:2px;">₹${cgst.toFixed(2)}</div>
-              </td>
-              <td width="${w}" style="padding:10px 8px;">
-                <div style="font-size:9.5px; font-weight:800; color:#64748b; text-transform:uppercase;">SGST AMT</div>
-                <div style="font-size:12.5px; font-weight:800; color:#0f172a; margin-top:2px;">₹${sgst.toFixed(2)}</div>
-              </td>
-              ` : ''}
-              ${hasDisc ? `
-              <td width="${w}" style="padding:10px 8px; background:#fef2f2;">
-                <div style="font-size:9.5px; font-weight:800; color:#991b1b; text-transform:uppercase;">TOTAL DISCOUNT</div>
-                <div style="font-size:12.5px; font-weight:800; color:#dc2626; margin-top:2px;">- ₹${discountAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-              </td>
-              ` : ''}
-              <td width="${w}" style="padding:10px 8px; background:#0f172a; color:#ffffff; border-right:none;">
-                <div style="font-size:9.5px; font-weight:800; color:#94a3b8; text-transform:uppercase;">TOTAL ${isQuoteFlow ? 'QUOTE' : 'INV'}.AMT</div>
-                <div style="font-size:13px; font-weight:900; color:#ffffff; margin-top:2px;">₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-              </td>
-            </tr>
-          </table>
-          `
-    })()}
+        ${buildInvoiceSummaryTable({ subtotal, taxAmt, cgst, sgst, discountAmt, totalAmount, isQuoteFlow })}
 
         <!-- BARCODE -->
         <div style="text-align:center; margin:20px 0 10px;">

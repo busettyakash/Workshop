@@ -165,6 +165,40 @@ function resolveDocumentNumber({ quote, bill, isQuote }) {
   return 'INV-10001'
 }
 
+function resolveExplicitTaxValues(doc, quote, bill) {
+  const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
+  const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !Number.isNaN(Number.parseFloat(rawTaxAmt))
+  const explicitTaxAmt = hasExplicitTaxAmt ? Number.parseFloat(rawTaxAmt) : 0
+
+  const rawTaxRate = doc.tax_rate ?? doc.taxRate ?? quote?.tax_rate ?? bill?.tax_rate
+  const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !Number.isNaN(Number.parseFloat(rawTaxRate)))
+    ? Number.parseFloat(rawTaxRate)
+    : null
+
+  return { explicitTaxAmt, explicitTaxRate }
+}
+
+function computeInvoiceTaxAmount(explicitTaxAmt, explicitTaxRate, tempTaxable, explicitTotalAmount) {
+  if (explicitTaxAmt > 0) return explicitTaxAmt
+  if (explicitTaxRate !== null && explicitTaxRate > 0) {
+    return tempTaxable * (explicitTaxRate / 100)
+  }
+  if (explicitTotalAmount > 0 && explicitTotalAmount > tempTaxable) {
+    return explicitTotalAmount - tempTaxable
+  }
+  return 0
+}
+
+function calculateInvoiceEffectiveTaxRate(explicitTaxRate, taxAmt, taxableSubtotal) {
+  if (explicitTaxRate !== null && explicitTaxRate !== undefined && !Number.isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
+    return explicitTaxRate
+  }
+  if (taxAmt > 0 && taxableSubtotal > 0) {
+    return Math.round((taxAmt / taxableSubtotal) * 100)
+  }
+  return 0
+}
+
 function calculateInvoiceTotals({ items, doc, quote, bill }) {
   const grossSubtotal = items.reduce((s, li) => {
     const q = Number.parseFloat(li.qty || li.quantity || 1)
@@ -176,26 +210,11 @@ function calculateInvoiceTotals({ items, doc, quote, bill }) {
   const explicitDiscount = Number.parseFloat(doc.discount || doc.discount_amount || quote?.discount || bill?.discount || 0)
   const explicitTotalAmount = Number.parseFloat(doc.amount || doc.total_amount || 0)
 
-  const rawTaxAmt = doc.tax_amount ?? doc.taxAmount ?? quote?.tax_amount ?? bill?.tax_amount
-  const hasExplicitTaxAmt = rawTaxAmt !== undefined && rawTaxAmt !== null && rawTaxAmt !== '' && !Number.isNaN(Number.parseFloat(rawTaxAmt))
-  const explicitTaxAmt = hasExplicitTaxAmt ? Number.parseFloat(rawTaxAmt) : 0
-
-  const rawTaxRate = doc.tax_rate ?? doc.taxRate ?? quote?.tax_rate ?? bill?.tax_rate
-  const explicitTaxRate = (rawTaxRate !== undefined && rawTaxRate !== null && rawTaxRate !== '' && !Number.isNaN(Number.parseFloat(rawTaxRate)))
-    ? Number.parseFloat(rawTaxRate)
-    : null
+  const { explicitTaxAmt, explicitTaxRate } = resolveExplicitTaxValues(doc, quote, bill)
 
   const tempDiscount = Math.max(explicitDiscount, lineDiscounts)
   const tempTaxable = Math.max(0, grossSubtotal - tempDiscount)
-
-  let taxAmt = 0
-  if (explicitTaxAmt > 0) {
-    taxAmt = explicitTaxAmt
-  } else if (explicitTaxRate !== null && explicitTaxRate > 0) {
-    taxAmt = tempTaxable * (explicitTaxRate / 100)
-  } else if (explicitTotalAmount > 0 && explicitTotalAmount > tempTaxable) {
-    taxAmt = explicitTotalAmount - tempTaxable
-  }
+  const taxAmt = computeInvoiceTaxAmount(explicitTaxAmt, explicitTaxRate, tempTaxable, explicitTotalAmount)
 
   const grossTotalWithTax = grossSubtotal + taxAmt
   const diffDiscount = (grossTotalWithTax > 0 && explicitTotalAmount > 0 && grossTotalWithTax > explicitTotalAmount + 0.01)
@@ -205,13 +224,7 @@ function calculateInvoiceTotals({ items, doc, quote, bill }) {
   const taxableSubtotal = Math.max(0, grossSubtotal - totalDiscount)
   const totalAmount = explicitTotalAmount > 0 ? explicitTotalAmount : (taxableSubtotal + taxAmt)
 
-  let effectiveTaxRate = 0
-  if (explicitTaxRate !== null && explicitTaxRate !== undefined && !Number.isNaN(explicitTaxRate) && explicitTaxRate >= 0) {
-    effectiveTaxRate = explicitTaxRate
-  } else if (taxAmt > 0 && taxableSubtotal > 0) {
-    effectiveTaxRate = Math.round((taxAmt / taxableSubtotal) * 100)
-  }
-
+  const effectiveTaxRate = calculateInvoiceEffectiveTaxRate(explicitTaxRate, taxAmt, taxableSubtotal)
   const halfTaxRate = effectiveTaxRate > 0 ? (effectiveTaxRate / 2).toFixed(2).replace(/\.00$/, '') : '0'
   const cgst = taxAmt / 2
   const sgst = taxAmt / 2
@@ -410,10 +423,12 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
 <html>
 <head>
   <meta charset="UTF-8"/>
+  <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
   <title>${docId}</title>
   <style>
     @page { margin: 0; size: A4; }
     * { margin:0; padding:0; box-sizing:border-box; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; color-adjust:exact!important; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    a[href^="tel"], a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; pointer-events: none !important; cursor: default !important; }
     body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:#ffffff; color:#0f172a; padding:20px; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
     .page { max-width:800px; margin:0 auto; border:1px solid #cbd5e1; border-radius:12px; overflow:hidden; background:#ffffff; }
     .banner { background:#1e3a8a!important; background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 60%,#3d68f5 100%)!important; padding:36px 44px 32px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; color:#ffffff!important; -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }

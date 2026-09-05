@@ -43,6 +43,236 @@ import ConfirmModal from '../ui/ConfirmModal'
 import '../../pages/Dashboard/Dashboard.css'
 import '../../pages/Products/Products.css'
 
+// ── Helper: Permission Badges for Member Table Row ──────────────────────────
+function MemberPermissionBadges({ member, isAdmin }) {
+  let perms = member.permissions || {}
+  if (typeof perms === 'string') {
+    try { perms = JSON.parse(perms) } catch { perms = {} }
+  }
+  const accessibleCount = MODULE_DEFINITIONS.filter(m => perms[m.id]?.read === true).length
+  const editCount = MODULE_DEFINITIONS.filter(m => perms[m.id]?.edit === true).length
+  const deleteCount = MODULE_DEFINITIONS.filter(m => perms[m.id]?.delete === true).length
+
+  if (isAdmin) {
+    return (
+      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 8, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>
+        Full Access ({MODULE_DEFINITIONS.length}/{MODULE_DEFINITIONS.length})
+      </span>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 6px', borderRadius: 8, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' }}>
+        Read ({accessibleCount}/{MODULE_DEFINITIONS.length})
+      </span>
+      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 6px', borderRadius: 8, background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+        Edit ({editCount})
+      </span>
+      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 6px', borderRadius: 8, background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+        Del ({deleteCount})
+      </span>
+    </div>
+  )
+}
+
+// ── Helper: Full-Page Permissions / Invite Editor View ───────────────────────
+function PermissionsEditorView({
+  selectedMember,
+  isInvitingNewMember,
+  inviteEmailInput,
+  setInviteEmailInput,
+  activeRole,
+  setActiveRole,
+  activePermissions,
+  saving,
+  onBack,
+  onSave,
+  onSendInvite,
+  onGrantFull,
+  onGrantReadOnly,
+  onClearAll,
+  onTogglePermission,
+  onToggleRowAll
+}) {
+  const isMemberOwner = selectedMember?.isOwner || (selectedMember?.role || '').toLowerCase() === 'owner'
+  const readCount = MODULE_DEFINITIONS.filter(m => activePermissions[m.id]?.read).length
+  const editCount = MODULE_DEFINITIONS.filter(m => activePermissions[m.id]?.edit).length
+  const deleteCount = MODULE_DEFINITIONS.filter(m => activePermissions[m.id]?.delete).length
+
+  return (
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 0, paddingBottom: 40 }}>
+      {/* ── Top Navigation & Back Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <button type="button" onClick={onBack} className="attio-btn"
+          style={{ padding: '6px 12px', fontSize: '0.80rem', fontWeight: 600, gap: 6, color: '#334155' }}>
+          <ArrowLeft size={14} /> Back to Members & Teams
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button type="button" onClick={onBack} className="attio-btn"
+            style={{ padding: '6px 14px', fontSize: '0.80rem' }}>
+            Cancel
+          </button>
+          {isInvitingNewMember ? (
+            <button type="button" onClick={onSendInvite} disabled={saving}
+              className="attio-btn attio-btn-primary"
+              style={{ padding: '6px 18px', fontSize: '0.80rem', fontWeight: 600, background: '#2563eb' }}>
+              {saving ? (<><Loader2 size={13} className="ws-chat-loader-spin" /><span>Sending Invite...</span></>) : <span>Send Invite</span>}
+            </button>
+          ) : (
+            <button type="button" onClick={onSave} disabled={saving}
+              className="attio-btn attio-btn-primary"
+              style={{ padding: '6px 18px', fontSize: '0.80rem', fontWeight: 600 }}>
+              {saving && <Loader2 size={13} className="ws-chat-loader-spin" />}
+              <span>Save Permissions</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Member Profile Card & Role Presets ── */}
+      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '16px 20px', marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
+          {/* Member Info / Input */}
+          {isInvitingNewMember ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: '280px', maxWidth: '420px' }}>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#334155' }}>
+                Work Email Address <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Mail size={15} style={{ position: 'absolute', left: 10, color: '#64748b' }} />
+                <input
+                  type="email"
+                  placeholder="e.g. colleague@company.com"
+                  value={inviteEmailInput}
+                  onChange={e => setInviteEmailInput(e.target.value)}
+                  autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter') onSendInvite(e) }}
+                  style={{ width: '100%', height: 36, paddingLeft: 34, paddingRight: 12, borderRadius: 8, border: '1.5px solid #2563eb', fontSize: '0.86rem', fontWeight: 500, color: '#0f172a', outline: 'none', boxShadow: '0 0 0 3px rgba(37,99,235,0.1)' }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 21, background: activeRole === 'Admin' ? '#eff6ff' : '#f1f5f9', color: activeRole === 'Admin' ? '#2563eb' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '1.1rem', flexShrink: 0, border: activeRole === 'Admin' ? '1.5px solid #bfdbfe' : '1.5px solid #e2e8f0' }}>
+                {(selectedMember.member_email || 'M')[0].toUpperCase()}
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0f172a' }}>{selectedMember.member_email}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: activeRole === 'Admin' ? '#eff6ff' : '#f1f5f9', color: activeRole === 'Admin' ? '#2563eb' : '#475569', border: activeRole === 'Admin' ? '1px solid #bfdbfe' : '1px solid #e2e8f0' }}>
+                    {activeRole}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: 2 }}>Configure what this member can view in the left sidebar, create/edit, or delete across all workspace modules.</div>
+              </div>
+            </div>
+          )}
+
+          {/* Role Selector & Quick Presets */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>Role:</span>
+              {isMemberOwner ? (
+                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '4px 10px', borderRadius: 6 }}>Admin (Full Access)</span>
+              ) : (
+                <select value={activeRole}
+                  onChange={e => {
+                    const newRole = e.target.value
+                    setActiveRole(newRole)
+                    if (newRole === 'Admin') onGrantFull()
+                  }}
+                  style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.80rem', fontWeight: 600, color: '#0f172a', background: '#ffffff', outline: 'none', cursor: 'pointer' }}>
+                  <option value="Member">Member (Granular Access)</option>
+                  <option value="Admin">Admin (Full Access)</option>
+                </select>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button type="button" onClick={onGrantFull} className="attio-btn"
+                style={{ padding: '4px 10px', fontSize: '0.74rem', fontWeight: 600, color: '#2563eb', borderColor: '#bfdbfe' }}>Grant Full Access</button>
+              <button type="button" onClick={onGrantReadOnly} className="attio-btn"
+                style={{ padding: '4px 10px', fontSize: '0.74rem', fontWeight: 600, color: '#475569' }}>Read-Only</button>
+              <button type="button" onClick={onClearAll} className="attio-btn"
+                style={{ padding: '4px 10px', fontSize: '0.74rem', fontWeight: 600, color: '#dc2626' }}>Clear All</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Active stats pills summary */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
+          <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 500 }}>Active Permissions:</span>
+          <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>Read ({readCount}/{MODULE_DEFINITIONS.length})</span>
+          <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>Edit ({editCount}/{MODULE_DEFINITIONS.length})</span>
+          <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca' }}>Delete ({deleteCount}/{MODULE_DEFINITIONS.length})</span>
+        </div>
+      </div>
+
+      {/* ── Full-Width Module Permissions Matrix Table ── */}
+      <div className="attio-table-card" style={{ marginTop: 0 }}>
+        <div className="attio-table-wrap">
+          <table className="attio-table">
+            <thead>
+              <tr>
+                <th style={{ width: '42%' }}>SIDEBAR MODULE & CAPABILITY</th>
+                <th style={{ width: '15%', textAlign: 'center' }}>READ / VIEW MENU</th>
+                <th style={{ width: '15%', textAlign: 'center' }}>EDIT / CREATE</th>
+                <th style={{ width: '15%', textAlign: 'center' }}>DELETE</th>
+                <th style={{ width: '13%', textAlign: 'right' }}>ROW ACCESS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MODULE_DEFINITIONS.map(m => {
+                const Icon = m.icon
+                const p = activePermissions[m.id] || { read: false, edit: false, delete: false }
+                const isAllChecked = p.read && p.edit && p.delete
+                return (
+                  <tr key={m.id} style={{ background: p.read ? '#ffffff' : '#fafafa', transition: 'background 0.1s' }}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: p.read ? '#eff6ff' : '#f1f5f9', color: p.read ? '#2563eb' : '#94a3b8', border: p.read ? '1px solid #dbeafe' : '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                          <Icon size={16} />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, color: p.read ? '#0f172a' : '#64748b', fontSize: '0.86rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>{m.label}</span>
+                            {p.read && <span style={{ fontSize: '0.62rem', fontWeight: 600, padding: '1px 5px', borderRadius: 4, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>Visible in Menu</span>}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2, lineHeight: 1.35 }}>{m.desc}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
+                        <input type="checkbox" checked={!!p.read} onChange={() => onTogglePermission(m.id, 'read')} className="attio-chk" style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }} />
+                      </label>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
+                        <input type="checkbox" checked={!!p.edit} onChange={() => onTogglePermission(m.id, 'edit')} className="attio-chk" style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }} />
+                      </label>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
+                        <input type="checkbox" checked={!!p.delete} onChange={() => onTogglePermission(m.id, 'delete')} className="attio-chk" style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }} />
+                      </label>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button type="button" onClick={() => onToggleRowAll(m.id)} className="attio-btn"
+                        style={{ padding: '3px 8px', fontSize: '0.72rem', fontWeight: 600, color: isAllChecked ? '#dc2626' : '#2563eb', borderColor: isAllChecked ? '#fecaca' : '#bfdbfe', background: isAllChecked ? '#fef2f2' : '#eff6ff' }}>
+                        {isAllChecked ? 'Clear All' : 'Select All'}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const MODULE_DEFINITIONS = [
   // ── Main Section ──
   { id: 'dashboard', label: 'Dashboard / Home', icon: LayoutDashboard, desc: 'Overview metrics, live analytics, recent activity logs, and widgets' },
@@ -305,372 +535,29 @@ export default function MembersManager() {
   // FULL PAGE VIEW: GRANULAR MENU PERMISSIONS & INVITE FULL-PAGE VIEW
   // ══════════════════════════════════════════════════════════════════════════
   if (selectedMember || isInvitingNewMember) {
-    const isMemberOwner = selectedMember?.isOwner || (selectedMember?.role || '').toLowerCase() === 'owner'
-    const readCount = MODULE_DEFINITIONS.filter(m => activePermissions[m.id]?.read).length
-    const editCount = MODULE_DEFINITIONS.filter(m => activePermissions[m.id]?.edit).length
-    const deleteCount = MODULE_DEFINITIONS.filter(m => activePermissions[m.id]?.delete).length
-
+    const backHandler = () => {
+      setSelectedMember(null)
+      setIsInvitingNewMember(false)
+    }
     return (
-      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 0, paddingBottom: 40 }}>
-        
-        {/* ── Top Navigation & Back Header ── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedMember(null)
-              setIsInvitingNewMember(false)
-            }}
-            className="attio-btn"
-            style={{
-              padding: '6px 12px',
-              fontSize: '0.80rem',
-              fontWeight: 600,
-              gap: 6,
-              color: '#334155'
-            }}
-          >
-            <ArrowLeft size={14} /> Back to Members & Teams
-          </button>
-
-          {/* Action buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMember(null)
-                setIsInvitingNewMember(false)
-              }}
-              className="attio-btn"
-              style={{ padding: '6px 14px', fontSize: '0.80rem' }}
-            >
-              Cancel
-            </button>
-            {isInvitingNewMember ? (
-              <button
-                type="button"
-                onClick={handleSendInviteFullPage}
-                disabled={saving}
-                className="attio-btn attio-btn-primary"
-                style={{ padding: '6px 18px', fontSize: '0.80rem', fontWeight: 600, background: '#2563eb' }}
-              >
-                {saving ? (
-                  <>
-                    <Loader2 size={13} className="ws-chat-loader-spin" />
-                    <span>Sending Invite...</span>
-                  </>
-                ) : (
-                  <span>Send Invite</span>
-                )}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSavePermissions}
-                disabled={saving}
-                className="attio-btn attio-btn-primary"
-                style={{ padding: '6px 18px', fontSize: '0.80rem', fontWeight: 600 }}
-              >
-                {saving && <Loader2 size={13} className="ws-chat-loader-spin" />}
-                <span>Save Permissions</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* ── Member Profile Card & Role Presets ── */}
-        <div style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: 10,
-          padding: '16px 20px',
-          marginBottom: 16,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
-            {/* Member Info / Input */}
-            {isInvitingNewMember ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: '280px', maxWidth: '420px' }}>
-                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#334155' }}>
-                  Work Email Address <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                  <Mail size={15} style={{ position: 'absolute', left: 10, color: '#64748b' }} />
-                  <input
-                    type="email"
-                    placeholder="e.g. colleague@company.com"
-                    value={inviteEmailInput}
-                    onChange={e => setInviteEmailInput(e.target.value)}
-                    autoFocus
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') handleSendInviteFullPage(e)
-                    }}
-                    style={{
-                      width: '100%',
-                      height: 36,
-                      paddingLeft: 34,
-                      paddingRight: 12,
-                      borderRadius: 8,
-                      border: '1.5px solid #2563eb',
-                      fontSize: '0.86rem',
-                      fontWeight: 500,
-                      color: '#0f172a',
-                      outline: 'none',
-                      boxShadow: '0 0 0 3px rgba(37,99,235,0.1)'
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{
-                  width: 42, height: 42, borderRadius: 21,
-                  background: activeRole === 'Admin' ? '#eff6ff' : '#f1f5f9',
-                  color: activeRole === 'Admin' ? '#2563eb' : '#475569',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontWeight: 700, fontSize: '1.1rem', flexShrink: 0,
-                  border: activeRole === 'Admin' ? '1.5px solid #bfdbfe' : '1.5px solid #e2e8f0'
-                }}>
-                  {(selectedMember.member_email || 'M')[0].toUpperCase()}
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0f172a' }}>
-                      {selectedMember.member_email}
-                    </span>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      padding: '2px 8px',
-                      borderRadius: 12,
-                      background: activeRole === 'Admin' ? '#eff6ff' : '#f1f5f9',
-                      color: activeRole === 'Admin' ? '#2563eb' : '#475569',
-                      border: activeRole === 'Admin' ? '1px solid #bfdbfe' : '1px solid #e2e8f0'
-                    }}>
-                      {activeRole}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: 2 }}>
-                    Configure what this member can view in the left sidebar, create/edit, or delete across all workspace modules.
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Role Selector & Quick Presets */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>Role:</span>
-                {isMemberOwner ? (
-                  <span style={{
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    color: '#2563eb',
-                    background: '#eff6ff',
-                    border: '1px solid #bfdbfe',
-                    padding: '4px 10px',
-                    borderRadius: 6
-                  }}>
-                    Admin (Full Access)
-                  </span>
-                ) : (
-                  <select
-                    value={activeRole}
-                    onChange={e => {
-                      const newRole = e.target.value
-                      setActiveRole(newRole)
-                      if (newRole === 'Admin') {
-                        handleGrantFullAccess()
-                      }
-                    }}
-                    style={{
-                      height: 32,
-                      padding: '0 10px',
-                      borderRadius: 6,
-                      border: '1px solid #cbd5e1',
-                      fontSize: '0.80rem',
-                      fontWeight: 600,
-                      color: '#0f172a',
-                      background: '#ffffff',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="Member">Member (Granular Access)</option>
-                    <option value="Admin">Admin (Full Access)</option>
-                  </select>
-                )}
-              </div>
-
-              {/* Quick Preset Buttons */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  onClick={handleGrantFullAccess}
-                  className="attio-btn"
-                  style={{ padding: '4px 10px', fontSize: '0.74rem', fontWeight: 600, color: '#2563eb', borderColor: '#bfdbfe' }}
-                >
-                  Grant Full Access
-                </button>
-                <button
-                  type="button"
-                  onClick={handleGrantReadOnly}
-                  className="attio-btn"
-                  style={{ padding: '4px 10px', fontSize: '0.74rem', fontWeight: 600, color: '#475569' }}
-                >
-                  Read-Only
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearAll}
-                  className="attio-btn"
-                  style={{ padding: '4px 10px', fontSize: '0.74rem', fontWeight: 600, color: '#dc2626' }}
-                >
-                  Clear All
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Active stats pills summary */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
-            <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 500 }}>Active Permissions:</span>
-            <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>
-              Read ({readCount}/{MODULE_DEFINITIONS.length})
-            </span>
-            <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
-              Edit ({editCount}/{MODULE_DEFINITIONS.length})
-            </span>
-            <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca' }}>
-              Delete ({deleteCount}/{MODULE_DEFINITIONS.length})
-            </span>
-          </div>
-        </div>
-
-        {/* ── Full-Width Module Permissions Matrix Table ── */}
-        <div className="attio-table-card" style={{ marginTop: 0 }}>
-          <div className="attio-table-wrap">
-            <table className="attio-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '42%' }}>SIDEBAR MODULE & CAPABILITY</th>
-                  <th style={{ width: '15%', textAlign: 'center' }}>READ / VIEW MENU</th>
-                  <th style={{ width: '15%', textAlign: 'center' }}>EDIT / CREATE</th>
-                  <th style={{ width: '15%', textAlign: 'center' }}>DELETE</th>
-                  <th style={{ width: '13%', textAlign: 'right' }}>ROW ACCESS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {MODULE_DEFINITIONS.map(m => {
-                  const Icon = m.icon
-                  const p = activePermissions[m.id] || { read: false, edit: false, delete: false }
-                  const isAllChecked = p.read && p.edit && p.delete
-
-                  return (
-                    <tr
-                      key={m.id}
-                      style={{
-                        background: p.read ? '#ffffff' : '#fafafa',
-                        transition: 'background 0.1s'
-                      }}
-                    >
-                      {/* Module Details */}
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                          <div style={{
-                            width: 32, height: 32, borderRadius: 8,
-                            background: p.read ? '#eff6ff' : '#f1f5f9',
-                            color: p.read ? '#2563eb' : '#94a3b8',
-                            border: p.read ? '1px solid #dbeafe' : '1px solid #e2e8f0',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0,
-                            marginTop: 1
-                          }}>
-                            <Icon size={16} />
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 600, color: p.read ? '#0f172a' : '#64748b', fontSize: '0.86rem', display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span>{m.label}</span>
-                              {p.read && (
-                                <span style={{ fontSize: '0.62rem', fontWeight: 600, padding: '1px 5px', borderRadius: 4, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
-                                  Visible in Menu
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2, lineHeight: 1.35 }}>
-                              {m.desc}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Read Checkbox */}
-                      <td style={{ textAlign: 'center' }}>
-                        <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
-                          <input
-                            type="checkbox"
-                            checked={!!p.read}
-                            onChange={() => handleTogglePermission(m.id, 'read')}
-                            className="attio-chk"
-                            style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
-                          />
-                        </label>
-                      </td>
-
-                      {/* Edit Checkbox */}
-                      <td style={{ textAlign: 'center' }}>
-                        <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
-                          <input
-                            type="checkbox"
-                            checked={!!p.edit}
-                            onChange={() => handleTogglePermission(m.id, 'edit')}
-                            className="attio-chk"
-                            style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
-                          />
-                        </label>
-                      </td>
-
-                      {/* Delete Checkbox */}
-                      <td style={{ textAlign: 'center' }}>
-                        <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
-                          <input
-                            type="checkbox"
-                            checked={!!p.delete}
-                            onChange={() => handleTogglePermission(m.id, 'delete')}
-                            className="attio-chk"
-                            style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
-                          />
-                        </label>
-                      </td>
-
-                      {/* Row-Level Quick Toggle */}
-                      <td style={{ textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleRowAll(m.id)}
-                          className="attio-btn"
-                          style={{
-                            padding: '3px 8px',
-                            fontSize: '0.72rem',
-                            fontWeight: 600,
-                            color: isAllChecked ? '#dc2626' : '#2563eb',
-                            borderColor: isAllChecked ? '#fecaca' : '#bfdbfe',
-                            background: isAllChecked ? '#fef2f2' : '#eff6ff'
-                          }}
-                        >
-                          {isAllChecked ? 'Clear All' : 'Select All'}
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <PermissionsEditorView
+        selectedMember={selectedMember}
+        isInvitingNewMember={isInvitingNewMember}
+        inviteEmailInput={inviteEmailInput}
+        setInviteEmailInput={setInviteEmailInput}
+        activeRole={activeRole}
+        setActiveRole={setActiveRole}
+        activePermissions={activePermissions}
+        saving={saving}
+        onBack={backHandler}
+        onSave={handleSavePermissions}
+        onSendInvite={handleSendInviteFullPage}
+        onGrantFull={handleGrantFullAccess}
+        onGrantReadOnly={handleGrantReadOnly}
+        onClearAll={handleClearAll}
+        onTogglePermission={handleTogglePermission}
+        onToggleRowAll={handleToggleRowAll}
+      />
     )
   }
 
@@ -679,13 +566,13 @@ export default function MembersManager() {
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* ── Unified Page Header (Matches UOM & Products exact template) ── */}
+      {/* ── Unified Page Header ── */}
       <div className="ws-unified-page-header" style={{ marginBottom: 0, paddingLeft: 0, paddingRight: 0 }}>
         <div className="ws-unified-header-left">
-          <span className="ws-unified-header-title">Members & Teams</span>
+          <span className="ws-unified-header-title">Members &amp; Teams</span>
           <span className="ws-unified-header-badge">{members.length} members</span>
         </div>
-        
+
         <div className="ws-unified-header-actions">
           {/* Search Box */}
           <div className="attio-search-box">
@@ -730,14 +617,7 @@ export default function MembersManager() {
                   }}
                 >
                   {r}
-                  <span style={{
-                    fontSize: '0.68rem',
-                    padding: '1px 5px',
-                    borderRadius: 10,
-                    background: isSelected ? '#dbeafe' : '#f1f5f9',
-                    color: isSelected ? '#1d4ed8' : '#64748b',
-                    fontWeight: 700
-                  }}>
+                  <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: 10, background: isSelected ? '#dbeafe' : '#f1f5f9', color: isSelected ? '#1d4ed8' : '#64748b', fontWeight: 700 }}>
                     {count}
                   </span>
                 </button>
@@ -746,17 +626,13 @@ export default function MembersManager() {
           </div>
 
           {/* Invite Member button */}
-          <button
-            type="button"
-            onClick={handleOpenInviteFullPage}
-            className="attio-btn attio-btn-primary"
-          >
+          <button type="button" onClick={handleOpenInviteFullPage} className="attio-btn attio-btn-primary">
             <Plus size={14} /> Invite Member
           </button>
         </div>
       </div>
 
-      {/* ── Members Table (Uses exact same attio-table classes as UOM page) ── */}
+      {/* ── Members Table ── */}
       <div className="attio-table-card" style={{ marginTop: 0 }}>
         <div className="attio-table-wrap">
           {loading ? (
@@ -770,12 +646,7 @@ export default function MembersManager() {
               <div style={{ fontSize: '0.80rem', color: '#64748b', marginTop: 4 }}>
                 {search ? `No members matched "${search}"` : 'Get started by inviting your first team member.'}
               </div>
-              <button
-                type="button"
-                onClick={handleOpenInviteFullPage}
-                className="attio-btn attio-btn-primary"
-                style={{ marginTop: 14 }}
-              >
+              <button type="button" onClick={handleOpenInviteFullPage} className="attio-btn attio-btn-primary" style={{ marginTop: 14 }}>
                 <Plus size={13} /> Invite Member
               </button>
             </div>
@@ -796,13 +667,6 @@ export default function MembersManager() {
               </thead>
               <tbody>
                 {filteredMembers.map(member => {
-                  let perms = member.permissions || {}
-                  if (typeof perms === 'string') {
-                    try { perms = JSON.parse(perms) } catch { perms = {} }
-                  }
-                  const accessibleCount = MODULE_DEFINITIONS.filter(m => perms[m.id]?.read === true).length
-                  const editCount = MODULE_DEFINITIONS.filter(m => perms[m.id]?.edit === true).length
-                  const deleteCount = MODULE_DEFINITIONS.filter(m => perms[m.id]?.delete === true).length
                   const isAdmin = member.isOwner || (member.role || '').toLowerCase() === 'admin' || (member.role || '').toLowerCase() === 'owner'
                   const pillStyle = getPillStyle('active')
 
@@ -812,39 +676,19 @@ export default function MembersManager() {
                         <input type="checkbox" className="attio-chk" readOnly />
                       </td>
 
-                      {/* Member Avatar & Email (Non-clickable clean text) */}
+                      {/* Member Avatar & Email */}
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                          <div style={{
-                            width: 26, height: 26, borderRadius: 13,
-                            background: isAdmin ? '#eff6ff' : '#f1f5f9',
-                            color: isAdmin ? '#2563eb' : '#475569',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontWeight: 700, fontSize: '0.74rem', flexShrink: 0
-                          }}>
+                          <div style={{ width: 26, height: 26, borderRadius: 13, background: isAdmin ? '#eff6ff' : '#f1f5f9', color: isAdmin ? '#2563eb' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.74rem', flexShrink: 0 }}>
                             {(member.member_email || 'M')[0].toUpperCase()}
                           </div>
-                          <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.84rem' }}>
-                            {member.member_email}
-                          </span>
+                          <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.84rem' }}>{member.member_email}</span>
                         </div>
                       </td>
 
                       {/* Role Pill */}
                       <td>
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            fontSize: '0.72rem',
-                            fontWeight: 600,
-                            padding: '2px 8px',
-                            borderRadius: 12,
-                            background: isAdmin ? '#eff6ff' : '#f1f5f9',
-                            color: isAdmin ? '#2563eb' : '#475569',
-                            border: isAdmin ? '1px solid #bfdbfe' : '1px solid #e2e8f0'
-                          }}
-                        >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: isAdmin ? '#eff6ff' : '#f1f5f9', color: isAdmin ? '#2563eb' : '#475569', border: isAdmin ? '1px solid #bfdbfe' : '1px solid #e2e8f0' }}>
                           {isAdmin ? 'Admin' : (member.role || 'Member')}
                         </span>
                       </td>
@@ -852,55 +696,7 @@ export default function MembersManager() {
                       {/* Menu Permissions Badges */}
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                          {isAdmin ? (
-                            <span style={{
-                              fontSize: '0.72rem',
-                              fontWeight: 600,
-                              padding: '2px 8px',
-                              borderRadius: 8,
-                              background: '#eff6ff',
-                              color: '#2563eb',
-                              border: '1px solid #bfdbfe'
-                            }}>
-                              Full Access ({MODULE_DEFINITIONS.length}/{MODULE_DEFINITIONS.length})
-                            </span>
-                          ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                padding: '2px 6px',
-                                borderRadius: 8,
-                                background: '#dcfce7',
-                                color: '#15803d',
-                                border: '1px solid #bbf7d0'
-                              }}>
-                                Read ({accessibleCount}/{MODULE_DEFINITIONS.length})
-                              </span>
-                              <span style={{
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                padding: '2px 6px',
-                                borderRadius: 8,
-                                background: '#fef3c7',
-                                color: '#b45309',
-                                border: '1px solid #fde68a'
-                              }}>
-                                Edit ({editCount})
-                              </span>
-                              <span style={{
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                padding: '2px 6px',
-                                borderRadius: 8,
-                                background: '#fee2e2',
-                                color: '#b91c1c',
-                                border: '1px solid #fecaca'
-                              }}>
-                                Del ({deleteCount})
-                              </span>
-                            </div>
-                          )}
+                          <MemberPermissionBadges member={member} isAdmin={isAdmin} />
                         </div>
                       </td>
 
@@ -911,18 +707,7 @@ export default function MembersManager() {
 
                       {/* Status */}
                       <td>
-                        <span
-                          style={{
-                            ...pillStyle,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            fontSize: '0.70rem',
-                            fontWeight: 600,
-                            padding: '2px 8px',
-                            borderRadius: 10
-                          }}
-                        >
+                        <span style={{ ...pillStyle, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.70rem', fontWeight: 600, padding: '2px 8px', borderRadius: 10 }}>
                           Active
                         </span>
                       </td>
@@ -930,37 +715,16 @@ export default function MembersManager() {
                       {/* Actions */}
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenPermissions(member)}
-                            className="attio-btn"
-                            style={{ padding: '3px 9px', fontSize: '0.74rem', fontWeight: 600 }}
-                          >
+                          <button type="button" onClick={() => handleOpenPermissions(member)} className="attio-btn" style={{ padding: '3px 9px', fontSize: '0.74rem', fontWeight: 600 }}>
                             Permissions
                           </button>
-                          
                           {!member.isOwner && (
                             <button
                               type="button"
                               onClick={() => setConfirmDelete({ isOpen: true, id: member.id, email: member.member_email })}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#94a3b8',
-                                padding: '4px 6px',
-                                borderRadius: 4,
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center'
-                              }}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.color = '#ef4444'
-                                e.currentTarget.style.background = '#fee2e2'
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.color = '#94a3b8'
-                                e.currentTarget.style.background = 'transparent'
-                              }}
+                              style={{ background: 'transparent', border: 'none', color: '#94a3b8', padding: '4px 6px', borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+                              onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = '#fee2e2' }}
+                              onMouseLeave={e => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'transparent' }}
                               title="Remove member"
                             >
                               <Trash2 size={13} />

@@ -390,7 +390,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                   <div className="address-card-text">
                     {companyGstin && <div><strong>GSTIN:</strong> {companyGstin.toUpperCase()}</div>}
                     {companyAddress && <div style={{ marginTop: 4 }}><strong style={{ color: '#0f172a' }}>:: Dispatch From ::</strong><br />{companyAddress}</div>}
-                    {companyPhone && <div style={{ marginTop: 4 }}>Phone: {companyPhone}</div>}
+                    {companyPhone && <div style={{ marginTop: 4 }}>Phone: <span style={{ color: 'inherit', textDecoration: 'none', pointerEvents: 'none' }}>{companyPhone}</span></div>}
                     {!companyGstin && !companyAddress && <div style={{ color: '#64748b' }}>Official Registered Supplier</div>}
                   </div>
                 </div>
@@ -403,7 +403,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                     {customerGstin && <div><strong>GSTIN:</strong> {customerGstin.toUpperCase()}</div>}
                     {customerCompany && <div style={{ marginTop: 2 }}>{customerCompany}</div>}
                     {customerAddress && <div style={{ marginTop: 4 }}><strong style={{ color: '#0f172a' }}>:: Ship To ::</strong><br />{customerAddress}</div>}
-                    {customerPhone && <div style={{ marginTop: 4 }}>Phone: {customerPhone}</div>}
+                    {customerPhone && <div style={{ marginTop: 4 }}>Phone: <span style={{ color: 'inherit', textDecoration: 'none', pointerEvents: 'none' }}>{customerPhone}</span></div>}
                   </div>
                 </div>
 

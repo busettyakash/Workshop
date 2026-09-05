@@ -62,11 +62,7 @@ export const getDynamicFieldLabels = (unit) => {
   }
 }
 
-export const getBulkUnitDetails = (unit) => {
-  if (!unit) return null;
-  const u = String(unit).toLowerCase().trim();
-
-  // Weight-based (Kg / Bag / Ton)
+function resolveWeightBulkDetails(u) {
   if (['kgs', 'kg', 'kilogram', 'kilograms'].some(k => u.includes(k))) {
     return {
       isBulk: true,
@@ -92,8 +88,10 @@ export const getBulkUnitDetails = (unit) => {
       unitName: 'Gram'
     };
   }
+  return null;
+}
 
-  // Volume-based (Liter / Can / Drum / Bottle)
+function resolveVolumeBulkDetails(u) {
   if (['litres', 'litre', 'ltr', 'ltrs', 'liter', 'liters', 'l'].some(k => u.includes(k))) {
     return {
       isBulk: true,
@@ -119,8 +117,10 @@ export const getBulkUnitDetails = (unit) => {
       unitName: 'Milliliter'
     };
   }
+  return null;
+}
 
-  // Length-based (Meter / Roll / Pipe / Coil)
+function resolveLengthBulkDetails(u) {
   if (['meters', 'meter', 'mtr', 'mtrs', 'm'].some(k => u.includes(k))) {
     return {
       isBulk: true,
@@ -146,8 +146,10 @@ export const getBulkUnitDetails = (unit) => {
       unitName: 'Feet'
     };
   }
+  return null;
+}
 
-  // Box / Pack / Quantity-based
+function resolvePackageBulkDetails(u) {
   if (['box', 'boxes', 'pack', 'pkt', 'ctn', 'carton'].includes(u)) {
     return {
       isBulk: true,
@@ -161,7 +163,6 @@ export const getBulkUnitDetails = (unit) => {
       quickSizes: UOM_QUICK_SIZES.box
     };
   }
-
   if (['doz', 'dozen'].includes(u)) {
     return {
       isBulk: true,
@@ -175,8 +176,18 @@ export const getBulkUnitDetails = (unit) => {
       quickSizes: UOM_QUICK_SIZES.doz
     };
   }
-
   return null;
+}
+
+export const getBulkUnitDetails = (unit) => {
+  if (!unit) return null;
+  const u = String(unit).toLowerCase().trim();
+
+  return resolveWeightBulkDetails(u) ||
+    resolveVolumeBulkDetails(u) ||
+    resolveLengthBulkDetails(u) ||
+    resolvePackageBulkDetails(u) ||
+    null;
 };
 
 // Calculates accurate per-kg and per-pack pricing regardless of bulk lot input size

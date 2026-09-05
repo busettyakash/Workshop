@@ -7,6 +7,13 @@ function escapeHtml(str) {
     .replaceAll("'", '&#39;')
 }
 
+function formatNonClickablePhone(phone) {
+  if (!phone) return ''
+  const escaped = escapeHtml(phone)
+  const unlinked = escaped.split('').join('&#8204;')
+  return `<span class="no-phone-link" style="color:#475569; text-decoration:none !important; pointer-events:none; cursor:default;">${unlinked}</span>`
+}
+
 function getExplicitLineDiscount(li) {
   const explicit = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? Number.NaN)
   if (!Number.isNaN(explicit) && explicit >= 0) return explicit
@@ -216,7 +223,20 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
         <title>Quotation #${escapeHtml(quoteId)}</title>
+        <style>
+          a[href^="tel"], a[x-apple-data-detectors], .no-phone-link, .no-phone-link a {
+            color: inherit !important;
+            text-decoration: none !important;
+            font-size: inherit !important;
+            font-family: inherit !important;
+            font-weight: inherit !important;
+            line-height: inherit !important;
+            pointer-events: none !important;
+            cursor: default !important;
+          }
+        </style>
       </head>
       <body style="margin:0; padding:0; background:#f1f5f9; font-family:'Inter','Segoe UI',Arial,sans-serif; color:#0f172a;">
         <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background:#f1f5f9; padding:20px 10px;">
@@ -294,7 +314,7 @@ export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl
                           <div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; border-bottom:1px solid #f1f5f9; padding-bottom:6px; margin-bottom:8px;">TO (BUYER)</div>
                           <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px;">${escapeHtml(customerName)}</div>
                           ${quote.customer_company ? `<div style="font-size:12px; color:#475569;">${escapeHtml(quote.customer_company)}</div>` : ''}
-                          ${quote.customer_phone ? `<div style="font-size:12px; color:#475569; margin-top:2px;">Phone: ${escapeHtml(quote.customer_phone)}</div>` : ''}
+                          ${quote.customer_phone ? `<div style="font-size:12px; color:#475569; margin-top:2px;">Phone: ${formatNonClickablePhone(quote.customer_phone)}</div>` : ''}
                         </td>
                       </tr>
                     </table>

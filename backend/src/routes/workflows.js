@@ -392,7 +392,7 @@ async function executeStep1Condition(run, branchSteps, isDeclinedBranch, logKey)
   await query(`UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`, [run.id])
 
   if (branchSteps.length > 0) {
-    publishWorkflowStep({
+    await publishWorkflowStep({
       runId: run.id,
       workflowId: run.workflow_id,
       step: 2,
@@ -454,7 +454,7 @@ async function advanceWorkflowStep(run, step, isDeclinedBranch) {
     [step, run.id]
   )
 
-  publishWorkflowStep({
+  await publishWorkflowStep({
     runId: run.id,
     workflowId: run.workflow_id,
     step: step + 1,
@@ -1215,7 +1215,7 @@ router.post('/:id/runs', async (req, res) => {
     await redis.expire(logKey, 3600).catch(() => {})
 
     // Execute Step 1 via QStash (production) or local runner (dev)
-    publishWorkflowStep({
+    await publishWorkflowStep({
       runId: run.id,
       workflowId: req.params.id,
       step: 1,

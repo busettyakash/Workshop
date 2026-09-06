@@ -222,6 +222,11 @@ async function createTables() {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
+      ALTER TABLE workflow_runs SET (
+        autovacuum_vacuum_scale_factor = 0.05,
+        autovacuum_analyze_scale_factor = 0.02
+      );
+
       CREATE TABLE IF NOT EXISTS chat_sessions (
         id SERIAL PRIMARY KEY,
         user_id UUID NOT NULL,

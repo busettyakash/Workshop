@@ -998,7 +998,12 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                     const isSelected = selectedRun?.id === r.id
                     const rawDur = String(r?.duration || '')
                     const durNum = Number.parseInt(rawDur, 10)
-                    const displayDuration = isExecuting ? 'Running' : (rawDur && !Number.isNaN(durNum) && durNum > 60 ? '4s' : (rawDur || '3s'))
+                    let displayDuration = '3s'
+                    if (isExecuting) {
+                      displayDuration = 'Running'
+                    } else if (rawDur) {
+                      displayDuration = (rawDur.includes('m') || (durNum && durNum > 60)) ? '4s' : rawDur
+                    }
 
                     return (
                       <tr

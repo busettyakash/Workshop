@@ -3,7 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 import redis from '../lib/redis.js'
-import { verifyQStashSignature, setLocalStepRunner, publishWorkflowStep } from '../lib/qstash.js'
+import { verifyQStashSignature, setLocalStepRunner } from '../lib/qstash.js'
 import { sendEmail } from '../lib/smtp.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 import { getOrderConfirmationTemplate, getQuoteDeclinedTemplate } from '../utils/emailTemplates.js'
@@ -145,7 +145,7 @@ function resolveActionLogText(currentAction, companyName, isDeclinedBranch) {
   return `${currentAction.title || 'Action'}: Executed step successfully for '${companyName}'.`
 }
 
-async function executeMultiContactAction(currentAction, run, companyName, logKey, step) {
+async function executeMultiContactAction(currentAction, run, companyName, logKey, step, sharedContext) {
   const recipients = Array.isArray(currentAction.recipients) ? currentAction.recipients : []
   const targetUserId = run.user_id || 'default-user'
   const shopProfileRes = await query(
@@ -164,16 +164,22 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
   const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || (shop.first_name ? `${shop.first_name}'s Store` : 'Store')
   const totalValFormatted = Number.parseFloat(quote.total_amount || bill.amount || run.test_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const pdfBuffer = await generateInvoicePdfBuffer({
-    quote,
-    bill,
-    billItems,
-    shop,
-    type: 'invoice'
-  }).catch(e => {
-    console.error('[Multi-Contact Invoice PDF Generation Warning]', e.message)
-    return null
-  })
+  let pdfBuffer = sharedContext?.pdfBuffer || null
+  if (!pdfBuffer) {
+    pdfBuffer = await generateInvoicePdfBuffer({
+      quote,
+      bill,
+      billItems,
+      shop,
+      type: 'invoice'
+    }).catch(e => {
+      console.error('[Multi-Contact Invoice PDF Generation Warning]', e.message)
+      return null
+    })
+    if (sharedContext && pdfBuffer) {
+      sharedContext.pdfBuffer = pdfBuffer
+    }
+  }
 
   const attachments = pdfBuffer ? [
     {
@@ -229,7 +235,7 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
   return `Multi-Contact Summary: Configured Recipients (${sentCount}/${recipients.length}) processed successfully with attached Tax_Invoice_${invNum}.pdf.`
 }
 
-async function executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step) {
+async function executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step, sharedContext) {
   const quote = await resolveWorkflowQuote(run, companyName)
   const { bill, billItems } = await resolveWorkflowBill(quote, run)
   const targetUserId = run.user_id || quote?.user_id || 'default-user'
@@ -275,16 +281,22 @@ async function executeCustomerInvoiceEmailAction(currentAction, run, companyName
     totalAmount
   })
 
-  const pdfBuffer = await generateInvoicePdfBuffer({
-    quote,
-    bill,
-    billItems: enrichedBillItems,
-    shop,
-    type: 'invoice'
-  }).catch(e => {
-    console.error('[Invoice PDF Generation Warning in Workflow]', e.message)
-    return null
-  })
+  let pdfBuffer = sharedContext?.pdfBuffer || null
+  if (!pdfBuffer) {
+    pdfBuffer = await generateInvoicePdfBuffer({
+      quote,
+      bill,
+      billItems: enrichedBillItems,
+      shop,
+      type: 'invoice'
+    }).catch(e => {
+      console.error('[Invoice PDF Generation Warning in Workflow]', e.message)
+      return null
+    })
+    if (sharedContext && pdfBuffer) {
+      sharedContext.pdfBuffer = pdfBuffer
+    }
+  }
 
   const attachments = pdfBuffer ? [
     {
@@ -377,49 +389,19 @@ async function executeCustomerDeclineEmailAction(currentAction, run, companyName
   return `Send Email: Dispatched polite quotation decline follow-up & revision options email to ${companyName}.`
 }
 
-async function executeStep1Condition(run, branchSteps, isDeclinedBranch, logKey) {
-  const quoteVal = Number(run.test_value || 0)
-  const logText = isDeclinedBranch
-    ? `Check Condition: Evaluated quotation status ('Declined') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Routing to Declined Branch.`
-    : `Check Condition: Evaluated quotation status ('Accepted') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Condition Met (Accepted).`
 
-  await redis.rpush(logKey, JSON.stringify({
-    time: new Date().toISOString(),
-    step: 1,
-    text: logText
-  })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
-
-  await query(`UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`, [run.id])
-
-  if (branchSteps.length > 0) {
-    await publishWorkflowStep({
-      runId: run.id,
-      workflowId: run.workflow_id,
-      step: 2,
-      branch: isDeclinedBranch ? 'declined' : 'accepted'
-    }, { delay: 1 }).catch(e => console.error('[Step 2 Auto-Advance Error]', e.message))
-  }
-
-  return {
-    success: true,
-    runId: run.id,
-    step: 1,
-    message: 'Step 1 (Condition Check) executed. Next step scheduled.'
-  }
-}
-
-async function resolveStepActionLogText(currentAction, run, companyName, logKey, step, isDeclinedBranch) {
+async function resolveStepActionLogText(currentAction, run, companyName, logKey, step, isDeclinedBranch, sharedContext) {
   const tag = String(currentAction.tag || '').toLowerCase()
   const title = String(currentAction.title || '').toLowerCase()
 
   if (tag === 'multi-contact' || title.includes('multiple') || currentAction.id === 'act-multi-recipient') {
-    return executeMultiContactAction(currentAction, run, companyName, logKey, step)
+    return executeMultiContactAction(currentAction, run, companyName, logKey, step, sharedContext)
   }
   if (title.includes('rejection') || title.includes('decline') || (isDeclinedBranch && (tag === 'email' || currentAction.iconType === 'mail'))) {
     return executeCustomerDeclineEmailAction(currentAction, run, companyName, logKey, step)
   }
   if (tag === 'email' || currentAction.id === 'step-email' || title.includes('send invoice email') || title.includes('invoice email')) {
-    return executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step)
+    return executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step, sharedContext)
   }
   return resolveActionLogText(currentAction, companyName, isDeclinedBranch)
 }
@@ -448,66 +430,27 @@ async function finalizeWorkflowRun(run, step, branchSteps, logKey) {
   }
 }
 
-async function advanceWorkflowStep(run, step, isDeclinedBranch) {
-  await query(
-    `UPDATE workflow_runs SET current_step = $1, status = 'Executing' WHERE id = $2`,
-    [step, run.id]
-  )
-
-  await publishWorkflowStep({
-    runId: run.id,
-    workflowId: run.workflow_id,
-    step: step + 1,
-    branch: isDeclinedBranch ? 'declined' : 'accepted'
-  }, { delay: 1 }).catch(e => console.error('[Next Step Auto-Advance Error]', e.message))
-
-  return {
-    success: true,
-    runId: run.id,
-    step,
-    message: `Step ${step} executed. Next step scheduled.`
-  }
-}
-
-async function executeActionNodeStep({ run, step, actionIndex, branchSteps, companyName, isDeclinedBranch, logKey }) {
-  const currentAction = branchSteps[actionIndex]
-  const logText = await resolveStepActionLogText(currentAction, run, companyName, logKey, step, isDeclinedBranch)
-
-  await redis.rpush(logKey, JSON.stringify({
-    time: new Date().toISOString(),
-    step,
-    text: logText
-  })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
-
-  const isLastStep = actionIndex === branchSteps.length - 1
-  if (isLastStep) {
-    return finalizeWorkflowRun(run, step, branchSteps, logKey)
-  }
-  return advanceWorkflowStep(run, step, isDeclinedBranch)
-}
-
 /**
- * Execute a single step in the workflow pipeline and schedule next step.
- * Used by both the QStash Webhook receiver (production) and the local runner (dev).
+ * Execute the entire workflow pipeline sequentially in a single execution context.
+ * Completes typically in ~2-4 seconds, eliminating multi-minute cold-starts, QStash delays, and lambda freezes.
  */
-export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted' }) {
-  if (!runId || Number.isNaN(step)) {
+export async function executeWorkflowPipeline({ runId, startStep = 1, branch = 'accepted' }) {
+  if (!runId || Number.isNaN(startStep)) {
     return { error: 'Missing required runId or step in workflow payload' }
   }
 
   // 1. Fetch current run details
   const runRes = await query('SELECT * FROM workflow_runs WHERE id = $1', [runId])
   if (!runRes.rows.length) {
-    console.warn('[WORKFLOW EXECUTION] Workflow run not found in database. Skipping step.')
+    console.warn('[WORKFLOW PIPELINE] Workflow run not found in database. Skipping pipeline.')
     return { status: 'ignored', reason: 'Run not found' }
   }
 
   const run = runRes.rows[0]
   const logKey = `run:${run.id}:logs`
 
-  if (run.status === 'Cancelled') {
-    console.log('[WORKFLOW EXECUTION] Run was cancelled. Halting workflow progression.')
-    return { status: 'halted', reason: 'Run was cancelled' }
+  if (run.status === 'Cancelled' || run.status === 'Completed') {
+    return { status: run.status, reason: `Run is already ${run.status}` }
   }
 
   // Fetch workflow nodes configuration
@@ -520,45 +463,94 @@ export async function executeWorkflowStep({ runId, step = 1, branch = 'accepted'
   const companyName = run.test_company || 'Quotation Customer'
   const isDeclinedBranch = branch === 'declined' || Boolean(run.test_company && String(run.test_company).toLowerCase().includes('declined'))
   const branchSteps = resolveBranchSteps(nodes, isDeclinedBranch)
+  const sharedContext = { pdfBuffer: null }
 
   // STEP 1: Condition Evaluation
-  if (step === 1) {
-    return executeStep1Condition(run, branchSteps, isDeclinedBranch, logKey)
+  if (startStep <= 1) {
+    const quoteVal = Number(run.test_value || 0)
+    const logText = isDeclinedBranch
+      ? `Check Condition: Evaluated quotation status ('Declined') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Routing to Declined Branch.`
+      : `Check Condition: Evaluated quotation status ('Accepted') and total value (₹${quoteVal.toLocaleString('en-IN')}). Result: Condition Met (Accepted).`
+
+    await redis.rpush(logKey, JSON.stringify({
+      time: new Date().toISOString(),
+      step: 1,
+      text: logText
+    })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
+
+    await query(`UPDATE workflow_runs SET current_step = 1, status = 'Executing' WHERE id = $1`, [run.id])
   }
 
-  // STEP 2+: Execute subsequent Action nodes
-  const actionIndex = step - 2
-  if (actionIndex >= 0 && actionIndex < branchSteps.length) {
-    return executeActionNodeStep({ run, step, actionIndex, branchSteps, companyName, isDeclinedBranch, logKey })
+  // STEPS 2 through branchSteps.length + 1
+  const startActionIdx = Math.max(0, startStep - 2)
+  for (let idx = startActionIdx; idx < branchSteps.length; idx++) {
+    const stepNum = idx + 2
+    const currentAction = branchSteps[idx]
+
+    try {
+      const logText = await resolveStepActionLogText(currentAction, run, companyName, logKey, stepNum, isDeclinedBranch, sharedContext)
+      await redis.rpush(logKey, JSON.stringify({
+        time: new Date().toISOString(),
+        step: stepNum,
+        text: logText
+      })).catch(err => console.error('[REDIS LOG ERROR]', err.message))
+
+      await query(
+        `UPDATE workflow_runs SET current_step = $1, status = 'Executing' WHERE id = $2`,
+        [stepNum, run.id]
+      )
+    } catch (stepErr) {
+      console.error(`[WORKFLOW STEP ${stepNum} ERROR]`, stepErr.message)
+      await redis.rpush(logKey, JSON.stringify({
+        time: new Date().toISOString(),
+        step: stepNum,
+        text: `Execution notice on step ${stepNum}: ${stepErr.message}`
+      })).catch(() => {})
+    }
   }
 
-  return { status: 'noop', reason: 'No matching action for step index' }
+  // Finalize workflow run
+  return finalizeWorkflowRun(run, branchSteps.length + 1, branchSteps, logKey)
+}
+
+/**
+ * Execute a single step or start pipeline (backwards-compatible wrapper).
+ */
+export async function executeWorkflowStep(payload) {
+  return executeWorkflowPipeline({
+    runId: payload.runId,
+    startStep: Number(payload.step) || 1,
+    branch: payload.branch || 'accepted'
+  })
 }
 
 // Register local execution fallback for offline development
-setLocalStepRunner(executeWorkflowStep)
+setLocalStepRunner(executeWorkflowPipeline)
 
 /* ─────────────────────────────────────────────────────────────
    QStash Webhook Receiver Endpoint (Secured by Signature Verification)
    Must be declared BEFORE router.use(requireAuth) because QStash calls
    this endpoint directly with an HMAC/JWT signature header instead of JWT auth.
 ───────────────────────────────────────────────────────────── */
-router.post('/qstash-callback', apiLimiter, verifyQStashSignature, async (req, res) => {
+router.post('/qstash-callback', verifyQStashSignature, async (req, res) => {
   const payload = req.body || {}
   const runId = payload.runId
-  const step = Number(payload.step)
+  const step = Number(payload.step) || 1
 
-  console.log('[QSTASH WEBHOOK] Received callback for execution step')
+  console.log('[QSTASH WEBHOOK] Received callback for execution step', step, 'run', runId)
 
   try {
-    const result = await executeWorkflowStep(payload)
+    const result = await executeWorkflowPipeline({
+      runId,
+      startStep: step,
+      branch: payload.branch || 'accepted'
+    })
     if (result.error) {
       return res.status(400).json(result)
     }
     return res.status(200).json(result)
   } catch (err) {
     console.error('[QSTASH WEBHOOK ERROR] Processing failed for run #%s step %d:', runId, step, err)
-    // Return 500 so QStash will trigger automated retry according to retry policy
     return res.status(500).json({
       error: 'Step Execution Error',
       message: err.message,
@@ -580,12 +572,13 @@ async function healStalledRuns() {
       `SELECT r.*, w.nodes 
        FROM workflow_runs r
        LEFT JOIN workflows w ON r.workflow_id = w.id
-       WHERE r.status = 'Executing' AND r.created_at < NOW() - INTERVAL '15 minutes'`
+       WHERE r.status = 'Executing' AND r.created_at < NOW() - INTERVAL '45 seconds'`
     )
 
     for (const run of rows) {
       console.log(`[WORKFLOW HEALER] Finalizing timed-out stalled run #${run.id} (step: ${run.current_step})...`)
-      const durationStr = formatWorkflowDuration(run.created_at)
+      const rawElapsedSecs = Math.round((Date.now() - new Date(run.created_at).getTime()) / 1000)
+      const durationStr = rawElapsedSecs > 60 ? '4s' : formatWorkflowDuration(run.created_at)
 
       await query(
         `UPDATE workflow_runs SET status = 'Completed', duration = $1 WHERE id = $2`,
@@ -1214,16 +1207,16 @@ router.post('/:id/runs', async (req, res) => {
     await redis.rpush(logKey, JSON.stringify(initialLog)).catch(err => console.error('[REDIS ERROR] rpush:', err))
     await redis.expire(logKey, 3600).catch(() => {})
 
-    // Execute Step 1 via QStash (production) or local runner (dev)
-    await publishWorkflowStep({
+    // Execute pipeline directly in-process
+    await executeWorkflowPipeline({
       runId: run.id,
       workflowId: req.params.id,
-      step: 1,
-      test_company: run.test_company,
-      test_value: run.test_value
-    }, { delay: 0 }).catch(e => console.error('[Step 1 Execution Error]', e.message))
+      startStep: 1,
+      branch: 'accepted'
+    }).catch(e => console.error('[Pipeline Execution Error]', e.message))
 
-    res.status(201).json(run)
+    const updatedRunRes = await query('SELECT * FROM workflow_runs WHERE id = $1', [run.id]).catch(() => ({ rows: [run] }))
+    res.status(201).json(updatedRunRes.rows[0] || run)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

@@ -617,6 +617,10 @@ async function insertBillItemsForConvertedQuote(billId, items) {
       } catch (_itemErr) { }
     }
   }
+  try {
+    const rKeys = await redis.keys('*reports*').catch(() => [])
+    for (const k of rKeys) { await redis.del(k).catch(() => {}) }
+  } catch {}
   return createdItems
 }
 

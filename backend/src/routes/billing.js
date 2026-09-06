@@ -556,7 +556,7 @@ router.patch('/:id/pay', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
 
     try {
-      const keys = await redis.keys(`billing:${userId}:*`).catch(() => [])
+      const keys = await redis.keys(`*${userId}*`).catch(() => [])
       for (const key of keys) { await redis.del(key).catch(() => { }) }
     } catch (_err) { }
 

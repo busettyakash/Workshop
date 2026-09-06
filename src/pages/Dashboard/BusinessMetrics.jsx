@@ -74,6 +74,7 @@ function getBarHeightPct(val, ticksAsc) {
 }
 
 const DAY_OPTIONS = ['Last 7 days', 'Last 30 days', 'Last 3 months', 'Last 6 months', 'This year', 'Custom date']
+const STATUS_OPTIONS = ['All Bills', 'Paid Only', 'Unpaid Only']
 
 export default function BusinessMetrics({
   selectedCategory: propSelectedCategory,
@@ -85,6 +86,8 @@ export default function BusinessMetrics({
   const [hoveredSeriesKey, setHoveredSeriesKey] = useState(null)
   const [pinnedBar, setPinnedBar]               = useState(null)
   const [dayFilter, setDayFilter]               = useState('Last 7 days')
+  const [statusFilter, setStatusFilter]         = useState('All Bills')
+  const [taxMode, setTaxMode]                   = useState('Without GST')
   const [customStartDate, setCustomStartDate]   = useState(() => {
     const d = new Date()
     d.setDate(d.getDate() - 7)
@@ -94,6 +97,7 @@ export default function BusinessMetrics({
   const [showCustomPicker, setShowCustomPicker] = useState(false)
   const [localProductFilter, setLocalProductFilter] = useState('All Products')
   const [showDayDrop, setShowDayDrop]           = useState(false)
+  const [showStatusDrop, setShowStatusDrop]     = useState(false)
   const [showCustDrop, setShowCustDrop]         = useState(false)
   const [showProdDrop, setShowProdDrop]         = useState(false)
   const [people, setPeople]                     = useState([])
@@ -110,6 +114,13 @@ export default function BusinessMetrics({
 
   const [categoryBreakdown, setCategoryBreakdown] = useState(null)
 
+  // Reset pinned and hovered tooltip when drilldown category changes
+  useEffect(() => {
+    setPinnedBar(null)
+    setHoveredBar(null)
+    setHoveredSeriesKey(null)
+  }, [selectedCategory])
+
   // Real-time backend states
   const [series, setSeries] = useState([])
   const [barData, setBarData] = useState([])
@@ -125,7 +136,7 @@ export default function BusinessMetrics({
     const fetchMetrics = async () => {
       try {
         setLoading(true)
-        const params = { dayFilter, customerFilter, productFilter }
+        const params = { dayFilter, customerFilter, productFilter, statusFilter }
         if (dayFilter === 'Custom date') {
           params.startDate = customStartDate
           params.endDate = customEndDate
@@ -151,7 +162,7 @@ export default function BusinessMetrics({
     }
     fetchMetrics()
     return () => { active = false }
-  }, [dayFilter, customerFilter, productFilter, customStartDate, customEndDate, refreshTrigger])
+  }, [dayFilter, customerFilter, productFilter, statusFilter, customStartDate, customEndDate, refreshTrigger])
 
   // 2. Fetch Category Breakdown when selectedCategory is set
   useEffect(() => {
@@ -163,7 +174,7 @@ export default function BusinessMetrics({
     const fetchCatBreakdown = async () => {
       try {
         setLoading(true)
-        const params = { category: selectedCategory, dayFilter, customerFilter, productFilter }
+        const params = { category: selectedCategory, dayFilter, customerFilter, productFilter, statusFilter }
         if (dayFilter === 'Custom date') {
           params.startDate = customStartDate
           params.endDate = customEndDate
@@ -180,7 +191,7 @@ export default function BusinessMetrics({
     }
     fetchCatBreakdown()
     return () => { active = false }
-  }, [selectedCategory, dayFilter, customerFilter, productFilter, customStartDate, customEndDate, refreshTrigger])
+  }, [selectedCategory, dayFilter, customerFilter, productFilter, statusFilter, customStartDate, customEndDate, refreshTrigger])
 
   // Fetch People / Customers (lazy-loaded on dropdown open or after idle)
   useEffect(() => {
@@ -251,19 +262,31 @@ export default function BusinessMetrics({
   const displayDonutSegments = isDrilldown ? (categoryBreakdown?.donutData || []) : donutSegments
   const displayTooltipData = isDrilldown ? (categoryBreakdown?.tooltipData || []) : tooltipData
 
+  const activeSeriesKey = (s) => (taxMode === 'With GST' ? `${s.key}_with_gst` : s.key)
+
   const maxRawRevenue = Math.max(
-    ...displayBarData.flatMap(grp => displaySeries.map(s => Number(grp[s.key]) || 0)),
+    ...displayBarData.flatMap(grp => displaySeries.map(s => Number(grp[activeSeriesKey(s)]) || Number(grp[s.key]) || 0)),
     0
   )
   const ticksAsc = getScaleTicks(maxRawRevenue)
   const ticksDesc = [...ticksAsc].reverse()
   const yLabels = ticksDesc.map(formatYAxisLabel)
 
-  const donutPaths = buildDonutPaths(displayDonutSegments, 90, 90, 75)
-  const donutInner = buildDonutPaths(displayDonutSegments, 90, 90, 50)
+  const adjustedDonutSegments = displayDonutSegments.map(s => {
+    const rev = taxMode === 'With GST' ? (s.revenue_with_gst || s.revenue || 0) : (s.revenue || 0)
+    return { ...s, currentRevenue: rev }
+  })
+  const donutTotalRev = adjustedDonutSegments.reduce((sum, s) => sum + (s.currentRevenue || 0), 0)
+  const finalDonutSegments = adjustedDonutSegments.map(s => ({
+    ...s,
+    pct: donutTotalRev > 0 ? Math.round(((s.currentRevenue || 0) / donutTotalRev) * 100) : (s.pct || 0)
+  }))
+
+  const donutPaths = buildDonutPaths(finalDonutSegments, 90, 90, 75)
+  const donutInner = buildDonutPaths(finalDonutSegments, 90, 90, 50)
   const hasDonutData = displayDonutSegments.length > 0 && displayDonutSegments.some(s => (s.count || 0) > 0 || (s.pct || 0) > 0 || (s.revenue || 0) > 0)
 
-  const closeDrops = () => { setShowDayDrop(false); setShowCustDrop(false); setShowProdDrop(false); setPinnedBar(null) }
+  const closeDrops = () => { setShowDayDrop(false); setShowStatusDrop(false); setShowCustDrop(false); setShowProdDrop(false); setPinnedBar(null) }
 
   if (loading && barData.length === 0 && !categoryBreakdown) {
     return (
@@ -302,6 +325,31 @@ export default function BusinessMetrics({
         </div>
 
         <div className="ws-bm-header-right" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Tax Mode Selector (Without GST / With GST / Both) */}
+          <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '2px', borderRadius: '7px', border: '1px solid #e2e8f0' }}>
+            {['Without GST', 'With GST', 'Both'].map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setTaxMode(mode)}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '0.74rem',
+                  fontWeight: taxMode === mode ? 700 : 500,
+                  color: taxMode === mode ? (mode === 'With GST' ? '#059669' : mode === 'Both' ? '#2563eb' : '#1e293b') : '#64748b',
+                  background: taxMode === mode ? '#ffffff' : 'transparent',
+                  border: 'none',
+                  borderRadius: '5px',
+                  boxShadow: taxMode === mode ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+
           {/* Filters */}
           <Filter size={13} style={{ color: '#9ca3af' }} />
 
@@ -425,7 +473,41 @@ export default function BusinessMetrics({
             )}
           </div>
 
-          {/* 2. Product Filter Dropdown (Only shown in Category Drilldown) */}
+          {/* 2. Status Filter Dropdown */}
+          <div className="ws-bm-filter-wrap">
+            <button
+              type="button"
+              className="ws-bm-filter-btn"
+              onClick={() => {
+                setShowStatusDrop(v => !v)
+                setShowDayDrop(false)
+                setShowCustDrop(false)
+                setShowProdDrop(false)
+              }}
+            >
+              {statusFilter}{' '}
+              <ChevronDown size={11} />
+            </button>
+            {showStatusDrop && (
+              <div className="ws-bm-dropdown" style={{ minWidth: 120, padding: 6 }}>
+                {STATUS_OPTIONS.map(opt => (
+                  <button
+                    type="button"
+                    key={opt}
+                    className={`ws-bm-dropdown-item ${statusFilter === opt ? 'active' : ''}`}
+                    onClick={() => {
+                      setStatusFilter(opt)
+                      setShowStatusDrop(false)
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Product Filter Dropdown (Only shown in Category Drilldown) */}
           {isDrilldown && (
             <div className="ws-bm-filter-wrap">
               <button
@@ -471,8 +553,24 @@ export default function BusinessMetrics({
 
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Volume Sold</span>
-            <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
-              {(categoryBreakdown?.totalUnits || 0).toLocaleString('en-IN')} units
+            <span style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+              {(() => {
+                const segs = categoryBreakdown?.donutData || []
+                const hasW = segs.some(p => ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim()) && Number(p.bag_weight || 1) > 1)
+                if (hasW) {
+                  const bags = segs.reduce((sum, p) => {
+                    const bw = Number(p.bag_weight || 1)
+                    const tw = Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw)
+                    return sum + Math.floor(tw / bw)
+                  }, 0)
+                  const w = segs.reduce((sum, p) => {
+                    const bw = Number(p.bag_weight || 1)
+                    return sum + (Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw))
+                  }, 0)
+                  return `${bags} Bags (${Math.round(w).toLocaleString('en-IN')} kgs)`
+                }
+                return `${(categoryBreakdown?.totalUnits || 0).toLocaleString('en-IN')} units`
+              })()}
             </span>
           </div>
 
@@ -541,7 +639,9 @@ export default function BusinessMetrics({
                 {displayBarData.map((grp, gi) => {
                   const tip = displayTooltipData[gi]
                   const isVisible = hoveredBar === gi || pinnedBar === gi
-                  const periodTotal = displaySeries.reduce((sum, s) => sum + (Number(grp[s.key]) || 0), 0)
+                  const periodTotalWithoutGst = displaySeries.reduce((sum, s) => sum + (Number(grp[s.key]) || 0), 0)
+                  const periodTotalWithGst = displaySeries.reduce((sum, s) => sum + (Number(grp[`${s.key}_with_gst`]) || Number(grp[s.key]) || 0), 0)
+                  const periodGstDiff = Math.max(0, periodTotalWithGst - periodTotalWithoutGst)
 
                   return (
                     <div
@@ -565,7 +665,9 @@ export default function BusinessMetrics({
                       }}
                     >
                       {displaySeries.map(s => {
-                        const val = Number(grp[s.key]) || 0
+                        const valWithoutGst = Number(grp[s.key]) || 0
+                        const valWithGst = Number(grp[`${s.key}_with_gst`]) || valWithoutGst
+                        const val = taxMode === 'With GST' ? valWithGst : valWithoutGst
                         const heightPct = getBarHeightPct(val, ticksAsc)
                         const isThisBarHovered = hoveredSeriesKey === s.key
                         let barOpacity = 0.85
@@ -606,7 +708,13 @@ export default function BusinessMetrics({
                               cursor: !isDrilldown ? 'pointer' : 'default',
                               transition: 'all 0.15s ease'
                             }}
-                            title={`${s.label}: ₹${val.toLocaleString('en-IN')}`}
+                            title={
+                              taxMode === 'Without GST'
+                                ? `${s.label}: ₹${valWithoutGst.toLocaleString('en-IN')}`
+                                : taxMode === 'With GST'
+                                  ? `${s.label} (With GST): ₹${valWithGst.toLocaleString('en-IN')}`
+                                  : `${s.label}: ₹${valWithoutGst.toLocaleString('en-IN')} (With GST: ₹${valWithGst.toLocaleString('en-IN')})`
+                            }
                           />
                         )
                       })}
@@ -619,7 +727,7 @@ export default function BusinessMetrics({
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => e.stopPropagation()}
                           style={{
-                            minWidth: 230,
+                            minWidth: taxMode === 'Both' ? 275 : 240,
                             zIndex: 100,
                             left: gi === displayBarData.length - 1 ? 'auto' : '50%',
                             right: gi === displayBarData.length - 1 ? '0px' : 'auto',
@@ -627,17 +735,63 @@ export default function BusinessMetrics({
                             pointerEvents: 'auto'
                           }}
                         >
-                          <div className="ws-bm-tooltip-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                            <span>{grp.label}</span>
-                            <span className="ws-bm-tooltip-badge">
-                              ₹{periodTotal.toLocaleString('en-IN')}
-                            </span>
+                          <div className="ws-bm-tooltip-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.84rem', color: '#0f172a' }}>{grp.label}</span>
+                            {taxMode !== 'Both' ? (
+                              <span className="ws-bm-tooltip-badge" style={{
+                                background: taxMode === 'With GST' ? '#dcfce7' : '#f1f5f9',
+                                color: taxMode === 'With GST' ? '#16a34a' : '#0f172a',
+                                fontWeight: 700
+                              }}>
+                                ₹{(taxMode === 'With GST' ? (tip?.withGst ?? periodTotalWithGst) : (tip?.withoutGst ?? periodTotalWithoutGst)).toLocaleString('en-IN')}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.70rem', color: '#64748b', background: '#f1f5f9', padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>
+                                {statusFilter}
+                              </span>
+                            )}
                           </div>
+
+                          {/* Dual Summary Box: ONLY rendered when taxMode === 'Both' */}
+                          {taxMode === 'Both' && (
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr',
+                              gap: 6,
+                              padding: '6px 10px',
+                              background: '#f8fafc',
+                              borderRadius: 7,
+                              border: '1px solid #e2e8f0',
+                              marginBottom: 8
+                            }}>
+                              <div>
+                                <div style={{ fontSize: '0.64rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Without GST</div>
+                                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0f172a' }}>
+                                  ₹{(tip?.withoutGst ?? periodTotalWithoutGst).toLocaleString('en-IN')}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '0.64rem', color: '#059669', fontWeight: 600, textTransform: 'uppercase' }}>With GST</div>
+                                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#059669' }}>
+                                  ₹{(tip?.withGst ?? periodTotalWithGst).toLocaleString('en-IN')}
+                                </div>
+                              </div>
+                              {((tip?.gstAmount ?? periodGstDiff) > 0) && (
+                                <div style={{ gridColumn: '1 / -1', paddingTop: 4, borderTop: '1px dashed #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: '#64748b' }}>
+                                  <span>GST (Tax):</span>
+                                  <span style={{ fontWeight: 700, color: '#d97706' }}>+₹{(tip?.gstAmount ?? periodGstDiff).toLocaleString('en-IN')}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 6, borderTop: '1px solid #f1f5f9' }}>
                             {displaySeries.map(s => {
-                              const val = Number(grp[s.key]) || 0
-                              const pct = periodTotal > 0 ? Math.round((val / periodTotal) * 100) : 0
+                              const valWithout = Number(grp[s.key]) || 0
+                              const valWith = Number(grp[`${s.key}_with_gst`]) || valWithout
+                              const currentVal = taxMode === 'With GST' ? valWith : valWithout
+                              const totalRef = taxMode === 'With GST' ? periodTotalWithGst : periodTotalWithoutGst
+                              const pct = totalRef > 0 ? Math.round((currentVal / totalRef) * 100) : 0
                               const isHighlighted = hoveredSeriesKey === s.key
 
                               return (
@@ -648,6 +802,8 @@ export default function BusinessMetrics({
                                   onClick={(e) => {
                                     if (!isDrilldown) {
                                       e.stopPropagation()
+                                      setPinnedBar(null)
+                                      setHoveredBar(null)
                                       setSelectedCategory(s.label)
                                     }
                                   }}
@@ -655,6 +811,8 @@ export default function BusinessMetrics({
                                     if (!isDrilldown && (e.key === 'Enter' || e.key === ' ')) {
                                       e.preventDefault()
                                       e.stopPropagation()
+                                      setPinnedBar(null)
+                                      setHoveredBar(null)
                                       setSelectedCategory(s.label)
                                     }
                                   }}
@@ -673,13 +831,20 @@ export default function BusinessMetrics({
                                   }}
                                   title={!isDrilldown ? `Click to view ${s.label} products breakdown` : ''}
                                 >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block' }} />
-                                    <span style={{ color: '#0f172a', fontWeight: 600 }}>{s.label}</span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1, marginRight: 8 }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block', flexShrink: 0 }} />
+                                    <span style={{ color: '#0f172a', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
                                   </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ color: '#0f172a', fontWeight: 600 }}>₹{val.toLocaleString('en-IN')}</span>
-                                    <span style={{ color: '#64748b', fontSize: '0.70rem', minWidth: 26, textAlign: 'right' }}>{pct}%</span>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25, flexShrink: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <span style={{ color: '#0f172a', fontWeight: 700 }}>₹{currentVal.toLocaleString('en-IN')}</span>
+                                      <span style={{ color: '#64748b', fontSize: '0.68rem', minWidth: 24, textAlign: 'right' }}>{pct}%</span>
+                                    </div>
+                                    {taxMode === 'Both' && valWith !== valWithout && (
+                                      <span style={{ color: '#059669', fontSize: '0.66rem', fontWeight: 600 }}>
+                                        Incl. GST: ₹{valWith.toLocaleString('en-IN')}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               )
@@ -699,6 +864,8 @@ export default function BusinessMetrics({
                               tabIndex={0}
                               onClick={(e) => {
                                 e.stopPropagation()
+                                setPinnedBar(null)
+                                setHoveredBar(null)
                                 const catToUse = (tip?.product && tip.product !== 'N/A') ? tip.product : (displaySeries[0]?.label || 'Grains')
                                 setSelectedCategory(catToUse)
                               }}
@@ -706,6 +873,8 @@ export default function BusinessMetrics({
                                 if (e.key === 'Enter' || e.key === ' ') {
                                   e.preventDefault()
                                   e.stopPropagation()
+                                  setPinnedBar(null)
+                                  setHoveredBar(null)
                                   const catToUse = (tip?.product && tip.product !== 'N/A') ? tip.product : (displaySeries[0]?.label || 'Grains')
                                   setSelectedCategory(catToUse)
                                 }
@@ -748,27 +917,38 @@ export default function BusinessMetrics({
           <div className="ws-bm-card-header">
             <div className="ws-bm-card-title-row">
               <span className="ws-bm-card-title">
-                {isDrilldown ? `Product sales share (${selectedCategory})` : 'Sales by product category'}
+                {isDrilldown ? `Product sales breakdown (${selectedCategory})` : 'Sales by product category'}
               </span>
             </div>
             <div className="ws-bm-legend">
-              {displayDonutSegments.map(s => (
-                <div 
-                  key={s.label} 
-                  className="ws-bm-legend-item"
-                  style={{
-                    cursor: 'default',
-                    padding: '3px 8px',
-                    borderRadius: 6,
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <span className="ws-bm-legend-dot" style={{ background: s.color }} />
-                  <span style={{ fontWeight: 500 }}>
-                    {s.label} {s.pct > 0 ? `(${s.pct}%)` : ''}
-                  </span>
-                </div>
-              ))}
+              {finalDonutSegments.map(s => {
+                const revWithout = s.revenue || 0
+                const revWith = s.revenue_with_gst || s.revenue || 0
+                const revToShow = taxMode === 'With GST' ? revWith : revWithout
+                const titleText = taxMode === 'Both'
+                  ? `Without GST: ₹${Math.round(revWithout).toLocaleString('en-IN')}\nWith GST: ₹${Math.round(revWith).toLocaleString('en-IN')}`
+                  : taxMode === 'With GST'
+                    ? `With GST: ₹${Math.round(revWith).toLocaleString('en-IN')}`
+                    : `Without GST: ₹${Math.round(revWithout).toLocaleString('en-IN')}`
+                return (
+                  <div 
+                    key={s.label} 
+                    className="ws-bm-legend-item"
+                    title={titleText}
+                    style={{
+                      cursor: 'default',
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span className="ws-bm-legend-dot" style={{ background: s.color }} />
+                    <span style={{ fontWeight: 500 }}>
+                      {s.label} {s.pct > 0 ? `(${s.pct}%)` : ''} <span style={{ color: '#0f172a', fontWeight: 600 }}>₹{Math.round(revToShow).toLocaleString('en-IN')}</span>
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
@@ -803,53 +983,249 @@ export default function BusinessMetrics({
       </div>
 
       {/* ── Product Performance Table (When inside category drilldown) ── */}
-      {isDrilldown && (
-        <div style={{ marginTop: 24, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
-              {selectedCategory} — Individual Products Breakdown
-            </h3>
-            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
-              {displayDonutSegments.length} Products
-            </span>
-          </div>
-          <table className="ws-table-styled" style={{ margin: 0, width: '100%' }}>
-            <thead>
-              <tr>
-                <th style={{ width: '50%' }}>Product Name</th>
-                <th style={{ width: '25%', textAlign: 'right' }}>Units Sold</th>
-                <th style={{ width: '25%', textAlign: 'right' }}>Total Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayDonutSegments.length === 0 ? (
-                <tr>
-                  <td colSpan={3} style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
-                    No sales recorded for {selectedCategory} in this period
-                  </td>
-                </tr>
-              ) : (
-                displayDonutSegments.map((prod, idx) => (
-                  <tr key={idx}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: prod.color }} />
-                        <span style={{ fontWeight: 600, color: '#1e293b' }}>{prod.label}</span>
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                      {Number(prod.units_sold || 0).toLocaleString('en-IN')} <span style={{ color: '#64748b', fontSize: '0.80rem' }}>{prod.unit || ''}</span>
-                    </td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
-                      ₹{Number(prod.revenue || 0).toLocaleString('en-IN')}
-                    </td>
+      {isDrilldown && (() => {
+        const totalRevWithout = displayDonutSegments.reduce((sum, p) => sum + (Number(p.revenue) || 0), 0)
+        const totalRevWith = displayDonutSegments.reduce((sum, p) => sum + (Number(p.revenue_with_gst || p.revenue) || 0), 0)
+        const totalRevToShow = taxMode === 'With GST' ? totalRevWith : totalRevWithout
+
+        const hasWeightItems = displayDonutSegments.some(p => 
+          ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim()) && Number(p.bag_weight || 1) > 1
+        )
+
+        const totalWeightAll = displayDonutSegments.reduce((sum, p) => {
+          const bw = Number(p.bag_weight || 1)
+          const isW = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim())
+          if (isW && bw > 1) {
+            return sum + (Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw))
+          }
+          return sum
+        }, 0)
+
+        const totalBagsAll = displayDonutSegments.reduce((sum, p) => {
+          const bw = Number(p.bag_weight || 1)
+          const isW = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim())
+          if (isW && bw > 1) {
+            const tw = Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw)
+            return sum + Math.floor(tw / bw)
+          }
+          return sum
+        }, 0)
+
+        const totalLooseAll = Math.round(displayDonutSegments.reduce((sum, p) => {
+          const bw = Number(p.bag_weight || 1)
+          const isW = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim())
+          if (isW && bw > 1) {
+            const tw = Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw)
+            return sum + (tw % bw)
+          }
+          return sum
+        }, 0))
+
+        const totalUnitsCount = displayDonutSegments.reduce((sum, p) => sum + (Number(p.units_sold) || 0), 0)
+
+        const formatUnitsSold = (prod) => {
+          const isWeightUnit = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(prod.unit || '').toLowerCase().trim())
+          const bw = Number(prod.bag_weight || 1)
+
+          if (isWeightUnit && bw > 1) {
+            const totalWeight = Number(prod.total_weight_kg) || ((Number(prod.units_sold) || 0) * bw)
+            const fullBags = Math.floor(totalWeight / bw)
+            const looseKg = Math.round((totalWeight % bw) * 100) / 100
+
+            const bagsPart = fullBags > 0 ? `${fullBags.toLocaleString('en-IN')} ${fullBags === 1 ? 'Bag' : 'Bags'}` : ''
+            const loosePart = looseKg > 0 ? `${looseKg.toLocaleString('en-IN')} kgs` : ''
+            const bagsText = [bagsPart, loosePart].filter(Boolean).join(' ') || '0 Bags'
+            const weightText = `${Math.round(totalWeight).toLocaleString('en-IN')} kgs`
+
+            return {
+              isWeight: true,
+              bagsText,
+              weightText
+            }
+          }
+
+          return {
+            isWeight: false,
+            bagsText: `${Number(prod.units_sold || 0).toLocaleString('en-IN')} ${prod.unit || 'pcs'}`,
+            weightText: null
+          }
+        }
+
+        return (
+          <div style={{ marginTop: 24, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+            {/* Table Header Row */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', background: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div>
+                <h3 style={{ fontSize: '0.94rem', fontWeight: 700, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>{selectedCategory}</span>
+                  <span style={{ color: '#94a3b8', fontWeight: 400 }}>—</span>
+                  <span style={{ color: '#334155' }}>Individual Products Breakdown</span>
+                </h3>
+                <p style={{ margin: '3px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+                  Sales volume, quantities (bags & kgs), and revenue breakdown for {selectedCategory}.
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: '0.74rem', background: '#f1f5f9', color: '#475569', padding: '4px 10px', borderRadius: 20, fontWeight: 600 }}>
+                  {displayDonutSegments.length} {displayDonutSegments.length === 1 ? 'Product' : 'Products'}
+                </span>
+                <span style={{ fontSize: '0.74rem', background: '#eff6ff', color: '#2563eb', padding: '4px 10px', borderRadius: 20, fontWeight: 600 }}>
+                  {hasWeightItems 
+                    ? `${totalBagsAll} Bags (${Math.round(totalWeightAll).toLocaleString('en-IN')} kgs)`
+                    : `${totalUnitsCount.toLocaleString('en-IN')} units`}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ margin: 0, width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', width: taxMode === 'Both' ? '40%' : '50%' }}>
+                      Product Name
+                    </th>
+                    <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: taxMode === 'Both' ? '28%' : '25%' }}>
+                      Units Sold (Bags & kgs)
+                    </th>
+                    {taxMode === 'Both' ? (
+                      <>
+                        <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '16%' }}>
+                          Without GST
+                        </th>
+                        <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '16%' }}>
+                          With GST
+                        </th>
+                      </>
+                    ) : (
+                      <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '25%' }}>
+                        {taxMode === 'With GST' ? 'Revenue (With GST)' : 'Revenue (Excl. GST)'}
+                      </th>
+                    )}
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+                </thead>
+                <tbody>
+                  {displayDonutSegments.length === 0 ? (
+                    <tr>
+                      <td colSpan={taxMode === 'Both' ? 4 : 3} style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                        No sales recorded for {selectedCategory} in this period
+                      </td>
+                    </tr>
+                  ) : (
+                    displayDonutSegments.map((prod, idx) => {
+                      const revWithout = Math.round(Number(prod.revenue) || 0)
+                      const revWith = Math.round(Number(prod.revenue_with_gst || prod.revenue) || 0)
+                      const revToShow = taxMode === 'With GST' ? revWith : revWithout
+                      const unitsData = formatUnitsSold(prod)
+
+                      return (
+                        <tr 
+                          key={idx} 
+                          style={{ 
+                            borderBottom: '1px solid #f1f5f9',
+                            transition: 'background-color 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                        >
+                          <td style={{ padding: '13px 20px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span 
+                                style={{ 
+                                  width: 9, 
+                                  height: 9, 
+                                  borderRadius: '50%', 
+                                  background: prod.color, 
+                                  flexShrink: 0,
+                                  boxShadow: `0 0 0 2px ${prod.color}20` 
+                                }} 
+                              />
+                              <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.85rem' }}>
+                                {prod.label}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '13px 20px', textAlign: 'right' }}>
+                            {unitsData.isWeight ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25 }}>
+                                <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.86rem' }}>
+                                  {unitsData.bagsText}
+                                </span>
+                                <span style={{ fontSize: '0.73rem', color: '#64748b', fontWeight: 500 }}>
+                                  ({unitsData.weightText})
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                                <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
+                                  {Number(prod.units_sold || 0).toLocaleString('en-IN')}
+                                </span>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, fontWeight: 500 }}>
+                                  {prod.unit || 'pcs'}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          {taxMode === 'Both' ? (
+                            <>
+                              <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
+                                ₹{revWithout.toLocaleString('en-IN')}
+                              </td>
+                              <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#059669', fontSize: '0.85rem' }}>
+                                ₹{revWith.toLocaleString('en-IN')}
+                              </td>
+                            </>
+                          ) : (
+                            <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#0f172a', fontSize: '0.86rem' }}>
+                              ₹{revToShow.toLocaleString('en-IN')}
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+                {displayDonutSegments.length > 0 && (
+                  <tfoot>
+                    <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+                      <td style={{ padding: '13px 20px', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>
+                        Total {selectedCategory}
+                      </td>
+                      <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>
+                        {hasWeightItems ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25 }}>
+                            <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.86rem' }}>
+                              {totalBagsAll} Bags {totalLooseAll > 0 ? `${totalLooseAll} kgs` : ''}
+                            </span>
+                            <span style={{ fontSize: '0.73rem', color: '#64748b', fontWeight: 500 }}>
+                              ({Math.round(totalWeightAll).toLocaleString('en-IN')} kgs)
+                            </span>
+                          </div>
+                        ) : (
+                          <span>{totalUnitsCount.toLocaleString('en-IN')} units</span>
+                        )}
+                      </td>
+                      {taxMode === 'Both' ? (
+                        <>
+                          <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#0f172a', fontSize: '0.88rem' }}>
+                            ₹{Math.round(totalRevWithout).toLocaleString('en-IN')}
+                          </td>
+                          <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#059669', fontSize: '0.88rem' }}>
+                            ₹{Math.round(totalRevWith).toLocaleString('en-IN')}
+                          </td>
+                        </>
+                      ) : (
+                        <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#0f172a', fontSize: '0.88rem' }}>
+                          ₹{Math.round(totalRevToShow).toLocaleString('en-IN')}
+                        </td>
+                      )}
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        )
+      })()}
 
     </div>
   )

@@ -325,9 +325,9 @@ export default function BusinessMetrics({
         </div>
 
         <div className="ws-bm-header-right" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Tax Mode Selector (Without GST / With GST / Both) */}
+          {/* Tax Mode Selector (Without GST / With GST) */}
           <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '2px', borderRadius: '7px', border: '1px solid #e2e8f0' }}>
-            {['Without GST', 'With GST', 'Both'].map(mode => (
+            {['Without GST', 'With GST'].map(mode => (
               <button
                 key={mode}
                 type="button"
@@ -336,7 +336,7 @@ export default function BusinessMetrics({
                   padding: '4px 10px',
                   fontSize: '0.74rem',
                   fontWeight: taxMode === mode ? 700 : 500,
-                  color: taxMode === mode ? (mode === 'With GST' ? '#059669' : mode === 'Both' ? '#2563eb' : '#1e293b') : '#64748b',
+                  color: taxMode === mode ? (mode === 'With GST' ? '#059669' : '#1e293b') : '#64748b',
                   background: taxMode === mode ? '#ffffff' : 'transparent',
                   border: 'none',
                   borderRadius: '5px',

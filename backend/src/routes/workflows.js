@@ -184,11 +184,9 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
   ] : []
 
   let sentCount = 0
-  // Deduplicate: skip recipients who already received the invoice from the previous email step
-  // (shop owner gets a sender copy, customer gets the main invoice email)
+  // Deduplicate: skip the customer who already received the invoice from the previous email step
   const customerEmail = quote?.customer_email || ''
-  const shopEmail = shop.email || process.env.SMTP_USER || ''
-  const alreadyEmailed = new Set([customerEmail, shopEmail].filter(Boolean).map(e => e.toLowerCase().trim()))
+  const alreadyEmailed = new Set([customerEmail].filter(Boolean).map(e => e.toLowerCase().trim()))
   const activeRecipients = recipients.filter(r => r && r.email && !alreadyEmailed.has(r.email.toLowerCase().trim()))
 
   await Promise.allSettled(

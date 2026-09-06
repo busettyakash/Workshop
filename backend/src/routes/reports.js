@@ -13,16 +13,21 @@ router.get('/sales', async (req, res) => {
   const { from, to, status } = req.query
   const start = from || new Date(Date.now() - 30 * 86400000).toISOString()
   const end   = to   || new Date().toISOString()
-  const statusFilter = status && status !== 'all' ? `AND status = '${status.replace(/'/g, '')}'` : ''
+  const params = [userId, start, end]
+  let statusCondition = ''
+  if (status && status !== 'all') {
+    params.push(status)
+    statusCondition = `AND status = $${params.length}`
+  }
   try {
     const { rows } = await query(
       `SELECT (created_at AT TIME ZONE ${TZ})::date AS date,
               COUNT(*) AS order_count,
               COALESCE(SUM(amount),0) AS total_revenue
        FROM bills
-       WHERE user_id = $1 AND created_at BETWEEN $2 AND $3 ${statusFilter}
+       WHERE user_id = $1 AND created_at BETWEEN $2 AND $3 ${statusCondition}
        GROUP BY (created_at AT TIME ZONE ${TZ})::date ORDER BY date ASC`,
-      [userId, start, end]
+      params
     )
     res.json(rows)
   } catch (err) {
@@ -172,7 +177,9 @@ function buildCustomBuckets(d, startDate, endDate) {
     }
     return {
       buckets,
-      dateCondition: `AND (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN '${startIso}'::date AND '${endIso}'::date`,
+      isCustom: true,
+      startDateStr: startIso,
+      endDateStr: endIso,
       groupBy: 'day'
     }
   }
@@ -187,17 +194,22 @@ function buildCustomBuckets(d, startDate, endDate) {
   }
   return {
     buckets,
-    dateCondition: `AND (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN '${startIso}'::date AND '${endIso}'::date`,
+    isCustom: true,
+    startDateStr: startIso,
+    endDateStr: endIso,
     groupBy: 'month'
   }
 }
 
 function buildMonthSpanBuckets(d, dayFilter) {
   let count = d.getMonth() + 1
+  let intervalClause = "INTERVAL '11 months'"
   if (dayFilter === 'Last 3 months') {
     count = 3
+    intervalClause = "INTERVAL '2 months'"
   } else if (dayFilter === 'Last 6 months') {
     count = 6
+    intervalClause = "INTERVAL '5 months'"
   }
   const buckets = []
   for (let i = count - 1; i >= 0; i--) {
@@ -209,9 +221,17 @@ function buildMonthSpanBuckets(d, dayFilter) {
   }
   return {
     buckets,
-    dateCondition: `AND (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= DATE_TRUNC('month', (NOW() AT TIME ZONE 'Asia/Kolkata') - INTERVAL '${count - 1} months')`,
+    dateCondition: `AND (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= DATE_TRUNC('month', (NOW() AT TIME ZONE 'Asia/Kolkata') - ${intervalClause})`,
     groupBy: 'month'
   }
+}
+
+function applyDateFilter(timeConfig, params) {
+  if (timeConfig.isCustom && timeConfig.startDateStr && timeConfig.endDateStr) {
+    params.push(timeConfig.startDateStr, timeConfig.endDateStr)
+    return `AND (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $${params.length - 1}::date AND $${params.length}::date`
+  }
+  return timeConfig.dateCondition || ''
 }
 
 function buildTimeBuckets(dayFilter, anchorDate = new Date(), startDate = '', endDate = '') {
@@ -263,8 +283,9 @@ function resolveStatusCondition(statusFilter) {
   return ''
 }
 
-async function queryBarData({ timeConfig, series, customerCondition, statusCondition = '', params, hasCustomerFilter }) {
-  const { buckets, dateCondition, groupBy } = timeConfig
+async function queryBarData({ timeConfig, series, customerCondition, statusCondition = '', params, hasCustomerFilter, dateCondition }) {
+  const { buckets, groupBy } = timeConfig
+  const activeDateCondition = dateCondition || timeConfig.dateCondition || ''
 
   const joins = hasCustomerFilter
     ? `JOIN bill_items bi ON bi.bill_id = b.id
@@ -287,7 +308,7 @@ async function queryBarData({ timeConfig, series, customerCondition, statusCondi
       FROM bills b
       ${joins}
       WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
-        ${dateCondition} ${customerCondition} ${statusCondition}
+        ${activeDateCondition} ${customerCondition} ${statusCondition}
       GROUP BY (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date, COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
     `
   } else {
@@ -301,7 +322,7 @@ async function queryBarData({ timeConfig, series, customerCondition, statusCondi
       FROM bills b
       ${joins}
       WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
-        ${dateCondition} ${customerCondition} ${statusCondition}
+        ${activeDateCondition} ${customerCondition} ${statusCondition}
       GROUP BY EXTRACT(MONTH FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')), EXTRACT(YEAR FROM (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')), COALESCE(NULLIF(TRIM(p.category), ''), 'Others')
     `
   }
@@ -469,6 +490,8 @@ router.get('/business-metrics', async (req, res) => {
     const statusCondition = resolveStatusCondition(statusFilter)
 
     const params = [userId]
+    const dateCondition = applyDateFilter(timeConfig, params)
+
     let customerCondition = ''
     const hasCustomerFilter = Boolean(customerFilter && customerFilter !== 'All Customers')
     if (hasCustomerFilter) {
@@ -488,8 +511,8 @@ router.get('/business-metrics', async (req, res) => {
     const { categoryColors, series } = await getDistinctCategories(userId)
 
     const [{ barData }, donutData] = await Promise.all([
-      queryBarData({ timeConfig, series, customerCondition, statusCondition, params, hasCustomerFilter }),
-      queryDonutData({ dateCondition: timeConfig.dateCondition, customerCondition, statusCondition, params, categoryColors, hasCustomerFilter })
+      queryBarData({ timeConfig, series, customerCondition, statusCondition, params, hasCustomerFilter, dateCondition }),
+      queryDonutData({ dateCondition, customerCondition, statusCondition, params, categoryColors, hasCustomerFilter })
     ])
 
     const tooltipData = computeTooltipData(timeConfig.buckets, barData, series)
@@ -523,8 +546,9 @@ function buildCategorySeries(allCategoryProducts, productFilter) {
   return { isProductFiltered, filteredProds, series }
 }
 
-function buildCategoryBreakdownFilters(userId, category, customerFilter, productFilter, isProductFiltered) {
+function buildCategoryBreakdownFilters(userId, category, customerFilter, productFilter, isProductFiltered, timeConfig) {
   const params = [userId, category]
+  const dateCondition = applyDateFilter(timeConfig, params)
   let customerCondition = ''
   if (customerFilter && customerFilter !== 'All Customers') {
     if (customerFilter.toLowerCase().includes('walk') || customerFilter.toLowerCase().includes('general')) {
@@ -536,12 +560,12 @@ function buildCategoryBreakdownFilters(userId, category, customerFilter, product
   }
 
   let prodFilterCondition = ''
-      if (isProductFiltered) {
+  if (isProductFiltered) {
     params.push(productFilter)
     prodFilterCondition = `AND (p.name = $${params.length} OR p.name ILIKE $${params.length})`
   }
 
-  return { params, customerCondition, prodFilterCondition }
+  return { params, dateCondition, customerCondition, prodFilterCondition }
 }
 
 function getCategoryBarQuery(groupBy, dateCondition, customerCondition, prodFilterCondition, statusCondition = '') {
@@ -631,9 +655,10 @@ function aggregateCategoryBarRows(rows, buckets, groupBy, series) {
   return buckets.map(b => barDataMap[b.key])
 }
 
-async function queryCategoryBarData({ timeConfig, series, params, customerCondition, prodFilterCondition, statusCondition = '' }) {
-  const { buckets, dateCondition, groupBy } = timeConfig
-  const barQuery = getCategoryBarQuery(groupBy, dateCondition, customerCondition, prodFilterCondition, statusCondition)
+async function queryCategoryBarData({ timeConfig, series, params, dateCondition, customerCondition, prodFilterCondition, statusCondition = '' }) {
+  const { buckets, groupBy } = timeConfig
+  const activeDateCondition = dateCondition || timeConfig.dateCondition || ''
+  const barQuery = getCategoryBarQuery(groupBy, activeDateCondition, customerCondition, prodFilterCondition, statusCondition)
   const barRes = await query(barQuery, params)
   return aggregateCategoryBarRows(barRes.rows, buckets, groupBy, series)
 }
@@ -750,11 +775,11 @@ router.get('/category-breakdown', async (req, res) => {
 
     const allCategoryProducts = allProdRes.rows
     const { isProductFiltered, filteredProds, series } = buildCategorySeries(allCategoryProducts, productFilter)
-    const { params, customerCondition, prodFilterCondition } = buildCategoryBreakdownFilters(userId, category, customerFilter, productFilter, isProductFiltered)
+    const { params, dateCondition, customerCondition, prodFilterCondition } = buildCategoryBreakdownFilters(userId, category, customerFilter, productFilter, isProductFiltered, timeConfig)
 
     const [barData, { donutRes, totalRevAll, donutData }] = await Promise.all([
-      queryCategoryBarData({ timeConfig, series, params, customerCondition, prodFilterCondition, statusCondition }),
-      queryCategoryDonutData({ params, dateCondition: timeConfig.dateCondition, customerCondition, prodFilterCondition, statusCondition, isProductFiltered, filteredProds, series })
+      queryCategoryBarData({ timeConfig, series, params, dateCondition, customerCondition, prodFilterCondition, statusCondition }),
+      queryCategoryDonutData({ params, dateCondition, customerCondition, prodFilterCondition, statusCondition, isProductFiltered, filteredProds, series })
     ])
 
     const tooltipData = computeTooltipData(timeConfig.buckets, barData, series)

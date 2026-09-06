@@ -983,250 +983,256 @@ export default function BusinessMetrics({
       </div>
 
       {/* ── Product Performance Table (When inside category drilldown) ── */}
-      {isDrilldown && (() => {
-        const totalRevWithout = displayDonutSegments.reduce((sum, p) => sum + (Number(p.revenue) || 0), 0)
-        const totalRevWith = displayDonutSegments.reduce((sum, p) => sum + (Number(p.revenue_with_gst || p.revenue) || 0), 0)
-        const totalRevToShow = taxMode === 'With GST' ? totalRevWith : totalRevWithout
+      {isDrilldown && (
+        <ProductPerformanceTable 
+          selectedCategory={selectedCategory} 
+          displayDonutSegments={displayDonutSegments} 
+          taxMode={taxMode} 
+        />
+      )}
 
-        const hasWeightItems = displayDonutSegments.some(p => 
-          ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim()) && Number(p.bag_weight || 1) > 1
-        )
+    </div>
+  )
+}
 
-        const totalWeightAll = displayDonutSegments.reduce((sum, p) => {
-          const bw = Number(p.bag_weight || 1)
-          const isW = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim())
-          if (isW && bw > 1) {
-            return sum + (Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw))
-          }
-          return sum
-        }, 0)
+function formatProductUnits(prod) {
+  const isWeightUnit = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(prod.unit || '').toLowerCase().trim())
+  const bw = Number(prod.bag_weight || 1)
 
-        const totalBagsAll = displayDonutSegments.reduce((sum, p) => {
-          const bw = Number(p.bag_weight || 1)
-          const isW = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim())
-          if (isW && bw > 1) {
-            const tw = Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw)
-            return sum + Math.floor(tw / bw)
-          }
-          return sum
-        }, 0)
+  if (isWeightUnit && bw > 1) {
+    const totalWeight = Number(prod.total_weight_kg) || ((Number(prod.units_sold) || 0) * bw)
+    const fullBags = Math.floor(totalWeight / bw)
+    const looseKg = Math.round((totalWeight % bw) * 100) / 100
 
-        const totalLooseAll = Math.round(displayDonutSegments.reduce((sum, p) => {
-          const bw = Number(p.bag_weight || 1)
-          const isW = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim())
-          if (isW && bw > 1) {
-            const tw = Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw)
-            return sum + (tw % bw)
-          }
-          return sum
-        }, 0))
+    const bagsPart = fullBags > 0 ? `${fullBags.toLocaleString('en-IN')} ${fullBags === 1 ? 'Bag' : 'Bags'}` : ''
+    const loosePart = looseKg > 0 ? `${looseKg.toLocaleString('en-IN')} kgs` : ''
+    const bagsText = [bagsPart, loosePart].filter(Boolean).join(' ') || '0 Bags'
+    const weightText = `${Math.round(totalWeight).toLocaleString('en-IN')} kgs`
 
-        const totalUnitsCount = displayDonutSegments.reduce((sum, p) => sum + (Number(p.units_sold) || 0), 0)
+    return { isWeight: true, bagsText, weightText }
+  }
 
-        const formatUnitsSold = (prod) => {
-          const isWeightUnit = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(prod.unit || '').toLowerCase().trim())
-          const bw = Number(prod.bag_weight || 1)
+  return {
+    isWeight: false,
+    bagsText: `${Number(prod.units_sold || 0).toLocaleString('en-IN')} ${prod.unit || 'pcs'}`,
+    weightText: null
+  }
+}
 
-          if (isWeightUnit && bw > 1) {
-            const totalWeight = Number(prod.total_weight_kg) || ((Number(prod.units_sold) || 0) * bw)
-            const fullBags = Math.floor(totalWeight / bw)
-            const looseKg = Math.round((totalWeight % bw) * 100) / 100
+function calculateCategoryTotals(segments) {
+  const totalRevWithout = segments.reduce((sum, p) => sum + (Number(p.revenue) || 0), 0)
+  const totalRevWith = segments.reduce((sum, p) => sum + (Number(p.revenue_with_gst || p.revenue) || 0), 0)
+  const hasWeightItems = segments.some(p =>
+    ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim()) && Number(p.bag_weight || 1) > 1
+  )
 
-            const bagsPart = fullBags > 0 ? `${fullBags.toLocaleString('en-IN')} ${fullBags === 1 ? 'Bag' : 'Bags'}` : ''
-            const loosePart = looseKg > 0 ? `${looseKg.toLocaleString('en-IN')} kgs` : ''
-            const bagsText = [bagsPart, loosePart].filter(Boolean).join(' ') || '0 Bags'
-            const weightText = `${Math.round(totalWeight).toLocaleString('en-IN')} kgs`
+  let totalWeightAll = 0
+  let totalBagsAll = 0
+  let totalLooseAll = 0
 
-            return {
-              isWeight: true,
-              bagsText,
-              weightText
-            }
-          }
+  if (hasWeightItems) {
+    segments.forEach(p => {
+      const bw = Number(p.bag_weight || 1)
+      const isW = ['kgs', 'kg', 'kilogram', 'kilograms'].includes(String(p.unit || '').toLowerCase().trim())
+      if (isW && bw > 1) {
+        const tw = Number(p.total_weight_kg) || ((Number(p.units_sold) || 0) * bw)
+        totalWeightAll += tw
+        totalBagsAll += Math.floor(tw / bw)
+        totalLooseAll += (tw % bw)
+      }
+    })
+    totalLooseAll = Math.round(totalLooseAll)
+  }
 
-          return {
-            isWeight: false,
-            bagsText: `${Number(prod.units_sold || 0).toLocaleString('en-IN')} ${prod.unit || 'pcs'}`,
-            weightText: null
-          }
-        }
+  const totalUnitsCount = segments.reduce((sum, p) => sum + (Number(p.units_sold) || 0), 0)
 
-        return (
-          <div style={{ marginTop: 24, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
-            {/* Table Header Row */}
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', background: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-              <div>
-                <h3 style={{ fontSize: '0.94rem', fontWeight: 700, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>{selectedCategory}</span>
-                  <span style={{ color: '#94a3b8', fontWeight: 400 }}>—</span>
-                  <span style={{ color: '#334155' }}>Individual Products Breakdown</span>
-                </h3>
-                <p style={{ margin: '3px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
-                  Sales volume, quantities (bags & kgs), and revenue breakdown for {selectedCategory}.
-                </p>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: '0.74rem', background: '#f1f5f9', color: '#475569', padding: '4px 10px', borderRadius: 20, fontWeight: 600 }}>
-                  {displayDonutSegments.length} {displayDonutSegments.length === 1 ? 'Product' : 'Products'}
-                </span>
-                <span style={{ fontSize: '0.74rem', background: '#eff6ff', color: '#2563eb', padding: '4px 10px', borderRadius: 20, fontWeight: 600 }}>
-                  {hasWeightItems 
-                    ? `${totalBagsAll} Bags (${Math.round(totalWeightAll).toLocaleString('en-IN')} kgs)`
-                    : `${totalUnitsCount.toLocaleString('en-IN')} units`}
-                </span>
-              </div>
-            </div>
+  return {
+    totalRevWithout,
+    totalRevWith,
+    hasWeightItems,
+    totalWeightAll,
+    totalBagsAll,
+    totalLooseAll,
+    totalUnitsCount
+  }
+}
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ margin: 0, width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                    <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', width: taxMode === 'Both' ? '40%' : '50%' }}>
-                      Product Name
-                    </th>
-                    <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: taxMode === 'Both' ? '28%' : '25%' }}>
-                      Units Sold (Bags & kgs)
-                    </th>
+function ProductPerformanceTable({ selectedCategory, displayDonutSegments, taxMode }) {
+  const totals = calculateCategoryTotals(displayDonutSegments)
+  const totalRevToShow = taxMode === 'With GST' ? totals.totalRevWith : totals.totalRevWithout
+
+  return (
+    <div style={{ marginTop: 24, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+      {/* Table Header Row */}
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', background: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <h3 style={{ fontSize: '0.94rem', fontWeight: 700, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{selectedCategory}</span>
+            <span style={{ color: '#94a3b8', fontWeight: 400 }}>—</span>
+            <span style={{ color: '#334155' }}>Individual Products Breakdown</span>
+          </h3>
+          <p style={{ margin: '3px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+            Sales volume, quantities (bags & kgs), and revenue breakdown for {selectedCategory}.
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: '0.74rem', background: '#f1f5f9', color: '#475569', padding: '4px 10px', borderRadius: 20, fontWeight: 600 }}>
+            {displayDonutSegments.length} {displayDonutSegments.length === 1 ? 'Product' : 'Products'}
+          </span>
+          <span style={{ fontSize: '0.74rem', background: '#eff6ff', color: '#2563eb', padding: '4px 10px', borderRadius: 20, fontWeight: 600 }}>
+            {totals.hasWeightItems 
+              ? `${totals.totalBagsAll} Bags (${Math.round(totals.totalWeightAll).toLocaleString('en-IN')} kgs)`
+              : `${totals.totalUnitsCount.toLocaleString('en-IN')} units`}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ margin: 0, width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', width: taxMode === 'Both' ? '40%' : '50%' }}>
+                Product Name
+              </th>
+              <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: taxMode === 'Both' ? '28%' : '25%' }}>
+                Units Sold (Bags & kgs)
+              </th>
+              {taxMode === 'Both' ? (
+                <>
+                  <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '16%' }}>
+                    Without GST
+                  </th>
+                  <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '16%' }}>
+                    With GST
+                  </th>
+                </>
+              ) : (
+                <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '25%' }}>
+                  {taxMode === 'With GST' ? 'Revenue (With GST)' : 'Revenue (Excl. GST)'}
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {displayDonutSegments.length === 0 ? (
+              <tr>
+                <td colSpan={taxMode === 'Both' ? 4 : 3} style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                  No sales recorded for {selectedCategory} in this period
+                </td>
+              </tr>
+            ) : (
+              displayDonutSegments.map((prod, idx) => {
+                const revWithout = Math.round(Number(prod.revenue) || 0)
+                const revWith = Math.round(Number(prod.revenue_with_gst || prod.revenue) || 0)
+                const revToShow = taxMode === 'With GST' ? revWith : revWithout
+                const unitsData = formatProductUnits(prod)
+
+                return (
+                  <tr 
+                    key={idx} 
+                    style={{ 
+                      borderBottom: '1px solid #f1f5f9',
+                      transition: 'background-color 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                  >
+                    <td style={{ padding: '13px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span 
+                          style={{ 
+                            width: 9, 
+                            height: 9, 
+                            borderRadius: '50%', 
+                            background: prod.color, 
+                            flexShrink: 0,
+                            boxShadow: `0 0 0 2px ${prod.color}20` 
+                          }} 
+                        />
+                        <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.85rem' }}>
+                          {prod.label}
+                        </span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '13px 20px', textAlign: 'right' }}>
+                      {unitsData.isWeight ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25 }}>
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.86rem' }}>
+                            {unitsData.bagsText}
+                          </span>
+                          <span style={{ fontSize: '0.73rem', color: '#64748b', fontWeight: 500 }}>
+                            ({unitsData.weightText})
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                          <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
+                            {Number(prod.units_sold || 0).toLocaleString('en-IN')}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, fontWeight: 500 }}>
+                            {prod.unit || 'pcs'}
+                          </span>
+                        </div>
+                      )}
+                    </td>
                     {taxMode === 'Both' ? (
                       <>
-                        <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '16%' }}>
-                          Without GST
-                        </th>
-                        <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '16%' }}>
-                          With GST
-                        </th>
+                        <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
+                          ₹{revWithout.toLocaleString('en-IN')}
+                        </td>
+                        <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#059669', fontSize: '0.85rem' }}>
+                          ₹{revWith.toLocaleString('en-IN')}
+                        </td>
                       </>
                     ) : (
-                      <th style={{ padding: '12px 20px', fontSize: '0.72rem', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '25%' }}>
-                        {taxMode === 'With GST' ? 'Revenue (With GST)' : 'Revenue (Excl. GST)'}
-                      </th>
+                      <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#0f172a', fontSize: '0.86rem' }}>
+                        ₹{revToShow.toLocaleString('en-IN')}
+                      </td>
                     )}
                   </tr>
-                </thead>
-                <tbody>
-                  {displayDonutSegments.length === 0 ? (
-                    <tr>
-                      <td colSpan={taxMode === 'Both' ? 4 : 3} style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8', fontSize: '0.85rem' }}>
-                        No sales recorded for {selectedCategory} in this period
-                      </td>
-                    </tr>
+                )
+              })
+            )}
+          </tbody>
+          {displayDonutSegments.length > 0 && (
+            <tfoot>
+              <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+                <td style={{ padding: '13px 20px', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>
+                  Total {selectedCategory}
+                </td>
+                <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>
+                  {totals.hasWeightItems ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25 }}>
+                      <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.86rem' }}>
+                        {totals.totalBagsAll} Bags {totals.totalLooseAll > 0 ? `${totals.totalLooseAll} kgs` : ''}
+                      </span>
+                      <span style={{ fontSize: '0.73rem', color: '#64748b', fontWeight: 500 }}>
+                        ({Math.round(totals.totalWeightAll).toLocaleString('en-IN')} kgs)
+                      </span>
+                    </div>
                   ) : (
-                    displayDonutSegments.map((prod, idx) => {
-                      const revWithout = Math.round(Number(prod.revenue) || 0)
-                      const revWith = Math.round(Number(prod.revenue_with_gst || prod.revenue) || 0)
-                      const revToShow = taxMode === 'With GST' ? revWith : revWithout
-                      const unitsData = formatUnitsSold(prod)
-
-                      return (
-                        <tr 
-                          key={idx} 
-                          style={{ 
-                            borderBottom: '1px solid #f1f5f9',
-                            transition: 'background-color 0.15s ease'
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc' }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
-                        >
-                          <td style={{ padding: '13px 20px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <span 
-                                style={{ 
-                                  width: 9, 
-                                  height: 9, 
-                                  borderRadius: '50%', 
-                                  background: prod.color, 
-                                  flexShrink: 0,
-                                  boxShadow: `0 0 0 2px ${prod.color}20` 
-                                }} 
-                              />
-                              <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.85rem' }}>
-                                {prod.label}
-                              </span>
-                            </div>
-                          </td>
-                          <td style={{ padding: '13px 20px', textAlign: 'right' }}>
-                            {unitsData.isWeight ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25 }}>
-                                <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.86rem' }}>
-                                  {unitsData.bagsText}
-                                </span>
-                                <span style={{ fontSize: '0.73rem', color: '#64748b', fontWeight: 500 }}>
-                                  ({unitsData.weightText})
-                                </span>
-                              </div>
-                            ) : (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                                <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
-                                  {Number(prod.units_sold || 0).toLocaleString('en-IN')}
-                                </span>
-                                <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, fontWeight: 500 }}>
-                                  {prod.unit || 'pcs'}
-                                </span>
-                              </div>
-                            )}
-                          </td>
-                          {taxMode === 'Both' ? (
-                            <>
-                              <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
-                                ₹{revWithout.toLocaleString('en-IN')}
-                              </td>
-                              <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#059669', fontSize: '0.85rem' }}>
-                                ₹{revWith.toLocaleString('en-IN')}
-                              </td>
-                            </>
-                          ) : (
-                            <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#0f172a', fontSize: '0.86rem' }}>
-                              ₹{revToShow.toLocaleString('en-IN')}
-                            </td>
-                          )}
-                        </tr>
-                      )
-                    })
+                    <span>{totals.totalUnitsCount.toLocaleString('en-IN')} units</span>
                   )}
-                </tbody>
-                {displayDonutSegments.length > 0 && (
-                  <tfoot>
-                    <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                      <td style={{ padding: '13px 20px', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>
-                        Total {selectedCategory}
-                      </td>
-                      <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>
-                        {hasWeightItems ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25 }}>
-                            <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.86rem' }}>
-                              {totalBagsAll} Bags {totalLooseAll > 0 ? `${totalLooseAll} kgs` : ''}
-                            </span>
-                            <span style={{ fontSize: '0.73rem', color: '#64748b', fontWeight: 500 }}>
-                              ({Math.round(totalWeightAll).toLocaleString('en-IN')} kgs)
-                            </span>
-                          </div>
-                        ) : (
-                          <span>{totalUnitsCount.toLocaleString('en-IN')} units</span>
-                        )}
-                      </td>
-                      {taxMode === 'Both' ? (
-                        <>
-                          <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#0f172a', fontSize: '0.88rem' }}>
-                            ₹{Math.round(totalRevWithout).toLocaleString('en-IN')}
-                          </td>
-                          <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#059669', fontSize: '0.88rem' }}>
-                            ₹{Math.round(totalRevWith).toLocaleString('en-IN')}
-                          </td>
-                        </>
-                      ) : (
-                        <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#0f172a', fontSize: '0.88rem' }}>
-                          ₹{Math.round(totalRevToShow).toLocaleString('en-IN')}
-                        </td>
-                      )}
-                    </tr>
-                  </tfoot>
+                </td>
+                {taxMode === 'Both' ? (
+                  <>
+                    <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#0f172a', fontSize: '0.88rem' }}>
+                      ₹{Math.round(totals.totalRevWithout).toLocaleString('en-IN')}
+                    </td>
+                    <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: '#059669', fontSize: '0.88rem' }}>
+                      ₹{Math.round(totals.totalRevWith).toLocaleString('en-IN')}
+                    </td>
+                  </>
+                ) : (
+                  <td style={{ padding: '13px 20px', textAlign: 'right', fontWeight: 700, color: taxMode === 'With GST' ? '#059669' : '#0f172a', fontSize: '0.88rem' }}>
+                    ₹{Math.round(totalRevToShow).toLocaleString('en-IN')}
+                  </td>
                 )}
-              </table>
-            </div>
-          </div>
-        )
-      })()}
-
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
     </div>
   )
 }

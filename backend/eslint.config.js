@@ -4,7 +4,7 @@ import sonarjs from 'eslint-plugin-sonarjs'
 
 export default [
   {
-    ignores: ['node_modules/**', 'coverage/**', 'test-*.js', 'init-db.js'],
+    ignores: ['node_modules/**', 'coverage/**', 'test-*.js', 'init-db.js', 'scripts/**'],
   },
   js.configs.recommended,
   sonarjs.configs.recommended,

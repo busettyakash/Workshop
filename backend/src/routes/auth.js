@@ -1107,11 +1107,12 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
     // Only include the user's own workspace if they have real activity in it
     // (products, bills, or members). Pure members with no owned business data
     // should only see the workspace(s) they were invited to.
-    const workspaces = hasOwnActivity
-      ? [ownEntry, ...invitedEntries]
-      : invitedEntries.length > 0
-        ? invitedEntries
-        : [ownEntry]
+    let workspaces = [ownEntry]
+    if (hasOwnActivity) {
+      workspaces = [ownEntry, ...invitedEntries]
+    } else if (invitedEntries.length > 0) {
+      workspaces = invitedEntries
+    }
 
     res.json(workspaces)
   } catch (err) {

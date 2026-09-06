@@ -1104,9 +1104,14 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
     const invitedEntries = invitedRows.map(formatInvitedWorkspace)
     const hasOwnActivity = await hasRealOwnedWorkspace(ownUserId)
 
-    const workspaces = (hasOwnActivity || invitedEntries.length === 0)
+    // Only include the user's own workspace if they have real activity in it
+    // (products, bills, or members). Pure members with no owned business data
+    // should only see the workspace(s) they were invited to.
+    const workspaces = hasOwnActivity
       ? [ownEntry, ...invitedEntries]
-      : [...invitedEntries, ownEntry]
+      : invitedEntries.length > 0
+        ? invitedEntries
+        : [ownEntry]
 
     res.json(workspaces)
   } catch (err) {
@@ -1488,6 +1493,16 @@ router.put('/profile', apiLimiter, requireAuth, async (req, res) => {
        WHERE LOWER(email) = LOWER($4)`,
       [firstName, lastName, email, userEmail]
     )
+
+    // Keep billing history in sync — update created_by_name on all bills
+    // this user created so the billing list shows their current name
+    const newName = `${firstName || ''} ${lastName || ''}`.trim()
+    if (newName) {
+      await query(
+        `UPDATE bills SET created_by_name = $1 WHERE LOWER(created_by_email) = LOWER($2)`,
+        [newName, userEmail]
+      ).catch(() => {}) // non-fatal: bills table may not have the column yet
+    }
 
     res.json({ message: 'Profile details saved successfully!' })
   } catch (err) {

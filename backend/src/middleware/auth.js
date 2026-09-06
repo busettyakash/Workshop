@@ -28,9 +28,13 @@ function resolveLocalJwt(token) {
     const decoded = jwt.verify(token, LOCAL_JWT_SECRET)
     if (decoded?.iss === 'workshop-local' && decoded?.email) {
       return {
-        id: decoded.sub || decoded.email,
-        email: decoded.email,
-        shopName: decoded.shopName,
+        id:        decoded.sub || decoded.email,
+        email:     decoded.email,
+        shopName:  decoded.shopName,
+        firstName: decoded.firstName || '',
+        lastName:  decoded.lastName  || '',
+        first_name: decoded.firstName || '',
+        last_name:  decoded.lastName  || '',
       }
     }
   } catch {

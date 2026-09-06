@@ -26,3 +26,6 @@ tmp_build
 *.njsproj
 *.sln
 *.sw?
+
+# Temporary database maintenance scripts
+backend/scripts/

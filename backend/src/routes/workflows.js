@@ -537,7 +537,7 @@ router.post('/qstash-callback', apiLimiter, verifyQStashSignature, async (req, r
   const runId = payload.runId
   const step = Number(payload.step) || 1
 
-  console.log('[QSTASH WEBHOOK] Received callback for execution step', step, 'run', runId)
+  console.log('[QSTASH WEBHOOK] Received callback for workflow execution')
 
   try {
     const result = await executeWorkflowPipeline({
@@ -550,12 +550,10 @@ router.post('/qstash-callback', apiLimiter, verifyQStashSignature, async (req, r
     }
     return res.status(200).json(result)
   } catch (err) {
-    console.error('[QSTASH WEBHOOK ERROR] Processing failed for run #%s step %d:', runId, step, err)
+    console.error('[QSTASH WEBHOOK ERROR] Processing failed for workflow execution:', err.message)
     return res.status(500).json({
       error: 'Step Execution Error',
-      message: err.message,
-      runId,
-      step
+      message: err.message
     })
   }
 })

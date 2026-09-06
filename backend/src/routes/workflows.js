@@ -303,14 +303,12 @@ async function executeCustomerInvoiceEmailAction(currentAction, run, companyName
     attachments
   }).catch(err => ({ data: null, error: err }))
 
-
-
   await query(
     `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, 'sent', $7, NOW(), NOW())`,
     [
       sellerName,
-      senderEmail || 'billing@workshop.app',
+      shop.email || process.env.SMTP_USER || 'billing@workshop.app',
       customerEmail,
       `Order Confirmation - ${orderNum}`,
       confirmationHtml,

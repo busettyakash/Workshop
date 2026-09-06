@@ -124,14 +124,18 @@ export async function publishWorkflowStep(payload, options = {}) {
   const retriesCount = options.retries !== undefined ? options.retries : 3
   const retryDelay = options.retryDelay || '5s'
 
+  // Sanitize user-controlled data before logging
+  const safeRunId = Number(payload.runId) || 0
+  const safeStep = Number(payload.step) || 0
+
   if (isLocalEndpoint(targetUrl) || !process.env.QSTASH_TOKEN) {
-    console.log('[WORKFLOW RUNNER] Executing local step runner for run #%s step %s in %ds (Local target)...', payload.runId, payload.step, delaySeconds)
+    console.log('[WORKFLOW RUNNER] Executing local step runner for run #%d step %d in %ds (Local target)...', safeRunId, safeStep, delaySeconds)
     runLocalStep(payload, delaySeconds)
     return { local: true, scheduledLocalFallback: true, reason: 'LOCAL_TARGET' }
   }
 
   try {
-    console.log('[QSTASH] Publishing message to %s for run #%s step %s (delay: %ds, retries: %d)', targetUrl, payload.runId, payload.step, delaySeconds, retriesCount)
+    console.log('[QSTASH] Publishing message for run #%d step %d (delay: %ds, retries: %d)', safeRunId, safeStep, delaySeconds, retriesCount)
 
     const result = await qstash.publishJSON({
       url: targetUrl,
@@ -140,21 +144,20 @@ export async function publishWorkflowStep(payload, options = {}) {
       retries: retriesCount,
       retryDelay,
       headers: {
-        'x-workflow-run-id': String(payload.runId),
-        'x-workflow-step': String(payload.step)
+        'x-workflow-run-id': String(safeRunId),
+        'x-workflow-step': String(safeStep)
       }
     })
 
-    console.log('[QSTASH] Successfully published step %s for run #%s. Message ID: %s', payload.step, payload.runId, result.messageId)
+    console.log('[QSTASH] Successfully published step %d for run #%d.', safeStep, safeRunId)
     return result
   } catch (err) {
-    console.warn('[QSTASH LOCAL FALLBACK] Target publish failed for run #%s step %s: %s. Advancing via local runner...', payload.runId, payload.step, err.message)
+    console.warn('[QSTASH LOCAL FALLBACK] Publish failed for run #%d step %d. Advancing via local runner...', safeRunId, safeStep)
     runLocalStep(payload, delaySeconds)
     return {
       local: true,
       scheduledLocalFallback: true,
-      reason: 'CLOUD_PUBLISH_FALLBACK',
-      message: err.message
+      reason: 'CLOUD_PUBLISH_FALLBACK'
     }
   }
 }

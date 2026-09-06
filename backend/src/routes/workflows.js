@@ -151,7 +151,7 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
   const shopProfileRes = await query(
     `SELECT shop_name, first_name, last_name, phone, gstin, email, address FROM shop_profiles 
      WHERE user_id::text = $1::text 
-        OR user_id = (SELECT workspace_owner_id FROM workspace_members WHERE member_email = $1 LIMIT 1)
+        OR user_id::text = (SELECT workspace_owner_id::text FROM workspace_members WHERE member_email = $1 LIMIT 1)
      LIMIT 1`,
     [targetUserId]
   ).catch(() => ({ rows: [] }))
@@ -184,7 +184,12 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
   ] : []
 
   let sentCount = 0
-  const activeRecipients = recipients.filter(r => r && r.email)
+  // Deduplicate: skip recipients who already received the invoice from the previous email step
+  // (shop owner gets a sender copy, customer gets the main invoice email)
+  const customerEmail = quote?.customer_email || ''
+  const shopEmail = shop.email || process.env.SMTP_USER || ''
+  const alreadyEmailed = new Set([customerEmail, shopEmail].filter(Boolean).map(e => e.toLowerCase().trim()))
+  const activeRecipients = recipients.filter(r => r && r.email && !alreadyEmailed.has(r.email.toLowerCase().trim()))
 
   await Promise.allSettled(
     activeRecipients.map(async (r) => {
@@ -234,7 +239,7 @@ async function executeCustomerInvoiceEmailAction(currentAction, run, companyName
   const shopProfileRes = await query(
     `SELECT shop_name, first_name, last_name, phone, gstin, email, address FROM shop_profiles 
      WHERE user_id::text = $1::text 
-        OR user_id = (SELECT workspace_owner_id FROM workspace_members WHERE member_email = $1 LIMIT 1)
+        OR user_id::text = (SELECT workspace_owner_id::text FROM workspace_members WHERE member_email = $1 LIMIT 1)
      LIMIT 1`,
     [targetUserId]
   ).catch(() => ({ rows: [] }))
@@ -298,15 +303,7 @@ async function executeCustomerInvoiceEmailAction(currentAction, run, companyName
     attachments
   }).catch(err => ({ data: null, error: err }))
 
-  const senderEmail = shop.email || process.env.SMTP_USER
-  if (senderEmail && senderEmail !== customerEmail) {
-    sendEmail({
-      to: senderEmail,
-      subject: `[Sender Copy] TAX INVOICE ${invNum} issued to ${customerName}`,
-      html: confirmationHtml,
-      attachments
-    }).catch(() => {})
-  }
+
 
   await query(
     `INSERT INTO emails (from_name, from_email, to_email, subject, body, preview, direction, user_id, created_at, updated_at)
@@ -340,7 +337,7 @@ async function executeCustomerDeclineEmailAction(currentAction, run, companyName
   const shopProfileRes = await query(
     `SELECT shop_name, first_name, last_name, phone, gstin, email, address FROM shop_profiles 
      WHERE user_id::text = $1::text 
-        OR user_id = (SELECT workspace_owner_id FROM workspace_members WHERE member_email = $1 LIMIT 1)
+        OR user_id::text = (SELECT workspace_owner_id::text FROM workspace_members WHERE member_email = $1 LIMIT 1)
      LIMIT 1`,
     [targetUserId]
   ).catch(() => ({ rows: [] }))

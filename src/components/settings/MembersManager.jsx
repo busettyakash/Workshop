@@ -368,8 +368,12 @@ export default function MembersManager() {
     }
     const full = {}
     MODULE_DEFINITIONS.forEach(m => {
+      let canRead = true
+      if (!isMemberAdmin) {
+        canRead = current[m.id] !== undefined ? current[m.id]?.read === true : m.id !== 'profit_margin'
+      }
       full[m.id] = {
-        read: isMemberAdmin ? true : (current[m.id] !== undefined ? current[m.id]?.read === true : m.id !== 'profit_margin'),
+        read: canRead,
         edit: isMemberAdmin ? true : (current[m.id]?.edit === true),
         delete: isMemberAdmin ? true : (current[m.id]?.delete === true)
       }

@@ -16,7 +16,14 @@ export default function ConfirmModal({
   if (!isOpen) return null
 
   return (
-    <div className="ws-modal-backdrop" onClick={onCancel} style={{ zIndex: 1010 }}>
+    <div 
+      className="ws-modal-backdrop" 
+      role="button" 
+      tabIndex={0} 
+      onClick={onCancel} 
+      onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') onCancel() }} 
+      style={{ zIndex: 1010 }}
+    >
       <div 
         className="ws-modal-card" 
         style={{ 

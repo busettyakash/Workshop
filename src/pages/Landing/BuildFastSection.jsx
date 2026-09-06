@@ -68,7 +68,7 @@ export default function BuildFastSection() {
               <div className="ws-build-detail-row">
                 <span>Company</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 500 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />{' '}
                   Electronics Hub
                 </span>
               </div>
@@ -97,7 +97,7 @@ export default function BuildFastSection() {
               <div className="ws-build-highlight-card">
                 <div className="ws-build-highlight-card-label">Company</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: '0.84rem' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />{' '}
                   Electronics Hub
                 </div>
                 <div style={{ fontSize: '0.74rem', color: 'var(--color-text-tertiary)', marginTop: 2 }}>Mumbai, India</div>

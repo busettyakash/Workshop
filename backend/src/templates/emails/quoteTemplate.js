@@ -134,7 +134,8 @@ function computeQuoteTotals(quote, items) {
   }
 }
 
-function buildQuoteItemRow(li, catalogMap, lineDiscounts, totalDiscount, grossSubtotal, taxAmt, halfTaxRate, totalItems) {
+function buildQuoteItemRow(li, catalogMap, totalsContext = {}) {
+  const { lineDiscounts, totalDiscount, grossSubtotal, taxAmt, halfTaxRate, totalItems } = totalsContext
   const qty = Number.parseFloat(li.quantity || li.qty || 1)
   const rate = Number.parseFloat(li.rate || li.price || 0)
   const disc = getExplicitLineDiscount(li)
@@ -186,7 +187,8 @@ function buildQuoteItemRows(items, catalogMap, lineDiscounts, totalDiscount, gro
       </tr>
     `
   }
-  return items.map(li => buildQuoteItemRow(li, catalogMap, lineDiscounts, totalDiscount, grossSubtotal, taxAmt, halfTaxRate, items.length)).join('')
+  const totalsContext = { lineDiscounts, totalDiscount, grossSubtotal, taxAmt, halfTaxRate, totalItems: items.length }
+  return items.map(li => buildQuoteItemRow(li, catalogMap, totalsContext)).join('')
 }
 
 export const getQuoteEmailTemplate = ({ quote, _itemsHtml, acceptUrl, declineUrl, issueDateFmt, validUntilFmt, catalogMap = {} }) => {

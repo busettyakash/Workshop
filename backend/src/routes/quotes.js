@@ -225,18 +225,18 @@ async function deductSingleItemForQuote(item, userId, quoteRef) {
 
   const noteDetail = buildQuoteStockDeductionNote(qty, rawUnit, isBaseUnit, bw, prod.unit)
 
-  await logStockHistory(
-    prod.id,
-    userId || 'default-user',
-    'deducted',
-    -qty,
-    currentStock,
-    newStock,
-    'Quote',
-    quoteRef ? String(quoteRef) : null,
-    noteDetail,
-    newLooseKg
-  ).catch(e => console.error('[Quote Stock History Log Error]', e.message))
+  await logStockHistory({
+    productId: prod.id,
+    userId: userId || 'default-user',
+    changeType: 'deducted',
+    qtyChange: -qty,
+    stockBefore: currentStock,
+    stockAfter: newStock,
+    source: 'Quote',
+    sourceRef: quoteRef ? String(quoteRef) : null,
+    notes: noteDetail,
+    looseKgAfter: newLooseKg
+  }).catch(e => console.error('[Quote Stock History Log Error]', e.message))
 }
 
 const decreaseProductStockForQuote = async (items, userId, quoteRef) => {

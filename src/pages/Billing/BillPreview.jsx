@@ -324,10 +324,10 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
             <span style={{ background: '#e2e8f0', color: '#334155', padding: '2px 8px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700 }}>{docId}</span>
           </div>
           <div className="bp-toolbar-actions">
-            <button className="bp-btn" onClick={handlePrint}>
+            <button type="button" className="bp-btn" onClick={handlePrint}>
               <Printer size={15} /> Print / Save PDF
             </button>
-            <button className="bp-close" onClick={onClose} title="Close Preview">
+            <button type="button" className="bp-close" onClick={onClose} title="Close Preview">
               <X size={16} />
             </button>
           </div>
@@ -477,7 +477,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                         : 0)
 
                     return (
-                      <tr key={i}>
+                      <tr key={it.id || `${it.product_id || 'item'}-${i}`}>
                         <td style={{ fontWeight: 600, color: '#475569', fontSize: 10, fontFamily: 'monospace' }}>{hsnCode}</td>
                         <td>
                           <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 11 }}>{prodName}</div>

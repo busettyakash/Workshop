@@ -16,7 +16,7 @@ import '../Products/Products.css'
 const limit = 20
 
 function formatCurrency(value) {
-  return (Number.parseFloat(value || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata',
+  return (Number.parseFloat(value || 0)).toLocaleString('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 2,
@@ -38,6 +38,33 @@ function parseOrderLineItems(value) {
     return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
+  }
+}
+
+function formatOrderNumber(order) {
+  if (order?.order_number && !order.order_number.startsWith('QT-')) {
+    return order.order_number
+  }
+  const suffix = order?.quote_number ? order.quote_number.replace(/^QT-?/i, '') : (order?.id || '')
+  return `ORD-${suffix}`
+}
+
+const SORT_LABELS = {
+  order_asc: 'A-Z',
+  order_desc: 'Z-A',
+  amount_desc: 'Amount',
+}
+
+function getNextSort(current) {
+  switch (current) {
+    case 'order_asc':
+      return 'order_desc'
+    case 'order_desc':
+      return 'amount_desc'
+    case 'amount_desc':
+      return ''
+    default:
+      return 'order_asc'
   }
 }
 
@@ -121,7 +148,7 @@ function OrderComparisonModal({ orders, onClose, onRemoveOrder, onClearAll }) {
                 <tr>
                   <th className="attr-col">Order Details</th>
                   {orderData.map(o => {
-                    const orderNum = o.order_number && !o.order_number.startsWith('QT-') ? o.order_number : `ORD-${o.quote_number ? o.quote_number.replace(/^QT-?/i, '') : o.id}`
+                    const orderNum = formatOrderNumber(o)
                     return (
                       <th key={`${o.source || 'ord'}-${o.id}`} className="product-col" style={{ background: '#ffffff', position: 'relative' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -424,10 +451,9 @@ export default function Orders() {
                 </div>
 
                 <button
+                  type="button"
                   className="attio-btn"
-                  onClick={() => {
-                    setSort(prev => prev === 'order_asc' ? 'order_desc' : prev === 'order_desc' ? 'amount_desc' : prev === 'amount_desc' ? '' : 'order_asc')
-                  }}
+                  onClick={() => setSort(prev => getNextSort(prev))}
                   style={{
                     background: sort ? '#f1f5f9' : '#ffffff',
                     borderColor: sort ? '#0f172a' : '#cbd5e1',
@@ -435,7 +461,7 @@ export default function Orders() {
                   }}
                 >
                   <ArrowUpDown size={13} />
-                  Sort {sort === 'order_asc' ? 'A-Z' : sort === 'order_desc' ? 'Z-A' : sort === 'amount_desc' ? 'Amount' : ''}
+                  Sort {SORT_LABELS[sort] || ''}
                 </button>
 
               </div>
@@ -492,7 +518,7 @@ export default function Orders() {
                             <td>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <span style={{ fontWeight: 700, color: '#2563eb', fontSize: '0.78rem', fontFamily: 'monospace' }}>
-                                  {row.order_number && !row.order_number.startsWith('QT-') ? row.order_number : `ORD-${row.quote_number ? row.quote_number.replace(/^QT-?/i, '') : row.id}`}
+                                  {formatOrderNumber(row)}
                                 </span>
                                 <span style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 500 }}>
                                   From accepted quotation

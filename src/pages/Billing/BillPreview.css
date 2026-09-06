@@ -57,9 +57,9 @@
 .bp-close {
   display: flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; border-radius: 8px; border: none;
-  background: #f1f5f9; color: #64748b; cursor: pointer; transition: all 0.15s;
+  background: #f1f5f9; color: #475569; cursor: pointer; transition: all 0.15s;
 }
-.bp-close:hover { background: #fee2e2; color: #ef4444; }
+.bp-close:hover { background: #fee2e2; color: #b91c1c; }
 
 .bp-scroll {
   flex: 1;

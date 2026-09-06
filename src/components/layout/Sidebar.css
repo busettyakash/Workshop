@@ -204,7 +204,7 @@
   padding: 1px 5px;
   font-size: 0.63rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #ffffff;
   font-family: inherit;
   line-height: 1.2;
   text-transform: uppercase;
@@ -678,7 +678,7 @@
 
 .ws-sb-chat-delete-btn:hover {
   background: #fee2e2;
-  color: #ef4444 !important;
+  color: #b91c1c !important;
 }
 
 .ws-sb-allchats-item:hover {

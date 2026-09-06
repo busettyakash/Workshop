@@ -20,7 +20,10 @@ const Input = forwardRef(({
   const inputId = id || `input-${autoId}`
   const [showPassword, setShowPassword] = useState(false)
   const isPassword = type === 'password'
-  const actualType = isPassword ? (showPassword ? 'text' : 'password') : type
+  let actualType = type
+  if (isPassword) {
+    actualType = showPassword ? 'text' : 'password'
+  }
 
   return (
     <div className={`ws-input-group ${error ? 'ws-input-group--error' : ''} ${className}`}>
@@ -39,7 +42,7 @@ const Input = forwardRef(({
           style={{ paddingRight: isPassword ? 36 : undefined }}
           {...rest}
         />
-        {isPassword ? (
+        {isPassword && (
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
@@ -52,9 +55,10 @@ const Input = forwardRef(({
           >
             {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
           </button>
-        ) : suffix ? (
+        )}
+        {!isPassword && suffix && (
           <span className="ws-input-suffix">{suffix}</span>
-        ) : null}
+        )}
       </div>
       {error && <p className="ws-input-error">{error}</p>}
       {hint && !error && <p className="ws-input-hint">{hint}</p>}

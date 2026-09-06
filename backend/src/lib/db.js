@@ -84,11 +84,12 @@ pool.on('connect', () => {
 })
 
 // Warm up the pool immediately so queries never hit cold TLS handshake delay
-pool.query('SELECT 1').then(() => {
+try {
+  await pool.query('SELECT 1')
   if (isDevelopment) console.log('[DB] Pool warm & ready ✅')
-}).catch(err => {
+} catch (err) {
   console.warn('[DB Warmup Warning]', err.message)
-})
+}
 
 let poolClosed = false
 const closePool = async () => {

@@ -80,7 +80,24 @@ async function logPriceHistory(productId, userId, oldPrice, newPrice, effectiveD
   }
 }
 
-export async function logStockHistory(productId, userId, changeType, qtyChange, stockBefore, stockAfter, source, sourceRef, notes, looseKgAfter = null) {
+export async function logStockHistory(paramsOrProductId, ...rest) {
+  const opts = (typeof paramsOrProductId === 'object' && paramsOrProductId !== null)
+    ? paramsOrProductId
+    : {
+        productId: paramsOrProductId,
+        userId: rest[0],
+        changeType: rest[1],
+        qtyChange: rest[2],
+        stockBefore: rest[3],
+        stockAfter: rest[4],
+        source: rest[5],
+        sourceRef: rest[6],
+        notes: rest[7],
+        looseKgAfter: rest[8] ?? null
+      }
+
+  const { productId, userId, changeType, qtyChange, stockBefore, stockAfter, source, sourceRef, notes, looseKgAfter } = opts
+
   try {
     await query(`ALTER TABLE product_stock_history ADD COLUMN IF NOT EXISTS loose_kg_after NUMERIC(10, 2)`).catch(() => {})
     await query(

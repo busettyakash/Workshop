@@ -668,30 +668,38 @@ export const DEFAULT_WORKFLOW_TEMPLATE = {
 }
 
 // Lightweight backfill: Only restore workflows that are completely empty/null (not user-customized ones)
-query(`
-  UPDATE workflows 
-  SET nodes = $1
-  WHERE nodes IS NULL 
-     OR nodes::text = '{}' 
-     OR nodes::text = 'null'
-     OR nodes->'acceptedSteps' IS NULL
-`, [JSON.stringify(DEFAULT_WORKFLOW_TEMPLATE)]).catch(e => console.warn('[Workflow Migration Notice]', e.message))
+try {
+  await query(`
+    UPDATE workflows 
+    SET nodes = $1
+    WHERE nodes IS NULL 
+       OR nodes::text = '{}' 
+       OR nodes::text = 'null'
+       OR nodes->'acceptedSteps' IS NULL
+  `, [JSON.stringify(DEFAULT_WORKFLOW_TEMPLATE)])
+} catch (e) {
+  console.warn('[Workflow Migration Notice]', e.message)
+}
 
 // Single-active workflow enforcement: de-duplicate any legacy rows so only the latest remains Live
-query(`
-  WITH ranked_live AS (
-    SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC, id DESC) as rn
-    FROM workflows
-    WHERE is_live = true
-  )
-  UPDATE workflows
-  SET is_live = false, updated_at = NOW()
-  WHERE id IN (SELECT id FROM ranked_live WHERE rn > 1)
-`).then(() => {
-  redis.keys('workflows:list:*').then(keys => {
-    if (keys && keys.length) redis.del(keys).catch(() => {})
-  }).catch(() => {})
-}).catch(e => console.warn('[Workflow Single-Live Migration Notice]', e.message))
+try {
+  await query(`
+    WITH ranked_live AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC, id DESC) as rn
+      FROM workflows
+      WHERE is_live = true
+    )
+    UPDATE workflows
+    SET is_live = false, updated_at = NOW()
+    WHERE id IN (SELECT id FROM ranked_live WHERE rn > 1)
+  `)
+  const wfListKeys = await redis.keys('workflows:list:*').catch(() => [])
+  if (wfListKeys && wfListKeys.length) {
+    await redis.del(wfListKeys).catch(() => {})
+  }
+} catch (e) {
+  console.warn('[Workflow Single-Live Migration Notice]', e.message)
+}
 
 /* GET /api/workflows */
 router.get('/', async (req, res) => {

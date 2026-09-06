@@ -564,7 +564,7 @@ export default function Settings() {
                   Profile
                 </h1>
                 <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  Manage your personal details.
+                  Manage your personal details.{' '}
                   <a href="#" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 500 }} onClick={e => e.preventDefault()}>
                     Learn more ↗
                   </a>
@@ -833,7 +833,7 @@ export default function Settings() {
                   General
                 </h1>
                 <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  Change the settings for your current workspace.
+                  Change the settings for your current workspace.{' '}
                   <a href="#" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 500 }} onClick={e => e.preventDefault()}>
                     Learn more ↗
                   </a>

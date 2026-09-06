@@ -665,39 +665,37 @@ const calcMaxStock = (prod, itemUnit) => {
 
           {/* ── Stepper Navigation Bar (Increased box sizes by 2%) ── */}
           <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto 16px', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 12 }}>
-            <div 
-              role="button"
-              tabIndex={0}
+            <button 
+              type="button"
               onClick={() => setStep(1)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setStep(1) }}
               style={{ 
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
-                background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
+                background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`,
+                fontFamily: 'inherit', textAlign: 'left'
               }}
             >
               <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 1 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>1</div>
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 1 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
                 Step 1: Add Products & Customer
               </div>
-            </div>
+            </button>
 
             <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-            <div 
-              role="button"
-              tabIndex={0}
+            <button 
+              type="button"
               onClick={() => { if (lineItems.length > 0) setStep(2) }}
-              onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && lineItems.length > 0) setStep(2) }}
               style={{ 
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
-                background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
+                background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`,
+                fontFamily: 'inherit', textAlign: 'left'
               }}
             >
               <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 2 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>2</div>
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 2 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
                 Step 2: Payment, Tax & Finalize
               </div>
-            </div>
+            </button>
           </div>
 
           {step === 1 ? (
@@ -735,7 +733,7 @@ const calcMaxStock = (prod, itemUnit) => {
                         const bulkUnit = getBulkUnitDetails(li.unit)
 
                         return (
-                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 100px 80px 100px 32px', gap: 10, padding: '10px 0', borderBottom: '1px solid #f9fafb', alignItems: 'center' }}>
+                          <div key={li.product_id || `line-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 100px 80px 100px 32px', gap: 10, padding: '10px 0', borderBottom: '1px solid #f9fafb', alignItems: 'center' }}>
                             <div>
                               <span style={{ fontSize: '0.84rem', fontWeight: 500, color: '#111827', display: 'block' }}>{li.name}</span>
                               {bulkUnit && productObj && (
@@ -834,56 +832,72 @@ const calcMaxStock = (prod, itemUnit) => {
                       <>
                         {/* Full-width Searchable Dropdown trigger */}
                         <div ref={custDropdownRef} style={{ position: 'relative', width: '100%' }}>
-                          <button
-                            type="button"
-                            onClick={() => setShowCustDropdown(v => !v)}
-                            style={{
-                              width: '100%', boxSizing: 'border-box',
-                              height: 38, padding: '0 12px',
-                              border: `1px solid ${errors.customer_id ? '#dc2626' : (form.customer_id === null ? '#2563eb' : (selectedCustomer ? '#10b981' : '#d1d5db'))}`,
-                              borderRadius: '8px', outline: 'none',
-                              cursor: 'pointer', display: 'flex',
-                              justify: 'space-between', alignItems: 'center',
-                              background: form.customer_id === null ? '#eff6ff' : (selectedCustomer ? '#f0fdf4' : '#fff'),
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            <span style={{
-                              flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                              fontSize: '0.8125rem',
-                              fontWeight: (selectedCustomer || form.customer_id === null) ? 600 : 400,
-                              color: form.customer_id === null ? '#1d4ed8' : (selectedCustomer ? '#15803d' : '#64748b'),
-                              textAlign: 'left',
-                              display: 'flex', alignItems: 'center', gap: 6
-                            }}>
-                              {form.customer_id === null ? (
-                                <>
-                                  <User size={13} style={{ flexShrink: 0 }} />
-                                  <span>Walk-in Customer Selected</span>
-                                </>
-                              ) : (
-                                selectedCustomer
-                                  ? `✓ ${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
-                                  : 'Search & select customer...'
-                              )}
-                            </span>
-                            {(form.customer_id !== '' && form.customer_id !== undefined) ? (
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setForm(prev => ({ ...prev, customer_id: '' }))
+                          {(() => {
+                            let triggerBorder = '#d1d5db'
+                            let triggerBg = '#fff'
+                            let triggerColor = '#64748b'
+                            if (errors.customer_id) {
+                              triggerBorder = '#dc2626'
+                            } else if (form.customer_id === null) {
+                              triggerBorder = '#2563eb'
+                              triggerBg = '#eff6ff'
+                              triggerColor = '#1d4ed8'
+                            } else if (selectedCustomer) {
+                              triggerBorder = '#10b981'
+                              triggerBg = '#f0fdf4'
+                              triggerColor = '#15803d'
+                            }
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setShowCustDropdown(v => !v)}
+                                style={{
+                                  width: '100%', boxSizing: 'border-box',
+                                  height: 38, padding: '0 12px',
+                                  border: `1px solid ${triggerBorder}`,
+                                  borderRadius: '8px', outline: 'none',
+                                  cursor: 'pointer', display: 'flex',
+                                  justifyContent: 'space-between', alignItems: 'center',
+                                  background: triggerBg,
+                                  fontFamily: 'inherit',
                                 }}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setForm(prev => ({ ...prev, customer_id: '' })) } }}
-                                style={{ cursor: 'pointer', opacity: 0.7, padding: 2, display: 'flex', color: 'inherit' }}
                               >
-                                <X size={13} />
-                              </span>
-                            ) : (
-                              <ChevronDown size={14} color="#9ca3af" style={{ flexShrink: 0, marginLeft: 8 }} />
-                            )}
-                          </button>
+                                <span style={{
+                                  flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  fontSize: '0.8125rem',
+                                  fontWeight: (selectedCustomer || form.customer_id === null) ? 600 : 400,
+                                  color: triggerColor,
+                                  textAlign: 'left',
+                                  display: 'flex', alignItems: 'center', gap: 6
+                                }}>
+                                  {form.customer_id === null ? (
+                                    <>
+                                      <User size={13} style={{ flexShrink: 0 }} />
+                                      <span>Walk-in Customer Selected</span>
+                                    </>
+                                  ) : (
+                                    selectedCustomer
+                                      ? `✓ ${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
+                                      : 'Search & select customer...'
+                                  )}
+                                </span>
+                                {(form.customer_id !== '' && form.customer_id !== undefined) ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setForm(prev => ({ ...prev, customer_id: '' }))
+                                    }}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.7, padding: 2, display: 'flex', color: 'inherit' }}
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                ) : (
+                                  <ChevronDown size={14} color="#9ca3af" style={{ flexShrink: 0, marginLeft: 8 }} />
+                                )}
+                              </button>
+                            )
+                          })()}
 
                           {/* Absolute Dropdown list */}
                           {showCustDropdown && (
@@ -1388,7 +1402,7 @@ const calcMaxStock = (prod, itemUnit) => {
                     </p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
                       {lineItems.map((li, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
+                        <div key={li.product_id || `cart-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 6 }}>
                             <span style={{ fontWeight: 500, color: '#111827', display: 'block' }}>{li.name}</span>
                             <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>{li.qty} {li.unit} × {INR(li.price)}</span>

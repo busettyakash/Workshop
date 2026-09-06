@@ -859,9 +859,8 @@ export default function BusinessMetrics({
                           )}
 
                           {!isDrilldown && (
-                            <div 
-                              role="button"
-                              tabIndex={0}
+                            <button 
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 setPinnedBar(null)
@@ -869,17 +868,10 @@ export default function BusinessMetrics({
                                 const catToUse = (tip?.product && tip.product !== 'N/A') ? tip.product : (displaySeries[0]?.label || 'Grains')
                                 setSelectedCategory(catToUse)
                               }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  setPinnedBar(null)
-                                  setHoveredBar(null)
-                                  const catToUse = (tip?.product && tip.product !== 'N/A') ? tip.product : (displaySeries[0]?.label || 'Grains')
-                                  setSelectedCategory(catToUse)
-                                }
-                              }}
                               style={{
+                                width: '100%',
+                                background: 'none',
+                                border: 'none',
                                 marginTop: 6,
                                 paddingTop: 6,
                                 borderTop: '1px solid #e2e8f0',
@@ -890,11 +882,12 @@ export default function BusinessMetrics({
                                 fontSize: '0.72rem',
                                 fontWeight: 600,
                                 color: '#2563eb',
-                                cursor: 'pointer'
+                                cursor: 'pointer',
+                                fontFamily: 'inherit'
                               }}
                             >
-                              Click to view product breakdown →
-                            </div>
+                              Click to drilldown →
+                            </button>
                           )}
                         </div>
                       )}

@@ -106,7 +106,7 @@ function computeInvoiceTax({ grossSubtotalVal, totalDiscountVal, totalAmount, bi
   return { netTaxableVal, realTaxAmt, halfRate }
 }
 
-function resolveInvoiceParties(shop = {}, quote, bill) {
+function resolveInvoiceParties(quote, bill, shop = {}) {
   const sellerName = shop.shop_name || quote?.shop_name || bill?.shop_name || (shop.first_name ? `${shop.first_name}'s Store` : 'Store')
   const sellerPhone = shop.phone || bill?.shop_phone || ''
   const sellerGstin = shop.gstin || bill?.shop_gstin || ''
@@ -226,7 +226,7 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const {
     sellerName, sellerPhone, sellerGstin, sellerAddress,
     customerName, customerGstin, customerAddress, customerPhone, customerCompany
-  } = resolveInvoiceParties(shop, quote, bill)
+  } = resolveInvoiceParties(quote, bill, shop)
 
   const invNum = bill?.bill_number || quote?.quote_number || `INV-${Math.floor(100000 + Math.abs(Math.sin(bill?.id || 1) * 899999))}`
   const orderNum = bill?.order_number || quote?.order_number || ''

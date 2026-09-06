@@ -44,7 +44,9 @@
 
 .ws-dash-body {
   flex: 1;
-  padding: 28px 32px;
+  background: #ffffff !important;
+  padding: 20px 16px !important;
+  min-height: calc(100vh - 60px) !important;
   overflow-y: auto;
   min-width: 0;
   scrollbar-width: thin;
@@ -2507,22 +2509,6 @@
   min-width: 52px;
 }
 
-.ws-typing-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #9ca3af;
-  animation: typingBounce 1.3s ease-in-out infinite;
-  display: inline-block;
-}
-
-.ws-typing-dot:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.ws-typing-dot:nth-child(3) {
-  animation-delay: 0.3s;
-}
 
 @keyframes typingBounce {
 
@@ -2936,25 +2922,6 @@
   border-color: var(--color-gray-300);
 }
 
-.ws-table-btn--primary {
-  background: #2563eb !important;
-  color: #fff !important;
-  border-color: #2563eb !important;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2) !important;
-}
-
-.ws-table-btn--primary:hover,
-.ws-table-btn--primary:active,
-.ws-table-btn--primary:focus {
-  background: #2563eb !important;
-  border-color: #2563eb !important;
-  color: #fff !important;
-  outline: none !important;
-}
-
-.ws-table-wrap {
-  overflow-x: auto;
-}
 
 /* Checkbox design */
 .ws-table-checkbox {
@@ -3161,12 +3128,6 @@ button.attio-page-btn.active {
 }
 
 /* Pure White Seamless Layout across All Pages (No grey background, No card borders) */
-.ws-dash-body {
-  background: #ffffff !important;
-  padding: 20px 16px !important;
-  min-height: calc(100vh - 60px) !important;
-}
-
 .ws-dash-body-split {
   padding: 0 !important;
 }

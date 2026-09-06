@@ -449,18 +449,18 @@ async function deductStockForItem(item, userId, billId) {
 
   const noteDetail = buildStockDeductionNote(isBaseUnit, bw, qty, rawUnit, prod.unit)
 
-  await logStockHistory(
-    prod.id,
-    userId || 'default-user',
-    'deducted',
-    -qty,
-    currentStock,
-    newStock,
-    'Bill',
-    billId || null,
-    noteDetail,
-    newLooseKg
-  ).catch(e => console.warn('[Stock History Log Error]', e.message))
+  await logStockHistory({
+    productId: prod.id,
+    userId: userId || 'default-user',
+    changeType: 'deducted',
+    qtyChange: -qty,
+    stockBefore: currentStock,
+    stockAfter: newStock,
+    source: 'Bill',
+    sourceRef: billId || null,
+    notes: noteDetail,
+    looseKgAfter: newLooseKg
+  }).catch(e => console.warn('[Stock History Log Error]', e.message))
 }
 
 async function deductStockForBillItems(items, userId, billId) {

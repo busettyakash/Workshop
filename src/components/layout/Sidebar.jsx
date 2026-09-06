@@ -590,20 +590,17 @@ function SidebarInviteModal({
                   gap: '4px',
                   marginTop: '4px'
                 }}>
-                  <div
-                    role="button"
-                    tabIndex={0}
+                  <button
+                    type="button"
                     onClick={() => {
                       setInviteRole('Member')
                       setRoleDropdownOpen(false)
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setInviteRole('Member')
-                        setRoleDropdownOpen(false)
-                      }
-                    }}
                     style={{
+                      width: '100%',
+                      border: 'none',
+                      fontFamily: 'inherit',
+                      textAlign: 'left',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -619,22 +616,19 @@ function SidebarInviteModal({
                       <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Can access designated workspace modules</span>
                     </div>
                     {inviteRole === 'Member' && <Check size={16} color="#6366f1" />}
-                  </div>
+                  </button>
 
-                  <div
-                    role="button"
-                    tabIndex={0}
+                  <button
+                    type="button"
                     onClick={() => {
                       setInviteRole('Admin')
                       setRoleDropdownOpen(false)
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setInviteRole('Admin')
-                        setRoleDropdownOpen(false)
-                      }
-                    }}
                     style={{
+                      width: '100%',
+                      border: 'none',
+                      fontFamily: 'inherit',
+                      textAlign: 'left',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -647,10 +641,10 @@ function SidebarInviteModal({
                   >
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>Admin</span>
-                      <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Full access to settings and all modules</span>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Full access to all modules and configurations</span>
                     </div>
                     {inviteRole === 'Admin' && <Check size={16} color="#6366f1" />}
-                  </div>
+                  </button>
                 </div>
               )}
             </div>
@@ -813,14 +807,16 @@ function SidebarSearchModal({
             filteredSearchItems.map((item, idx) => {
               const isSelected = idx === selectedIndex
               return (
-                <div
+                <button
                   key={item.label}
-                  role="button"
-                  tabIndex={0}
+                  type="button"
                   onClick={() => onExecuteItem(item)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onExecuteItem(item) }}
                   onMouseEnter={() => setSelectedIndex(idx)}
                   style={{
+                    width: '100%',
+                    border: 'none',
+                    fontFamily: 'inherit',
+                    textAlign: 'left',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -853,7 +849,7 @@ function SidebarSearchModal({
                       <span style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: 600 }}>↵</span>
                     )}
                   </div>
-                </div>
+                </button>
               )
             })
           )}

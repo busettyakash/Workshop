@@ -16,13 +16,13 @@ export default function ProductsTable() {
           <p className="ws-table-sub">Your latest inventory snapshot</p>
         </div>
         <div className="ws-table-actions">
-          <button className="ws-table-btn">
+          <button type="button" className="ws-table-btn">
             <Filter size={13} /> Filter
           </button>
-          <button className="ws-table-btn">
+          <button type="button" className="ws-table-btn">
             <ArrowUpDown size={13} /> Sort
           </button>
-          <button className="ws-table-btn ws-table-btn--primary">
+          <button type="button" className="ws-table-btn ws-table-btn--primary">
             <Plus size={13} /> Add Product
           </button>
         </div>

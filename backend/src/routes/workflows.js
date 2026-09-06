@@ -532,7 +532,7 @@ setLocalStepRunner(executeWorkflowPipeline)
    Must be declared BEFORE router.use(requireAuth) because QStash calls
    this endpoint directly with an HMAC/JWT signature header instead of JWT auth.
 ───────────────────────────────────────────────────────────── */
-router.post('/qstash-callback', verifyQStashSignature, async (req, res) => {
+router.post('/qstash-callback', apiLimiter, verifyQStashSignature, async (req, res) => {
   const payload = req.body || {}
   const runId = payload.runId
   const step = Number(payload.step) || 1

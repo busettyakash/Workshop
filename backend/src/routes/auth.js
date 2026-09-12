@@ -53,6 +53,8 @@ async function ensureWorkspaceTable() {
       UNIQUE (workspace_owner_id, member_email)
     );
     ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE workspace_members NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE workspace_members DISABLE ROW LEVEL SECURITY;
   `).catch(err => console.error('[DB] Error ensuring workspace_members table:', err.message))
 
   await query(`
@@ -62,6 +64,8 @@ async function ensureWorkspaceTable() {
     ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
     ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(50);
     ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT;
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
   `).catch(err => console.error('[DB] Error ensuring columns on shop_profiles:', err.message))
 }
 
@@ -888,6 +892,15 @@ router.post('/login', authLimiter, async (req, res) => {
       try {
         const { data, error } = await insforge.auth.signInWithPassword({ email, password })
         if (error) {
+          const isInvitedMember = await query(
+            'SELECT 1 FROM workspace_members WHERE LOWER(member_email) = LOWER($1) LIMIT 1',
+            [email]
+          ).then(r => r.rows.length > 0).catch(() => false)
+
+          if (isInvitedMember) {
+            return res.status(401).json({ message: 'Invalid email or password.' })
+          }
+
           // Only return "no account" if not in shop_profiles AND not in InsForge
           if (!prof) {
             return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })
@@ -942,6 +955,15 @@ router.post('/login', authLimiter, async (req, res) => {
         }
       } catch (authErr) {
         console.warn('[InsForge Auth SignIn Notice]', authErr.message)
+        const isInvitedMember = await query(
+          'SELECT 1 FROM workspace_members WHERE LOWER(member_email) = LOWER($1) LIMIT 1',
+          [email]
+        ).then(r => r.rows.length > 0).catch(() => false)
+
+        if (isInvitedMember) {
+          return res.status(401).json({ message: 'Invalid email or password.' })
+        }
+
         if (!prof) {
           return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })
         }

@@ -924,7 +924,7 @@ router.post('/login', authLimiter, async (req, res) => {
               [email, userId, shopName, firstName, lastName]
             ).catch(err => console.error('[Login] Auto-create profile error:', err.message))
 
-            console.log(`[Login] Auto-created shop_profiles for invited member: ${email}`)
+            console.log(`[Login] Auto-created shop_profiles for invited member: ${email.replace(/[\r\n]/g, '_')}`)
           } else {
             // Not invited, not registered locally — truly no account
             return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })

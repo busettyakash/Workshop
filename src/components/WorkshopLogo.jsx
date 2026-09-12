@@ -1,6 +1,6 @@
 import React from 'react'
 
-const WorkshopLogo = ({ size = 24, className = '' }) => {
+const WorkshopLogo = ({ size = 24, className = '', color = '#2563eb' }) => {
   return (
     <svg
       width={size}
@@ -15,17 +15,17 @@ const WorkshopLogo = ({ size = 24, className = '' }) => {
       <rect
         x="3" y="6" width="4.5" height="14" rx="2.25"
         transform="rotate(-15 3 6)"
-        fill="currentColor"
+        fill={color}
       />
       <rect
         x="10.5" y="8" width="4.5" height="10" rx="2.25"
         transform="rotate(-15 10.5 8)"
-        fill="currentColor"
+        fill={color}
       />
       <rect
         x="18" y="10" width="4.5" height="7" rx="2.25"
         transform="rotate(-15 18 10)"
-        fill="currentColor"
+        fill={color}
       />
     </svg>
   )

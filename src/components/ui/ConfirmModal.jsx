@@ -7,13 +7,22 @@ export default function ConfirmModal({
   message = 'Are you sure you want to perform this action?', 
   confirmLabel = 'Delete', 
   cancelLabel = 'Cancel', 
+  confirmBg = '#dc2626',
+  confirmHoverBg = '#b91c1c',
+  icon = null,
   onConfirm, 
   onCancel 
 }) {
   if (!isOpen) return null
 
   return (
-    <div className="ws-modal-backdrop" onClick={onCancel} style={{ zIndex: 1010 }}>
+    <div 
+      className="ws-modal-backdrop" 
+      aria-hidden="true"
+      onClick={onCancel} 
+      onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') onCancel() }} 
+      style={{ zIndex: 1010 }}
+    >
       <div 
         className="ws-modal-card" 
         style={{ 
@@ -29,9 +38,13 @@ export default function ConfirmModal({
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#fee2e2', color: '#ef4444' }}>
-              <AlertTriangle size={15} />
-            </div>
+            {icon ? (
+              icon
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#fee2e2', color: '#ef4444' }}>
+                <AlertTriangle size={15} />
+              </div>
+            )}
             <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#111827', margin: 0 }}>{title}</h3>
           </div>
           <button 
@@ -81,7 +94,7 @@ export default function ConfirmModal({
               padding: '0 16px', 
               border: 'none', 
               borderRadius: '8px', 
-              background: '#dc2626', 
+              background: confirmBg, 
               color: '#ffffff', 
               fontSize: '0.8125rem', 
               fontWeight: 600, 
@@ -89,8 +102,8 @@ export default function ConfirmModal({
               transition: 'background 0.15s',
               fontFamily: 'inherit'
             }}
-            onMouseEnter={e => e.currentTarget.style.background = '#b91c1c'}
-            onMouseLeave={e => e.currentTarget.style.background = '#dc2626'}
+            onMouseEnter={e => e.currentTarget.style.background = confirmHoverBg}
+            onMouseLeave={e => e.currentTarget.style.background = confirmBg}
           >
             {confirmLabel}
           </button>

@@ -3,6 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
+import { getCached, setCached, deleteMemoryCache } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(apiLimiter)
@@ -10,6 +11,7 @@ router.use(requireAuth)
 
 const clearNotesCache = async (userId) => {
   try {
+    deleteMemoryCache(`notes:${userId}:`)
     const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
     for (const key of keys) {
       await redis.del(key).catch(() => {})
@@ -38,7 +40,17 @@ const ensureTable = async () => {
   await query(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS attachment_name TEXT`).catch(() => {})
   await query(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS attachment_data TEXT`).catch(() => {})
 }
-ensureTable().catch(console.error)
+
+let ensureTablePromise
+router.use((_req, _res, next) => {
+  if (!ensureTablePromise) {
+    ensureTablePromise = ensureTable().catch((err) => {
+      ensureTablePromise = null
+      console.warn('[Notes Table Init Warning]', err.message)
+    })
+  }
+  next()
+})
 
 /* GET /api/notes */
 router.get('/', async (req, res) => {
@@ -54,7 +66,7 @@ router.get('/', async (req, res) => {
 
   const cacheKey = `notes:${userId}:${search || ''}`
   try {
-    const cached = await redis.get(cacheKey).catch(() => null)
+    const cached = await getCached(redis, cacheKey, 100)
     if (cached) {
       return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
     }
@@ -68,11 +80,7 @@ router.get('/', async (req, res) => {
       params
     )
     const resultPayload = { data: rows, total: rows.length }
-    try {
-      await redis.set(cacheKey, JSON.stringify(resultPayload), { ex: 300 }).catch(() => {})
-    } catch (cErr) {
-      console.error('[Notes Cache Write Error]', cErr.message)
-    }
+    setCached(redis, cacheKey, resultPayload, 300)
     res.json(resultPayload)
   } catch (err) {
     res.status(500).json({ error: err.message })

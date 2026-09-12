@@ -3,18 +3,26 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Trash2, Loader2, Search, Filter, ArrowUpDown } from 'lucide-react'
+import { Trash2, Loader2, Search, Filter, ArrowUpDown, Eye } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import TablePagination from '../../components/ui/TablePagination'
+import BillPreview from '../Billing/BillPreview'
+import { useNavigate } from 'react-router'
+import { getFirstAccessibleRoute, usePermissions } from '../../utils/permissionUtils'
 
 export default function PaidBills() {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  const { canRead, canDelete } = usePermissions('paid')
   
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)
+  const [previewBill, setPreviewBill] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, displayId: '' })
 
   const [page, setPage] = useState(1)
@@ -24,6 +32,22 @@ export default function PaidBills() {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState('') // '' (default), 'id_asc', 'id_desc', 'amount_asc', 'amount_desc'
   const [showFilterBar, setShowFilterBar] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
+
+  const isAllSelected = bills.length > 0 && selectedIds.length === bills.length
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedIds(bills.map(b => b.id))
+    } else {
+      setSelectedIds([])
+    }
+  }
+
+  const handleSelectRow = (id) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    )
+  }
 
   const totalPages = Math.ceil(total / limit) || 1
   const getPageNumbers = () => {
@@ -43,9 +67,13 @@ export default function PaidBills() {
   }
 
   useEffect(() => {
+    if (!canRead) {
+      navigate(getFirstAccessibleRoute(), { replace: true })
+      return
+    }
     dispatch(setActiveNav('Paid'))
     fetchPaidBills(page)
-  }, [dispatch, page, search, sort])
+  }, [dispatch, page, search, sort, canRead])
 
   const fetchPaidBills = async (currentPage = page) => {
     setLoading(true)
@@ -54,6 +82,7 @@ export default function PaidBills() {
       setBills(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to load paid bills', type: 'error' }))
     } finally {
       setLoading(false)
@@ -68,6 +97,7 @@ export default function PaidBills() {
       setBills(prev => prev.filter(b => b.id !== id))
       dispatch(addToast({ message: 'Bill record deleted successfully', type: 'success' }))
     } catch (err) {
+      console.error(err)
       dispatch(addToast({ message: 'Failed to delete bill record', type: 'error' }))
     }
   }
@@ -78,7 +108,13 @@ export default function PaidBills() {
 
   const formatDate = (d) => {
     if (!d) return '—'
-    return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    let s = String(d).trim()
+    if (!s.endsWith('Z') && !/[+-]\d{2}(:?\d{2})?$/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+      s = s.replace(' ', 'T') + 'Z'
+    }
+    const parsed = new Date(s)
+    const validDate = Number.isNaN(parsed.getTime()) ? new Date(d) : parsed
+    return validDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   return (
@@ -87,84 +123,69 @@ export default function PaidBills() {
       <div className={`ws-dash-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <Topbar />
         <main className="ws-dash-body">
-          <div className="ws-dash-greeting">Paid Invoices</div>
-
-          <div className="ws-table-section" style={{ minHeight: 'calc(100vh - 240px)', display: 'flex', flexDirection: 'column' }}>
-            <div className="ws-table-header" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h2 className="ws-table-title">Paid Invoices</h2>
-                  <p className="ws-table-sub">{total} paid invoices total</p>
+          <div className="attio-products-container">
+            {/* Top Toolbar */}
+            <div className="ws-unified-page-header">
+              <div className="ws-unified-header-left">
+                <span className="ws-unified-header-title">Paid Invoices</span>
+                <span className="ws-unified-header-badge">{total} paid</span>
+              </div>
+              <div className="ws-unified-header-actions">
+                {/* Search box */}
+                <div className="attio-search-box">
+                  <Search size={14} className="attio-search-icon" />
+                  <input
+                    type="text"
+                    className="attio-input-search"
+                    placeholder="Search invoices..."
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                  />
                 </div>
-                <div className="ws-table-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {/* Search box */}
-                  <div style={{ position: 'relative' }}>
-                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                    <input
-                      type="text"
-                      placeholder="Search invoices..."
-                      value={search}
-                      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                      style={{
-                        padding: '8px 12px 8px 30px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        fontSize: '0.8125rem',
-                        outline: 'none',
-                        width: '180px',
-                        background: '#fff',
-                        color: '#374151'
-                      }}
-                    />
-                  </div>
 
-                  {/* Sort button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => {
-                      setSort(prev => prev === 'id_asc' ? 'id_desc' : prev === 'id_desc' ? 'amount_asc' : prev === 'amount_asc' ? 'amount_desc' : prev === 'amount_desc' ? '' : 'id_asc');
-                      setPage(1);
-                    }}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: sort ? '#111827' : '#d1d5db',
-                      background: sort ? '#f3f4f6' : '#fff',
-                      fontWeight: sort ? 600 : 500
-                    }}
-                  >
-                    <ArrowUpDown size={13} /> 
-                    Sort {sort === 'id_asc' ? 'ID Asc' : sort === 'id_desc' ? 'ID Desc' : sort === 'amount_asc' ? 'Min Amt' : sort === 'amount_desc' ? 'Max Amt' : ''}
-                  </button>
+                {/* Sort button */}
+                <button 
+                  className="attio-btn"
+                  onClick={() => {
+                    setSort(prev => prev === 'id_asc' ? 'id_desc' : prev === 'id_desc' ? 'amount_asc' : prev === 'amount_asc' ? 'amount_desc' : prev === 'amount_desc' ? '' : 'id_asc');
+                    setPage(1);
+                  }}
+                  style={{
+                    background: sort ? '#f1f5f9' : '#ffffff',
+                    borderColor: sort ? '#0f172a' : '#cbd5e1',
+                    fontWeight: sort ? 600 : 500
+                  }}
+                >
+                  <ArrowUpDown size={13} /> 
+                  Sort {sort === 'id_asc' ? 'ID Asc' : sort === 'id_desc' ? 'ID Desc' : sort === 'amount_asc' ? 'Min Amt' : sort === 'amount_desc' ? 'Max Amt' : ''}
+                </button>
 
-                  {/* Filter button */}
-                  <button 
-                    className="ws-table-btn" 
-                    onClick={() => setShowFilterBar(prev => !prev)}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      borderColor: showFilterBar ? '#111827' : '#d1d5db',
-                      background: showFilterBar ? '#f3f4f6' : '#fff',
-                      fontWeight: showFilterBar ? 600 : 500
-                    }}
-                  >
-                    <Filter size={13} /> Filter
-                  </button>
+                {/* Filter button */}
+                <button 
+                  className="attio-btn"
+                  onClick={() => setShowFilterBar(prev => !prev)}
+                  style={{
+                    background: showFilterBar ? '#f1f5f9' : '#ffffff',
+                    borderColor: showFilterBar ? '#0f172a' : '#cbd5e1',
+                    fontWeight: showFilterBar ? 600 : 500
+                  }}
+                >
+                  <Filter size={13} /> Filter
+                </button>
+              </div>
+            </div>
+
+            {/* Expandable Filter Box */}
+            {showFilterBar && (
+              <div className="attio-filter-box">
+                <div style={{ fontSize: '0.8125rem', color: '#475467' }}>
+                  Filtering for <span style={{ fontWeight: 600, color: '#0f172a' }}>Paid</span> invoices only.
                 </div>
               </div>
+            )}
 
-              {/* Expandable Filter Bar */}
-              {showFilterBar && (
-                <div style={{ display: 'flex', gap: 12, padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb', alignItems: 'center' }}>
-                  <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
-                    Filtering for <span style={{ fontWeight: 600, color: '#111827' }}>Paid</span> invoices only.
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Table Card Shell */}
+            <div className="attio-table-card">
 
             <div className="ws-table-wrap" style={{ flex: 1 }}>
               {loading ? (
@@ -179,25 +200,60 @@ export default function PaidBills() {
                 <table className="ws-table-styled">
                   <thead>
                     <tr>
-                      <th style={{ width: 40 }}><input type="checkbox" className="ws-table-checkbox" readOnly /></th>
-                      <th>Invoice ID</th>
-                      <th>Customer</th>
-                      <th>Total Amount</th>
-                      <th>Due Date</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
+                      <th style={{ width: 40, textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          className="ws-table-checkbox" 
+                          checked={isAllSelected}
+                          onChange={handleSelectAll}
+                        />
+                      </th>
+                      <th>INVOICE ID</th>
+                      <th>QUOTE / ORDER #</th>
+                      <th>CUSTOMER</th>
+                      <th>CREATED BY</th>
+                      <th>TOTAL AMOUNT</th>
+                      <th>INVOICE DATE</th>
+                      <th>DUE DATE</th>
+                      <th>STATUS</th>
+                      <th style={{ textAlign: 'right' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {bills.map(bill => {
                       const name = bill.customer_name || 'General Customer'
                       const colors = getPillStyle('Paid')
+                      const isRowSelected = selectedIds.includes(bill.id)
+                      const invNum = bill.bill_number || (bill.id ? `INV-${String(bill.id).padStart(5, '0')}` : '—')
+                      const orderMatch = bill.order_number || (bill.notes && (bill.notes.match(/ORD-\w+/i)?.[0]))
+                      const quoteMatch = bill.notes && (bill.notes.match(/QT-\w+/i)?.[0])
+
                       return (
-                        <tr key={bill.id}>
-                          <td>
-                            <input type="checkbox" className="ws-table-checkbox" readOnly />
+                        <tr key={bill.id} style={{ background: isRowSelected ? '#f0f5ff' : undefined }}>
+                          <td style={{ textAlign: 'center' }}>
+                            <input 
+                              type="checkbox" 
+                              className="ws-table-checkbox" 
+                              checked={isRowSelected}
+                              onChange={() => handleSelectRow(bill.id)}
+                            />
                           </td>
-                          <td className="ws-td-mono">INV-{String(bill.id).padStart(3, '0')}</td>
+                          <td className="ws-td-mono" style={{ fontWeight: 700, color: '#1e293b' }}>{invNum}</td>
+                          <td>
+                            {orderMatch ? (
+                              <span style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                {orderMatch}
+                              </span>
+                            ) : quoteMatch ? (
+                              <span style={{ color: '#475569', fontWeight: 600, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                {quoteMatch}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
+                                Direct Bill
+                              </span>
+                            )}
+                          </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div className="ws-table-avatar" style={{ background: getAvatarColor(name) }}>
@@ -208,7 +264,24 @@ export default function PaidBills() {
                               </span>
                             </div>
                           </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                              <span style={{ fontWeight: 600, fontSize: '0.80rem', color: '#1e293b' }}>
+                                {bill.created_by_name || 'Admin'}
+                              </span>
+                              {(bill.created_by_name || 'Admin').toLowerCase().trim() !== (bill.created_by_role || 'Admin').toLowerCase().trim() && (
+                                <span style={{
+                                  fontSize: '0.70rem',
+                                  fontWeight: 500,
+                                  color: bill.created_by_role === 'Member' ? '#2563eb' : '#64748b'
+                                }}>
+                                  ({bill.created_by_role || 'Admin'})
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="ws-td-price">{formatCurrency(bill.amount)}</td>
+                          <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.created_at || bill.date || bill.issue_date)}</td>
                           <td style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{formatDate(bill.due_date)}</td>
                           <td>
                             <span className="ws-pill-topic" style={{ background: colors.bg, color: colors.text, borderColor: colors.border }}>
@@ -216,15 +289,37 @@ export default function PaidBills() {
                             </span>
                           </td>
                           <td>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
                               <button 
-                                className="ws-chat-history-delete-btn" 
-                                style={{ padding: 6 }} 
-                                onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: 'INV-' + String(bill.id).padStart(3, '0') })}
-                                title="Delete Bill Record"
+                                onClick={() => setPreviewBill(bill)}
+                                style={{
+                                  background: '#eff6ff',
+                                  border: '1px solid #bfdbfe',
+                                  color: '#2563eb',
+                                  cursor: 'pointer',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  fontSize: '0.72rem',
+                                  fontWeight: 500,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  transition: 'all 0.15s'
+                                }}
+                                title="View Paid Invoice Details"
                               >
-                                <Trash2 size={13} />
+                                <Eye size={12} /> View
                               </button>
+                              {canDelete && (
+                                <button 
+                                  className="ws-chat-history-delete-btn" 
+                                  style={{ padding: 6 }} 
+                                  onClick={() => setConfirmDelete({ isOpen: true, id: bill.id, displayId: 'INV-' + String(bill.id).padStart(3, '0') })}
+                                  title="Delete Bill Record"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -235,96 +330,26 @@ export default function PaidBills() {
               )}
             </div>
 
-            {/* Pagination component outside ws-table-wrap at bottom of card */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid #f3f4f6', background: '#fff', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', marginTop: 'auto' }}>
-              <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
-                Showing <span style={{ fontWeight: 600, color: '#111827' }}>{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{Math.min(page * limit, total)}</span> of{' '}
-                <span style={{ fontWeight: 600, color: '#111827' }}>{total}</span> entries
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page <= 1 ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &lt;
-                </button>
-                {getPageNumbers().map((p, idx) => {
-                  if (p === '...') {
-                    return (
-                      <span key={`dots-${idx}`} style={{ color: '#9ca3af', padding: '0 8px', fontSize: '0.875rem' }}>
-                        ...
-                      </span>
-                    )
-                  }
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                        background: page === p ? '#111827' : '#fff',
-                        color: page === p ? '#fff' : '#374151',
-                        border: page === p ? '1px solid #111827' : '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      {p}
-                    </button>
-                  )
-                })}
-                <button
-                  type="button"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(page + 1)}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    background: '#fff',
-                    color: page >= totalPages ? '#d1d5db' : '#374151',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  &gt;
-                </button>
-              </div>
-            </div>
+            {/* Pagination component */}
+            <TablePagination
+              page={page}
+              setPage={setPage}
+              total={total}
+              limit={limit}
+              getPageNumbers={getPageNumbers}
+              totalPages={totalPages}
+            />
           </div>
-        </main>
+        </div>
+      </main>
       </div>
+
+      {previewBill && (
+        <BillPreview
+          bill={previewBill}
+          onClose={() => setPreviewBill(null)}
+        />
+      )}
 
       <ConfirmModal
         isOpen={confirmDelete.isOpen}

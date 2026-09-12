@@ -37,14 +37,21 @@ const tools = [
   {
     type: 'function',
     function: {
-      name: 'query_database_readonly',
-      description: 'Executes a read-only SQL SELECT query on the database to query information about products, import stock, customers/people, bills/invoices, deals. Strictly only SELECT queries are permitted.',
+      name: 'query_business_data',
+      description: 'Queries business data such as products, bills, quotes, people/contacts, import stock, notes, deals, or analytics summaries. Use this to retrieve information about inventory, invoices, quotations, contacts, or sales performance.',
       parameters: {
         type: 'object',
         properties: {
-          sql: { type: 'string', description: 'The SQL SELECT query to run.' }
+          dataset: {
+            type: 'string',
+            enum: ['products', 'bills', 'quotes', 'people', 'import_stock', 'notes', 'deals', 'top_products', 'revenue_summary', 'quotes_summary'],
+            description: 'The dataset to query'
+          },
+          search: { type: 'string', description: 'Optional keyword to search across names, SKUs, or titles' },
+          status: { type: 'string', description: 'Optional status filter (e.g. active, paid, unpaid, pending, accepted)' },
+          limit: { type: 'number', description: 'Maximum number of items to retrieve (default 20, max 50)' }
         },
-        required: ['sql']
+        required: ['dataset']
       }
     }
   },
@@ -83,14 +90,15 @@ const tools = [
     type: 'function',
     function: {
       name: 'create_person',
-      description: 'Creates a new person/contact (Lead, Customer, or Partner) in the database people table. Use this when the user asks to add or create a new contact, customer, lead, or supplier/partner.',
+      description: 'Creates a new person/contact (Lead, Prospect, Customer, Partner, Vendor, or Other) in the database people table. Use this when the user asks to add or create a new contact, customer, lead, vendor, supplier, or partner.',
       parameters: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Name of the contact' },
           email: { type: 'string', description: 'Email address of the contact' },
           phone: { type: 'string', description: 'Phone number of the contact' },
-          persona: { type: 'string', enum: ['Lead', 'Customer', 'Partner'], description: 'Role of the contact, defaults to "Lead"' },
+          company: { type: 'string', description: 'Company or business name associated with this contact' },
+          persona: { type: 'string', enum: ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other'], description: 'Role or persona of the contact (Lead, Prospect, Customer, Partner, Vendor, Other). When the user asks to add a vendor or supplier, persona MUST be "Vendor". Defaults to "Lead"' },
           notes: { type: 'string', description: 'Any extra notes about this contact' }
         },
         required: ['name']
@@ -98,6 +106,270 @@ const tools = [
     }
   }
 ]
+
+async function handleDealP2PChat(conversationId, userId, lastMsg) {
+  if (!conversationId || !conversationId.startsWith('deal-')) return null
+  const dealIdStr = conversationId.split('-')[1]
+  const dealId = Number.parseInt(dealIdStr, 10)
+  if (Number.isNaN(dealId)) return null
+
+  const dealCheck = await query('SELECT * FROM deals WHERE id = $1 AND (user_id = $2 OR company_shop_id = $2)', [dealId, userId])
+  if (!dealCheck.rows.length) return null
+
+  const deal = dealCheck.rows[0]
+  const senderName = deal.user_id === userId ? 'Seller' : 'Buyer'
+
+  const currentSession = await query('SELECT messages FROM chat_sessions WHERE conversation_id = $1', [conversationId])
+  const dbMessages = currentSession.rows[0]?.messages || []
+
+  dbMessages.push({
+    id: Date.now(),
+    role: 'user',
+    content: `**${senderName}:** ${lastMsg}`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  })
+
+  await query(
+    `UPDATE chat_sessions SET messages = $1::jsonb, last_message = $2, updated_at = NOW() WHERE conversation_id = $3`,
+    [JSON.stringify(dbMessages), lastMsg.slice(0, 255), conversationId]
+  )
+
+  const targetUserId = deal.user_id === userId ? deal.company_shop_id : deal.user_id
+  if (targetUserId) {
+    try {
+      const notifTitle = `New message from ${senderName}`
+      const notifBody = `New message in deal "${deal.title}": ${lastMsg}`
+      const notifLink = deal.user_id === targetUserId ? `/deals/edit/${deal.id}` : `/deals/review/${deal.id}`
+
+      await query(
+        `INSERT INTO notifications (user_id, title, body, type, read, link, created_at)
+         VALUES ($1, $2, $3, 'info', false, $4, NOW())`,
+        [targetUserId, notifTitle, notifBody, notifLink]
+      )
+
+      await insforge.realtime.publish(`notifications:${targetUserId}`, {
+        event: 'new_notification',
+        payload: { title: notifTitle, body: notifBody, link: notifLink }
+      }).catch(() => {})
+    } catch (_err) {
+      console.error('Failed to notify counterparty')
+    }
+  }
+
+  return `*Message delivered to ${senderName === 'Seller' ? 'Buyer' : 'Seller'}.*`
+}
+
+async function callOpenRouterWithFallback(apiMessages) {
+  const MODELS = ['openai/gpt-4o-mini', 'openrouter/free', 'meta-llama/llama-3.3-70b-instruct']
+  let lastErrText = ''
+
+  for (const modelCandidate of MODELS) {
+    try {
+      const resCandidate = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://workshop.app',
+          'X-Title': 'Workshop AI Assistant'
+        },
+        body: JSON.stringify({
+          model: modelCandidate,
+          messages: apiMessages,
+          tools: tools,
+          max_tokens: 1024,
+          temperature: 0.7
+        })
+      })
+
+      if (resCandidate.ok) {
+        return { ok: true, response: resCandidate }
+      }
+      lastErrText = await resCandidate.text()
+      console.warn('[OPENROUTER MODEL FAIL] model=%s status=%s', modelCandidate, resCandidate.status)
+    } catch (fetchErr) {
+      lastErrText = fetchErr.message
+      console.warn('[OPENROUTER FETCH ERROR] model=%s', modelCandidate)
+    }
+  }
+
+  return { ok: false, error: lastErrText }
+}
+
+const DATASET_HANDLERS = {
+  products: async (userId, searchPattern, status, limit) => {
+    if (searchPattern && status) {
+      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 AND (name ILIKE $3 OR sku ILIKE $3) ORDER BY id DESC LIMIT $4', [userId, status, searchPattern, limit])
+    }
+    if (searchPattern) {
+      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
+    }
+    if (status) {
+      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3', [userId, status, limit])
+    }
+    return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+  },
+  import_stock: async (userId, searchPattern, _status, limit) => {
+    if (searchPattern) {
+      return query('SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
+    }
+    return query('SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+  },
+  bills: async (userId, _searchPattern, status, limit) => {
+    if (status) {
+      return query('SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 AND b.status = $2 ORDER BY b.id DESC LIMIT $3', [userId, status, limit])
+    }
+    return query('SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 ORDER BY b.id DESC LIMIT $2', [userId, limit])
+  },
+  quotes: async (userId, _searchPattern, status, limit) => {
+    if (status) {
+      return query('SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3', [userId, status, limit])
+    }
+    return query('SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+  },
+  people: async (userId, searchPattern, _status, limit) => {
+    if (searchPattern) {
+      return query('SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 AND (name ILIKE $2 OR email ILIKE $2 OR company ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
+    }
+    return query('SELECT name, email, phone, company, persona, status, notes FROM people WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+  },
+  notes: async (userId, _sp, _st, limit) => query('SELECT title, content, created_at FROM notes WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit]),
+  deals: async (userId, _sp, _st, limit) => query('SELECT title, value, stage, owner, close_date, status FROM deals WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit]),
+  revenue_summary: async (userId, _sp, _st, limit) => query(`SELECT (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day, COUNT(*) AS total_bills, SUM(amount) AS revenue FROM bills WHERE user_id = $1 GROUP BY day ORDER BY day DESC LIMIT $2`, [userId, limit]),
+  top_products: async (userId, _sp, _st, limit) => query('SELECT bi.name, SUM(bi.qty) AS total_qty FROM bill_items bi WHERE bi.user_id = $1 GROUP BY bi.name ORDER BY total_qty DESC LIMIT $2', [userId, limit]),
+  quotes_summary: async (userId) => query('SELECT status, COUNT(*) AS count, SUM(total_amount) AS total_value FROM quotes WHERE user_id = $1 GROUP BY status', [userId]),
+}
+
+async function queryBusinessData(args, userId) {
+  const { dataset, search, status, limit: rawLimit } = args || {}
+  const limit = Math.min(Math.max(Number.parseInt(rawLimit, 10) || 20, 1), 50)
+  const searchPattern = search ? `%${search.trim()}%` : null
+
+  const handler = DATASET_HANDLERS[dataset]
+  if (!handler) {
+    return { error: `Unsupported dataset: ${dataset}` }
+  }
+
+  const res = await handler(userId, searchPattern, status, limit)
+  return { success: true, count: res.rows?.length, data: res.rows }
+}
+
+async function sendEmailTool(args, userId, reqUser) {
+  const { to, subject, body } = args
+  if (!to || !subject || !body) {
+    return { error: 'to, subject and body are required' }
+  }
+
+  const { rows } = await query(
+    `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
+     VALUES ('Me', $1, $2, $3, $4, 'sent', $5, NOW(), NOW()) RETURNING *`,
+    [to.trim(), subject.trim(), body, body.slice(0, 120), userId]
+  )
+
+  try {
+    const keys = await redis.keys(`emails:${userId}:*`).catch(() => [])
+    for (const key of keys) { await redis.del(key).catch(() => {}) }
+  } catch { }
+
+  try {
+    const recipientEmail = to.toLowerCase().trim()
+    const senderEmail = reqUser?.email || ''
+    let recipientUserId = recipientEmail === senderEmail.toLowerCase().trim() ? userId : null
+
+    if (!recipientUserId) {
+      const recipientRes = await query(
+        'SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1) LIMIT 1',
+        [recipientEmail]
+      )
+      recipientUserId = recipientRes.rows[0]?.user_id || null
+    }
+
+    if (recipientUserId) {
+      await query(
+        `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'inbox', $6, NOW(), NOW())`,
+        [reqUser?.shopName || senderEmail || 'Me', senderEmail || 'Me', subject.trim(), body, body.slice(0, 120), recipientUserId]
+      )
+
+      const recipientKeys = await redis.keys(`emails:${recipientUserId}:*`).catch(() => [])
+      for (const key of recipientKeys) { await redis.del(key).catch(() => {}) }
+    }
+  } catch (_inboxErr) {
+    console.error('[Emails AI Recipient Inbox Error]')
+  }
+
+  await sendEmail({
+    to: to.trim(),
+    subject: subject.trim(),
+    html: body.replaceAll('\n', '<br/>')
+  })
+
+  return { success: true, email: rows[0], message: 'Email sent successfully via SMTP' }
+}
+
+async function handleAddImportStock(args, userId) {
+  const { name, sku, category, price, stock, status, unit, description } = args
+  if (!name || price === undefined) {
+    return { error: 'name and price are required' }
+  }
+  const { rows } = await query(
+    `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *`,
+    [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null, userId]
+  )
+  await redis.del(`import_stock:${userId}`).catch(() => {})
+  return { success: true, product: rows[0] }
+}
+
+async function handleAddNote(args, userId) {
+  const { title, body = '' } = args
+  if (!title) return { error: 'title is required' }
+  const { rows } = await query(
+    `INSERT INTO notes (title, body, user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *`,
+    [title.trim(), body, userId]
+  )
+  try {
+    const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
+    for (const key of keys) { await redis.del(key).catch(() => {}) }
+  } catch { }
+  return { success: true, note: rows[0] }
+}
+
+async function handleCreatePerson(args, userId) {
+  const { name, email = '', phone = '', company = '', persona = 'Lead', notes = '' } = args
+  if (!name) return { error: 'name is required' }
+  const validPersonas = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
+  const matchedPersona = validPersonas.find(p => p.toLowerCase() === String(persona).toLowerCase()) || persona || 'Lead'
+  const compVal = company && company.trim() ? company.trim() : null
+
+  const { rows } = await query(
+    `INSERT INTO people (name, email, phone, company, company_name, persona, notes, user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING *`,
+    [name.trim(), email.trim(), phone.trim(), compVal, compVal, matchedPersona, notes, userId]
+  )
+  try {
+    const pKeys = await redis.keys(`people:${userId}:*`).catch(() => [])
+    for (const key of pKeys) { await redis.del(key).catch(() => {}) }
+  } catch { }
+  return { success: true, person: rows[0] }
+}
+
+const TOOL_HANDLERS = {
+  add_to_import_stock: (args, userId) => handleAddImportStock(args, userId),
+  query_business_data: (args, userId) => queryBusinessData(args, userId),
+  send_email: (args, userId, reqUser) => sendEmailTool(args, userId, reqUser),
+  add_note: (args, userId) => handleAddNote(args, userId),
+  create_person: (args, userId) => handleCreatePerson(args, userId),
+}
+
+async function executeToolCall(toolName, args, userId, reqUser) {
+  const handler = TOOL_HANDLERS[toolName]
+  if (!handler) {
+    return { error: `Unknown tool: ${toolName}` }
+  }
+  return await handler(args, userId, reqUser)
+}
 
 /* POST /api/chat — send a message and get AI response */
 router.post('/', async (req, res) => {
@@ -110,74 +382,22 @@ router.post('/', async (req, res) => {
   const userId = req.workspaceId
   const lastMsg = messages[messages.length - 1]?.content || ''
 
-  // ── Redis Cache Check ──
-  const cacheKey = `chat_cache:${userId}:${crypto.createHash('md5').update(lastMsg.toLowerCase().trim()).digest('hex')}`
+  const cacheKey = `chat_cache:${userId}:${crypto.createHash('sha256').update(lastMsg.toLowerCase().trim()).digest('hex')}`
   try {
     const cached = await redis.get(cacheKey)
     if (cached) {
-      console.log('[REDIS] Cache Hit for query:', lastMsg)
-      saveSession(userId, conversationId, messages, cached, title).catch(err => {
-        console.warn('[DB] Session save failed:', err.message)
-      })
+      console.log('[REDIS] Chat cache hit')
+      saveSession(userId, conversationId, messages, cached, title).catch(() => {})
       return res.json({ content: cached, cached: true })
     }
-  } catch (cacheErr) {
-    console.warn('[REDIS] Cache read failed:', cacheErr.message)
-  }
+  } catch { }
 
   try {
-    // ── Handle Deal P2P Chat Bypassing AI ──
-    if (conversationId && conversationId.startsWith('deal-')) {
-      const dealIdStr = conversationId.split('-')[1]
-      const dealId = parseInt(dealIdStr, 10)
-      if (!isNaN(dealId)) {
-        const dealCheck = await query('SELECT * FROM deals WHERE id = $1 AND (user_id = $2 OR company_shop_id = $2)', [dealId, userId])
-        if (dealCheck.rows.length > 0) {
-          const deal = dealCheck.rows[0]
-          const senderName = deal.user_id === userId ? 'Seller' : 'Buyer'
-
-          const currentSession = await query('SELECT messages FROM chat_sessions WHERE conversation_id = $1', [conversationId])
-          let dbMessages = currentSession.rows[0]?.messages || []
-          
-          dbMessages.push({
-            id: Date.now(),
-            role: 'user',
-            content: `**${senderName}:** ${lastMsg}`,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          })
-
-          await query(`UPDATE chat_sessions SET messages = $1::jsonb, last_message = $2, updated_at = NOW() WHERE conversation_id = $3`, [JSON.stringify(dbMessages), lastMsg.slice(0, 255), conversationId])
-          
-          // Notify counterparty
-          const targetUserId = deal.user_id === userId ? deal.company_shop_id : deal.user_id
-          if (targetUserId) {
-            try {
-              const notifTitle = `New message from ${senderName}`
-              const notifBody = `New message in deal "${deal.title}": ${lastMsg}`
-              const notifLink = deal.user_id === targetUserId ? `/deals/edit/${deal.id}` : `/deals/review/${deal.id}`
-              
-              await query(
-                `INSERT INTO notifications (user_id, title, body, type, read, link, created_at)
-                 VALUES ($1, $2, $3, 'info', false, $4, NOW())`,
-                [targetUserId, notifTitle, notifBody, notifLink]
-              )
-              
-              await insforge.realtime.publish(`notifications:${targetUserId}`, {
-                event: 'new_notification',
-                payload: { title: notifTitle, body: notifBody, link: notifLink }
-              }).catch(() => {})
-            } catch (err) {
-              console.error('Failed to notify counterparty:', err.message)
-            }
-          }
-
-          // Send system confirmation
-          return res.json({ content: `*Message delivered to ${senderName === 'Seller' ? 'Buyer' : 'Seller'}.*`, cached: false })
-        }
-      }
+    const dealChatResponse = await handleDealP2PChat(conversationId, userId, lastMsg)
+    if (dealChatResponse) {
+      return res.json({ content: dealChatResponse, cached: false })
     }
 
-    // ── Call OpenRouter ──
     if (!OPENROUTER_API_KEY) {
       return res.status(500).json({ error: 'OpenRouter API key not configured' })
     }
@@ -196,59 +416,44 @@ You have access to tools to:
 5. Create new contacts/people (create_person)
 
 Database tables available for SELECT queries:
-- products: id, name, sku, category, price, stock, status, description, user_id, created_at, updated_at
-- import_stock: id, name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at
-- people: id, name, email, phone, persona, status, notes, user_id, created_at, updated_at (stores customers, leads, partners)
-- bills: id, customer_id, items (JSON array of billing items), amount, discount, status (paid/unpaid), due_date, notes, paid_at, user_id, created_at
+- products: id, name, sku, hsn_code, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, bag_weight, unit, status, description, user_id, created_at, updated_at
+- import_stock: id, name, sku, category, price, stock, loose_kg, bag_weight, unit, status, description, buying_price, price_covers, user_id, created_at, updated_at
+- people: id, name, email, phone, company, persona, status, notes, user_id, created_at, updated_at (stores customers, leads, prospects, partners, vendors)
+- bills: id, bill_number, customer_id, amount, discount, tax_rate, status (paid/unpaid/cancelled), due_date, notes, order_number, paid_at, user_id, created_at, updated_at
+- bill_items: id, bill_id, product_id, name, qty, price, discount, unit, hsn_code, user_id, created_at (each row is one line item in a bill)
+- quotes: id, quote_number, customer_name, customer_phone, customer_email, total_amount, tax_amount, status, issue_date, valid_until, notes, line_items, user_id, created_at, updated_at
 - deals: id, title, value, stage, owner, close_date, notes, status, user_id, created_at, updated_at
 - deal_logs: id, deal_id, deal_title, event, from_value, to_value, done_by, user_id, created_at
 - notes: id, title, body, user_id, created_at, updated_at
 - emails: id, from_name, from_email, subject, body, preview, is_read, starred, direction, user_id, created_at, updated_at
+- product_stock_history: id, product_id, user_id, change_type, qty_change, stock_before, stock_after, source, source_ref, notes, created_at
+- product_price_history: id, product_id, user_id, old_price, new_price, effective_date, notes, created_at
 
-CRITICAL SECURITY RULE: You MUST always filter every table in your query by \`user_id = '${userId}'\`. 
-For example: \`SELECT * FROM products WHERE user_id = '${userId}'\`. 
-If you join tables, filter both or use aliases: \`SELECT * FROM bills b JOIN people p ON b.customer_id = p.id WHERE b.user_id = '${userId}' AND p.user_id = '${userId}'\`.
-Your query will FAIL if it does not contain the filter \`user_id = '${userId}'\` on every table queried!
+CRITICAL DISPLAY & FORMATTING RULES:
+- When presenting product tables, bills, stock, or business data in markdown tables or lists, NEVER include internal technical database columns like "id", "ID", "user_id", or numerical primary keys.
+- Present clean, business-friendly columns such as: Name, SKU, Category, Price (₹), Stock, Status, Unit, Description.
+- Format all currency and prices with the Rupee symbol (₹).
 
-Always run database queries to get real-time accurate information when asked about specific business data (e.g. products, bills, people/customers) instead of using placeholders or dump data.`
+Always call query_business_data to get real-time accurate information when asked about business data (e.g. products, bills, quotes, people/customers, or sales summaries) instead of using placeholders or dump data.`
     }
 
-    let apiMessages = [systemPrompt, ...messages.map(m => ({ role: m.role, content: m.content }))]
+    const apiMessages = [systemPrompt, ...messages.map(m => ({ role: m.role, content: m.content }))]
     let loopCount = 0
     let finalContent = ''
 
     while (loopCount < 5) {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://workshop.app',
-          'X-Title': 'Workshop AI Assistant'
-        },
-        body: JSON.stringify({
-          model: 'anthropic/claude-sonnet-4-6',
-          messages: apiMessages,
-          tools: tools,
-          max_tokens: 1024,
-          temperature: 0.7
-        })
-      })
-
-      if (!response.ok) {
-        const errText = await response.text()
-        console.error('[OPENROUTER ERROR]', response.status, errText)
-        return res.status(502).json({ error: 'AI service unavailable', details: errText })
+      const openRouterResult = await callOpenRouterWithFallback(apiMessages)
+      if (!openRouterResult.ok) {
+        return res.status(502).json({ error: 'AI service unavailable', details: openRouterResult.error })
       }
 
-      const data = await response.json()
+      const data = await openRouterResult.response.json()
       const message = data.choices?.[0]?.message
       if (!message) {
         throw new Error('Empty response from AI model')
       }
 
       if (message.tool_calls && message.tool_calls.length > 0) {
-        // Add assistant's message with tool calls to history
         apiMessages.push(message)
 
         for (const toolCall of message.tool_calls) {
@@ -256,143 +461,15 @@ Always run database queries to get real-time accurate information when asked abo
           let args = {}
           try {
             args = JSON.parse(toolArgsStr)
-          } catch (e) {
-            console.error('[TOOL PARSE ERROR]', e)
-          }
+          } catch { }
 
           let toolResult
           try {
-            if (toolName === 'add_to_import_stock') {
-              const { name, sku, category, price, stock, status, unit, description } = args
-              if (!name || price === undefined) {
-                toolResult = { error: 'name and price are required' }
-              } else {
-                const { rows } = await query(
-                  `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *`,
-                  [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null, userId]
-                )
-                await redis.del(`import_stock:${userId}`).catch(() => {})
-                toolResult = { success: true, product: rows[0] }
-              }
-            } else if (toolName === 'query_database_readonly') {
-              const { sql } = args
-              const cleanSql = (sql || '').trim()
-              if (!/^select\b/i.test(cleanSql)) {
-                toolResult = { error: 'Only SELECT queries are allowed for read-only database query.' }
-              } else if (/\b(insert|update|delete|drop|alter|create|truncate|replace|grant|revoke)\b/i.test(cleanSql)) {
-                toolResult = { error: 'Mutation SQL commands are forbidden.' }
-              } else if (!cleanSql.toLowerCase().includes('user_id') || !cleanSql.includes(`'${userId}'`)) {
-                toolResult = { error: `Security check failed: Your query must filter by user_id = '${userId}' to prevent unauthorized access.` }
-              } else {
-                const { rows } = await query(cleanSql)
-                toolResult = { success: true, rows }
-              }
-            } else if (toolName === 'send_email') {
-              const { to, subject, body } = args
-              if (!to || !subject || !body) {
-                toolResult = { error: 'to, subject and body are required' }
-              } else {
-                // 1. Record sent email in DB
-                const { rows } = await query(
-                  `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
-                   VALUES ('Me', $1, $2, $3, $4, 'sent', $5, NOW(), NOW()) RETURNING *`,
-                  [to.trim(), subject.trim(), body, body.slice(0, 120), userId]
-                )
-                
-                // Invalidate emails cache
-                try {
-                  const keys = await redis.keys(`emails:${userId}:*`).catch(() => [])
-                  for (const key of keys) {
-                    await redis.del(key).catch(() => {})
-                  }
-                } catch (cErr) {
-                  console.error('[Emails AI Cache Invalidation Error]', cErr.message)
-                }
-
-                // Also create an inbox copy for registered recipients.
-                try {
-                  const recipientEmail = to.toLowerCase().trim()
-                  const senderEmail = req.user?.email || ''
-                  let recipientUserId = recipientEmail === senderEmail.toLowerCase().trim() ? userId : null
-
-                  if (!recipientUserId) {
-                    const recipientRes = await query(
-                      'SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1) LIMIT 1',
-                      [recipientEmail]
-                    )
-                    recipientUserId = recipientRes.rows[0]?.user_id || null
-                  }
-
-                  if (recipientUserId) {
-                    await query(
-                      `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
-                       VALUES ($1, $2, $3, $4, $5, 'inbox', $6, NOW(), NOW())`,
-                      [req.user?.shopName || senderEmail || 'Me', senderEmail || 'Me', subject.trim(), body, body.slice(0, 120), recipientUserId]
-                    )
-
-                    const recipientKeys = await redis.keys(`emails:${recipientUserId}:*`).catch(() => [])
-                    for (const key of recipientKeys) {
-                      await redis.del(key).catch(() => {})
-                    }
-                  }
-                } catch (inboxErr) {
-                  console.error('[Emails AI Recipient Inbox Error]', inboxErr.message)
-                }
-
-                // 2. Deliver via SMTP
-                await sendEmail({
-                  to: to.trim(),
-                  subject: subject.trim(),
-                  html: body.replace(/\n/g, '<br/>')
-                })
-                
-                toolResult = { success: true, email: rows[0], message: 'Email sent successfully via SMTP' }
-              }
-            } else if (toolName === 'add_note') {
-              const { title, body = '' } = args
-              if (!title) {
-                toolResult = { error: 'title is required' }
-              } else {
-                const { rows } = await query(
-                  `INSERT INTO notes (title, body, user_id, created_at, updated_at)
-                   VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *`,
-                  [title.trim(), body, userId]
-                )
-
-                // Invalidate notes cache
-                try {
-                  const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
-                  for (const key of keys) {
-                    await redis.del(key).catch(() => {})
-                  }
-                } catch (cErr) {
-                  console.error('[Notes AI Cache Invalidation Error]', cErr.message)
-                }
-
-                toolResult = { success: true, note: rows[0] }
-              }
-            } else if (toolName === 'create_person') {
-              const { name, email = '', phone = '', persona = 'Lead', notes = '' } = args
-              if (!name) {
-                toolResult = { error: 'name is required' }
-              } else {
-                const { rows } = await query(
-                  `INSERT INTO people (name, email, phone, persona, notes, user_id, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING *`,
-                  [name.trim(), email.trim(), phone.trim(), persona, notes, userId]
-                )
-                toolResult = { success: true, person: rows[0] }
-              }
-            } else {
-              toolResult = { error: `Unknown tool: ${toolName}` }
-            }
+            toolResult = await executeToolCall(toolName, args, userId, req.user)
           } catch (err) {
-            console.error('[TOOL EXECUTION ERROR]', err)
             toolResult = { error: err.message }
           }
 
-          // Push tool response
           apiMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
@@ -410,23 +487,13 @@ Always run database queries to get real-time accurate information when asked abo
 
     const content = finalContent || 'Sorry, I could not generate a response.'
 
-    // Save to Redis Cache
-    try {
-      await redis.set(cacheKey, content, { ex: 3600 })
-      console.log('[REDIS] Cache Saved for query:', lastMsg)
-    } catch (cacheErr) {
-      console.warn('[REDIS] Cache write failed:', cacheErr.message)
-    }
+    redis.set(cacheKey, content, { ex: 3600 }).catch(() => {})
+    saveSession(userId, conversationId, messages, content, title).catch(() => {})
 
-    // ── Save session to DB ──
-    saveSession(userId, conversationId, messages, content, title).catch(err => {
-      console.warn('[DB] Session save failed:', err.message)
-    })
-
-    res.json({ content, cached: false })
+    return res.json({ content, cached: false })
   } catch (err) {
-    console.error('[CHAT ERROR]', err.message)
-    res.status(500).json({ error: err.message })
+    console.error('[CHAT ERROR]')
+    return res.status(500).json({ error: err.message })
   }
 })
 
@@ -437,37 +504,60 @@ router.get('/sessions', async (req, res) => {
       `SELECT id, conversation_id, title, last_message, updated_at 
        FROM chat_sessions 
        WHERE user_id = $1 
-          OR conversation_id IN (
-             SELECT 'deal-' || id FROM deals WHERE user_id = $1::text OR company_shop_id = $1::text
-          )
        ORDER BY updated_at DESC 
        LIMIT 20`,
       [req.workspaceId]
     )
     res.json(rows)
   } catch (err) {
-    console.error('Sessions list error:', err.message)
+    console.error('Sessions list error')
     res.status(500).json({ error: err.message })
   }
 })
 
-/* GET /api/chat/sessions/:id — get messages for a session */
+/* GET /api/chat/sessions/:id — get full session details and messages */
 router.get('/sessions/:id', async (req, res) => {
   try {
     const { rows } = await query(
-      `SELECT messages FROM chat_sessions 
-       WHERE id = $1 AND (
-         user_id = $2 
-         OR conversation_id IN (
-             SELECT 'deal-' || id FROM deals WHERE user_id = $2::text OR company_shop_id = $2::text
-         )
+      `SELECT id, conversation_id, title, messages, last_message, updated_at 
+       FROM chat_sessions 
+       WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.workspaceId]
+    )
+
+    if (rows.length > 0) {
+      return res.json({
+        id: rows[0].id,
+        conversation_id: rows[0].conversation_id,
+        title: rows[0].title,
+        messages: rows[0].messages || [],
+        last_message: rows[0].last_message,
+        updated_at: rows[0].updated_at
+      })
+    }
+
+    // Fallback check for deal peer-to-peer chats if needed
+    const dealRows = await query(
+      `SELECT cs.id, cs.conversation_id, cs.title, cs.messages, cs.last_message, cs.updated_at 
+       FROM chat_sessions cs
+       WHERE cs.id = $1 AND cs.conversation_id IN (
+         SELECT 'deal-' || id FROM deals WHERE user_id = $2::text OR company_shop_id = $2::text
        )`,
       [req.params.id, req.workspaceId]
     )
-    if (!rows.length) return res.status(404).json({ error: 'Session not found' })
-    res.json({ messages: rows[0].messages })
+
+    if (!dealRows.length) return res.status(404).json({ error: 'Session not found' })
+
+    res.json({
+      id: dealRows[0].id,
+      conversation_id: dealRows[0].conversation_id,
+      title: dealRows[0].title,
+      messages: dealRows[0].messages || [],
+      last_message: dealRows[0].last_message,
+      updated_at: dealRows[0].updated_at
+    })
   } catch (err) {
-    console.error('Session load error:', err.message)
+    console.error('Session load error')
     res.status(500).json({ error: err.message })
   }
 })

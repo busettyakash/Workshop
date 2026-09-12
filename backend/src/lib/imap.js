@@ -13,7 +13,8 @@ import { query } from './db.js'
 
 // ── DNS patch (same as smtp.js) ── Only active in development mode to avoid affecting production
 if (process.env.NODE_ENV === 'development') {
-  try { dns.setServers(['8.8.8.8', '8.8.4.4']) } catch (_) {}
+  // eslint-disable-next-line sonarjs/no-hardcoded-ip -- Google public DNS used only in dev to fix local DNS resolution
+  try { dns.setServers(['8.8.8.8', '8.8.4.4']) } catch {}
   const _origLookup = dns.lookup
   dns.lookup = function (hostname, options, callback) {
     if (typeof options === 'function') { callback = options; options = {} }
@@ -32,6 +33,86 @@ if (process.env.NODE_ENV === 'development') {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+async function gatherWorkshopMetadata(ownerUserId, user) {
+  const workshopEmails = new Set()
+  if (user) workshopEmails.add(user.toLowerCase().trim())
+
+  const custRes = await query(`SELECT LOWER(email) as email FROM customers WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [ownerUserId]).catch(() => ({ rows: [] }))
+  custRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
+
+  const peopleRes = await query(`SELECT LOWER(email) as email FROM people WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [ownerUserId]).catch(() => ({ rows: [] }))
+  peopleRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
+
+  const quotesRes = await query(`SELECT LOWER(customer_email) as email, quote_number FROM quotes WHERE user_id = $1`, [ownerUserId]).catch(() => ({ rows: [] }))
+  const quoteNumbers = new Set()
+  quotesRes.rows.forEach(r => {
+    if (r.email) workshopEmails.add(r.email.trim())
+    if (r.quote_number) quoteNumbers.add(r.quote_number.toLowerCase().trim())
+  })
+
+  const billsRes = await query(`SELECT bill_number FROM bills WHERE user_id = $1`, [ownerUserId]).catch(() => ({ rows: [] }))
+  const billNumbers = new Set()
+  billsRes.rows.forEach(r => {
+    if (r.bill_number) billNumbers.add(r.bill_number.toLowerCase().trim())
+  })
+
+  const existingEmailsRes = await query(`SELECT DISTINCT LOWER(from_email) as email FROM emails WHERE user_id = $1`, [ownerUserId]).catch(() => ({ rows: [] }))
+  existingEmailsRes.rows.forEach(r => {
+    if (r.email) workshopEmails.add(r.email.trim())
+  })
+
+  return { workshopEmails, quoteNumbers, billNumbers }
+}
+
+function matchesReferenceNumber(refSet, subjectClean, bodyClean) {
+  for (const ref of refSet) {
+    if (ref && (subjectClean.includes(ref) || bodyClean.includes(ref))) return true
+  }
+  return false
+}
+
+function isEmailWorkshopRelated({ fromAddress, subjectClean, bodyClean, workshopEmails, quoteNumbers, billNumbers }) {
+  if (workshopEmails.has(fromAddress)) return true
+  if (matchesReferenceNumber(quoteNumbers, subjectClean, bodyClean)) return true
+  if (matchesReferenceNumber(billNumbers, subjectClean, bodyClean)) return true
+
+  return (
+    subjectClean.includes('workshop') ||
+    subjectClean.includes('quotation') ||
+    subjectClean.includes('quote') ||
+    subjectClean.includes('inv-') ||
+    subjectClean.includes('qt-')
+  )
+}
+
+async function saveInboxEmailIfNew(parsed, ownerUserId) {
+  const fromAddress = (parsed.from?.value?.[0]?.address || '').toLowerCase().trim()
+  const subject     = parsed.subject || '(No subject)'
+  const bodyText    = parsed.text || parsed.html || ''
+  const fromName    = parsed.from?.value?.[0]?.name || fromAddress
+  const preview     = String(bodyText).slice(0, 150)
+  const date        = parsed.date || new Date()
+
+  const existing = await query(
+    `SELECT id FROM emails
+     WHERE user_id = $1
+       AND direction = 'inbox'
+       AND from_email = $2
+       AND subject = $3
+       AND ABS(EXTRACT(EPOCH FROM (created_at - $4::timestamptz))) < 300`,
+    [ownerUserId, fromAddress, subject, date.toISOString()]
+  )
+  if (existing.rows.length > 0) return false
+
+  await query(
+    `INSERT INTO emails
+       (from_name, from_email, subject, body, preview, direction, is_read, user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 'inbox', false, $6, $7, NOW())`,
+    [fromName, fromAddress, subject, bodyText, preview, ownerUserId, date.toISOString()]
+  )
+  return true
+}
+
 /**
  * Fetch unseen emails from Gmail IMAP and insert them into the emails table.
  * @param {string} ownerUserId  - The workspace owner's user_id (for the user_id column)
@@ -41,7 +122,7 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
   const user = process.env.SMTP_USER
   const pass = process.env.SMTP_PASS
   const host = process.env.IMAP_HOST || 'imap.gmail.com'
-  const port = parseInt(process.env.IMAP_PORT) || 993
+  const port = Number.parseInt(process.env.IMAP_PORT) || 993
 
   if (!user || !pass) {
     console.warn('[IMAP] SMTP_USER / SMTP_PASS not set — skipping sync')
@@ -59,29 +140,13 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
 
   let synced = 0
   try {
-    // 1. Get all unique recipient emails and subjects we have sent emails to
-    const sentEmailsRes = await query(
-      `SELECT DISTINCT from_email, LOWER(subject) as subject FROM emails WHERE user_id = $1 AND direction = 'sent'`,
-      [ownerUserId]
-    ).catch(() => ({ rows: [] }))
-
-    // Map recipient email -> Set of clean lowercase subjects we sent to them
-    const sentMap = new Map()
-    for (const r of sentEmailsRes.rows) {
-      const email = String(r.from_email || '').toLowerCase().trim()
-      const subject = String(r.subject || '').toLowerCase().trim().replace(/^(re|fwd|fw):\s*/i, '').trim()
-      if (!sentMap.has(email)) {
-        sentMap.set(email, new Set())
-      }
-      sentMap.get(email).add(subject)
-    }
+    const meta = await gatherWorkshopMetadata(ownerUserId, user)
 
     await client.connect()
     const lock = await client.getMailboxLock('INBOX')
 
     try {
       const limit = opts.limit || 50
-      // Fetch the most recent `limit` messages so we don't pull the whole mailbox
       const status = await client.status('INBOX', { messages: true })
       const total = status.messages || 0
       const startSeq = Math.max(1, total - limit + 1)
@@ -93,51 +158,16 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
       })) {
         try {
           const parsed = await simpleParser(msg.source)
-
           const fromAddress = (parsed.from?.value?.[0]?.address || '').toLowerCase().trim()
-          const subject     = parsed.subject || '(No subject)'
-          const incomingSubjectClean = subject.toLowerCase().trim().replace(/^(re|fwd|fw):\s*/i, '').trim()
+          const subjectClean = (parsed.subject || '(No subject)').toLowerCase().trim()
+          const bodyClean    = String(parsed.text || parsed.html || '').toLowerCase()
 
-          // Filter 1: Must be from someone we sent an email to
-          const sentSubjects = sentMap.get(fromAddress)
-          if (!sentSubjects) {
+          if (!isEmailWorkshopRelated({ fromAddress, subjectClean, bodyClean, ...meta })) {
             continue
           }
 
-          // Filter 2: The subject thread (ignoring prefixes like Re:) must match
-          if (!sentSubjects.has(incomingSubjectClean)) {
-            continue
-          }
-
-          // Filter 3: Must be an actual reply (subject starts with "Re:")
-          if (!subject.toLowerCase().trim().startsWith('re:')) {
-            continue
-          }
-
-          const fromName    = parsed.from?.value?.[0]?.name || fromAddress
-          const bodyText    = parsed.text || parsed.html || ''
-          const preview     = bodyText.replace(/<\/?([^>]+)(>|$)/g, '').replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 150)
-          const date        = parsed.date || new Date()
-
-          // Skip emails we already saved (by matching from + subject + approximate timestamp)
-          const existing = await query(
-            `SELECT id FROM emails
-             WHERE user_id = $1
-               AND direction = 'inbox'
-               AND from_email = $2
-               AND subject = $3
-               AND ABS(EXTRACT(EPOCH FROM (created_at - $4::timestamptz))) < 300`,
-            [ownerUserId, fromAddress, subject, date.toISOString()]
-          )
-          if (existing.rows.length > 0) continue  // already in DB
-
-          await query(
-            `INSERT INTO emails
-               (from_name, from_email, subject, body, preview, direction, is_read, user_id, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, 'inbox', false, $6, $7, NOW())`,
-            [fromName, fromAddress, subject, bodyText, preview, ownerUserId, date.toISOString()]
-          )
-          synced++
+          const saved = await saveInboxEmailIfNew(parsed, ownerUserId)
+          if (saved) synced++
         } catch (msgErr) {
           console.error('[IMAP] Error parsing message:', msgErr.message)
         }
@@ -152,6 +182,6 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
     return { synced, error: err.message }
   }
 
-  console.log(`[IMAP] Synced ${synced} new emails for user ${ownerUserId}`)
+  console.log('[IMAP] Synced %d new Workshop emails', synced)
   return { synced }
 }

@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+tmp_build
 *.local
 
 # Environment variables
@@ -25,3 +26,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Temporary database maintenance scripts
+backend/scripts/

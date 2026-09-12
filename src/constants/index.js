@@ -17,7 +17,6 @@ export const ROUTES = {
   CATEGORIES: '/categories',
   REPORTS: '/reports',
   HISTORY: '/history',
-  NOTIFICATIONS: '/notifications',
   SETTINGS: '/settings',
   TASKS: '/tasks',
   NOTES: '/notes',
@@ -31,12 +30,12 @@ export const ROUTES = {
   IMPORT_STOCK: '/import-stock',
   IMPORT_STOCK_ADD: '/import-stock/add',
   IMPORT_STOCK_EDIT: '/import-stock/edit/:id',
+  ORDERS: '/orders',
 }
 
 // Navigation items for sidebar
 export const MAIN_NAV = [
   { label: 'Home',          icon: 'Home',         path: ROUTES.DASHBOARD },
-  { label: 'Notifications', icon: 'Bell',         path: ROUTES.NOTIFICATIONS, badge: 3 },
   { label: 'Tasks',         icon: 'ClipboardList',path: null },
   { label: 'Notes',         icon: 'FileText',     path: null },
   { label: 'Emails',        icon: 'Mail',         path: null },

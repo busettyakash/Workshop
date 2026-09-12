@@ -1,0 +1,280 @@
+import { useState, useEffect, useRef } from 'react'
+import api from '../api/client'
+
+// Map of sidebar labels / route identifiers to module permission keys
+export const NAV_MODULE_MAP = {
+  'Home': 'dashboard',
+  'Dashboard': 'dashboard',
+  'Notes': 'notes',
+  'Emails': 'emails',
+  'Reports': 'reports',
+  'Workflows': 'workflows',
+  'Automations': 'workflows',
+  'Products': 'products',
+  'People': 'people',
+  'Product History': 'price_history',
+  'Price History': 'price_history',
+  'Quotes': 'quotes',
+  'Orders': 'orders',
+  'Import Stock': 'import_stock',
+  'Profit Margin': 'profit_margin',
+  'Billing': 'billing',
+  'Paid': 'paid',
+  'Unpaid': 'unpaid',
+  'Chats': 'chats',
+}
+
+// Ordered navigation items in the exact order they appear in the left menu
+export const ORDERED_NAV_ITEMS = [
+  { module: 'dashboard', label: 'Home', path: '/dashboard' },
+  { module: 'notes', label: 'Notes', path: '/notes' },
+  { module: 'emails', label: 'Emails', path: '/emails' },
+  { module: 'reports', label: 'Reports', path: '/reports' },
+  { module: 'workflows', label: 'Workflows', path: '/workflows' },
+  { module: 'products', label: 'Products', path: '/products' },
+  { module: 'people', label: 'People', path: '/people' },
+  { module: 'price_history', label: 'Product History', path: '/price-history' },
+  { module: 'quotes', label: 'Quotes', path: '/quotes' },
+  { module: 'orders', label: 'Orders', path: '/orders' },
+  { module: 'import_stock', label: 'Import Stock', path: '/import-stock' },
+  { module: 'profit_margin', label: 'Profit Margin', path: '/profit-margin' },
+  { module: 'billing', label: 'Billing', path: '/billing' },
+  { module: 'paid', label: 'Paid', path: '/paid' },
+  { module: 'unpaid', label: 'Unpaid', path: '/unpaid' },
+  { module: 'chats', label: 'Chats', path: '/dashboard?chat=true' },
+]
+
+/**
+ * Check if the active role is Owner or Admin.
+ */
+export function isOwnerOrAdmin(role) {
+  const rawRole = role !== undefined && role !== null
+    ? role
+    : (typeof window !== 'undefined' ? sessionStorage.getItem('ws_active_role') : null)
+  if (!rawRole) return false
+  const currentRole = String(rawRole).trim().toLowerCase()
+  return currentRole === 'owner' || currentRole === 'admin'
+}
+
+/**
+ * Helper to retrieve active permissions from argument or sessionStorage.
+ */
+export function getActivePermissions(permissions) {
+  if (permissions && typeof permissions === 'object' && Object.keys(permissions).length > 0) {
+    return permissions
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = sessionStorage.getItem('ws_active_permissions')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+/**
+ * Check if the active user role/permissions allow reading a specific module.
+ */
+export function hasModulePermission(moduleName, permissions, role) {
+  if (isOwnerOrAdmin(role)) return true
+
+  const currentPermissions = getActivePermissions(permissions)
+  // If no permissions configured or loaded yet, only allow access to dashboard for non-owners
+  if (!currentPermissions || typeof currentPermissions !== 'object' || Object.keys(currentPermissions).length === 0) {
+    return moduleName === 'dashboard'
+  }
+
+  const perm = currentPermissions[moduleName]
+  return perm?.read === true
+}
+
+/**
+ * Check if the active user role/permissions allow editing / creating in a module.
+ */
+export function canEditModule(moduleName, permissions, role) {
+  if (isOwnerOrAdmin(role)) return true
+
+  const currentPermissions = getActivePermissions(permissions)
+  if (!currentPermissions || typeof currentPermissions !== 'object' || Object.keys(currentPermissions).length === 0) {
+    return false
+  }
+
+  const perm = currentPermissions[moduleName]
+  return perm?.edit === true
+}
+
+/**
+ * Check if the active user role/permissions allow creating items in a module.
+ */
+export function canCreateModule(moduleName, permissions, role) {
+  return canEditModule(moduleName, permissions, role)
+}
+
+/**
+ * Check if the active user role/permissions allow deleting in a module.
+ */
+export function canDeleteModule(moduleName, permissions, role) {
+  if (isOwnerOrAdmin(role)) return true
+
+  const currentPermissions = getActivePermissions(permissions)
+  if (!currentPermissions || typeof currentPermissions !== 'object' || Object.keys(currentPermissions).length === 0) {
+    return false
+  }
+
+  const perm = currentPermissions[moduleName]
+  return perm?.delete === true
+}
+
+/**
+ * Returns the first accessible route based on the user's role and permissions.
+ * If the user has permission for 'dashboard', returns '/dashboard'.
+ * Otherwise, scans the left menu in order and returns the first permitted route (e.g. '/products').
+ */
+export function getFirstAccessibleRoute(permissions, role) {
+  if (isOwnerOrAdmin(role)) return '/dashboard'
+
+  const currentPermissions = getActivePermissions(permissions)
+  if (!currentPermissions || typeof currentPermissions !== 'object' || Object.keys(currentPermissions).length === 0) {
+    return '/dashboard'
+  }
+
+  // If dashboard is permitted or not explicitly set to false, return /dashboard
+  if (currentPermissions.dashboard?.read !== false) {
+    return '/dashboard'
+  }
+
+  // Scan ordered sidebar items for first match
+  for (const item of ORDERED_NAV_ITEMS) {
+    if (currentPermissions[item.module]?.read === true) {
+      return item.path
+    }
+  }
+
+  // Fallback to dashboard
+  return '/dashboard'
+}
+
+/**
+ * React hook that subscribes to live permission changes (without page refresh).
+ * Re-evaluates instantly when Admin updates permissions or when ws_permissions_updated event fires.
+ * Also syncs from the server on first mount to correct any stale sessionStorage role/permissions.
+ */
+export function usePermissions(moduleName) {
+  const [role, setRole] = useState(() => {
+    return typeof window !== 'undefined' ? (sessionStorage.getItem('ws_active_role') || 'Member') : 'Member'
+  })
+
+  const [permissions, setPermissions] = useState(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      const stored = sessionStorage.getItem('ws_active_permissions')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
+  })
+
+  const synced = useRef(false)
+
+  useEffect(() => {
+    const handleUpdate = (e) => {
+      // If the event was dispatched for a specific memberEmail,
+      // verify it actually belongs to the current logged-in user!
+      if (e.detail?.memberEmail) {
+        let currentEmail = ''
+        try {
+          const userStr = sessionStorage.getItem('ws_user')
+          if (userStr) {
+            const parsedUser = JSON.parse(userStr)
+            currentEmail = (parsedUser?.email || '').toLowerCase().trim()
+          }
+        } catch { }
+
+        const targetEmail = (e.detail.memberEmail || '').toLowerCase().trim()
+        // If an Admin/Owner just updated someone else's permissions, ignore in this tab!
+        if (currentEmail && targetEmail && currentEmail !== targetEmail) {
+          return
+        }
+      }
+
+      const newRole = e.detail?.role || (typeof window !== 'undefined' ? (sessionStorage.getItem('ws_active_role') || 'Member') : 'Member')
+      let newPerms = e.detail?.perms
+      if (!newPerms && typeof window !== 'undefined') {
+        try {
+          const stored = sessionStorage.getItem('ws_active_permissions')
+          newPerms = stored ? JSON.parse(stored) : null
+        } catch {
+          newPerms = null
+        }
+      }
+      setRole(newRole)
+      setPermissions(newPerms)
+    }
+
+    window.addEventListener('ws_permissions_updated', handleUpdate)
+    return () => window.removeEventListener('ws_permissions_updated', handleUpdate)
+  }, [])
+
+  // ── Server sync on first mount ──────────────────────────────────────────
+  // Verify role+permissions against the server once per session.
+  // This corrects stale sessionStorage data (e.g., member logged in and got
+  // wrong 'Owner' role before backend fix, or admin just updated their permissions).
+  useEffect(() => {
+    if (synced.current) return
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('ws_token') : null
+    if (!token) return
+
+    // Only sync once per browser session (flag in sessionStorage)
+    const syncedFlag = sessionStorage.getItem('ws_perms_synced')
+    if (syncedFlag === 'true') return
+    synced.current = true
+
+    api.get('/auth/workspaces').then(res => {
+      const workspaces = res.data
+      if (!Array.isArray(workspaces) || workspaces.length === 0) return
+
+      const activeId = sessionStorage.getItem('ws_active_workspace_id')
+      const current = workspaces.find(w => String(w.id) === String(activeId)) || workspaces[0]
+      if (!current) return
+
+      const serverRole  = current.role || (current.isOwner ? 'Owner' : 'Member')
+      const serverPerms = current.permissions || {}
+
+      const storedRole = sessionStorage.getItem('ws_active_role') || 'Member'
+
+      // If the server role differs from what sessionStorage has, correct it
+      if (serverRole !== storedRole || !current.isOwner) {
+        sessionStorage.setItem('ws_active_role', serverRole)
+        sessionStorage.setItem('ws_active_workspace_id', current.id)
+        sessionStorage.setItem('ws_active_workspace_name', current.shopName)
+        if (serverPerms && Object.keys(serverPerms).length > 0) {
+          sessionStorage.setItem('ws_active_permissions', JSON.stringify(serverPerms))
+        } else {
+          sessionStorage.removeItem('ws_active_permissions')
+        }
+        setRole(serverRole)
+        setPermissions(serverPerms && Object.keys(serverPerms).length > 0 ? serverPerms : null)
+        // Broadcast so all other hooks on the page update too
+        window.dispatchEvent(new CustomEvent('ws_permissions_updated', {
+          detail: { role: serverRole, perms: serverPerms }
+        }))
+      }
+
+      sessionStorage.setItem('ws_perms_synced', 'true')
+    }).catch(() => {
+      // Server sync failed — keep using cached sessionStorage values
+    })
+  }, [])
+
+  return {
+    role,
+    permissions,
+    canRead: moduleName ? hasModulePermission(moduleName, permissions, role) : true,
+    canCreate: moduleName ? canCreateModule(moduleName, permissions, role) : true,
+    canEdit: moduleName ? canEditModule(moduleName, permissions, role) : true,
+    canDelete: moduleName ? canDeleteModule(moduleName, permissions, role) : true,
+  }
+}
+

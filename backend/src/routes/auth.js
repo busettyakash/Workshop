@@ -1307,7 +1307,9 @@ router.put('/members/:id/permissions', apiLimiter, requireAuth, async (req, res)
       ]
     )
 
-    if (rows.length === 0) {
+    let finalMember = rows[0]
+
+    if (!finalMember) {
       // Fallback: try updating by memberId or email directly
       const { rows: fallbackRows } = await query(
         `UPDATE workspace_members
@@ -1317,24 +1319,53 @@ router.put('/members/:id/permissions', apiLimiter, requireAuth, async (req, res)
          RETURNING id, member_email, role, permissions, created_at`,
         [role || null, permissions ? JSON.stringify(permissions) : null, memberId]
       )
-
-      const finalMember = fallbackRows[0]
-      if (finalMember?.member_email) {
-        deleteCached(redis, `ws_membership:${req.workspaceId}:${finalMember.member_email.toLowerCase()}`)
-      }
-      return res.json({ message: 'Permissions updated successfully', member: finalMember })
+      finalMember = fallbackRows[0]
     }
 
-    const finalMember = rows[0]
     if (finalMember?.member_email) {
-      deleteCached(redis, `ws_membership:${req.workspaceId}:${finalMember.member_email.toLowerCase()}`)
+      const memberEmail = finalMember.member_email.toLowerCase()
+
+      // 1. Clear all caches for this member
+      await Promise.all([
+        redis.del(`ws_membership:${req.workspaceId}:${memberEmail}`).catch(() => {}),
+        redis.del(`workspaces:${memberEmail}`).catch(() => {}),
+        deleteMemoryCache(`workspaces:${memberEmail}`),
+        deleteCached(redis, `ws_membership:${req.workspaceId}:${memberEmail}`)
+      ])
+
+      // 2. Push new role+permissions to the member's live browser session via realtime
+      // The member's frontend subscribes to permissions:<userId> and updates sessionStorage instantly
+      try {
+        const { rows: memberProfile } = await query(
+          'SELECT user_id FROM shop_profiles WHERE LOWER(email) = LOWER($1) LIMIT 1',
+          [memberEmail]
+        ).catch(() => ({ rows: [] }))
+
+        const memberUserId = memberProfile[0]?.user_id
+        if (memberUserId) {
+          await insforge.realtime.publish(
+            `permissions:${memberUserId}`,
+            'ws_permissions_updated',
+            {
+              role:        finalMember.role,
+              perms:       finalMember.permissions,
+              memberEmail: memberEmail,
+              workspaceId: req.workspaceId,
+            }
+          ).catch(() => {})  // Don't fail the request if realtime is unavailable
+        }
+      } catch {
+        // Realtime push is best-effort — the member will get correct permissions on next login
+      }
     }
+
     res.json({ message: 'Permissions updated successfully', member: finalMember })
   } catch (err) {
     console.error('[MEMBER PERMISSIONS ERROR]', err.message)
     res.status(500).json({ error: err.message })
   }
 })
+
 
 /* DELETE /api/auth/members/:id — Permanently remove a member from workspace and auth tables */
 router.delete('/members/:id', apiLimiter, requireAuth, async (req, res) => {

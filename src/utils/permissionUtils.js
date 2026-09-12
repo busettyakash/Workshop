@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import api from '../api/client'
 
 // Map of sidebar labels / route identifiers to module permission keys
 export const NAV_MODULE_MAP = {
@@ -158,6 +159,7 @@ export function getFirstAccessibleRoute(permissions, role) {
 /**
  * React hook that subscribes to live permission changes (without page refresh).
  * Re-evaluates instantly when Admin updates permissions or when ws_permissions_updated event fires.
+ * Also syncs from the server on first mount to correct any stale sessionStorage role/permissions.
  */
 export function usePermissions(moduleName) {
   const [role, setRole] = useState(() => {
@@ -173,6 +175,8 @@ export function usePermissions(moduleName) {
       return null
     }
   })
+
+  const synced = useRef(false)
 
   useEffect(() => {
     const handleUpdate = (e) => {
@@ -211,6 +215,57 @@ export function usePermissions(moduleName) {
 
     window.addEventListener('ws_permissions_updated', handleUpdate)
     return () => window.removeEventListener('ws_permissions_updated', handleUpdate)
+  }, [])
+
+  // ── Server sync on first mount ──────────────────────────────────────────
+  // Verify role+permissions against the server once per session.
+  // This corrects stale sessionStorage data (e.g., member logged in and got
+  // wrong 'Owner' role before backend fix, or admin just updated their permissions).
+  useEffect(() => {
+    if (synced.current) return
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('ws_token') : null
+    if (!token) return
+
+    // Only sync once per browser session (flag in sessionStorage)
+    const syncedFlag = sessionStorage.getItem('ws_perms_synced')
+    if (syncedFlag === 'true') return
+    synced.current = true
+
+    api.get('/auth/workspaces').then(res => {
+      const workspaces = res.data
+      if (!Array.isArray(workspaces) || workspaces.length === 0) return
+
+      const activeId = sessionStorage.getItem('ws_active_workspace_id')
+      const current = workspaces.find(w => String(w.id) === String(activeId)) || workspaces[0]
+      if (!current) return
+
+      const serverRole  = current.role || (current.isOwner ? 'Owner' : 'Member')
+      const serverPerms = current.permissions || {}
+
+      const storedRole = sessionStorage.getItem('ws_active_role') || 'Member'
+
+      // If the server role differs from what sessionStorage has, correct it
+      if (serverRole !== storedRole || !current.isOwner) {
+        sessionStorage.setItem('ws_active_role', serverRole)
+        sessionStorage.setItem('ws_active_workspace_id', current.id)
+        sessionStorage.setItem('ws_active_workspace_name', current.shopName)
+        if (serverPerms && Object.keys(serverPerms).length > 0) {
+          sessionStorage.setItem('ws_active_permissions', JSON.stringify(serverPerms))
+        } else {
+          sessionStorage.removeItem('ws_active_permissions')
+        }
+        setRole(serverRole)
+        setPermissions(serverPerms && Object.keys(serverPerms).length > 0 ? serverPerms : null)
+        // Broadcast so all other hooks on the page update too
+        window.dispatchEvent(new CustomEvent('ws_permissions_updated', {
+          detail: { role: serverRole, perms: serverPerms }
+        }))
+      }
+
+      sessionStorage.setItem('ws_perms_synced', 'true')
+    }).catch(() => {
+      // Server sync failed — keep using cached sessionStorage values
+    })
   }, [])
 
   return {

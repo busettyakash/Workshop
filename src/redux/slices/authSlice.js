@@ -105,6 +105,9 @@ const authSlice = createSlice({
       sessionStorage.removeItem('ws_user')
       sessionStorage.removeItem('ws_active_workspace_id')
       sessionStorage.removeItem('ws_active_workspace_name')
+      sessionStorage.removeItem('ws_active_role')
+      sessionStorage.removeItem('ws_active_permissions')
+      sessionStorage.removeItem('ws_perms_synced')
       sessionStorage.removeItem('ws_favorites')
     },
     clearError(state) {

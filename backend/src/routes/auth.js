@@ -539,15 +539,29 @@ router.post('/check-email', authLimiter, async (req, res) => {
   if (!email) return res.status(400).json({ message: 'Email is required' })
 
   try {
+    // Check local shop_profiles first (fastest)
     const { rows } = await query(
-      'SELECT email FROM shop_profiles WHERE email = $1',
+      'SELECT email FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
       [email]
     ).catch(() => ({ rows: [] }))
 
-    if (rows.length === 0) {
-      return res.status(404).json({ message: 'No account found with this email. Please sign up first.' })
+    if (rows.length > 0) {
+      return res.json({ exists: true })
     }
-    res.json({ exists: true })
+
+    // Not in shop_profiles — check if they are an invited workspace member
+    // (InsForge may have created them in auth.users via the invite flow but shop_profiles not yet created)
+    const { rows: memberRows } = await query(
+      'SELECT 1 FROM workspace_members WHERE LOWER(member_email) = LOWER($1) LIMIT 1',
+      [email]
+    ).catch(() => ({ rows: [] }))
+
+    if (memberRows.length > 0) {
+      // They were invited — let login route handle auth + auto-create profile
+      return res.json({ exists: true })
+    }
+
+    return res.status(404).json({ message: 'No account found with this email. Please sign up first.' })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -855,34 +869,69 @@ router.post('/login', authLimiter, async (req, res) => {
       [email]
     ).catch(() => ({ rows: [] }))
 
-    if (profile.rows.length === 0) {
-      return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })
-    }
-
-    const prof           = profile.rows[0]
-    const shopName       = prof.shop_name   || email.split('@')[0]
-    const firstName      = prof.first_name  || ''
-    const lastName       = prof.last_name   || ''
-    const phoneVal       = prof.phone       || ''
-    const gstinVal       = prof.gstin       || ''
-    const localUserId    = prof.user_id     || getLocalUserId(email)
-    const storedPassword = prof.password
-
-    let token  = null
-    let userId = localUserId
+    let prof           = profile.rows[0] || null
+    let userId         = prof?.user_id || null
+    let shopName       = prof?.shop_name   || email.split('@')[0]
+    let firstName      = prof?.first_name  || ''
+    let lastName       = prof?.last_name   || ''
+    const phoneVal     = prof?.phone       || ''
+    const gstinVal     = prof?.gstin       || ''
+    const storedPassword = prof?.password  || null
+    let token          = null
 
     // ── Fast path: local password check (avoids remote InsForge round-trip) ──
-    if (storedPassword && password === storedPassword) {
-      token = signLocalJwt({ sub: localUserId, email, shopName, firstName, lastName })
+    if (prof && storedPassword && password === storedPassword) {
+      userId = userId || getLocalUserId(email)
+      token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
     } else {
       // ── Fallback: verify via InsForge auth service ──
       try {
         const { data, error } = await insforge.auth.signInWithPassword({ email, password })
         if (error) {
+          // Only return "no account" if not in shop_profiles AND not in InsForge
+          if (!prof) {
+            return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })
+          }
           return res.status(401).json({ message: 'Invalid email or password.' })
         }
-        userId = localUserId || data?.user?.id || getLocalUserId(email)
-        token  = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
+
+        const insforgeUserId = data?.user?.id
+        userId = prof?.user_id || insforgeUserId || getLocalUserId(email)
+
+        // ── Auto-create shop_profiles for invited members who signed up via InsForge ──
+        // This handles the production case where InsForge created the user in auth.users
+        // (via invite or OAuth) but there is no corresponding shop_profiles row yet.
+        if (!prof) {
+          const isInvitedMember = await query(
+            'SELECT 1 FROM workspace_members WHERE LOWER(member_email) = LOWER($1) LIMIT 1',
+            [email]
+          ).then(r => r.rows.length > 0).catch(() => false)
+
+          if (isInvitedMember) {
+            // Derive a display name from InsForge user metadata or email prefix
+            const meta = data.user?.user_metadata || {}
+            firstName  = meta.first_name || meta.firstName || meta.full_name?.split(' ')[0] || email.split('@')[0]
+            lastName   = meta.last_name  || meta.lastName  || meta.full_name?.split(' ').slice(1).join(' ') || ''
+            shopName   = `${firstName}'s Workshop`
+
+            await query(
+              `INSERT INTO shop_profiles (email, user_id, shop_name, first_name, last_name, created_at)
+               VALUES ($1, $2, $3, $4, $5, NOW())
+               ON CONFLICT (email) DO UPDATE SET
+                 user_id    = COALESCE(shop_profiles.user_id, EXCLUDED.user_id),
+                 first_name = COALESCE(EXCLUDED.first_name, shop_profiles.first_name),
+                 last_name  = COALESCE(EXCLUDED.last_name,  shop_profiles.last_name)`,
+              [email, userId, shopName, firstName, lastName]
+            ).catch(err => console.error('[Login] Auto-create profile error:', err.message))
+
+            console.log(`[Login] Auto-created shop_profiles for invited member: ${email}`)
+          } else {
+            // Not invited, not registered locally — truly no account
+            return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })
+          }
+        }
+
+        token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
 
         // Cache the verified password locally so all future logins skip the remote network trip
         if (password) {
@@ -893,12 +942,16 @@ router.post('/login', authLimiter, async (req, res) => {
         }
       } catch (authErr) {
         console.warn('[InsForge Auth SignIn Notice]', authErr.message)
+        if (!prof) {
+          return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })
+        }
         return res.status(401).json({ message: 'Invalid email or password.' })
       }
     }
 
     // Ensure we always have a token
     if (!token) {
+      userId = userId || getLocalUserId(email)
       token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
     }
 
@@ -1105,7 +1158,7 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
 
   try {
     const ownUserId = req.user.id || req.workspaceId
-    const [ownWs, invitedRes] = await Promise.all([
+    const [ownWs, invitedRes, ownDataRes] = await Promise.all([
       query(
         'SELECT user_id, shop_name, email, logo_url FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
         [email]
@@ -1113,17 +1166,42 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
       query(
         `SELECT p.user_id, p.shop_name, p.email AS owner_email, p.logo_url, m.role, m.permissions
          FROM workspace_members m
-         JOIN shop_profiles p ON p.user_id::text = m.workspace_owner_id OR p.email = m.workspace_owner_id
+         JOIN shop_profiles p ON (
+           p.user_id::text = m.workspace_owner_id
+           OR LOWER(p.email) = LOWER(m.workspace_owner_id)
+         )
          WHERE LOWER(m.member_email) = LOWER($1)
          ORDER BY m.created_at ASC`,
         [email]
-      ).catch(() => ({ rows: [] }))
+      ).catch(() => ({ rows: [] })),
+      // Check if user has their own real data (products or bills)
+      ownUserId
+        ? query(
+            `SELECT (
+               EXISTS (SELECT 1 FROM products WHERE user_id::text = $1::text LIMIT 1)
+               OR EXISTS (SELECT 1 FROM bills WHERE user_id::text = $1::text LIMIT 1)
+             ) AS has_data`,
+            [ownUserId]
+          ).catch(() => ({ rows: [] }))
+        : Promise.resolve({ rows: [] })
     ])
 
-    const ownEntry = formatOwnWorkspace(ownWs.rows[0], ownUserId, req.user?.shopName || 'My Shop', email)
     const invitedEntries = (invitedRes.rows || []).map(formatInvitedWorkspace)
+    const hasOwnData = ownDataRes.rows[0]?.has_data === true
 
-    const workspaces = [ownEntry, ...invitedEntries]
+    let workspaces = []
+
+    // Only include own workspace if:
+    // - User has their own products/bills (they run their own business), OR
+    // - They have NO invited workspaces (standalone owner)
+    if (hasOwnData || invitedEntries.length === 0) {
+      const ownEntry = formatOwnWorkspace(ownWs.rows[0], ownUserId, req.user?.shopName || 'My Shop', email)
+      workspaces = [ownEntry, ...invitedEntries]
+    } else {
+      // Pure member: only show invited workspaces (no own empty workspace)
+      workspaces = invitedEntries
+    }
+
     setMemoryCache(cacheKey, workspaces, 60)
     res.json(workspaces)
   } catch (err) {

@@ -369,7 +369,14 @@ async function resolveInvitedWorkspace(email) {
     `SELECT m.workspace_owner_id, m.role, m.permissions, p.shop_name, p.email AS owner_email
      FROM workspace_members m
      LEFT JOIN shop_profiles p
-       ON (p.user_id::text = m.workspace_owner_id OR LOWER(p.email) = LOWER(m.workspace_owner_id))
+       ON (
+         p.user_id::text = m.workspace_owner_id
+         OR LOWER(p.email) = LOWER(m.workspace_owner_id)
+         OR LOWER(p.email) = LOWER(m.workspace_owner_id)
+         OR p.user_id::text = (
+           SELECT user_id::text FROM shop_profiles WHERE LOWER(email) = LOWER(m.workspace_owner_id) LIMIT 1
+         )
+       )
      WHERE LOWER(m.member_email) = LOWER($1)
      ORDER BY m.created_at ASC
      LIMIT 1`,
@@ -397,23 +404,28 @@ async function resolveInvitedWorkspace(email) {
   }
 }
 
-async function hasRealOwnedWorkspace(userId) {
+async function hasOwnProductsOrBills(userId) {
   if (!userId) return false
   const { rows } = await query(
     `SELECT (
        EXISTS (SELECT 1 FROM products WHERE user_id::text = $1::text LIMIT 1)
        OR EXISTS (SELECT 1 FROM bills WHERE user_id::text = $1::text LIMIT 1)
-       OR EXISTS (SELECT 1 FROM workspace_members WHERE workspace_owner_id::text = $1::text LIMIT 1)
-     ) AS has_activity`,
+     ) AS has_data`,
     [userId]
   ).catch(() => ({ rows: [] }))
-  return rows[0]?.has_activity === true
+  return rows[0]?.has_data === true
 }
 
 /**
  * Resolve the active workspace role/permissions for a user at login time.
- * If the user has active business in their own workspace, returns own workspace.
- * If invited to a team workspace and has no owned business activity, returns invited workspace immediately.
+ *
+ * Priority logic:
+ * 1. If the user has their own products or bills → they run their own workspace (Owner).
+ * 2. If they are invited to another workspace → use that with their assigned role & permissions.
+ * 3. New users with no data and no invite → own empty workspace (Owner).
+ *
+ * NOTE: Being listed in workspace_members as workspace_owner_id is NOT counted as
+ * "own activity" because invited members do NOT own the rows in workspace_members.
  */
 async function resolveLoginWorkspace(email, userId, shopName, profRow = null) {
   const safeShopName = (shopName && String(shopName).trim() !== 'null' && String(shopName).trim() !== '')
@@ -421,12 +433,13 @@ async function resolveLoginWorkspace(email, userId, shopName, profRow = null) {
     : `${email.split('@')[0]}'s Workshop`
 
   try {
-    const [invitedWorkspace, hasOwnActivity] = await Promise.all([
+    const [invitedWorkspace, ownData] = await Promise.all([
       resolveInvitedWorkspace(email),
-      hasRealOwnedWorkspace(userId)
+      hasOwnProductsOrBills(userId)
     ])
 
-    if (hasOwnActivity) {
+    // User has their own products/bills → stay in own workspace as Owner
+    if (ownData) {
       return {
         activeRole: 'Owner',
         activePermissions: null,
@@ -435,10 +448,12 @@ async function resolveLoginWorkspace(email, userId, shopName, profRow = null) {
       }
     }
 
+    // No own data but invited to a team workspace → use invited role & permissions
     if (invitedWorkspace) {
       return invitedWorkspace
     }
 
+    // New user: no data, no invite → own empty workspace
     return {
       activeRole: 'Owner',
       activePermissions: null,
@@ -1314,11 +1329,26 @@ router.delete('/members/:id', apiLimiter, requireAuth, async (req, res) => {
         console.error('[AUTH CLEANUP ERROR]', err.message)
       }
 
-      // 4. Invalidate Redis cache and blacklist the revoked user
+      // 4. Invalidate ALL caches and immediately blacklist the revoked user
+
+      // 4a. Write revocation to in-memory cache immediately (fastest path — no TTL wait)
+      setMemoryCache(`revoked_user:${targetEmail}`, true, 604800)
+
+      // 4b. Write revocation to Redis blacklist (persistent across restarts)
       await redis.set(`revoked_user:${targetEmail}`, 'true', { ex: 604800 }).catch(() => {})
+
+      // 4c. Clear user_exists cache so the DB check re-runs and finds them gone
+      await redis.del(`user_exists:${targetEmail}`).catch(() => {})
+      deleteMemoryCache(`revoked_user:${targetEmail}`) // clear negative-cache in case it was set false
+      setMemoryCache(`revoked_user:${targetEmail}`, true, 604800) // re-set as true
+
+      // 4d. Clear workspace membership caches
+      await redis.del(`ws_membership:${req.workspaceId}:${targetEmail}`).catch(() => {})
       await redis.del(`workspace_member:${req.workspaceId}:${targetEmail}`).catch(() => {})
       if (req.user?.id)    await redis.del(`workspace_member:${req.user.id}:${targetEmail}`).catch(() => {})
       if (req.user?.email) await redis.del(`workspace_member:${req.user.email.toLowerCase()}:${targetEmail}`).catch(() => {})
+
+      // 4e. Clear user ID mapping cache
       await redis.del(`user_id_map:${targetEmail}`).catch(() => {})
     }
 

@@ -439,11 +439,10 @@ export default function ProfitMargin() {
                                 <span style={{ fontWeight: 600, color: '#1e293b' }}>
                                   {formatINR(p.buyer_price)}
                                 </span>
-                                {p.buy_rate_per_unit > 0 && (
-                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                    ₹{p.buy_rate_per_unit.toFixed(2)} / {p.unit} cost
-                                  </span>
-                                )}
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                  {p.buy_rate_per_unit > 0 ? `₹${p.buy_rate_per_unit.toFixed(2)} / ${p.unit} cost` : '—'}
+                                  {p.bag_weight > 1 && p.buyer_pack_price > 0 ? ` · ₹${formatINR(p.buyer_pack_price)}/pack` : ''}
+                                </span>
                               </div>
                             </td>
 
@@ -453,11 +452,10 @@ export default function ProfitMargin() {
                                 <span style={{ fontWeight: 600, color: '#1e293b' }}>
                                   {formatINR(p.seller_price)}
                                 </span>
-                                {p.sell_rate_per_unit > 0 && (
-                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                    ₹{p.sell_rate_per_unit.toFixed(2)} / {p.unit} retail
-                                  </span>
-                                )}
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                  {p.sell_rate_per_unit > 0 ? `₹${p.sell_rate_per_unit.toFixed(2)} / ${p.unit} retail` : '—'}
+                                  {p.bag_weight > 1 && p.seller_pack_price > 0 ? ` · ₹${formatINR(p.seller_pack_price)}/pack` : ''}
+                                </span>
                               </div>
                             </td>
 
@@ -476,6 +474,7 @@ export default function ProfitMargin() {
                                 </span>
                                 <span style={{ fontSize: '0.70rem', color: '#94a3b8' }}>
                                   per {p.unit}
+                                  {p.bag_weight > 1 && p.profit_per_pack !== undefined ? ` · ${p.profit_per_pack >= 0 ? '+' : ''}₹${p.profit_per_pack.toFixed(0)}/pack` : ''}
                                 </span>
                               </div>
                             </td>
@@ -532,7 +531,9 @@ export default function ProfitMargin() {
                                   {formatINR(p.present_profit !== undefined ? p.present_profit : p.total_potential_profit)}
                                 </span>
                                 <span style={{ fontSize: '0.70rem', color: '#64748b', marginTop: 1 }}>
-                                  {(p.present_units !== undefined ? p.present_units : (p.total_units_in_stock || 0)).toLocaleString('en-IN')} {p.unit} in hand
+                                  {p.bag_weight > 1 && p.profit_per_pack !== undefined
+                                    ? `${p.stock || 0} bags${p.loose_kg > 0 ? ` +${p.loose_kg}kg` : ''} (${(p.present_units || 0).toLocaleString('en-IN')} ${p.unit})`
+                                    : `${(p.present_units !== undefined ? p.present_units : (p.total_units_in_stock || 0)).toLocaleString('en-IN')} ${p.unit} in hand`}
                                 </span>
                               </div>
                             </td>
@@ -548,7 +549,9 @@ export default function ProfitMargin() {
                                   {formatINR(p.full_stock_profit)}
                                 </span>
                                 <span style={{ fontSize: '0.70rem', color: '#64748b', marginTop: 1 }}>
-                                  Lot: {(p.full_units || 0).toLocaleString('en-IN')} {p.unit}
+                                  {p.bag_weight > 1 && p.profit_per_pack !== undefined
+                                    ? `${p.full_lot_stock} bags × ₹${p.profit_per_pack}/bag`
+                                    : `Lot: ${(p.full_units || 0).toLocaleString('en-IN')} ${p.unit}`}
                                 </span>
                               </div>
                             </td>

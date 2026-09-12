@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { Mail, Lock, ArrowLeft, Phone, CreditCard, User } from 'lucide-react'
 import WorkshopLogo from '../../components/WorkshopLogo'
@@ -15,6 +15,7 @@ export default function Signup() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
   const [searchParams] = useSearchParams()
+  const fileInputRef = useRef(null)
   
   const getParam = (key) => searchParams.get(key) || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get(key) : '') || ''
 
@@ -29,8 +30,14 @@ export default function Signup() {
     companyName: '', workspaceHandle: '', workspaceHandleManual: false,
     billingCountry: 'India', referralSource: '',
     firstName: '', lastName: '', phone: '', gstin: '',
-    usageType: 'Sales', inviteEmail: '', otp: ''
+    usageType: 'Sales', inviteEmail: '', otp: '', companyLogo: ''
   })
+  const [logoUrl, setLogoUrl] = useState('')
+
+  useEffect(() => {
+    // Ensure fresh signup never inherits previously cached avatars
+    localStorage.removeItem('ws_avatar_url')
+  }, [])
   const [errors, setErrors] = useState({})
   const [isLoading, setIsLoading] = useState(false)
   const [notification, setNotification] = useState(null) // { message, type }
@@ -41,6 +48,39 @@ export default function Signup() {
 
   const normalizeEmail = (value) => value.trim().toLowerCase()
   const normalizeOtp   = (value) => value.replace(/\D/g, '').slice(0, 6)
+
+  const handleLogoChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 10 * 1024 * 1024) {
+      showNotif('Logo image must be less than 10MB.', 'error')
+      return
+    }
+
+    if (!file.type.startsWith('image/')) {
+      showNotif('Please upload a valid image file (*.png, *.jpeg, *.webp).', 'error')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      if (reader.result) {
+        setLogoUrl(reader.result)
+        setForm(prev => ({ ...prev, companyLogo: reader.result }))
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleRemoveLogo = () => {
+    setLogoUrl('')
+    localStorage.removeItem('ws_avatar_url')
+    setForm(prev => ({ ...prev, companyLogo: '' }))
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
 
   // Sync invite email if search params load after initial render
   useEffect(() => {
@@ -261,6 +301,8 @@ export default function Signup() {
         last_name:       form.lastName,
         shopName:        derivedShopName,
         companyName:     derivedShopName,
+        companyLogo:     logoUrl,
+        logoUrl:         logoUrl,
         phone:           form.phone,
         gstin:           form.gstin,
         billingCountry:  form.billingCountry,
@@ -271,6 +313,12 @@ export default function Signup() {
       }
       const resultAction = await dispatch(registerThunk(payload))
       if (registerThunk.fulfilled.match(resultAction)) {
+        if (logoUrl) {
+          localStorage.setItem('ws_workspace_logo', logoUrl)
+          sessionStorage.setItem('ws_active_workspace_logo', logoUrl)
+          localStorage.removeItem('ws_avatar_url')
+          localStorage.removeItem('ws_user_avatar')
+        }
         showNotif('Workspace created! Redirecting to dashboard…', 'success')
         setTimeout(() => navigate('/dashboard'), 1200)
       } else {
@@ -292,7 +340,13 @@ export default function Signup() {
           <>
             <div className="ws-preview-sidebar">
               <div className="ws-preview-item ws-active">
-                <div className="ws-preview-avatar"><WorkshopLogo size={18} /></div>
+                <div className="ws-preview-avatar" style={{ overflow: 'hidden' }}>
+                  {logoUrl ? (
+                    <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <WorkshopLogo size={18} />
+                  )}
+                </div>
                 <span className="ws-preview-text">{form.companyName || 'Workspace title'}</span>
                 <ArrowLeft size={12} style={{ transform: 'rotate(-90deg)', marginLeft: 'auto', opacity: 0.5 }} />
               </div>
@@ -630,12 +684,41 @@ export default function Signup() {
             <h1 className="ws-auth-step-title" style={{ textAlign: 'left' }}>Create your workspace</h1>
 
             <div className="ws-logo-upload-section">
-              <div className="ws-logo-preview"><WorkshopLogo size={28} /></div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                accept="image/png, image/jpeg, image/jpg, image/webp"
+                onChange={handleLogoChange}
+              />
+              <div className="ws-logo-preview" style={{ overflow: 'hidden' }}>
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="Company logo preview"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <WorkshopLogo size={28} />
+                )}
+              </div>
               <div className="ws-logo-actions">
                 <span className="ws-logo-label">Company logo</span>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" className="ws-logo-btn">Replace image</button>
-                  <button type="button" className="ws-logo-btn ws-remove">Remove</button>
+                  <button
+                    type="button"
+                    className="ws-logo-btn"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Replace image
+                  </button>
+                  <button
+                    type="button"
+                    className="ws-logo-btn ws-remove"
+                    onClick={handleRemoveLogo}
+                  >
+                    Remove
+                  </button>
                 </div>
                 <p className="ws-logo-hint">*.png, *.jpeg files up to 10MB at least 400px by 400px</p>
               </div>
@@ -708,25 +791,25 @@ export default function Signup() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div className="ws-form-field">
                 <label className="ws-field-label">First name *</label>
-                <Input name="firstName" type="text" placeholder="John" icon={User}
+                <Input name="firstName" type="text" placeholder="Enter first name" icon={User}
                   value={form.firstName} onChange={handleChange} error={errors.firstName} />
               </div>
               <div className="ws-form-field">
                 <label className="ws-field-label">Last name *</label>
-                <Input name="lastName" type="text" placeholder="Doe" icon={User}
+                <Input name="lastName" type="text" placeholder="Enter last name" icon={User}
                   value={form.lastName} onChange={handleChange} error={errors.lastName} />
               </div>
             </div>
 
             <div className="ws-form-field">
               <label className="ws-field-label">Phone number *</label>
-              <Input name="phone" type="tel" placeholder="+91 98765 43210" icon={Phone}
+              <Input name="phone" type="tel" placeholder="Enter phone number" icon={Phone}
                 value={form.phone} onChange={handleChange} error={errors.phone} />
             </div>
 
             <div className="ws-form-field">
               <label className="ws-field-label">GSTIN *</label>
-              <Input name="gstin" type="text" placeholder="22AAAAA0000A1Z5" icon={CreditCard}
+              <Input name="gstin" type="text" placeholder="Enter GST number" icon={CreditCard}
                 value={form.gstin}
                 onChange={e => {
                   const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15)

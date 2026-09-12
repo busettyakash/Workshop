@@ -4,7 +4,7 @@ import {
   Home, Bell, BarChart3, Settings,
   Package, BookOpen, Receipt, CheckCircle, CheckCircle2, XCircle, Check,
   Users, UserCheck, GitBranch, Building2,
-  Search, ChevronDown, ChevronRight, LogOut, UserPlus, Zap, Menu, X, Plus,
+  Search, ChevronDown, ChevronRight, LogOut, Zap, Menu, X, Plus,
   Briefcase, User, CheckSquare, FileText, Mail, Phone, Send, Folder, LayoutGrid, Play, Star,
   MessageSquare, Upload, UserRound, ScrollText, DollarSign, History, ShoppingBag, PanelLeftClose, PanelLeftOpen, MoreHorizontal,
   Trash2
@@ -71,7 +71,6 @@ const ICON_MAP = {
   Pipeline: <Briefcase size={16} strokeWidth={1.35} />,
   ImportStock: <ImportStockIcon size={16} />,
   ProfitMargin: <ProfitMarginIcon size={16} />,
-  UserPlus: <UserPlus size={16} strokeWidth={1.35} />,
   LogOut: <LogOut size={16} strokeWidth={1.35} />,
 }
 
@@ -157,7 +156,6 @@ const SEARCH_ITEMS = [
   { label: 'Unpaid Invoices', path: ROUTES.UNPAID, icon: 'Unpaid', category: 'Invoices & Finance', keywords: 'pending overdue due bill' },
   { label: 'Workflows', path: '/workflows', icon: 'Workflows', category: 'Automations', keywords: 'automation triggers sequences flow' },
   { label: 'Settings', path: '/settings', icon: 'Settings', category: 'Account', keywords: 'preferences config profile workspace' },
-  { label: 'Invite Teammates', action: 'invite', icon: 'UserPlus', category: 'Actions', keywords: 'team invite user member share' },
   { label: 'Sign Out', action: 'logout', icon: 'LogOut', category: 'Account', keywords: 'exit logout logoff' },
 ]
 
@@ -272,9 +270,14 @@ function SidebarWorkspaceDropdown({
                   justifyContent: 'center',
                   fontSize: '0.68rem',
                   fontWeight: 700,
-                  flexShrink: 0
+                  flexShrink: 0,
+                  overflow: 'hidden'
                 }}>
-                  {(w.shopName || 'W')[0].toUpperCase()}
+                  {w.logoUrl ? (
+                    <img src={w.logoUrl} alt={w.shopName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    (w.shopName || 'W')[0].toUpperCase()
+                  )}
                 </div>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {w.shopName}
@@ -285,38 +288,7 @@ function SidebarWorkspaceDropdown({
           )
         })}
 
-        {isOwnerAdmin && (
-          <>
-            <button
-              onClick={() => {
-                onClose()
-                navigate('/settings')
-              }}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 8px',
-                border: 'none',
-                borderRadius: '6px',
-                background: 'transparent',
-                color: '#344054',
-                cursor: 'pointer',
-                fontSize: '0.78rem',
-                fontWeight: 500,
-                textAlign: 'left',
-                fontFamily: 'inherit'
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-            >
-              <Plus size={14} style={{ color: '#64748b' }} />
-              <span>New workspace</span>
-            </button>
-            <div style={{ height: '1px', background: '#f1f5f9', margin: '3px 0' }} />
-          </>
-        )}
+
 
         <button
           onClick={() => {
@@ -375,35 +347,6 @@ function SidebarWorkspaceDropdown({
             >
               <Settings size={14} style={{ color: '#64748b' }} />
               <span>Workspace settings</span>
-            </button>
-            <div style={{ height: '1px', background: '#f1f5f9', margin: '3px 0' }} />
-            <button
-              onClick={() => {
-                onClose()
-                navigate('/settings?tab=members&invite=true')
-                window.dispatchEvent(new CustomEvent('ws-open-invite'))
-              }}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 8px',
-                border: 'none',
-                borderRadius: '6px',
-                background: 'transparent',
-                color: '#344054',
-                cursor: 'pointer',
-                fontSize: '0.78rem',
-                fontWeight: 500,
-                textAlign: 'left',
-                fontFamily: 'inherit'
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-            >
-              <UserPlus size={14} style={{ color: '#64748b' }} />
-              <span>Invite team members</span>
             </button>
           </>
         )}
@@ -1085,7 +1028,15 @@ export default function Sidebar() {
     }
   })
 
-  const [workspaces, setWorkspaces] = useState([])
+  const [workspaces, setWorkspaces] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('ws_cached_workspaces')
+      const parsed = saved ? JSON.parse(saved) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -1103,11 +1054,45 @@ export default function Sidebar() {
     () => sessionStorage.getItem('ws_active_workspace_id') || ''
   )
 
+  const [activeWorkspaceLogo, setActiveWorkspaceLogo] = useState(() => {
+    return sessionStorage.getItem('ws_active_workspace_logo') || localStorage.getItem('ws_workspace_logo') || localStorage.getItem('ws_avatar_url') || ''
+  })
+
   useEffect(() => {
     const handleOpenInvite = () => setInviteModalOpen(true)
-    const handleWsUpdate = () => {
+    const handleWsUpdate = (e) => {
       const updated = sessionStorage.getItem('ws_active_workspace_name') || localStorage.getItem('ws_workspace_name')
       if (updated && updated !== 'null' && updated !== 'undefined') setActiveWorkspaceName(updated)
+      const updatedLogo = e?.detail?.logoUrl || sessionStorage.getItem('ws_active_workspace_logo') || localStorage.getItem('ws_workspace_logo') || localStorage.getItem('ws_avatar_url')
+      if (updatedLogo) setActiveWorkspaceLogo(updatedLogo)
+      if (e) {
+        authApi.getWorkspaces().then(data => {
+          if (data && Array.isArray(data)) {
+            setWorkspaces(data)
+            sessionStorage.setItem('ws_cached_workspaces', JSON.stringify(data))
+            const activeId = sessionStorage.getItem('ws_active_workspace_id')
+            const current = data.find(w => String(w.id) === String(activeId)) || data[0]
+            if (current) {
+              const role = current.role || (current.isOwner ? 'Owner' : 'Member')
+              const perms = current.permissions || {}
+              setActiveWorkspaceId(current.id)
+              setActiveWorkspaceName(current.shopName)
+              setActiveRole(role)
+              setActivePermissions(perms)
+              if (current.logoUrl) {
+                setActiveWorkspaceLogo(current.logoUrl)
+                sessionStorage.setItem('ws_active_workspace_logo', current.logoUrl)
+                localStorage.setItem('ws_workspace_logo', current.logoUrl)
+              }
+              sessionStorage.setItem('ws_active_workspace_id', current.id)
+              sessionStorage.setItem('ws_active_workspace_name', current.shopName)
+              sessionStorage.setItem('ws_active_role', role)
+              sessionStorage.setItem('ws_active_permissions', JSON.stringify(perms))
+              window.dispatchEvent(new CustomEvent('ws_permissions_updated', { detail: { role, perms } }))
+            }
+          }
+        }).catch(() => {})
+      }
     }
     const handlePermsUpdate = (e) => {
       if (e.detail?.role) setActiveRole(e.detail.role)
@@ -1118,6 +1103,7 @@ export default function Sidebar() {
     window.addEventListener('ws-open-invite', handleOpenInvite)
     window.addEventListener('workspace_updated', handleWsUpdate)
     window.addEventListener('ws_permissions_updated', handlePermsUpdate)
+    handleWsUpdate()
     return () => {
       window.removeEventListener('ws-open-invite', handleOpenInvite)
       window.removeEventListener('workspace_updated', handleWsUpdate)
@@ -1165,6 +1151,22 @@ export default function Sidebar() {
   useEffect(() => {
     const token = sessionStorage.getItem('ws_token')
     if (token) {
+      // 1. Instant hydration from cache
+      try {
+        const cachedChats = JSON.parse(sessionStorage.getItem('ws_cached_chats'))
+        if (Array.isArray(cachedChats) && cachedChats.length > 0) {
+          setChats(cachedChats)
+        }
+      } catch {}
+
+      try {
+        const cachedWs = JSON.parse(sessionStorage.getItem('ws_cached_workspaces'))
+        if (Array.isArray(cachedWs) && cachedWs.length > 0) {
+          setWorkspaces(cachedWs)
+        }
+      } catch {}
+
+      // 2. Fetch latest chats in background
       api.get('/chat/sessions')
         .then(res => {
           const data = res.data || []
@@ -1176,7 +1178,10 @@ export default function Sidebar() {
       const syncWorkspaces = () => {
         authApi.getWorkspaces()
           .then(data => {
-            setWorkspaces(data || [])
+            if (data && Array.isArray(data)) {
+              setWorkspaces(data)
+              sessionStorage.setItem('ws_cached_workspaces', JSON.stringify(data))
+            }
 
             const activeId = sessionStorage.getItem('ws_active_workspace_id')
             const isValid = data?.some(w => String(w.id) === String(activeId))
@@ -1375,8 +1380,12 @@ export default function Sidebar() {
             onClick={() => setWorkspaceDropdownOpen(!workspaceDropdownOpen)}
             title={displayWorkspaceName}
           >
-            <div className="ws-sb-ws-icon" style={{ textTransform: 'uppercase', color: '#fff', fontWeight: '800', fontSize: '11px', fontFamily: 'sans-serif' }}>
-              {logoLetter}
+            <div className="ws-sb-ws-icon" style={{ textTransform: 'uppercase', color: '#fff', fontWeight: '800', fontSize: '11px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+              {activeWorkspaceLogo ? (
+                <img src={activeWorkspaceLogo} alt={displayWorkspaceName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                logoLetter
+              )}
             </div>
             <span className="ws-sb-ws-name" title={displayWorkspaceName}>{displayWorkspaceName}</span>
             <ChevronDown size={13} className="ws-sb-chevron" />
@@ -1679,24 +1688,6 @@ export default function Sidebar() {
           )}
 
         </nav>
-
-        {/* Bottom */}
-        {isOwnerOrAdmin(activeRole) && (
-          <div className="ws-sb-bottom">
-            <div className="ws-sb-footer-actions">
-              <button
-                className="ws-sb-invite-btn"
-                onClick={() => {
-                  navigate('/settings?tab=members&invite=true')
-                  window.dispatchEvent(new CustomEvent('ws-open-invite'))
-                }}
-              >
-                <UserPlus size={14} />
-                Invite teammates
-              </button>
-            </div>
-          </div>
-        )}
       </aside>
 
       {/* All Chats Side Drawer*/}

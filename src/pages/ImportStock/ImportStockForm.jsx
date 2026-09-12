@@ -138,6 +138,15 @@ export default function ImportStockForm() {
           buying_price: item.buying_price || '',
           price_covers: item.price_covers !== undefined && item.price_covers !== null ? item.price_covers : '',
           price: item.price || '',
+          price_100: (() => {
+            const rawP = Number.parseFloat(item.price || 0)
+            const bw = Number.parseFloat(item.bag_weight || 1)
+            const pc = Number.parseFloat(item.price_covers || 0)
+            if (rawP > 0 && pc > 0 && bw > 0 && pc !== bw) {
+              return ((rawP / bw) * pc).toFixed(2)
+            }
+            return rawP > 0 ? rawP.toFixed(2) : ''
+          })(),
           updated_price: item.updated_price || '',
           updated_price_100: (() => {
             const up = Number.parseFloat(item.updated_price || 0)
@@ -570,19 +579,7 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                     </div>
 
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                        <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569' }}>Unit of Measure (UOM)</label>
-                        {uomOptions.length === 0 && (
-                          <a
-                            href="/settings?tab=uom"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600, textDecoration: 'underline' }}
-                          >
-                            + Add UOM in Settings
-                          </a>
-                        )}
-                      </div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Unit of Measure (UOM)</label>
                       <select
                         name="unit"
                         value={form.unit}
@@ -636,7 +633,27 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                         type="number"
                         step="0.1"
                         value={form.price_covers}
-                        onChange={handleChange}
+                        onChange={(e) => {
+                          const pcVal = e.target.value
+                          const pcNum = Number.parseFloat(pcVal || 0)
+                          const bwVal = Number.parseFloat(form.bag_weight || 1)
+                          const p100 = Number.parseFloat(form.price_100 || form.price || 0)
+                          let calculatedPrice = form.price
+                          if (p100 > 0) {
+                            calculatedPrice = (pcNum > 0 && bwVal > 0 && pcNum !== bwVal) ? ((p100 / pcNum) * bwVal).toFixed(2) : p100.toFixed(2)
+                          }
+                          const up100 = Number.parseFloat(form.updated_price_100 || 0)
+                          let calculatedUpPrice = form.updated_price
+                          if (up100 > 0) {
+                            calculatedUpPrice = (pcNum > 0 && bwVal > 0 && pcNum !== bwVal) ? ((up100 / pcNum) * bwVal).toFixed(2) : up100.toFixed(2)
+                          }
+                          setForm(prev => ({
+                            ...prev,
+                            price_covers: pcVal,
+                            price: calculatedPrice,
+                            updated_price: calculatedUpPrice
+                          }))
+                        }}
                         placeholder="Price Covers Qty"
                         style={inp('price_covers')}
                         onFocus={() => setFocus('price_covers')}
@@ -688,12 +705,23 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                           const bw = e.target.value
                           const pc = Number.parseFloat(form.price_covers || 0)
                           const bwVal = Number.parseFloat(bw || 1)
+                          const p100 = Number.parseFloat(form.price_100 || (form.price && pc > 0 && bwVal > 0 && pc !== bwVal ? ((Number.parseFloat(form.price) / bwVal) * pc).toFixed(2) : form.price) || 0)
                           let calculatedPrice = form.price
-                          if (form.price_100 && !Number.isNaN(form.price_100)) {
-                            const p100 = Number.parseFloat(form.price_100)
-                            calculatedPrice = pc > 0 ? ((p100 / pc) * bwVal).toFixed(2) : p100.toFixed(2)
+                          if (p100 > 0) {
+                            calculatedPrice = (pc > 0 && bwVal > 0 && pc !== bwVal) ? ((p100 / pc) * bwVal).toFixed(2) : p100.toFixed(2)
                           }
-                          setForm(prev => ({ ...prev, bag_weight: bw, price: calculatedPrice }))
+                          const up100 = Number.parseFloat(form.updated_price_100 || 0)
+                          let calculatedUpPrice = form.updated_price
+                          if (up100 > 0) {
+                            calculatedUpPrice = (pc > 0 && bwVal > 0 && pc !== bwVal) ? ((up100 / pc) * bwVal).toFixed(2) : up100.toFixed(2)
+                          }
+                          setForm(prev => ({
+                            ...prev,
+                            bag_weight: bw,
+                            price_100: prev.price_100 || (p100 > 0 ? String(p100) : prev.price_100),
+                            price: calculatedPrice,
+                            updated_price: calculatedUpPrice
+                          }))
                           if (errors.bag_weight) setErrors(prev => ({ ...prev, bag_weight: '' }))
                         }}
                         placeholder="Pack Size / Weight"
@@ -711,12 +739,23 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                                 type="button"
                                 onClick={() => {
                                   const pc = Number.parseFloat(form.price_covers || 0)
+                                  const p100 = Number.parseFloat(form.price_100 || form.price || 0)
                                   let calculatedPrice = form.price
-                                  if (form.price_100 && !Number.isNaN(form.price_100)) {
-                                    const p100 = Number.parseFloat(form.price_100)
-                                    calculatedPrice = pc > 0 ? ((p100 / pc) * size).toFixed(2) : p100.toFixed(2)
+                                  if (p100 > 0) {
+                                    calculatedPrice = (pc > 0 && size > 0 && pc !== size) ? ((p100 / pc) * size).toFixed(2) : p100.toFixed(2)
                                   }
-                                  setForm(prev => ({ ...prev, bag_weight: size, price: calculatedPrice }))
+                                  const up100 = Number.parseFloat(form.updated_price_100 || 0)
+                                  let calculatedUpPrice = form.updated_price
+                                  if (up100 > 0) {
+                                    calculatedUpPrice = (pc > 0 && size > 0 && pc !== size) ? ((up100 / pc) * size).toFixed(2) : up100.toFixed(2)
+                                  }
+                                  setForm(prev => ({
+                                    ...prev,
+                                    bag_weight: size,
+                                    price_100: prev.price_100 || (p100 > 0 ? String(p100) : prev.price_100),
+                                    price: calculatedPrice,
+                                    updated_price: calculatedUpPrice
+                                  }))
                                 }}
                                 style={{
                                   padding: '2px 6px',

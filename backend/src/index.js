@@ -90,31 +90,33 @@ app.use(express.json({
 }))
 app.use(express.urlencoded({ extended: true }))
 
-/* ── Response Gzip Compression ── */
-app.use((req, res, next) => {
-  const acceptEncoding = req.headers['accept-encoding'] || ''
-  if (!acceptEncoding.includes('gzip')) return next()
+/* ── Response Gzip Compression (Production only) ── */
+if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+  app.use((req, res, next) => {
+    const acceptEncoding = req.headers['accept-encoding'] || ''
+    if (!acceptEncoding.includes('gzip')) return next()
 
-  const originalJson = res.json.bind(res)
-  res.json = function (data) {
-    try {
-      const body = Buffer.from(JSON.stringify(data))
-      if (body.length < 1024) {
+    const originalJson = res.json.bind(res)
+    res.json = function (data) {
+      try {
+        const body = Buffer.from(JSON.stringify(data))
+        if (body.length < 1024) {
+          return originalJson(data)
+        }
+        zlib.gzip(body, (err, compressed) => {
+          if (err) return originalJson(data)
+          res.setHeader('Content-Encoding', 'gzip')
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.setHeader('Vary', 'Accept-Encoding')
+          res.send(compressed)
+        })
+      } catch {
         return originalJson(data)
       }
-      zlib.gzip(body, (err, compressed) => {
-        if (err) return originalJson(data)
-        res.setHeader('Content-Encoding', 'gzip')
-        res.setHeader('Content-Type', 'application/json; charset=utf-8')
-        res.setHeader('Vary', 'Accept-Encoding')
-        res.send(compressed)
-      })
-    } catch {
-      return originalJson(data)
     }
-  }
-  next()
-})
+    next()
+  })
+}
 
 /* ── Health & Observability Metrics ── */
 app.get('/', (_req, res) => {

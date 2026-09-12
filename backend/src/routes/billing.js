@@ -27,17 +27,14 @@ async function ensureBillingSchema() {
   await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => { })
 }
 
-router.use(async (_req, _res, next) => {
-  try {
-    ensureBillingSchemaPromise ||= ensureBillingSchema().catch((err) => {
+router.use((_req, _res, next) => {
+  if (!ensureBillingSchemaPromise) {
+    ensureBillingSchemaPromise = ensureBillingSchema().catch((err) => {
       ensureBillingSchemaPromise = null
-      throw err
+      console.warn('[Billing Schema Warning]', err.message)
     })
-    await ensureBillingSchemaPromise
-    next()
-  } catch (err) {
-    next(err)
   }
+  next()
 })
 
 import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
@@ -135,35 +132,40 @@ async function fetchBillsWithCursor({ where, params, cursor, limit, orderCol }) 
 }
 
 async function fetchBillsWithOffset({ where, params, page, limit, offset, orderCol }) {
-  const count = await query(
-    `SELECT COUNT(*) FROM bills b 
-     LEFT JOIN people p ON b.customer_id = p.id
-     LEFT JOIN customers cust ON b.customer_id = cust.id
-     ${where}`,
-    params
-  )
-  const total = Number.parseInt(count.rows[0].count, 10) || 0
-  const totalPages = Math.ceil(total / limit) || 1
-
+  const countParams = [...params]
   const listParams = [...params, limit, offset]
-  const { rows } = await query(
-    `SELECT b.*,
-       COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
-       COALESCE(p.phone, cust.phone, '') AS customer_phone,
-       COALESCE(b.created_by_name, sp.first_name || ' ' || sp.last_name, sp.shop_name, 'Admin') AS created_by_name,
-       COALESCE(b.created_by_role, 'Admin') AS created_by_role,
-       COALESCE(b.created_by_email, sp.email, '') AS created_by_email,
-       sp.shop_name,
-       sp.gstin AS shop_gstin,
-       sp.phone AS shop_phone
-     FROM bills b
-     LEFT JOIN people p ON b.customer_id = p.id
-     LEFT JOIN customers cust ON b.customer_id = cust.id
-     LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
-     ${where} ORDER BY ${orderCol}
-     LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
-    listParams
-  )
+
+  const [count, listRes] = await Promise.all([
+    query(
+      `SELECT COUNT(*) FROM bills b 
+       LEFT JOIN people p ON b.customer_id = p.id
+       LEFT JOIN customers cust ON b.customer_id = cust.id
+       ${where}`,
+      countParams
+    ),
+    query(
+      `SELECT b.*,
+         COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
+         COALESCE(p.phone, cust.phone, '') AS customer_phone,
+         COALESCE(b.created_by_name, sp.first_name || ' ' || sp.last_name, sp.shop_name, 'Admin') AS created_by_name,
+         COALESCE(b.created_by_role, 'Admin') AS created_by_role,
+         COALESCE(b.created_by_email, sp.email, '') AS created_by_email,
+         sp.shop_name,
+         sp.gstin AS shop_gstin,
+         sp.phone AS shop_phone
+       FROM bills b
+       LEFT JOIN people p ON b.customer_id = p.id
+       LEFT JOIN customers cust ON b.customer_id = cust.id
+       LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
+       ${where} ORDER BY ${orderCol}
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+      listParams
+    )
+  ])
+
+  const total = Number.parseInt(count.rows[0]?.count, 10) || 0
+  const totalPages = Math.ceil(total / limit) || 1
+  const rows = listRes.rows || []
 
   const hasNextPage = page < totalPages
   const lastRow = rows.length > 0 ? rows[rows.length - 1] : null

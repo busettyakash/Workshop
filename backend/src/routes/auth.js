@@ -2,7 +2,7 @@ import { Router }     from 'express'
 import insforge       from '../lib/insforge.js'
 import { query }      from '../lib/db.js'
 import redis          from '../lib/redis.js'
-import { deleteCached } from '../lib/fastCache.js'
+import { deleteCached, getMemoryCache, setMemoryCache, deleteMemoryCache } from '../lib/fastCache.js'
 import resend         from '../lib/resend.js'
 import { sendEmail }  from '../lib/smtp.js'
 import {
@@ -67,17 +67,14 @@ async function ensureWorkspaceTable() {
 
 let ensureWorkspaceTablePromise
 router.use(authLimiter)
-router.use(async (_req, _res, next) => {
-  try {
-    ensureWorkspaceTablePromise ||= ensureWorkspaceTable().catch(err => {
+router.use((_req, _res, next) => {
+  if (!ensureWorkspaceTablePromise) {
+    ensureWorkspaceTablePromise = ensureWorkspaceTable().catch(err => {
       ensureWorkspaceTablePromise = null
-      throw err
+      console.warn('[DB Init Warning]', err.message)
     })
-    await ensureWorkspaceTablePromise
-    next()
-  } catch (err) {
-    next(err)
   }
+  next()
 })
 
 // ─────────────────────────────────────────────
@@ -367,27 +364,6 @@ function resolvePermissions(role, permissions) {
 //  Login helpers
 // ─────────────────────────────────────────────
 
-async function resolveOwnWorkspace(email, userId, safeShopName) {
-  const ownCheck = await query(
-    'SELECT user_id, shop_name FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
-    [email]
-  ).catch(() => ({ rows: [] }))
-
-  if (!ownCheck.rows.length) return null
-
-  const row = ownCheck.rows[0]
-  const activeWorkspaceName = (row.shop_name && String(row.shop_name).trim() !== 'null' && String(row.shop_name).trim() !== '')
-    ? row.shop_name
-    : safeShopName
-
-  return {
-    activeRole: 'Owner',
-    activePermissions: null,
-    activeWorkspaceId: row.user_id || userId,
-    activeWorkspaceName
-  }
-}
-
 async function resolveInvitedWorkspace(email) {
   const { rows } = await query(
     `SELECT m.workspace_owner_id, m.role, m.permissions, p.shop_name, p.email AS owner_email
@@ -439,26 +415,36 @@ async function hasRealOwnedWorkspace(userId) {
  * If the user has active business in their own workspace, returns own workspace.
  * If invited to a team workspace and has no owned business activity, returns invited workspace immediately.
  */
-async function resolveLoginWorkspace(email, userId, shopName) {
+async function resolveLoginWorkspace(email, userId, shopName, profRow = null) {
   const safeShopName = (shopName && String(shopName).trim() !== 'null' && String(shopName).trim() !== '')
     ? shopName
     : `${email.split('@')[0]}'s Workshop`
 
   try {
-    const invitedWorkspace = await resolveInvitedWorkspace(email)
-    const hasOwnActivity = await hasRealOwnedWorkspace(userId)
+    const [invitedWorkspace, hasOwnActivity] = await Promise.all([
+      resolveInvitedWorkspace(email),
+      hasRealOwnedWorkspace(userId)
+    ])
 
     if (hasOwnActivity) {
-      const ownWorkspace = await resolveOwnWorkspace(email, userId, safeShopName)
-      if (ownWorkspace) return ownWorkspace
+      return {
+        activeRole: 'Owner',
+        activePermissions: null,
+        activeWorkspaceId: profRow?.user_id || userId,
+        activeWorkspaceName: profRow?.shop_name || safeShopName
+      }
     }
 
     if (invitedWorkspace) {
       return invitedWorkspace
     }
 
-    const ownWorkspace = await resolveOwnWorkspace(email, userId, safeShopName)
-    if (ownWorkspace) return ownWorkspace
+    return {
+      activeRole: 'Owner',
+      activePermissions: null,
+      activeWorkspaceId: profRow?.user_id || userId,
+      activeWorkspaceName: profRow?.shop_name || safeShopName
+    }
   } catch (err) {
     console.error('[Login] Error resolving initial workspace role:', err.message)
   }
@@ -723,8 +709,10 @@ async function resolveDefaultPendingWorkspace(email) {
 router.post('/register', authLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   const {
-    password, workspaceHandle, billingCountry, referralSource, usageType, inviteEmail, gstin
+    password, workspaceHandle, billingCountry, referralSource, usageType, inviteEmail, gstin,
+    companyLogo, logoUrl
   } = req.body
+  const actualLogo = companyLogo || logoUrl || null
 
   const isInvite = await checkIsInviteUser(req.body, email)
   const fields = normalizeRegistrationFields(req.body, email)
@@ -758,8 +746,8 @@ router.post('/register', authLimiter, async (req, res) => {
     await query(
       `INSERT INTO shop_profiles
          (email, user_id, shop_name, first_name, last_name, phone, gstin,
-          workspace_handle, billing_country, referral_source, usage_type, password, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+          workspace_handle, billing_country, referral_source, usage_type, password, logo_url, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
        ON CONFLICT (email) DO UPDATE SET
          user_id           = COALESCE(shop_profiles.user_id, EXCLUDED.user_id),
          shop_name         = EXCLUDED.shop_name,
@@ -770,11 +758,13 @@ router.post('/register', authLimiter, async (req, res) => {
          workspace_handle  = COALESCE(shop_profiles.workspace_handle, EXCLUDED.workspace_handle),
          billing_country   = COALESCE(shop_profiles.billing_country,  EXCLUDED.billing_country),
          referral_source   = COALESCE(shop_profiles.referral_source,  EXCLUDED.referral_source),
-         usage_type        = COALESCE(shop_profiles.usage_type,        EXCLUDED.usage_type)`,
+         usage_type        = COALESCE(shop_profiles.usage_type,        EXCLUDED.usage_type),
+         logo_url          = COALESCE(EXCLUDED.logo_url, shop_profiles.logo_url)`,
       [
         email, userId, actualShopName, actualFirstName, actualLastName,
         actualPhone || null, actualGstin || null, workspaceHandle || null,
         billingCountry || null, referralSource || null, usageType || null, password || null,
+        actualLogo
       ]
     ).catch(err => console.error('DB Insert Error', err))
 
@@ -799,8 +789,6 @@ router.post('/register', authLimiter, async (req, res) => {
       }
     }
 
-    const { defaultWorkspaceId, defaultWorkspaceName } = await resolveDefaultPendingWorkspace(email)
-
     const response = {
       message: 'Registration successful',
       token,
@@ -811,18 +799,27 @@ router.post('/register', authLimiter, async (req, res) => {
         phone: actualPhone, gstin,
       },
     }
-    if (defaultWorkspaceId) {
-      response.defaultWorkspaceId   = defaultWorkspaceId
-      response.defaultWorkspaceName = defaultWorkspaceName
-    }
 
-    // Resolve workspace role & permissions so the frontend can store them on first join
-    // (same logic as the login endpoint — avoids needing a page refresh for permissions)
-    const wsInfo = await resolveLoginWorkspace(email, userId, actualShopName)
-    response.activeRole          = wsInfo.activeRole
-    response.activePermissions   = wsInfo.activePermissions
-    response.activeWorkspaceId   = wsInfo.activeWorkspaceId
-    response.activeWorkspaceName = wsInfo.activeWorkspaceName
+    if (isInvite) {
+      const { defaultWorkspaceId, defaultWorkspaceName } = await resolveDefaultPendingWorkspace(email)
+      if (defaultWorkspaceId) {
+        response.defaultWorkspaceId   = defaultWorkspaceId
+        response.defaultWorkspaceName = defaultWorkspaceName
+      }
+      const wsInfo = await resolveLoginWorkspace(email, userId, actualShopName)
+      response.activeRole          = wsInfo.activeRole
+      response.activePermissions   = wsInfo.activePermissions
+      response.activeWorkspaceId   = wsInfo.activeWorkspaceId
+      response.activeWorkspaceName = wsInfo.activeWorkspaceName
+    } else {
+      // User registered their own new workspace — keep them in their own new workspace!
+      response.defaultWorkspaceId   = userId
+      response.defaultWorkspaceName = actualShopName
+      response.activeRole           = 'Owner'
+      response.activePermissions    = FULL_ADMIN_PERMISSIONS
+      response.activeWorkspaceId    = userId
+      response.activeWorkspaceName  = actualShopName
+    }
 
     res.status(201).json(response)
 
@@ -890,12 +887,12 @@ router.post('/login', authLimiter, async (req, res) => {
       token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
     }
 
-    // Always clear revocation blacklist and existence cache on successful login
-    await redis.del(`revoked_user:${email.toLowerCase()}`).catch(() => {})
+    // Clear revocation blacklist and cache in background without blocking response
+    redis.del(`revoked_user:${email.toLowerCase()}`).catch(() => {})
     deleteCached(redis, `user_exists:${email.toLowerCase()}`)
 
     const { activeRole, activePermissions, activeWorkspaceId, activeWorkspaceName } =
-      await resolveLoginWorkspace(email, userId, shopName)
+      await resolveLoginWorkspace(email, userId, shopName, prof)
 
     res.json({
       token,
@@ -1060,6 +1057,7 @@ function formatInvitedWorkspace(row) {
     id:          row.user_id || row.owner_email,
     shopName:    safeShop,
     ownerEmail:  row.owner_email,
+    logoUrl:     row.logo_url || null,
     isOwner:     false,
     role:        row.role || 'Member',
     permissions: row.permissions || {},
@@ -1075,6 +1073,7 @@ function formatOwnWorkspace(own, ownUserId, fallbackShopName, email) {
     id:         own?.user_id || ownUserId,
     shopName:   safeOwnShop,
     ownerEmail: own?.email || email,
+    logoUrl:    own?.logo_url || null,
     isOwner:    true,
     role:       'Owner',
   }
@@ -1083,37 +1082,34 @@ function formatOwnWorkspace(own, ownUserId, fallbackShopName, email) {
 /* GET /api/auth/workspaces — Fetch all workspaces accessible by the current user */
 router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
   const email = normalizeEmail(req.user.email)
+  const cacheKey = `workspaces:${email}`
+  const cached = getMemoryCache(cacheKey)
+  if (cached) {
+    return res.json(cached)
+  }
+
   try {
     const ownUserId = req.user.id || req.workspaceId
-    const ownWs = await query(
-      'SELECT user_id, shop_name, email FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
-      [email]
-    ).catch(() => ({ rows: [] }))
+    const [ownWs, invitedRes] = await Promise.all([
+      query(
+        'SELECT user_id, shop_name, email, logo_url FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
+        [email]
+      ).catch(() => ({ rows: [] })),
+      query(
+        `SELECT p.user_id, p.shop_name, p.email AS owner_email, p.logo_url, m.role, m.permissions
+         FROM workspace_members m
+         JOIN shop_profiles p ON p.user_id::text = m.workspace_owner_id OR p.email = m.workspace_owner_id
+         WHERE LOWER(m.member_email) = LOWER($1)
+         ORDER BY m.created_at ASC`,
+        [email]
+      ).catch(() => ({ rows: [] }))
+    ])
 
     const ownEntry = formatOwnWorkspace(ownWs.rows[0], ownUserId, req.user?.shopName || 'My Shop', email)
+    const invitedEntries = (invitedRes.rows || []).map(formatInvitedWorkspace)
 
-    const { rows: invitedRows } = await query(
-      `SELECT p.user_id, p.shop_name, p.email AS owner_email, m.role, m.permissions
-       FROM workspace_members m
-       JOIN shop_profiles p ON p.user_id::text = m.workspace_owner_id OR p.email = m.workspace_owner_id
-       WHERE LOWER(m.member_email) = LOWER($1)
-       ORDER BY m.created_at ASC`,
-      [email]
-    ).catch(() => ({ rows: [] }))
-
-    const invitedEntries = invitedRows.map(formatInvitedWorkspace)
-    const hasOwnActivity = await hasRealOwnedWorkspace(ownUserId)
-
-    // Only include the user's own workspace if they have real activity in it
-    // (products, bills, or members). Pure members with no owned business data
-    // should only see the workspace(s) they were invited to.
-    let workspaces = [ownEntry]
-    if (hasOwnActivity) {
-      workspaces = [ownEntry, ...invitedEntries]
-    } else if (invitedEntries.length > 0) {
-      workspaces = invitedEntries
-    }
-
+    const workspaces = [ownEntry, ...invitedEntries]
+    setMemoryCache(cacheKey, workspaces, 60)
     res.json(workspaces)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -1436,7 +1432,7 @@ router.get('/profile', apiLimiter, requireAuth, async (req, res) => {
     if (!email) return res.status(401).json({ error: 'Unauthorized' })
 
     const { rows } = await query(
-      'SELECT user_id, shop_name, email, first_name, last_name, phone, gstin, address FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
+      'SELECT user_id, shop_name, email, first_name, last_name, phone, gstin, address, avatar_url, logo_url FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
       [email]
     )
 
@@ -1460,6 +1456,7 @@ router.get('/profile', apiLimiter, requireAuth, async (req, res) => {
         lastName:   req.user?.lastName  || req.user?.name?.split(' ').slice(1).join(' ') || '',
         shopName:   req.user?.shopName  || '',
         phone: '', gstin: '', address: '',
+        avatarUrl: '', logoUrl: '',
         role, permissions,
       })
     }
@@ -1474,6 +1471,8 @@ router.get('/profile', apiLimiter, requireAuth, async (req, res) => {
       phone:      row.phone      || '',
       gstin:      row.gstin      || '',
       address:    row.address    || '',
+      avatarUrl:  row.avatar_url || '',
+      logoUrl:    row.logo_url   || '',
       role, permissions,
     })
   } catch (err) {
@@ -1481,19 +1480,29 @@ router.get('/profile', apiLimiter, requireAuth, async (req, res) => {
   }
 })
 
-/* PUT /api/auth/profile — Update name / email fields */
+/* PUT /api/auth/profile — Update name / email / avatar fields */
 router.put('/profile', apiLimiter, requireAuth, async (req, res) => {
   try {
     const userEmail = req.user?.email
     if (!userEmail) return res.status(401).json({ error: 'Unauthorized' })
 
-    const { firstName, lastName, email } = req.body
-    await query(
-      `UPDATE shop_profiles
-       SET first_name = $1, last_name = $2, email = COALESCE($3, email)
-       WHERE LOWER(email) = LOWER($4)`,
-      [firstName, lastName, email, userEmail]
-    )
+    const { firstName, lastName, email, avatarUrl, avatar_url } = req.body
+    const targetAvatar = avatarUrl !== undefined ? avatarUrl : avatar_url
+    if (targetAvatar !== undefined) {
+      await query(
+        `UPDATE shop_profiles
+         SET first_name = $1, last_name = $2, email = COALESCE($3, email), avatar_url = $4
+         WHERE LOWER(email) = LOWER($5)`,
+        [firstName, lastName, email, targetAvatar, userEmail]
+      )
+    } else {
+      await query(
+        `UPDATE shop_profiles
+         SET first_name = $1, last_name = $2, email = COALESCE($3, email)
+         WHERE LOWER(email) = LOWER($4)`,
+        [firstName, lastName, email, userEmail]
+      )
+    }
 
     // Keep billing history in sync — update created_by_name on all bills
     // this user created so the billing list shows their current name
@@ -1511,22 +1520,202 @@ router.put('/profile', apiLimiter, requireAuth, async (req, res) => {
   }
 })
 
-/* PUT /api/auth/workspace — Update workspace / shop details */
+/* PUT /api/auth/workspace — Update workspace / shop details including logo */
 router.put('/workspace', apiLimiter, requireAuth, async (req, res) => {
   try {
     const userEmail = req.user?.email
     if (!userEmail) return res.status(401).json({ error: 'Unauthorized' })
 
-    const { shopName, phone, gstin, address } = req.body
-    await query(
-      `UPDATE shop_profiles
-       SET shop_name = $1, phone = $2, gstin = $3, address = $4
-       WHERE LOWER(email) = LOWER($5)`,
-      [shopName, phone, gstin, address, userEmail]
-    )
+    const { shopName, phone, gstin, address, logoUrl, logo_url } = req.body
+    const targetLogo = logoUrl !== undefined ? logoUrl : logo_url
+    if (targetLogo !== undefined) {
+      await query(
+        `UPDATE shop_profiles
+         SET shop_name = COALESCE($1, shop_name),
+             phone = COALESCE($2, phone),
+             gstin = COALESCE($3, gstin),
+             address = COALESCE($4, address),
+             logo_url = $5
+         WHERE LOWER(email) = LOWER($6)`,
+        [shopName, phone, gstin, address, targetLogo, userEmail]
+      )
+    } else {
+      await query(
+        `UPDATE shop_profiles
+         SET shop_name = $1, phone = $2, gstin = $3, address = $4
+         WHERE LOWER(email) = LOWER($5)`,
+        [shopName, phone, gstin, address, userEmail]
+      )
+    }
+
+    deleteMemoryCache(`workspaces:${normalizeEmail(userEmail)}`)
 
     res.json({ message: 'Workspace details saved successfully!' })
   } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/* DELETE /api/auth/workspace — Permanently delete workspace and its members & data */
+router.delete('/workspace', apiLimiter, requireAuth, async (req, res) => {
+  try {
+    const userEmail = req.user?.email
+    const userId    = String(req.user?.id || '')
+    const wsId      = String(req.workspaceId || '')
+    if (!userEmail) return res.status(401).json({ error: 'Unauthorized' })
+
+    // Find if user is owner of this workspace
+    const ownerRes = await query(
+      'SELECT user_id, shop_name FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
+      [userEmail]
+    ).catch(() => ({ rows: [] }))
+
+    const profileUserId = ownerRes.rows[0]?.user_id ? String(ownerRes.rows[0].user_id) : userId
+    const isOwnerOfWs = (wsId === profileUserId || wsId === userId || wsId === userEmail || !wsId)
+
+    if (isOwnerOfWs) {
+      // 1. Find all invited members belonging to this workspace and delete their accounts
+      const { rows: memberRows } = await query(
+        `SELECT DISTINCT LOWER(member_email) AS member_email
+         FROM workspace_members
+         WHERE (workspace_owner_id = $1
+            OR workspace_owner_id = $2
+            OR LOWER(workspace_owner_id) = LOWER($3)
+            OR workspace_owner_id IN (SELECT user_id::text FROM shop_profiles WHERE LOWER(email) = LOWER($3)))
+           AND member_email IS NOT NULL`,
+        [wsId, profileUserId, userEmail]
+      ).catch(() => ({ rows: [] }))
+
+      const memberEmails = memberRows
+        .map(r => r.member_email?.trim()?.toLowerCase())
+        .filter(email => email && email !== userEmail.toLowerCase())
+
+      for (const mEmail of memberEmails) {
+        try {
+          // Check if this member has other workspace memberships
+          const { rows: otherMemberships } = await query(
+            `SELECT id FROM workspace_members
+             WHERE LOWER(member_email) = LOWER($1)
+               AND workspace_owner_id != $2
+               AND workspace_owner_id != $3
+               AND LOWER(workspace_owner_id) != LOWER($4)`,
+            [mEmail, wsId, profileUserId, userEmail]
+          ).catch(() => ({ rows: [] }))
+
+          // If member belongs only to this workspace, permanently delete their profile and credentials
+          if (otherMemberships.length === 0) {
+            await query(
+              'DELETE FROM auth.user_providers WHERE user_id IN (SELECT id FROM auth.users WHERE LOWER(email) = LOWER($1))',
+              [mEmail]
+            ).catch(() => {})
+            await query('DELETE FROM auth.email_otps WHERE LOWER(email) = LOWER($1)', [mEmail]).catch(() => {})
+            await query(
+              'DELETE FROM notifications WHERE user_id IN (SELECT id FROM auth.users WHERE LOWER(email) = LOWER($1))',
+              [mEmail]
+            ).catch(() => {})
+            await query('DELETE FROM shop_profiles WHERE LOWER(email) = LOWER($1)', [mEmail]).catch(() => {})
+            await query('DELETE FROM auth.users WHERE LOWER(email) = LOWER($1)', [mEmail]).catch(() => {})
+
+            // Blacklist and invalidate in Redis
+            await redis.set(`revoked_user:${mEmail}`, 'true', { ex: 604800 }).catch(() => {})
+            await redis.del(`user_id_map:${mEmail}`).catch(() => {})
+            deleteCached(redis, `user_exists:${mEmail}`)
+          }
+
+          // Invalidate workspace member caches
+          await redis.del(`workspace_member:${wsId}:${mEmail}`).catch(() => {})
+          await redis.del(`workspace_member:${profileUserId}:${mEmail}`).catch(() => {})
+          await redis.del(`workspace_member:${userEmail.toLowerCase()}:${mEmail}`).catch(() => {})
+        } catch (memberErr) {
+          console.error(`[DELETE WORKSPACE] Error deleting member ${mEmail}:`, memberErr.message)
+        }
+      }
+
+      // 2. Delete ALL membership records for this workspace
+      await query(
+        `DELETE FROM workspace_members
+         WHERE workspace_owner_id = $1
+            OR workspace_owner_id = $2
+            OR LOWER(workspace_owner_id) = LOWER($3)
+            OR workspace_owner_id IN (SELECT user_id::text FROM shop_profiles WHERE LOWER(email) = LOWER($3))`,
+        [wsId, profileUserId, userEmail]
+      )
+
+      // 3. Delete all records belonging to this workspace
+      const targets = [wsId, profileUserId, userEmail].filter(Boolean)
+      const inClause = targets.map((_, idx) => `$${idx + 1}`).join(', ')
+
+      await Promise.allSettled([
+        query(`DELETE FROM bill_items WHERE bill_id IN (SELECT id FROM bills WHERE user_id::text IN (${inClause}))`, targets),
+        query(`DELETE FROM products WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM bills WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM quotes WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM orders WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM people WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM customers WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM notes WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM emails WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM import_stock WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM import_stock_payments WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM bill_templates WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM workflow_runs WHERE user_id::text IN (${inClause}) OR workflow_id IN (SELECT id FROM workflows WHERE user_id::text IN (${inClause}))`, [...targets, ...targets]),
+        query(`DELETE FROM workflows WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM uoms WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM chat_sessions WHERE user_id::text IN (${inClause})`, targets),
+        query(`DELETE FROM price_history WHERE user_id::text IN (${inClause})`, targets),
+      ])
+
+      // 4. Invalidate Redis caches for this workspace
+      for (const target of targets) {
+        try {
+          const keys = await redis.keys(`emails:${target}:*`).catch(() => [])
+          for (const k of keys) {
+            await redis.del(k).catch(() => {})
+          }
+          await redis.del(`workflows:list:${target}`).catch(() => {})
+        } catch {}
+      }
+      try {
+        deleteCached(redis, `user_id_map:${userEmail}`)
+        deleteMemoryCache(`workspaces:${normalizeEmail(userEmail)}`)
+      } catch {}
+
+      // 5. Remove this user from any other workspaces they were invited to
+      await query(
+        `DELETE FROM workspace_members WHERE LOWER(member_email) = LOWER($1)`,
+        [userEmail]
+      ).catch(() => {})
+
+      // 6. Delete admin workspace profile and auth credentials completely from the platform
+      await query(
+        `DELETE FROM shop_profiles WHERE LOWER(email) = LOWER($1) OR user_id::text = $2`,
+        [userEmail, profileUserId]
+      ).catch(() => {})
+      await query(
+        'DELETE FROM auth.user_providers WHERE user_id IN (SELECT id FROM auth.users WHERE LOWER(email) = LOWER($1))',
+        [userEmail]
+      ).catch(() => {})
+      await query('DELETE FROM auth.email_otps WHERE LOWER(email) = LOWER($1)', [userEmail]).catch(() => {})
+      await query(
+        'DELETE FROM notifications WHERE user_id IN (SELECT id FROM auth.users WHERE LOWER(email) = LOWER($1))',
+        [userEmail]
+      ).catch(() => {})
+      await query('DELETE FROM auth.users WHERE LOWER(email) = LOWER($1)', [userEmail]).catch(() => {})
+      await redis.set(`revoked_user:${userEmail.toLowerCase()}`, 'true', { ex: 604800 }).catch(() => {})
+      deleteCached(redis, `user_exists:${userEmail.toLowerCase()}`)
+    } else {
+      // Member leaving an invited workspace: remove from workspace_members
+      await query(
+        `DELETE FROM workspace_members
+         WHERE LOWER(member_email) = LOWER($1)
+           AND (workspace_owner_id = $2 OR LOWER(workspace_owner_id) = LOWER($2))`,
+        [userEmail, wsId]
+      )
+    }
+
+    res.json({ message: 'Workspace and all associated members and data deleted successfully!' })
+  } catch (err) {
+    console.error('[DELETE WORKSPACE ERROR]', err.message)
     res.status(500).json({ error: err.message })
   }
 })

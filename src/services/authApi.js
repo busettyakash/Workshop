@@ -93,5 +93,10 @@ export const authApi = {
     const res = await apiClient.delete(`/auth/members/${memberId}`)
     return res.data
   },
+
+  deleteWorkspace: async () => {
+    const res = await apiClient.delete('/auth/workspace')
+    return res.data
+  },
 }
 

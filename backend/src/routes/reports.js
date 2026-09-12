@@ -38,21 +38,27 @@ router.get('/sales', async (req, res) => {
 /* GET /api/reports/dashboard — KPI summary */
 router.get('/dashboard', async (req, res) => {
   const userId = req.workspaceId
+  const cacheKey = `reports:dashboard:${userId}`
   try {
+    const cached = await getCached(redis, cacheKey, 100)
+    if (cached) return res.json(cached)
+
     const [sales, products, customers, unpaid] = await Promise.all([
       query(`SELECT COALESCE(SUM(amount),0) AS today FROM bills WHERE user_id = $1 AND (created_at AT TIME ZONE ${TZ})::date = (NOW() AT TIME ZONE ${TZ})::date`, [userId]),
       query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE stock < 5) AS low_stock FROM products WHERE user_id = $1`, [userId]),
       query(`SELECT COUNT(*) AS total FROM people WHERE user_id = $1`, [userId]),
       query(`SELECT COUNT(*) AS count, COALESCE(SUM(amount),0) AS amount FROM bills WHERE status='unpaid' AND user_id = $1`, [userId]),
     ])
-    res.json({
+    const payload = {
       today_sales:    Number.parseFloat(sales.rows[0].today),
       total_products: Number.parseInt(products.rows[0].total),
       low_stock:      Number.parseInt(products.rows[0].low_stock),
       total_customers:Number.parseInt(customers.rows[0].total),
       unpaid_count:   Number.parseInt(unpaid.rows[0].count),
       unpaid_amount:  Number.parseFloat(unpaid.rows[0].amount),
-    })
+    }
+    setCached(redis, cacheKey, payload, 60)
+    res.json(payload)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

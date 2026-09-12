@@ -5,6 +5,7 @@ import { sendEmail } from '../lib/smtp.js'
 import { syncGmailInbox } from '../lib/imap.js'
 import redis from '../lib/redis.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
+import { getCached, setCached, deleteMemoryCache } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(apiLimiter)
@@ -21,6 +22,8 @@ const escapeHtml = (unsafe) => {
 
 const clearEmailsCache = async (userId) => {
   try {
+    deleteMemoryCache(`emails:${userId}:inbox:`)
+    deleteMemoryCache(`emails:${userId}:sent:`)
     const keys = await redis.keys(`emails:${userId}:*`).catch(() => [])
     for (const key of keys) {
       await redis.del(key).catch(() => {})
@@ -58,17 +61,14 @@ const ensureTable = async () => {
 }
 
 let ensureTablePromise
-router.use(async (_req, _res, next) => {
-  try {
-    ensureTablePromise ||= ensureTable().catch((err) => {
+router.use((_req, _res, next) => {
+  if (!ensureTablePromise) {
+    ensureTablePromise = ensureTable().catch((err) => {
       ensureTablePromise = null
-      throw err
+      console.warn('[Emails Table Init Warning]', err.message)
     })
-    await ensureTablePromise
-    next()
-  } catch (err) {
-    next(err)
   }
+  next()
 })
 
 async function fetchWorkshopKnownEntities(userId) {
@@ -147,9 +147,9 @@ router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { search, direction = 'inbox' } = req.query
 
-  // Perform inbox cleanup on fetch
+  // Perform inbox cleanup in background without blocking response
   if (direction === 'inbox') {
-    await cleanupInbox(userId)
+    cleanupInbox(userId).catch(() => {})
   }
 
   const params = [userId, direction]
@@ -163,7 +163,7 @@ router.get('/', async (req, res) => {
 
   const cacheKey = `emails:${userId}:${direction}:${search || ''}`
   try {
-    const cached = await redis.get(cacheKey).catch(() => null)
+    const cached = await getCached(redis, cacheKey, 100)
     if (cached) {
       return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
     }
@@ -177,11 +177,7 @@ router.get('/', async (req, res) => {
       params
     )
     const resultPayload = { data: rows, total: rows.length }
-    try {
-      await redis.set(cacheKey, JSON.stringify(resultPayload), { ex: 300 }).catch(() => {})
-    } catch (cErr) {
-      console.error('[Emails Cache Write Error]', cErr.message)
-    }
+    setCached(redis, cacheKey, resultPayload, 300)
     res.json(resultPayload)
   } catch (err) {
     res.status(500).json({ error: err.message })

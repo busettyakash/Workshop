@@ -3,6 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
+import { getCached, setCached, deleteMemoryCache } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(apiLimiter)
@@ -10,6 +11,7 @@ router.use(requireAuth)
 
 const clearNotesCache = async (userId) => {
   try {
+    deleteMemoryCache(`notes:${userId}:`)
     const keys = await redis.keys(`notes:${userId}:*`).catch(() => [])
     for (const key of keys) {
       await redis.del(key).catch(() => {})
@@ -40,17 +42,14 @@ const ensureTable = async () => {
 }
 
 let ensureTablePromise
-router.use(async (_req, _res, next) => {
-  try {
-    ensureTablePromise ||= ensureTable().catch((err) => {
+router.use((_req, _res, next) => {
+  if (!ensureTablePromise) {
+    ensureTablePromise = ensureTable().catch((err) => {
       ensureTablePromise = null
-      throw err
+      console.warn('[Notes Table Init Warning]', err.message)
     })
-    await ensureTablePromise
-    next()
-  } catch (err) {
-    next(err)
   }
+  next()
 })
 
 /* GET /api/notes */
@@ -67,7 +66,7 @@ router.get('/', async (req, res) => {
 
   const cacheKey = `notes:${userId}:${search || ''}`
   try {
-    const cached = await redis.get(cacheKey).catch(() => null)
+    const cached = await getCached(redis, cacheKey, 100)
     if (cached) {
       return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
     }
@@ -81,11 +80,7 @@ router.get('/', async (req, res) => {
       params
     )
     const resultPayload = { data: rows, total: rows.length }
-    try {
-      await redis.set(cacheKey, JSON.stringify(resultPayload), { ex: 300 }).catch(() => {})
-    } catch (cErr) {
-      console.error('[Notes Cache Write Error]', cErr.message)
-    }
+    setCached(redis, cacheKey, resultPayload, 300)
     res.json(resultPayload)
   } catch (err) {
     res.status(500).json({ error: err.message })

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react'
 import { useSelector } from 'react-redux'
 import { useAppDispatch } from '../../redux/hooks'
-import { selectToasts, removeToast } from '../../redux/slices/uiSlice'
+import { selectToasts, removeToast, addToast } from '../../redux/slices/uiSlice'
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
 import './Toast.css'
 
@@ -16,9 +16,9 @@ function Toast({ toast }) {
   const dispatch = useAppDispatch()
 
   useEffect(() => {
-    const timer = setTimeout(() => dispatch(removeToast(toast.id)), 2500)
+    const timer = setTimeout(() => dispatch(removeToast(toast.id)), toast.duration || 4000)
     return () => clearTimeout(timer)
-  }, [dispatch, toast.id])
+  }, [dispatch, toast.id, toast.duration])
 
   return (
     <div className={`ws-toast ws-toast--${toast.type}`} role="alert">
@@ -36,7 +36,24 @@ function Toast({ toast }) {
 }
 
 export default function ToastContainer() {
+  const dispatch = useAppDispatch()
   const toasts = useSelector(selectToasts)
+
+  useEffect(() => {
+    try {
+      const flash = sessionStorage.getItem('flash_toast')
+      if (flash) {
+        sessionStorage.removeItem('flash_toast')
+        const parsed = JSON.parse(flash)
+        if (parsed?.message) {
+          dispatch(addToast(parsed))
+        }
+      }
+    } catch (e) {
+      console.warn('Could not parse flash toast', e)
+    }
+  }, [dispatch])
+
   if (!toasts.length) return null
 
   return (

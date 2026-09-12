@@ -73,15 +73,15 @@ async function fetchPeopleWithCursor(res, { conditions, params, limit, orderCol,
 
 async function fetchPeopleWithOffset(res, { conditions, params, page, limit, offset, orderCol }) {
   const where = `WHERE ${conditions.join(' AND ')}`
-  const countRes = await query(`SELECT COUNT(*) FROM people ${where}`, params)
-  const total = Number.parseInt(countRes.rows[0].count, 10)
-  const totalPages = Math.ceil(total / limit) || 1
-
-  params.push(limit, offset)
-  const { rows } = await query(
-    `SELECT * FROM people ${where} ORDER BY ${orderCol} LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params
+  const queryParams = [...params, limit, offset]
+  const { rows: rawRows } = await query(
+    `SELECT *, COUNT(*) OVER() AS _total_count FROM people ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
+    queryParams
   )
+
+  const total = rawRows.length > 0 ? Number.parseInt(rawRows[0]._total_count, 10) : 0
+  const rows = rawRows.map(r => { const { _total_count, ...rest } = r; return rest })
+  const totalPages = Math.ceil(total / limit) || 1
 
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
   return res.json({ data: rows, total, page, limit, totalPages })

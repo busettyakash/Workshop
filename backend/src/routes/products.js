@@ -50,17 +50,14 @@ async function ensureProductsSchema() {
   ])
 }
 
-router.use(async (_req, _res, next) => {
-  try {
-    ensureProductsSchemaPromise ||= ensureProductsSchema().catch((err) => {
+router.use((_req, _res, next) => {
+  if (!ensureProductsSchemaPromise) {
+    ensureProductsSchemaPromise = ensureProductsSchema().catch((err) => {
       ensureProductsSchemaPromise = null
-      throw err
+      console.warn('[Products Schema Warning]', err.message)
     })
-    await ensureProductsSchemaPromise
-    next()
-  } catch (err) {
-    next(err)
   }
+  next()
 })
 
 function getIndianDateStr() {

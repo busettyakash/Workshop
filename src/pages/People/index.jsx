@@ -3,7 +3,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Filter, ArrowUpDown, Loader2, Mail, Phone, Trash2, Edit2, Search } from 'lucide-react'
+import { Plus, Filter, ArrowUpDown, Loader2, Trash2, Edit2, Search } from 'lucide-react'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
 import { getAvatarColor, getSingleLetter, getPillStyle } from '../../utils/tableHelpers'
@@ -284,16 +284,10 @@ export default function People() {
                             </div>
                           </td>
                           <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <Mail size={12} style={{ color: 'var(--color-gray-400)', flexShrink: 0 }} />
-                              <span style={{ fontSize: '0.82rem', color: 'var(--color-gray-600)' }}>{row.email || '—'}</span>
-                            </div>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--color-gray-600)' }}>{row.email || '—'}</span>
                           </td>
                           <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <Phone size={12} style={{ color: 'var(--color-gray-400)', flexShrink: 0 }} />
-                              <span style={{ fontSize: '0.82rem', color: 'var(--color-gray-600)' }}>{row.phone || '—'}</span>
-                            </div>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--color-gray-600)' }}>{row.phone || '—'}</span>
                           </td>
                           <td>
                             <span className="ws-pill-topic" style={{ background: personaStyle.bg, color: personaStyle.text, borderColor: personaStyle.border }}>

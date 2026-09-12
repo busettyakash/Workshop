@@ -33,6 +33,7 @@ import WorkspaceSettings from './pages/WorkspaceSettings/index'
 
 // UI
 import ToastContainer from './components/ui/Toast'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 
 // Redux
 import { useAppSelector } from './redux/hooks'
@@ -48,8 +49,9 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <ToastContainer />
-      <Routes>
+      <ErrorBoundary>
+        <ToastContainer />
+        <Routes>
         {/* Public */}
         <Route path="/"               element={<Landing />} />
         <Route path="/login"          element={<Login />} />
@@ -88,6 +90,7 @@ export default function App() {
         {/* 404 */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   )
 }

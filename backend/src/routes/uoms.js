@@ -37,13 +37,12 @@ async function ensureUomsTable() {
 
 /* GET /api/uoms - List UOMs created for the workspace */
 router.get('/', async (req, res) => {
-  const workspaceId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
-  const userId = req.user?.id || workspaceId
+  const workspaceId = req.workspaceId || req.user?.id
   try {
     await ensureUomsTable()
     const { rows } = await query(
-      "SELECT * FROM uoms WHERE user_id::text = $1 OR user_id::text = $2 OR user_id::text = 'default-user' OR user_id IS NULL ORDER BY id ASC",
-      [String(workspaceId), String(userId)]
+      'SELECT * FROM uoms WHERE user_id::text = $1 ORDER BY id ASC',
+      [String(workspaceId)]
     )
     res.json(rows)
   } catch (err) {
@@ -54,13 +53,12 @@ router.get('/', async (req, res) => {
 
 /* DELETE /api/uoms/all - Clear all UOMs */
 router.delete('/all', async (req, res) => {
-  const workspaceId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
-  const userId = req.user?.id || workspaceId
+  const workspaceId = req.workspaceId || req.user?.id
   try {
     await ensureUomsTable()
     await query(
-      "DELETE FROM uoms WHERE user_id::text = $1 OR user_id::text = $2 OR user_id::text = 'default-user' OR user_id IS NULL",
-      [String(workspaceId), String(userId)]
+      'DELETE FROM uoms WHERE user_id::text = $1',
+      [String(workspaceId)]
     )
     res.json({ message: 'All UOMs cleared' })
   } catch (err) {
@@ -70,7 +68,7 @@ router.delete('/all', async (req, res) => {
 
 /* POST /api/uoms - Create UOM */
 router.post('/', async (req, res) => {
-  const userId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
+  const userId = req.workspaceId || req.user?.id
   const { code, name, category, is_bulk, presets, status } = req.body
   if (!code || !name) return res.status(400).json({ error: 'code and name are required' })
 
@@ -78,7 +76,8 @@ router.post('/', async (req, res) => {
     await ensureUomsTable()
     const { rows } = await query(
       `INSERT INTO uoms (user_id, code, name, category, is_bulk, presets, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+       RETURNING *`,
       [String(userId), code.toLowerCase().trim(), name.trim(), category || 'Count', Boolean(is_bulk), presets || '1', status || 'Active']
     )
     res.status(201).json(rows[0])
@@ -90,15 +89,16 @@ router.post('/', async (req, res) => {
 
 /* PUT /api/uoms/:id - Update UOM */
 router.put('/:id', async (req, res) => {
-  const workspaceId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
-  const userId = req.user?.id || workspaceId
+  const workspaceId = req.workspaceId || req.user?.id
   const { code, name, category, is_bulk, presets, status } = req.body
   try {
     await ensureUomsTable()
     const { rows } = await query(
-      `UPDATE uoms SET code=$1, name=$2, category=$3, is_bulk=$4, presets=$5, status=$6, updated_at=NOW()
-       WHERE id=$7 AND (user_id::text=$8 OR user_id::text=$9 OR user_id::text='default-user' OR user_id IS NULL) RETURNING *`,
-      [code.toLowerCase().trim(), name.trim(), category, Boolean(is_bulk), presets, status, req.params.id, String(workspaceId), String(userId)]
+      `UPDATE uoms
+       SET code = $1, name = $2, category = $3, is_bulk = $4, presets = $5, status = $6, updated_at = NOW()
+       WHERE id = $7 AND user_id::text = $8
+       RETURNING *`,
+      [code.toLowerCase().trim(), name.trim(), category, Boolean(is_bulk), presets, status, req.params.id, String(workspaceId)]
     )
     if (!rows.length) return res.status(404).json({ error: 'UOM not found' })
     res.json(rows[0])
@@ -109,14 +109,14 @@ router.put('/:id', async (req, res) => {
 
 /* DELETE /api/uoms/:id - Delete UOM */
 router.delete('/:id', async (req, res) => {
-  const workspaceId = req.workspaceId || req.user?.id || '00000000-0000-0000-0000-000000000000'
-  const userId = req.user?.id || workspaceId
+  const workspaceId = req.workspaceId || req.user?.id
   try {
     await ensureUomsTable()
-    await query(
-      "DELETE FROM uoms WHERE id = $1 AND (user_id::text = $2 OR user_id::text = $3 OR user_id::text = 'default-user' OR user_id IS NULL)",
-      [req.params.id, String(workspaceId), String(userId)]
+    const { rowCount } = await query(
+      'DELETE FROM uoms WHERE id = $1 AND user_id::text = $2',
+      [req.params.id, String(workspaceId)]
     )
+    if (!rowCount) return res.status(404).json({ error: 'UOM not found' })
     res.json({ message: 'UOM deleted' })
   } catch (err) {
     res.status(500).json({ error: err.message })

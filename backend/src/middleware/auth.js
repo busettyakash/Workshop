@@ -2,7 +2,7 @@ import insforge from '../lib/insforge.js'
 import jwt from 'jsonwebtoken'
 import { query, dbLocalStorage } from '../lib/db.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached } from '../lib/fastCache.js'
+import { getCached, setCached, getMemoryCache, setMemoryCache, withTimeout } from '../lib/fastCache.js'
 
 // ─────────────────────────────────────────────
 //  Constants
@@ -61,9 +61,14 @@ async function resolveInsForgeToken(token) {
  * Mutates user.id in place if a local ID is found.
  */
 async function mapLocalUserId(user) {
+  // If user.id is already a valid UUID / local ID from local JWT, skip lookup
+  if (user.id && user.id !== user.email && !user.id.startsWith('mock-')) {
+    return
+  }
+
   try {
     const cacheKey = `user_id_map:${user.email.toLowerCase()}`
-    let localUserId = await getCached(redis, cacheKey)
+    let localUserId = await getCached(redis, cacheKey, 100)
 
     if (!localUserId) {
       const profileRes = await query(
@@ -84,22 +89,32 @@ async function mapLocalUserId(user) {
 
 /**
  * Check whether the user account has been revoked or deleted.
- * Uses Redis blacklist first, then a cached 3-table existence check.
+ * Uses In-Memory cache first (0ms), then Redis blacklist, then DB existence check.
  * Returns an error response string if the user should be blocked, or null if OK.
  */
 async function checkUserRevocation(email) {
   const emailLower = email.toLowerCase()
 
-  // 1. Fast path: Redis revocation blacklist
-  const isRevoked = await redis.get(`revoked_user:${emailLower}`).catch(() => null)
+  // 1. FASTEST PATH: In-memory cache check (0ms!)
+  const memRevoked = getMemoryCache(`revoked_user:${emailLower}`)
+  if (memRevoked === true) {
+    return 'Your account has been deleted or removed from the workspace.'
+  }
+  if (memRevoked === false) {
+    return null // verified active in memory cache
+  }
+
+  // 2. Redis revocation blacklist (with 100ms timeout)
+  const isRevoked = await withTimeout(redis.get(`revoked_user:${emailLower}`).catch(() => null), 100)
   if (isRevoked) {
+    setMemoryCache(`revoked_user:${emailLower}`, true, 604800)
     return 'Your account has been deleted or removed from the workspace.'
   }
 
-  // 2. Cached DB existence check (5-min TTL)
+  // 3. Cached DB existence check
   try {
     const existsCacheKey = `user_exists:${emailLower}`
-    let userExistsFlag = await getCached(redis, existsCacheKey)
+    let userExistsFlag = await getCached(redis, existsCacheKey, 100)
 
     if (userExistsFlag === null) {
       const userCheck = await query(
@@ -114,12 +129,15 @@ async function checkUserRevocation(email) {
     }
 
     if (userExistsFlag === 'false') {
+      setMemoryCache(`revoked_user:${emailLower}`, true, 300)
       return 'User account not found or has been deleted.'
     }
   } catch (err) {
     console.error('[Auth Middleware] User existence check failed:', err.message)
   }
 
+  // Cache that this user is active and NOT revoked in memory for 120 seconds
+  setMemoryCache(`revoked_user:${emailLower}`, false, 120)
   return null // user is valid
 }
 
@@ -132,7 +150,7 @@ async function resolveWorkspaceMembership(req, res, requestedWorkspaceId, user) 
   const cacheKey = `ws_membership:${requestedWorkspaceId}:${user.email.toLowerCase()}`
 
   try {
-    const cached = await getCached(redis, cacheKey)
+    const cached = await getCached(redis, cacheKey, 100)
     if (cached) {
       if (cached.granted) {
         req.workspaceId       = cached.resolvedOwnerId
@@ -166,11 +184,11 @@ async function resolveWorkspaceMembership(req, res, requestedWorkspaceId, user) 
         resolvedOwnerId,
         role: rows[0].role || 'Member',
         permissions: rows[0].permissions || {}
-      }, 30)
+      }, 120)
       return { granted: true, resolvedOwnerId }
     }
 
-    setCached(redis, cacheKey, { granted: false }, 15)
+    setCached(redis, cacheKey, { granted: false }, 60)
     return { granted: false }
   } catch (err) {
     console.error('[Auth Middleware] Workspace check exception:', err.message)

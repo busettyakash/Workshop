@@ -3,6 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 import redis from '../lib/redis.js'
+import { getCached, setCached, deleteMemoryCache } from '../lib/fastCache.js'
 import { verifyQStashSignature, setLocalStepRunner } from '../lib/qstash.js'
 import { sendEmail } from '../lib/smtp.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
@@ -596,7 +597,9 @@ router.get('/all-runs', async (req, res) => {
       `SELECT r.*, w.name as workflow_name 
        FROM workflow_runs r
        LEFT JOIN workflows w ON r.workflow_id = w.id
-       ORDER BY r.created_at DESC LIMIT 100`
+       WHERE (r.user_id::text = $1::text OR w.user_id::text = $1::text)
+       ORDER BY r.created_at DESC LIMIT 100`,
+      [req.workspaceId]
     )
     res.json(rows)
   } catch (err) {
@@ -705,8 +708,7 @@ try {
 router.get('/', async (req, res) => {
   const cacheKey = `workflows:list:${req.workspaceId}`
   try {
-    // Try reading from Redis cache first
-    const cached = await redis.get(cacheKey).catch(() => null)
+    const cached = await getCached(redis, cacheKey, 100)
     if (cached) {
       try {
         const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached
@@ -729,11 +731,7 @@ router.get('/', async (req, res) => {
               ) AS recent_runs
        FROM workflows w 
        LEFT JOIN workflow_runs r ON w.id = r.workflow_id 
-       WHERE (w.user_id::text = $1::text 
-          OR w.user_id::text = '00000000-0000-0000-0000-000000000000' 
-          OR $1::text = '00000000-0000-0000-0000-000000000000'
-          OR w.user_id::text = 'default-user'
-          OR $1::text = 'default-user')
+       WHERE w.user_id::text = $1::text
        GROUP BY w.id 
        ORDER BY w.is_starred DESC, w.created_at DESC`,
       [req.workspaceId]
@@ -791,8 +789,8 @@ router.get('/', async (req, res) => {
       ).catch(() => {})
     }
 
-    // Cache in Redis for fast access (TTL: 5 seconds)
-    await redis.set(cacheKey, JSON.stringify(resultRows), { ex: 5 }).catch(() => {})
+    // Cache for fast access (TTL: 60 seconds)
+    setCached(redis, cacheKey, resultRows, 60)
 
     res.json(resultRows)
   } catch (err) {
@@ -818,6 +816,7 @@ router.post('/', async (req, res) => {
     // Set initial draft status in Redis
     await redis.set(`workflow:${newWf.id}:is_live`, '0').catch(() => {})
     await redis.del(`workflows:list:${req.workspaceId}`).catch(() => {})
+    deleteMemoryCache(`workflows:list:${req.workspaceId}`)
 
     res.status(201).json(newWf)
   } catch (err) {
@@ -888,6 +887,7 @@ router.patch('/:id/toggle-star', async (req, res) => {
     )
 
     await redis.del(`workflows:list:${req.workspaceId}`).catch(() => {})
+    deleteMemoryCache(`workflows:list:${req.workspaceId}`)
 
     console.log('[WORKFLOW STAR TOGGLE] Workflow star status toggled')
     res.json(rows[0])
@@ -958,6 +958,7 @@ router.delete('/:id', async (req, res) => {
     // Clean up Redis keys
     await redis.del(`workflow:${req.params.id}:is_live`).catch(() => {})
     await redis.del(`workflows:list:${req.workspaceId}`).catch(() => {})
+    deleteMemoryCache(`workflows:list:${req.workspaceId}`)
 
     res.json({ message: 'Workflow deleted successfully' })
   } catch (err) {

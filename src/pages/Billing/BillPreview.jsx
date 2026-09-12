@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { X, Printer } from 'lucide-react'
+import api from '../../api/client'
 import './BillPreview.css'
 
 const INR = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -123,17 +124,9 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
     // Dynamically fetch company profile and products from backend DB
     const fetchData = async () => {
       try {
-        const token = sessionStorage.getItem('ws_token') || localStorage.getItem('token') || localStorage.getItem('jwt')
-        const wsId = sessionStorage.getItem('ws_active_workspace_id') || ''
-        const headers = { 'Content-Type': 'application/json' }
-        if (token) headers['Authorization'] = `Bearer ${token}`
-        if (wsId) headers['x-workspace-id'] = wsId
-
-        const resProds = await fetch('/api/products?limit=100', { headers }).catch(() => null)
-
-        if (resProds && resProds.ok) {
-          const jsonProds = await resProds.json()
-          const prods = jsonProds.data || []
+        const resProds = await api.get('/products?limit=100').catch(() => null)
+        if (resProds && resProds.data) {
+          const prods = Array.isArray(resProds.data) ? resProds.data : (resProds.data.data || [])
           const pMap = {}
           prods.forEach(p => {
             if (p.id) pMap[String(p.id)] = p
@@ -158,15 +151,18 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   try {
     const rawItems = doc.line_items || doc.items || []
     items = typeof rawItems === 'string' ? JSON.parse(rawItems) : (rawItems || [])
+    if (!Array.isArray(items)) items = []
   } catch { items = [] }
 
   const grossSubtotal = items.reduce((s, li) => {
+    if (!li) return s
     const q = Number.parseFloat(li.qty || li.quantity || 1)
     const p = Number.parseFloat(li.price || li.rate || 0)
     return s + (p * q)
   }, 0)
 
   const lineDiscounts = items.reduce((s, li) => {
+    if (!li) return s
     const d = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? 0)
     return s + (Number.isNaN(d) ? 0 : d)
   }, 0)
@@ -424,6 +420,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                 </thead>
                 <tbody>
                   {items.length > 0 ? items.map((li, i) => {
+                    if (!li) return null
                     const qty = Number.parseFloat(li.qty || li.quantity || 1)
                     const price = Number.parseFloat(li.price || li.rate || 0)
                     const pId = li.product_id || li.productId || li.id
@@ -477,7 +474,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                         : 0)
 
                     return (
-                      <tr key={it.id || `${it.product_id || 'item'}-${i}`}>
+                      <tr key={li.id || `${li.product_id || 'item'}-${i}`}>
                         <td style={{ fontWeight: 600, color: '#475569', fontSize: 10, fontFamily: 'monospace' }}>{hsnCode}</td>
                         <td>
                           <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 11 }}>{prodName}</div>
@@ -495,7 +492,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                     )
                   }) : (
                     <tr>
-                      <td colSpan="5" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px' }}>No line items found</td>
+                      <td colSpan="6" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px' }}>No line items found</td>
                     </tr>
                   )}
                 </tbody>

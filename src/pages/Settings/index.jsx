@@ -2,14 +2,16 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router'
 import { useAppDispatch } from '../../redux/hooks'
 import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
-import { updateUser } from '../../redux/slices/authSlice'
+import { updateUser, logout } from '../../redux/slices/authSlice'
 import { useAuth } from '../../hooks/useAuth'
 import {
   ChevronLeft, ArrowLeft, Search, User, Palette, Bell, Lock, Building2, LayoutGrid, Scale, Users, DollarSign, Info, Camera, HelpCircle, Save, Plus, Trash2, Copy, Download, Calendar, X
 } from 'lucide-react'
 import api from '../../api/client'
+import { authApi } from '../../services/authApi'
 import UomManager from '../../components/settings/UomManager'
 import MembersManager from '../../components/settings/MembersManager'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 import { usePermissions, isOwnerOrAdmin } from '../../utils/permissionUtils'
 import '../Dashboard/Dashboard.css'
 
@@ -121,8 +123,11 @@ export default function Settings() {
     }
     return user?.email || ''
   })
-  const [avatarUrl, setAvatarUrl] = useState(() => {
-    return localStorage.getItem('ws_avatar_url') || ''
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState(() => {
+    return localStorage.getItem('ws_user_avatar') || ''
+  })
+  const [workspaceLogoUrl, setWorkspaceLogoUrl] = useState(() => {
+    return sessionStorage.getItem('ws_active_workspace_logo') || localStorage.getItem('ws_workspace_logo') || localStorage.getItem('ws_avatar_url') || ''
   })
 
   // Workspace Form state
@@ -196,6 +201,15 @@ export default function Settings() {
           if (fName) setFirstName(fName)
           if (lName) setLastName(lName)
           if (res.data.email) setEmail(res.data.email)
+          if (res.data.avatarUrl) {
+            setProfileAvatarUrl(res.data.avatarUrl)
+            localStorage.setItem('ws_user_avatar', res.data.avatarUrl)
+          }
+          if (res.data.logoUrl) {
+            setWorkspaceLogoUrl(res.data.logoUrl)
+            sessionStorage.setItem('ws_active_workspace_logo', res.data.logoUrl)
+            localStorage.setItem('ws_workspace_logo', res.data.logoUrl)
+          }
           dispatch(updateUser({ firstName: fName, lastName: lName, email: res.data.email }))
           setWorkspaceForm(prev => ({
             ...prev,
@@ -209,7 +223,7 @@ export default function Settings() {
       .catch(() => { })
   }, [dispatch])
 
-  const handleAvatarChange = (e) => {
+  const handleProfileAvatarChange = (e) => {
     const file = e.target.files?.[0]
     if (file) {
       const allowedImageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
@@ -217,15 +231,35 @@ export default function Settings() {
         dispatch(addToast({ message: 'Invalid file type. Please upload a PNG, JPEG, GIF, or WEBP image.', type: 'error' }))
         return
       }
-      const tempUrl = URL.createObjectURL(file)
-      setAvatarUrl(tempUrl)
-      localStorage.setItem('ws_avatar_url', tempUrl)
-
       const reader = new FileReader()
       reader.onloadend = () => {
         if (reader.result) {
-          setAvatarUrl(reader.result)
-          localStorage.setItem('ws_avatar_url', reader.result)
+          setProfileAvatarUrl(reader.result)
+          localStorage.setItem('ws_user_avatar', reader.result)
+          api.put('/auth/profile', { firstName, lastName, email, avatarUrl: reader.result }).catch(() => {})
+        }
+      }
+      reader.readAsDataURL(file)
+      dispatch(addToast({ message: 'Profile picture updated successfully!', type: 'success' }))
+    }
+  }
+
+  const handleWorkspaceLogoChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const allowedImageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
+      if (!allowedImageTypes.includes(file.type)) {
+        dispatch(addToast({ message: 'Invalid file type. Please upload a PNG, JPEG, GIF, or WEBP image.', type: 'error' }))
+        return
+      }
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        if (reader.result) {
+          setWorkspaceLogoUrl(reader.result)
+          sessionStorage.setItem('ws_active_workspace_logo', reader.result)
+          localStorage.setItem('ws_workspace_logo', reader.result)
+          api.put('/auth/workspace', { ...workspaceForm, logoUrl: reader.result }).catch(() => {})
+          window.dispatchEvent(new CustomEvent('workspace_updated', { detail: { logoUrl: reader.result } }))
         }
       }
       reader.readAsDataURL(file)
@@ -251,18 +285,28 @@ export default function Settings() {
     }, 400)
   }
 
-  const handleDeleteWorkspace = async () => {
-    const wsName = workspaceForm.shopName || 'this workspace'
-    if (window.confirm(`Are you sure you want to delete "${wsName}"? All data will be permanently removed.`)) {
-      try {
-        localStorage.removeItem('ws_workspace_settings')
-        sessionStorage.removeItem('ws_active_workspace_name')
-        sessionStorage.removeItem('ws_active_workspace_id')
-        dispatch(addToast({ message: 'Workspace deleted successfully.', type: 'info' }))
-        navigate('/dashboard')
-      } catch {
-        dispatch(addToast({ message: 'Failed to delete workspace.', type: 'error' }))
-      }
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+
+  const handleDeleteWorkspace = () => {
+    setConfirmDeleteOpen(true)
+  }
+
+  const handleConfirmDeleteWorkspace = async () => {
+    setConfirmDeleteOpen(false)
+    try {
+      await authApi.deleteWorkspace()
+      dispatch(logout())
+      sessionStorage.clear()
+      localStorage.clear()
+      sessionStorage.setItem('flash_toast', JSON.stringify({
+        message: 'Workspace deleted successfully',
+        type: 'success',
+        duration: 4500
+      }))
+      window.location.href = '/'
+    } catch (err) {
+      console.error('[Delete Workspace Error]', err)
+      dispatch(addToast({ message: err?.response?.data?.error || 'Failed to delete workspace.', type: 'error' }))
     }
   }
 
@@ -590,8 +634,8 @@ export default function Settings() {
 
               {/* Profile Picture Section */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-                {getSanitizedImageUrl(avatarUrl) ? (
-                  <img src={getSanitizedImageUrl(avatarUrl)} alt="Profile" style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover' }} />
+                {getSanitizedImageUrl(profileAvatarUrl) ? (
+                  <img src={getSanitizedImageUrl(profileAvatarUrl)} alt="Profile" style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover' }} />
                 ) : (
                   <div style={{
                     width: 52,
@@ -635,7 +679,7 @@ export default function Settings() {
                       <Camera size={13} />
                       Upload Image
                     </button>
-                    <input ref={profileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} />
+                    <input ref={profileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleProfileAvatarChange} />
                   </div>
                 </div>
               </div>
@@ -842,8 +886,8 @@ export default function Settings() {
 
               {/* Workspace Logo Section */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-                {getSanitizedImageUrl(avatarUrl) ? (
-                  <img src={getSanitizedImageUrl(avatarUrl)} alt="Workspace Logo" style={{ width: 52, height: 52, borderRadius: 12, objectFit: 'cover' }} />
+                {getSanitizedImageUrl(workspaceLogoUrl) ? (
+                  <img src={getSanitizedImageUrl(workspaceLogoUrl)} alt="Workspace Logo" style={{ width: 52, height: 52, borderRadius: 12, objectFit: 'cover' }} />
                 ) : (
                   <div style={{
                     width: 52,
@@ -887,7 +931,7 @@ export default function Settings() {
                       <Camera size={13} />
                       Upload logo
                     </button>
-                    <input ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} />
+                    <input ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleWorkspaceLogoChange} />
                   </div>
                 </div>
               </div>
@@ -1165,6 +1209,19 @@ export default function Settings() {
         </div>
 
       </div>
+
+      {/* Delete Workspace Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmDeleteOpen}
+        title="Delete Workspace"
+        message={`Are you sure you want to delete "${workspaceForm.shopName || 'this workspace'}"? All workspace settings and local data will be permanently removed.`}
+        confirmLabel="Delete Workspace"
+        cancelLabel="Keep Workspace"
+        confirmBg="#ef4444"
+        confirmHoverBg="#dc2626"
+        onConfirm={handleConfirmDeleteWorkspace}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </div>
   )
 }

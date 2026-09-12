@@ -35,16 +35,31 @@ function calculateMargin(buyRate, sellRate, buyerPrice, sellerPrice) {
 }
 
 function computeItemProfitMargin(r) {
-  const buyerPrice = Number.parseFloat(r.buyer_price) || 0
-  const sellerPrice = Number.parseFloat(r.seller_price) || 0
+  const rawBuyerPrice = Number.parseFloat(r.buyer_price) || 0
+  const rawSellerPrice = Number.parseFloat(r.seller_price) || 0
   const stock = Number.parseFloat(r.stock) || 0
   const looseKg = Number.parseFloat(r.loose_kg) || 0
   const bw = Number.parseFloat(r.bag_weight) || 1
   const pc = Number.parseFloat(r.price_covers) || 1
 
-  const buyRatePerUnit = calculateBuyRatePerUnit(buyerPrice, pc, bw)
-  const sellRatePerUnit = calculateSellRatePerUnit(sellerPrice, bw, pc)
-  const { marginPerUnit, marginPct } = calculateMargin(buyRatePerUnit, sellRatePerUnit, buyerPrice, sellerPrice)
+  const buyRatePerUnit = calculateBuyRatePerUnit(rawBuyerPrice, pc, bw)
+  const sellRatePerUnit = calculateSellRatePerUnit(rawSellerPrice, bw, pc)
+  const { marginPerUnit, marginPct } = calculateMargin(buyRatePerUnit, sellRatePerUnit, rawBuyerPrice, rawSellerPrice)
+
+  // Compute normalized benchmark display prices (e.g. per price_covers / 100 kgs)
+  // so that Buyer Price and Seller Price are always compared at the exact same scale
+  const effectiveBuyerPrice = (pc > 0 && bw > 0 && pc !== bw)
+    ? rawBuyerPrice
+    : (pc > 0 ? (buyRatePerUnit * pc) : (bw > 0 ? (buyRatePerUnit * bw) : rawBuyerPrice))
+
+  const effectiveSellerPrice = (pc > 0 && bw > 0 && pc !== bw)
+    ? ((rawSellerPrice / bw) * pc)
+    : rawSellerPrice
+
+  // Compute pack-level prices (for 1 bag of bag_weight)
+  const buyerPackPrice = bw > 0 ? (buyRatePerUnit * bw) : rawBuyerPrice
+  const sellerPackPrice = rawSellerPrice > 0 ? rawSellerPrice : (sellRatePerUnit * bw)
+  const profitPerPack = sellerPackPrice - buyerPackPrice
 
   // Present stock remaining (reduces as sales happen in Billing)
   const fullBagUnits = stock * (bw > 1 ? bw : 1)
@@ -66,8 +81,11 @@ function computeItemProfitMargin(r) {
     loose_kg: looseKg,
     bag_weight: bw,
     price_covers: pc,
-    buyer_price: buyerPrice,
-    seller_price: sellerPrice,
+    buyer_price: Number(effectiveBuyerPrice.toFixed(2)),
+    seller_price: Number(effectiveSellerPrice.toFixed(2)),
+    buyer_pack_price: Number(buyerPackPrice.toFixed(2)),
+    seller_pack_price: Number(sellerPackPrice.toFixed(2)),
+    profit_per_pack: Number(profitPerPack.toFixed(2)),
     buy_rate_per_unit: Number(buyRatePerUnit.toFixed(2)),
     sell_rate_per_unit: Number(sellRatePerUnit.toFixed(2)),
     margin_per_unit: Number(marginPerUnit.toFixed(2)),

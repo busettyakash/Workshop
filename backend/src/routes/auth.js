@@ -53,8 +53,8 @@ async function ensureWorkspaceTable() {
       UNIQUE (workspace_owner_id, member_email)
     );
     ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
-    ALTER TABLE workspace_members NO FORCE ROW LEVEL SECURITY;
-    ALTER TABLE workspace_members DISABLE ROW LEVEL SECURITY;
+    ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE workspace_members FORCE ROW LEVEL SECURITY;
   `).catch(err => console.error('[DB] Error ensuring workspace_members table:', err.message))
 
   await query(`

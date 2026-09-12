@@ -162,11 +162,12 @@ export default function UomManager() {
       {/* ── UOM Table (uses exact same attio-table classes as Products page) ── */}
       <div className="attio-table-card" style={{ marginTop: 0 }}>
         <div className="attio-table-wrap">
-          {loading ? (
+          {loading && (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
               <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
             </div>
-          ) : filteredList.length === 0 ? (
+          )}
+          {!loading && filteredList.length === 0 && (
             <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
               <Scale size={32} style={{ color: '#cbd5e1', margin: '0 auto 10px', display: 'block' }} />
               <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.92rem' }}>No measurement units found</div>
@@ -181,7 +182,8 @@ export default function UomManager() {
                 <Plus size={13} /> Add UOM
               </button>
             </div>
-          ) : (
+          )}
+          {!loading && filteredList.length > 0 && (
             <table className="attio-table">
               <thead>
                 <tr>
@@ -258,9 +260,9 @@ export default function UomManager() {
                       <td>
                         {presetsArr.length > 0 ? (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                            {presetsArr.slice(0, 4).map((p, pIdx) => (
+                            {presetsArr.slice(0, 4).map(p => (
                               <span
-                                key={pIdx}
+                                key={`${item.id || item.code}-preset-${p}`}
                                 style={{
                                   fontSize: '0.70rem',
                                   fontWeight: 600,

@@ -916,7 +916,6 @@ export default function Dashboard() {
                         resize: 'none',
                         fontFamily: 'inherit'
                       }}
-                      autoFocus
                     />
 
                     {/* Bottom controls row inside card */}

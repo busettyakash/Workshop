@@ -18,8 +18,7 @@ export default function ConfirmModal({
   return (
     <div 
       className="ws-modal-backdrop" 
-      role="button" 
-      tabIndex={0} 
+      aria-hidden="true"
       onClick={onCancel} 
       onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') onCancel() }} 
       style={{ zIndex: 1010 }}

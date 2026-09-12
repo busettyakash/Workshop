@@ -51,7 +51,7 @@ function QuickAddPersonModal({ onClose, onSaved }) {
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
             <label style={S.label}>Name *</label>
-            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={S.input} autoFocus />
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={S.input} />
           </div>
           <div style={{ marginBottom: 16 }}>
             <label style={S.label}>Phone</label>
@@ -115,7 +115,7 @@ function QuickAddProductModal({ onClose, onSaved }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div style={{ gridColumn: 'span 2' }}>
               <label style={S.label}>Product Name *</label>
-              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={S.input} autoFocus />
+              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={S.input} />
             </div>
             <div>
               <label style={S.label}>HSN Code</label>
@@ -631,6 +631,19 @@ const calcMaxStock = (prod, itemUnit) => {
     ? { name: 'Walk-in Customer', phone: '' }
     : customers.find(c => String(c.id) === String(form.customer_id))
 
+  let customerDisplay = 'Search & select customer...'
+  if (form.customer_id === null) {
+    customerDisplay = (
+      <>
+        <User size={13} style={{ flexShrink: 0 }} />
+        <span>Walk-in Customer Selected</span>
+      </>
+    )
+  } else if (selectedCustomer) {
+    const phoneSuffix = selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''
+    customerDisplay = `✓ ${selectedCustomer.name}${phoneSuffix}`
+  }
+
   const filteredProducts = products.filter(p =>
     p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
     (p.sku && p.sku.toLowerCase().includes(productSearch.toLowerCase()))
@@ -870,16 +883,7 @@ const calcMaxStock = (prod, itemUnit) => {
                                   textAlign: 'left',
                                   display: 'flex', alignItems: 'center', gap: 6
                                 }}>
-                                  {form.customer_id === null ? (
-                                    <>
-                                      <User size={13} style={{ flexShrink: 0 }} />
-                                      <span>Walk-in Customer Selected</span>
-                                    </>
-                                  ) : (
-                                    selectedCustomer
-                                      ? `✓ ${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
-                                      : 'Search & select customer...'
-                                  )}
+                                  {customerDisplay}
                                 </span>
                                 {(form.customer_id !== '' && form.customer_id !== undefined) ? (
                                   <button
@@ -1090,15 +1094,17 @@ const calcMaxStock = (prod, itemUnit) => {
 
                   {/* Product List */}
                   <div style={{ overflowY: 'auto', flex: 1 }}>
-                    {loadingProds ? (
+                    {loadingProds && (
                       <div style={{ padding: '35px 16px', display: 'flex', justifyContent: 'center' }}>
                         <Loader2 size={22} className="ws-chat-loader-spin" style={{ color: '#94a3b8' }} />
                       </div>
-                    ) : filteredProducts.length === 0 ? (
+                    )}
+                    {!loadingProds && filteredProducts.length === 0 && (
                       <div style={{ padding: '35px 16px', fontSize: '0.8125rem', color: '#94a3b8', textAlign: 'center' }}>
                         {productSearch ? 'No matching products' : 'No active products found'}
                       </div>
-                    ) : (
+                    )}
+                    {!loadingProds && filteredProducts.length > 0 && (
                       filteredProducts.map(p => {
                         const lineItem = lineItems.find(li => li.product_id === p.id)
                         const qtyAdded = lineItem ? Number.parseFloat(lineItem.qty || 0) : 0

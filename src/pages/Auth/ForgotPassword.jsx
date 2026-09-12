@@ -135,7 +135,6 @@ export default function ForgotPassword() {
                     value={email}
                     onChange={handleEmailChange}
                     required
-                    autoFocus
                   />
                 </div>
               </div>
@@ -179,7 +178,6 @@ export default function ForgotPassword() {
                     maxLength={6}
                     inputMode="numeric"
                     required
-                    autoFocus
                   />
                 </div>
               </div>

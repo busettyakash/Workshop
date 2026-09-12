@@ -299,7 +299,7 @@ export default function BusinessMetrics({
   }
 
   return (
-    <div className="ws-bm-section" role="presentation" onClick={closeDrops} onKeyDown={(e) => { if (e.key === 'Escape') closeDrops() }} style={{ opacity: loading ? 0.75 : 1, transition: 'opacity 0.2s' }}>
+    <div className="ws-bm-section" onClick={closeDrops} onKeyDown={(e) => { if (e.key === 'Escape') closeDrops() }} style={{ opacity: loading ? 0.75 : 1, transition: 'opacity 0.2s' }}>
 
       {/* ── Header (Above all charts & cards) ── */}
       <div className="ws-bm-header" style={{ marginBottom: isDrilldown ? 20 : 16 }}>
@@ -395,7 +395,6 @@ export default function BusinessMetrics({
 
                 {showCustomPicker && (
                   <div
-                    role="presentation"
                     style={{
                       marginTop: 8,
                       paddingTop: 8,

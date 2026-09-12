@@ -1666,7 +1666,6 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
               type="text"
               placeholder="Search actions (WhatsApp, Invoice Email, Rejection...)..."
               value={search}
-              autoFocus
               onChange={e => setSearch(e.target.value)}
               style={{
                 width: '100%', padding: '8px 12px 8px 34px', fontSize: '0.82rem',
@@ -2437,7 +2436,6 @@ function WorkflowEditor({
               ref={nameRef}
               className="ws-wfe-name-input"
               value={tempName}
-              autoFocus
               onChange={e => setTempName(e.target.value)}
               onBlur={saveName}
               onKeyDown={e => { if (e.key === 'Enter') saveName() }}

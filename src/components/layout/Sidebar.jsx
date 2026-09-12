@@ -208,11 +208,9 @@ function SidebarWorkspaceDropdown({
   return (
     <>
       <div 
-        role="button"
-        tabIndex={0}
+        aria-hidden="true"
         style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'transparent' }}
         onClick={onClose}
-        onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
       />
       <div
         className="ws-sb-ws-dropdown"
@@ -401,8 +399,7 @@ function SidebarInviteModal({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
+      aria-hidden="true"
       style={{
         position: 'fixed',
         inset: 0,
@@ -653,8 +650,7 @@ function SidebarSearchModal({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
+      aria-hidden="true"
       style={{
         position: 'fixed',
         inset: 0,
@@ -694,7 +690,6 @@ function SidebarSearchModal({
           <Search size={18} style={{ color: '#94a3b8', flexShrink: 0 }} />
           <input
             type="text"
-            autoFocus
             placeholder="Type a command or search..."
             value={searchQuery}
             onChange={e => {
@@ -1736,7 +1731,6 @@ export default function Sidebar() {
               value={chatsSearchQuery}
               onChange={(e) => setChatsSearchQuery(e.target.value)}
               style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.83rem', color: '#0f172a' }}
-              autoFocus
             />
           </div>
 
@@ -1754,46 +1748,51 @@ export default function Sidebar() {
                     <div
                       key={chat.id}
                       className="ws-sb-allchats-item"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        setShowAllChatsPanel(false)
-                        handleNav('Home')
-                        navigate(`/dashboard?session=${chat.id}`)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          setShowAllChatsPanel(false)
-                          handleNav('Home')
-                          navigate(`/dashboard?session=${chat.id}`)
-                        }
-                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 10,
-                        padding: '8px 10px',
                         borderRadius: 8,
-                        cursor: 'pointer',
                         background: isActive ? '#eff6ff' : 'transparent',
-                        color: isActive ? '#2563eb' : '#334155',
-                        fontSize: '0.84rem',
-                        fontWeight: isActive ? 500 : 400,
                         transition: 'background 0.12s ease',
                         position: 'relative'
                       }}
                     >
-                      <MessageSquare size={14} style={{ flexShrink: 0, color: isActive ? '#2563eb' : '#64748b' }} />
-                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, paddingRight: 24 }}>
-                        {chat.title || 'Untitled chat'}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAllChatsPanel(false)
+                          handleNav('Home')
+                          navigate(`/dashboard?session=${chat.id}`)
+                        }}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '8px 10px',
+                          paddingRight: 32,
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          color: isActive ? '#2563eb' : '#334155',
+                          fontSize: '0.84rem',
+                          fontWeight: isActive ? 500 : 400
+                        }}
+                      >
+                        <MessageSquare size={14} style={{ flexShrink: 0, color: isActive ? '#2563eb' : '#64748b' }} />
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                          {chat.title || 'Untitled chat'}
+                        </span>
+                      </button>
                       <button
                         type="button"
                         className="ws-sb-chat-delete-btn"
                         title="Delete chat"
                         aria-label="Delete chat"
                         onClick={(e) => handleDeleteChat(chat.id, e)}
-                        style={{ right: 8 }}
+                        style={{ right: 8, position: 'absolute' }}
                       >
                         <Trash2 size={13} />
                       </button>

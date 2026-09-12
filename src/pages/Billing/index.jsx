@@ -23,6 +23,48 @@ const STATUS_MAP = {
   cancelled: { bg: '#fee2e2', text: '#991b1b', label: 'Cancelled' },
 }
 
+const NEXT_SORT = {
+  '': 'id_asc',
+  id_asc: 'id_desc',
+  id_desc: 'amount_asc',
+  amount_asc: 'amount_desc',
+  amount_desc: ''
+}
+
+const SORT_LABELS = {
+  id_asc: 'ID Asc',
+  id_desc: 'ID Desc',
+  amount_asc: 'Min Amt',
+  amount_desc: 'Max Amt'
+}
+
+function getDailyRowBg(isToday, i) {
+  if (isToday) return '#eff6ff'
+  return i % 2 === 0 ? '#ffffff' : '#fafafa'
+}
+
+function renderSourceBadge(orderMatch, quoteMatch) {
+  if (orderMatch) {
+    return (
+      <span style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+        {orderMatch}
+      </span>
+    )
+  }
+  if (quoteMatch) {
+    return (
+      <span style={{ color: '#475569', fontWeight: 600, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+        {quoteMatch}
+      </span>
+    )
+  }
+  return (
+    <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
+      Direct Bill
+    </span>
+  )
+}
+
 /* ── Template Manager Modal ──────────────────────────────── */
 function TemplateManagerModal({ onClose }) {
   const dispatch = useAppDispatch()
@@ -92,7 +134,7 @@ function TemplateManagerModal({ onClose }) {
   }
 
   return (
-    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }} style={{ zIndex: 1100 }}>
+    <div className="ws-modal-backdrop" aria-hidden="true" onClick={onClose} style={{ zIndex: 1100 }}>
       <div className="ws-modal-card" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
         <div className="ws-modal-header">
           <h3 className="ws-modal-title">Bill Templates</h3>
@@ -131,15 +173,17 @@ function TemplateManagerModal({ onClose }) {
             <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#111827', marginBottom: 8 }}>
               Saved Templates ({templates.length})
             </div>
-            {loading ? (
+            {loading && (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
                 <Loader2 size={20} className="ws-chat-loader-spin" />
               </div>
-            ) : templates.length === 0 ? (
+            )}
+            {!loading && templates.length === 0 && (
               <div style={{ padding: '16px', textAlign: 'center', color: '#9ca3af', fontSize: '0.8125rem', background: '#f9fafb', borderRadius: 8 }}>
                 No custom templates yet. The built-in default will be used.
               </div>
-            ) : (
+            )}
+            {!loading && templates.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {templates.map(t => (
                   <div key={t.id} style={{
@@ -531,7 +575,7 @@ export default function Billing() {
                 <button
                   className="attio-btn"
                   onClick={() => {
-                    setSort(prev => prev === 'id_asc' ? 'id_desc' : prev === 'id_desc' ? 'amount_asc' : prev === 'amount_asc' ? 'amount_desc' : prev === 'amount_desc' ? '' : 'id_asc');
+                    setSort(prev => NEXT_SORT[prev] || 'id_asc');
                     setPage(1);
                   }}
                   style={{
@@ -541,7 +585,7 @@ export default function Billing() {
                   }}
                 >
                   <ArrowUpDown size={13} />
-                  Sort {sort === 'id_asc' ? 'ID Asc' : sort === 'id_desc' ? 'ID Desc' : sort === 'amount_asc' ? 'Min Amt' : sort === 'amount_desc' ? 'Max Amt' : ''}
+                  Sort{SORT_LABELS[sort] ? ` ${SORT_LABELS[sort]}` : ''}
                 </button>
 
                 {/* Filter button */}
@@ -653,11 +697,13 @@ export default function Billing() {
                     </button>
                   </div>
                 </div>
-                {dailyLoading ? (
+                {dailyLoading && (
                   <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', fontSize: '0.82rem' }}>Loading…</div>
-                ) : dailyStats.length === 0 ? (
+                )}
+                {!dailyLoading && dailyStats.length === 0 && (
                   <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', fontSize: '0.82rem' }}>No billing data found for selected period.</div>
-                ) : (
+                )}
+                {!dailyLoading && dailyStats.length > 0 && (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
                       <thead>
@@ -675,16 +721,17 @@ export default function Billing() {
                       <tbody>
                         {dailyStats.map((row, i) => {
                           const isToday = row.day === todayStr
+                          const rowBg = getDailyRowBg(isToday, i)
                           return (
                             <tr
                               key={row.day}
                               style={{
                                 borderBottom: '1px solid #f1f5f9',
-                                background: isToday ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#fafafa',
+                                background: rowBg,
                                 transition: 'background 0.15s'
                               }}
-                              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                              onMouseLeave={e => e.currentTarget.style.background = isToday ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#fafafa'}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = rowBg }}
                             >
                               <td style={{ padding: '8px 12px', fontWeight: isToday ? 700 : 500, color: isToday ? '#2563eb' : '#0f172a' }}>
                                 {isToday ? '📅 Today' : new Date(row.day + 'T00:00:00').toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', weekday: 'short' })}
@@ -832,15 +879,17 @@ export default function Billing() {
             <div className="attio-table-card">
 
               <div className="attio-table-wrap" style={{ flex: 1 }}>
-                {loading ? (
+                {loading && (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                     <Loader2 size={24} className="ws-chat-loader-spin" />
                   </div>
-                ) : bills.length === 0 ? (
+                )}
+                {!loading && bills.length === 0 && (
                   <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
                     No bills generated yet. Click "New Bill" to create one.
                   </div>
-                ) : (
+                )}
+                {!loading && bills.length > 0 && (
                   <table className="attio-table">
                     <thead>
                       <tr>
@@ -885,19 +934,7 @@ export default function Billing() {
                             </td>
                             <td className="ws-td-mono" style={{ fontWeight: 700, color: '#1e293b' }}>{invNum}</td>
                             <td>
-                              {orderMatch ? (
-                                <span style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.78rem', fontFamily: 'monospace' }}>
-                                  {orderMatch}
-                                </span>
-                              ) : quoteMatch ? (
-                                <span style={{ color: '#475569', fontWeight: 600, fontSize: '0.78rem', fontFamily: 'monospace' }}>
-                                  {quoteMatch}
-                                </span>
-                              ) : (
-                                <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
-                                  Direct Bill
-                                </span>
-                              )}
+                              {renderSourceBadge(orderMatch, quoteMatch)}
                             </td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -90,7 +90,6 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{ width: '100%', height: 30, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.78rem', marginBottom: 4, outline: 'none' }}
-            autoFocus
           />
           {filtered.length === 0 ? (
             <div style={{ padding: '8px 10px', fontSize: '0.78rem', color: '#94a3b8' }}>No vendors found</div>
@@ -196,7 +195,6 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{ width: '100%', height: 28, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.75rem', marginBottom: 4, outline: 'none' }}
-            autoFocus
           />
           {filtered.length === 0 ? (
             <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#94a3b8' }}>No products found</div>

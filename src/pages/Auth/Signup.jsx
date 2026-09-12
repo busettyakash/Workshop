@@ -129,10 +129,10 @@ export default function Signup() {
   }
   const score = Object.values(passRules).filter(Boolean).length
   const getPassStrength = () => {
-    if (!form.password) return { label: '', percent: '0%', color: '#e2e8f0' }
-    if (score <= 2) return { label: 'Weak', percent: '33%', color: '#ef4444' }
-    if (score <= 4) return { label: 'Medium (Neutral)', percent: '66%', color: '#f59e0b' }
-    return { label: 'Strong', percent: '100%', color: '#10b981' }
+    if (!form.password) return { label: '', percent: '0%', color: '#e2e8f0', textColor: '#94a3b8' }
+    if (score <= 2) return { label: 'Weak', percent: '33%', color: '#ef4444', textColor: '#dc2626' }
+    if (score <= 4) return { label: 'Medium (Neutral)', percent: '66%', color: '#f59e0b', textColor: '#d97706' }
+    return { label: 'Strong', percent: '100%', color: '#10b981', textColor: '#16a34a' }
   }
   const passStrength = getPassStrength()
 
@@ -493,7 +493,7 @@ export default function Signup() {
                     <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475467' }}>Password Strength:</span>
                     <span style={{ 
                       fontSize: '0.72rem', fontWeight: 700, 
-                      color: passStrength.label === 'Strong' ? '#16a34a' : passStrength.label.includes('Medium') ? '#d97706' : '#dc2626' 
+                      color: passStrength.textColor 
                     }}>
                       {passStrength.label}
                     </span>
@@ -573,7 +573,7 @@ export default function Signup() {
                         <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475467' }}>Password Strength:</span>
                         <span style={{ 
                           fontSize: '0.72rem', fontWeight: 700, 
-                          color: passStrength.label === 'Strong' ? '#16a34a' : passStrength.label.includes('Medium') ? '#d97706' : '#dc2626' 
+                          color: passStrength.textColor 
                         }}>
                           {passStrength.label}
                         </span>

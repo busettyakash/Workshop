@@ -23,6 +23,12 @@ function getSanitizedImageUrl(url) {
   }
 }
 
+const SECTION_TITLES = {
+  profile: 'Profile',
+  security: 'Security & Password',
+  appearance: 'Appearance'
+}
+
 export default function AccountSettings() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
@@ -121,7 +127,7 @@ export default function AccountSettings() {
           </button>
           <span style={{ color: '#cbd5e1' }}>/</span>
           <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 500 }}>
-            {activeSection === 'profile' ? 'Profile' : activeSection === 'security' ? 'Security & Password' : 'Appearance'}
+            {SECTION_TITLES[activeSection] || 'Appearance'}
           </span>
         </div>
 

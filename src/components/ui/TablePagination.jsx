@@ -26,8 +26,9 @@ export default function TablePagination({ page, setPage, total, limit, getPageNu
         </button>
         {getPageNumbers().map((p, idx) => {
           if (p === '...') {
+            const dotKey = idx < 3 ? 'dots-start' : 'dots-end'
             return (
-              <span key={`dots-${idx}`} style={{ color: '#9ca3af', padding: '0 4px', fontSize: '0.8125rem' }}>
+              <span key={dotKey} style={{ color: '#9ca3af', padding: '0 4px', fontSize: '0.8125rem' }}>
                 ...
               </span>
             )

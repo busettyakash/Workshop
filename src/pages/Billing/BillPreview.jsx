@@ -58,7 +58,10 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 
   // 1. Box / Pack / Cartons
   if (['box', 'boxes', 'carton', 'cartons', 'pkt', 'pack', 'packs'].includes(u)) {
-    const unitName = (u === 'box' || u === 'boxes') ? (qty === 1 ? 'Box' : 'Boxes') : 'Pack'
+    let unitName = 'Pack'
+    if (u === 'box' || u === 'boxes') {
+      unitName = qty === 1 ? 'Box' : 'Boxes'
+    }
     const sub = bw > 1 ? `${bw} pcs/${unitName}` : unitName
     return { displayQty: qty, displayUnit: unitName, subtext: sub }
   }
@@ -252,7 +255,13 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   // Customer details
   const customerName = doc.customer_name || ''
   const customerGstin = doc.customer_gstin || ''
-  const customerAddress = doc.customer_address || (doc.customer_city ? `${doc.customer_city}${doc.customer_state ? `, ${doc.customer_state}` : ''}` : '')
+  let customerCityState = ''
+  if (doc.customer_city) {
+    customerCityState = doc.customer_state
+      ? `${doc.customer_city}, ${doc.customer_state}`
+      : doc.customer_city
+  }
+  const customerAddress = doc.customer_address || customerCityState
   const customerPhone = doc.customer_phone || ''
   const customerCompany = doc.customer_company || ''
 
@@ -310,7 +319,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   }
 
   return (
-    <div className="bp-overlay" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+    <div className="bp-overlay" aria-hidden="true" onClick={onClose}>
       <div className="bp-modal" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
 
         {/* Top Controls Bar */}
@@ -464,14 +473,16 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
 
                     const explicitDisc = Number.parseFloat(li.discount ?? li.discount_amount ?? li.discountAmount ?? li.disc ?? 0)
                     const lineTotalGross = price * qty
-                    const itemDisc = explicitDisc > 0
-                      ? explicitDisc
-                      : (lineDiscounts === 0 && totalDiscount > 0
-                        ? (items.length === 1
-                          ? totalDiscount
-                          : Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
-                        )
-                        : 0)
+                    let itemDisc = 0
+                    if (explicitDisc > 0) {
+                      itemDisc = explicitDisc
+                    } else if (lineDiscounts === 0 && totalDiscount > 0) {
+                      if (items.length === 1) {
+                        itemDisc = totalDiscount
+                      } else {
+                        itemDisc = Math.round(((lineTotalGross / (grossSubtotal || 1)) * totalDiscount) * 100) / 100
+                      }
+                    }
 
                     return (
                       <tr key={li.id || `${li.product_id || 'item'}-${i}`}>

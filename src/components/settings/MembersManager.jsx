@@ -145,7 +145,6 @@ function PermissionsEditorView({
                   placeholder="e.g. colleague@company.com"
                   value={inviteEmailInput}
                   onChange={e => setInviteEmailInput(e.target.value)}
-                  autoFocus
                   onKeyDown={e => { if (e.key === 'Enter') onSendInvite(e) }}
                   style={{ width: '100%', height: 36, paddingLeft: 34, paddingRight: 12, borderRadius: 8, border: '1.5px solid #2563eb', fontSize: '0.86rem', fontWeight: 500, color: '#0f172a', outline: 'none', boxShadow: '0 0 0 3px rgba(37,99,235,0.1)' }}
                 />
@@ -639,11 +638,12 @@ export default function MembersManager() {
       {/* ── Members Table ── */}
       <div className="attio-table-card" style={{ marginTop: 0 }}>
         <div className="attio-table-wrap">
-          {loading ? (
+          {loading && (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
               <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
             </div>
-          ) : filteredMembers.length === 0 ? (
+          )}
+          {!loading && filteredMembers.length === 0 && (
             <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
               <Users size={32} style={{ color: '#cbd5e1', margin: '0 auto 10px', display: 'block' }} />
               <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.92rem' }}>No team members found</div>
@@ -654,7 +654,8 @@ export default function MembersManager() {
                 <Plus size={13} /> Invite Member
               </button>
             </div>
-          ) : (
+          )}
+          {!loading && filteredMembers.length > 0 && (
             <table className="attio-table">
               <thead>
                 <tr>

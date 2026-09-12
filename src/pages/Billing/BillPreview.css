@@ -47,10 +47,11 @@
 .bp-btn {
   display: flex; align-items: center; gap: 6px;
   padding: 8px 16px;
-  background: linear-gradient(135deg,#4f7ef5,#3d68f5);
-  color: #fff; border: none; border-radius: 8px;
+  background-color: #1d4ed8;
+  background: linear-gradient(135deg, #1d4ed8, #2563eb);
+  color: #ffffff; border: none; border-radius: 8px;
   font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
-  box-shadow: 0 2px 8px rgba(61,104,245,0.35);
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.35);
 }
 .bp-btn:hover { background: linear-gradient(135deg,#3d68f5,#2d58e5); transform: translateY(-1px); }
 

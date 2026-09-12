@@ -48,13 +48,19 @@ function computeItemProfitMargin(r) {
 
   // Compute normalized benchmark display prices (e.g. per price_covers / 100 kgs)
   // so that Buyer Price and Seller Price are always compared at the exact same scale
-  const effectiveBuyerPrice = (pc > 0 && bw > 0 && pc !== bw)
-    ? rawBuyerPrice
-    : (pc > 0 ? (buyRatePerUnit * pc) : (bw > 0 ? (buyRatePerUnit * bw) : rawBuyerPrice))
+  let effectiveBuyerPrice = rawBuyerPrice
+  if (pc > 0 && bw > 0 && pc !== bw) {
+    effectiveBuyerPrice = rawBuyerPrice
+  } else if (pc > 0) {
+    effectiveBuyerPrice = buyRatePerUnit * pc
+  } else if (bw > 0) {
+    effectiveBuyerPrice = buyRatePerUnit * bw
+  }
 
-  const effectiveSellerPrice = (pc > 0 && bw > 0 && pc !== bw)
-    ? ((rawSellerPrice / bw) * pc)
-    : rawSellerPrice
+  let effectiveSellerPrice = rawSellerPrice
+  if (pc > 0 && bw > 0 && pc !== bw) {
+    effectiveSellerPrice = (rawSellerPrice / bw) * pc
+  }
 
   // Compute pack-level prices (for 1 bag of bag_weight)
   const buyerPackPrice = bw > 0 ? (buyRatePerUnit * bw) : rawBuyerPrice

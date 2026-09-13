@@ -159,7 +159,10 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
   const configuredUser = user.toLowerCase().trim()
 
   if (!ownerEmail || ownerEmail !== configuredUser) {
-    console.log(`[IMAP] Skipping sync: workspace ${ownerUserId} (${ownerEmail || 'unknown'}) does not match SMTP_USER (${configuredUser})`)
+    const safeWorkspaceId = String(ownerUserId || '').replace(/[\r\n]/g, '')
+    const safeOwnerEmail = String(ownerEmail || 'unknown').replace(/[\r\n]/g, '')
+    const safeConfiguredUser = String(configuredUser || '').replace(/[\r\n]/g, '')
+    console.log(`[IMAP] Skipping sync: workspace ${safeWorkspaceId} (${safeOwnerEmail}) does not match SMTP_USER (${safeConfiguredUser})`)
     return { synced: 0, message: 'IMAP sync is only available for the configured account' }
   }
 

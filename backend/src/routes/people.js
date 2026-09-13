@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
+import { getCached, setCached, deleteCached } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -22,11 +23,11 @@ const ensureTable = async () => {
       user_id      TEXT,
       created_at   TIMESTAMPTZ DEFAULT NOW(),
       updated_at   TIMESTAMPTZ DEFAULT NOW()
-    )
-  `)
-  await query(`ALTER TABLE people ADD COLUMN IF NOT EXISTS user_id TEXT`).catch(() => {})
-  await query(`ALTER TABLE people ADD COLUMN IF NOT EXISTS company TEXT`).catch(() => {})
-  await query(`ALTER TABLE people ADD COLUMN IF NOT EXISTS company_name TEXT`).catch(() => {})
+    );
+    ALTER TABLE people ADD COLUMN IF NOT EXISTS user_id TEXT;
+    ALTER TABLE people ADD COLUMN IF NOT EXISTS company TEXT;
+    ALTER TABLE people ADD COLUMN IF NOT EXISTS company_name TEXT;
+  `).catch(() => {})
 }
 
 let ensureTablePromise
@@ -46,46 +47,11 @@ router.use(async (_req, _res, next) => {
 async function clearPeopleCache(userId) {
   try {
     const keys = await redis.keys(`people:${userId}:*`).catch(() => [])
-    for (const k of keys) { await redis.del(k).catch(() => {}) }
+    for (const k of keys) { deleteCached(redis, k) }
   } catch (_e) {}
 }
 
-async function fetchPeopleWithCursor(res, { conditions, params, limit, orderCol, cursor }) {
-  if (cursor.created_at && cursor.id) {
-    params.push(cursor.created_at, cursor.id)
-    conditions.push(`(created_at, id) < ($${params.length - 1}, $${params.length})`)
-  }
-  const where = `WHERE ${conditions.join(' AND ')}`
-  params.push(limit + 1)
-  const { rows } = await query(
-    `SELECT * FROM people ${where} ORDER BY ${orderCol} LIMIT $${params.length}`,
-    params
-  )
-  const hasNextPage = rows.length > limit
-  if (hasNextPage) rows.pop()
-  const nextCursor = (hasNextPage && rows.length > 0)
-    ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
-    : null
 
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
-  return res.json({ data: rows, limit, hasNextPage, nextCursor })
-}
-
-async function fetchPeopleWithOffset(res, { conditions, params, page, limit, offset, orderCol }) {
-  const where = `WHERE ${conditions.join(' AND ')}`
-  const queryParams = [...params, limit, offset]
-  const { rows: rawRows } = await query(
-    `SELECT *, COUNT(*) OVER() AS _total_count FROM people ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
-    queryParams
-  )
-
-  const total = rawRows.length > 0 ? Number.parseInt(rawRows[0]._total_count, 10) : 0
-  const rows = rawRows.map(r => { const { _total_count, ...rest } = r; return rest })
-  const totalPages = Math.ceil(total / limit) || 1
-
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
-  return res.json({ data: rows, total, page, limit, totalPages })
-}
 
 /* GET /api/people */
 router.get('/', async (req, res) => {
@@ -112,11 +78,53 @@ router.get('/', async (req, res) => {
   if (sort === 'name_asc') orderCol = 'name ASC, id DESC'
   else if (sort === 'name_desc') orderCol = 'name DESC, id DESC'
 
+  const cacheKey = `people:${userId}:${JSON.stringify({ page, limit, offset, cursor, search, status, persona, sort })}`
+
   try {
-    if (cursor) {
-      return await fetchPeopleWithCursor(res, { conditions, params, limit, orderCol, cursor })
+    const cached = await getCached(redis, cacheKey, 200)
+    if (cached) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+      return res.json(cached)
     }
-    return await fetchPeopleWithOffset(res, { conditions, params, page, limit, offset, orderCol })
+
+    if (cursor) {
+      if (cursor.created_at && cursor.id) {
+        params.push(cursor.created_at, cursor.id)
+        conditions.push(`(created_at, id) < ($${params.length - 1}, $${params.length})`)
+      }
+      const where = `WHERE ${conditions.join(' AND ')}`
+      params.push(limit + 1)
+      const { rows } = await query(
+        `SELECT * FROM people ${where} ORDER BY ${orderCol} LIMIT $${params.length}`,
+        params
+      )
+      const hasNextPage = rows.length > limit
+      if (hasNextPage) rows.pop()
+      const nextCursor = (hasNextPage && rows.length > 0)
+        ? encodeCursor({ created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id })
+        : null
+
+      const result = { data: rows, limit, hasNextPage, nextCursor }
+      setCached(redis, cacheKey, result, 60)
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+      return res.json(result)
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    const queryParams = [...params, limit, offset]
+    const { rows: rawRows } = await query(
+      `SELECT *, COUNT(*) OVER() AS _total_count FROM people ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
+      queryParams
+    )
+
+    const total = rawRows.length > 0 ? Number.parseInt(rawRows[0]._total_count, 10) : 0
+    const rows = rawRows.map(r => { const { _total_count, ...rest } = r; return rest })
+    const totalPages = Math.ceil(total / limit) || 1
+
+    const result = { data: rows, total, page, limit, totalPages }
+    setCached(redis, cacheKey, result, 60)
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+    return res.json(result)
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }

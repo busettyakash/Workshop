@@ -3,14 +3,26 @@ import pool from './db.js'
 
 // In-Memory Fast Cache with TTL to minimize Redis and DB calls completely
 const localCache = new Map()
-const CACHE_TTL_MS = 120000 // 2 minutes in-memory TTL
+const CACHE_TTL_MS = 30000 // 30 seconds in-memory TTL (reduced to lower heap usage)
 
 function buildProductMap(rows) {
   const map = {}
   for (const p of rows) {
     const hsn = p.hsn_code || p.sku || `1006${String(p.id || 1000).padStart(4, '0')}`
     const bw = Number.parseFloat(p.bag_weight || 1)
-    const pData = { hsn, name: p.name, unit: p.unit, bag_weight: bw }
+    const pc = Number.parseFloat(p.price_covers || 0)
+    const price = Number.parseFloat(p.price || 0)
+    const updatedPrice = Number.parseFloat(p.updated_price || p.price || 0)
+    const pData = {
+      id: p.id,
+      hsn,
+      name: p.name,
+      unit: p.unit,
+      bag_weight: bw,
+      price_covers: pc,
+      price,
+      updated_price: updatedPrice
+    }
     if (p.id) map[String(p.id)] = pData
     if (p.name) {
       const clean = p.name.toLowerCase().trim()
@@ -47,7 +59,7 @@ export async function getProductHsnMap() {
 
   // Single batch fetch from Postgres DB only if cache miss
   try {
-    const { rows } = await pool.query('SELECT id, name, hsn_code, sku, unit, bag_weight FROM products')
+    const { rows } = await pool.query('SELECT id, name, hsn_code, sku, unit, bag_weight, price_covers, price, updated_price FROM products')
     const map = buildProductMap(rows)
 
     // Save to Redis and Local Memory
@@ -132,6 +144,10 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
       ? `Bag (${bagWeight}kg)`
       : (item.unitLabel || item.subtext || rawUnit || '')
 
+    const priceCovers = Number.parseFloat(item.price_covers ?? catProd?.price_covers ?? 0)
+    const prodPrice = Number.parseFloat(item.price ?? catProd?.price ?? item.rate ?? 0)
+    const updatedPrice = Number.parseFloat(item.updated_price ?? catProd?.updated_price ?? prodPrice)
+
     return {
       ...item,
       name,
@@ -144,6 +160,9 @@ export function enrichItemsWithCache(items, catalogMap = {}) {
       bagWeight,
       pack_weight: bagWeight,
       packWeight: bagWeight,
+      price_covers: priceCovers,
+      price: prodPrice,
+      updated_price: updatedPrice,
       unitLabel: unitStr,
       subtext: unitStr
     }

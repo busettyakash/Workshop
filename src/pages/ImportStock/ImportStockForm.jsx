@@ -304,7 +304,7 @@ Category: ${form.category || 'General'}
 Pack Weight: ${form.bag_weight} ${unitShort} per pack
 
 PRICING & UNIT RATE ANALYSIS:
-Buyer Price (Supplier): ₹${form.buying_price ? Number.parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'} (₹${buyRatePerUnit} / ${unitShort} cost)
+Buying Price (Supplier): ₹${form.buying_price ? Number.parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'} (₹${buyRatePerUnit} / ${unitShort} cost)
 Updated Market Price: ${form.updated_price ? `₹${Number.parseFloat(form.updated_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
 
 TOTAL INVENTORY STOCK:
@@ -609,7 +609,7 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Buyer Price (₹)</label>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: 3 }}>Buying Price (₹)</label>
                       <input
                         name="buying_price"
                         type="number"
@@ -918,9 +918,9 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                       <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
-                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Buyer Price (Supplier)</div>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Buying Price (Supplier)</div>
                         <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b' }}>
                           {form.buying_price ? `₹${Number.parseFloat(form.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                         </div>
@@ -936,6 +936,16 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
                           ₹{Number.parseFloat(sellRatePerUnit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {uomShort} selling
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#fff', border: '1px solid #dcfce7', padding: 10, borderRadius: 6 }}>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Per Bag Price</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f766e' }}>
+                          ₹{Number.parseFloat(form.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2 }}>
+                          ₹{Number.parseFloat(form.price || 0).toFixed(2)} / {bw > 1 ? `${bw} ${uomShort} bag` : 'bag'}
                         </div>
                       </div>
 

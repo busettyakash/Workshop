@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Plus, Upload, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown, Eye, FileText } from 'lucide-react'
+import { Plus, Download, Trash2, Edit2, Loader2, X, Check, Search, Filter, ArrowUpDown, Eye, FileText } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
 import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
@@ -90,9 +90,17 @@ function PricingModal({ product, onClose }) {
 
         <div className="ws-modal-body" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Current Pricing Summary Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: Number.parseFloat(product?.buying_price || 0) > 0 ? 'repeat(3, 1fr)' : '1fr 1fr', gap: 10 }}>
+            {Number.parseFloat(product?.buying_price || 0) > 0 && (
+              <div style={{ background: '#fefce8', border: '1px solid #fef08a', borderRadius: 8, padding: '10px 12px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#854d0e', fontWeight: 500 }}>Buying Price (Cost)</span>
+                <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#713f12' }}>
+                  ₹{Number.parseFloat(product.buying_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+            )}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price {bagWeight > 1 ? `(${bagWeight} ${bulkUnit?.short || product.unit || 'kgs'})` : ''}</span>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Selling Price {bagWeight > 1 ? `(${bagWeight} ${bulkUnit?.short || product.unit || 'kgs'})` : ''}</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
                 ₹{basePriceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
@@ -251,7 +259,95 @@ export default function ImportStock() {
     }
   }
 
+  const handleExportCSV = async () => {
+    try {
+      let exportItems = products
+      try {
+        const res = await api.get(`/import-stock?page=1&limit=5000&search=${encodeURIComponent(search)}&sort=${sort}&status=${filterStatus}`)
+        if (res.data?.data && res.data.data.length > 0) {
+          exportItems = res.data.data
+        }
+      } catch (err) {
+        console.warn('Failed to fetch full export dataset, falling back to loaded items', err)
+      }
 
+      if (!exportItems || exportItems.length === 0) {
+        dispatch(addToast({ message: 'No records to export', type: 'info' }))
+        return
+      }
+
+      const headers = [
+        'Product Name',
+        'HSN Code',
+        'Category',
+        'Buying Price (INR)',
+        'Buying Price Unit',
+        'Selling Price (INR)',
+        'Selling Price Unit',
+        'Per Bag Price (INR)',
+        'Updated Price (INR)',
+        'Stock Display',
+        'Bags / Stock',
+        'Loose Qty',
+        'Bag Weight',
+        'Unit',
+        'Status',
+        'Supplier Name'
+      ]
+
+      const rows = exportItems.map(p => {
+        const bulkUnit = getBulkUnitDetails(p.unit)
+        const uomShort = (bulkUnit?.short || p.unit || 'kg').toLowerCase().replace(/s$/, '')
+        const pc = Number.parseFloat(p.price_covers || 0)
+        const bw = Number.parseFloat(p.bag_weight || 1)
+        const rawBP = Number.parseFloat(p.buying_price || 0)
+        const bpSubtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+
+        const rawP = Number.parseFloat(p.price || 0)
+        let priceVal = rawP
+        if (pc > 0 && bw > 0 && pc !== bw) {
+          priceVal = (rawP / bw) * pc
+        }
+        const spSubtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+
+        const rawUP = Number.parseFloat(p.updated_price || 0)
+        const stockText = formatStockDisplay(p.stock, p.bag_weight, p.unit, p.loose_kg)
+
+        return [
+          `"${(p.name || '').replaceAll('"', '""')}"`,
+          `"${p.hsn_code || p.sku || ''}"`,
+          `"${(p.category || 'Unassigned').replaceAll('"', '""')}"`,
+          rawBP.toFixed(2),
+          `"${bpSubtext}"`,
+          priceVal.toFixed(2),
+          `"${spSubtext}"`,
+          rawP.toFixed(2),
+          rawUP > 0 ? rawUP.toFixed(2) : '—',
+          `"${stockText}"`,
+          p.stock || 0,
+          p.loose_kg || 0,
+          p.bag_weight || 1,
+          `"${p.unit || ''}"`,
+          `"${p.status || ''}"`,
+          `"${(p.buyer_name || '').replaceAll('"', '""')}"`
+        ]
+      })
+
+      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n')
+      const encodedUri = encodeURI(csvContent)
+      const link = document.createElement('a')
+      link.setAttribute('href', encodedUri)
+      link.setAttribute('download', `import_stock_${new Date().toISOString().split('T')[0]}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      dispatch(addToast({ message: 'Stock exported to CSV successfully', type: 'success' }))
+    } catch (err) {
+      console.error('Export CSV failed:', err)
+      dispatch(addToast({ message: 'Failed to export CSV', type: 'error' }))
+    }
+  }
 
   const handleConfirmDelete = async () => {
     const { id } = confirmDelete
@@ -357,15 +453,19 @@ export default function ImportStock() {
                   <Filter size={13} /> Filter
                 </button>
 
+                <button 
+                  type="button" 
+                  className="attio-btn"
+                  onClick={handleExportCSV}
+                  title="Export stock records to CSV"
+                >
+                  <Download size={13} style={{ marginRight: '4px' }} /> Export CSV
+                </button>
+
                 {canCreate && (
-                  <>
-                    <button className="attio-btn">
-                      <Upload size={13} style={{ marginRight: '4px' }} /> Import CSV
-                    </button>
-                    <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock/add')}>
-                      <Plus size={13} style={{ marginRight: '4px' }} /> Add Stock
-                    </button>
-                  </>
+                  <button className="attio-btn attio-btn-primary" onClick={() => navigate('/import-stock/add')}>
+                    <Plus size={13} style={{ marginRight: '4px' }} /> Add Stock
+                  </button>
                 )}
               </div>
             </div>
@@ -432,7 +532,9 @@ export default function ImportStock() {
                       <th>PRODUCT NAME</th>
                       <th>HSN CODE</th>
                       <th>CATEGORY</th>
-                      <th>PRICE</th>
+                      <th>BUYING PRICE</th>
+                      <th>SELLING PRICE</th>
+                      <th>PER BAG PRICE</th>
                       <th>UPDATED PRICE</th>
                       <th>STOCK</th>
                       <th>STATUS</th>
@@ -503,6 +605,32 @@ export default function ImportStock() {
                               )
                             })()}
                           </td>
+                          {/* ── Buying Price ── */}
+                          <td className="ws-td-price">
+                            {(() => {
+                              const rawBP = Number.parseFloat(row.buying_price || 0)
+                              if (rawBP <= 0) return <span style={{ color: '#9ca3af' }}>—</span>
+
+                              const bulkUnit = getBulkUnitDetails(row.unit)
+                              const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
+                              const pc = Number.parseFloat(row.price_covers || 0)
+                              const bw = Number.parseFloat(row.bag_weight || 1)
+
+                              const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    ₹{rawBP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                    {subtext}
+                                  </span>
+                                </div>
+                              )
+                            })()}
+                          </td>
+                          {/* ── Selling Price ── */}
                           <td className="ws-td-price">
                             {(() => {
                               const bulkUnit = getBulkUnitDetails(row.unit)
@@ -522,6 +650,30 @@ export default function ImportStock() {
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                                   <span style={{ fontWeight: 600, color: '#1e293b' }}>
                                     ₹{priceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                                    {subtext}
+                                  </span>
+                                </div>
+                              )
+                            })()}
+                          </td>
+                          {/* ── Per Bag Price ── */}
+                          <td className="ws-td-price">
+                            {(() => {
+                              const bulkUnit = getBulkUnitDetails(row.unit)
+                              const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
+                              const bw = Number.parseFloat(row.bag_weight || 1)
+                              const rawP = Number.parseFloat(row.price || 0)
+
+                              if (rawP <= 0) return <span style={{ color: '#9ca3af' }}>—</span>
+
+                              const subtext = bw > 1 ? `Per ${bw} ${uomShort} bag` : `Per bag`
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontWeight: 600, color: '#0f766e' }}>
+                                    ₹{rawP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                   <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                                     {subtext}
@@ -616,7 +768,7 @@ export default function ImportStock() {
                           <td>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
                               <button 
-                                onClick={() => setSelectedPricing(row)}
+                                onClick={() => navigate(`/import-stock/${row.id}/pricing`)}
                                 style={{
                                   background: '#eff6ff',
                                   border: '1px solid #bfdbfe',

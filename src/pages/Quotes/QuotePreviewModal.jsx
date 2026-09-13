@@ -1,5 +1,7 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { Edit2, X } from 'lucide-react'
+import api from '../../api/client'
+import { getBulkUnitDetails } from '../../utils/unitHelpers'
 
 function parseItems(value) {
   if (Array.isArray(value)) return value
@@ -27,8 +29,41 @@ function dateText(value) {
   return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function QuotePreviewModal({ quote, onClose, _onEdit, _onStatusChange }) {
+export default function QuotePreviewModal({ quote, products: initialProducts, onClose, _onEdit, _onStatusChange }) {
   const items = parseItems(quote?.line_items)
+  const [productsMap, setProductsMap] = useState({})
+
+  useEffect(() => {
+    if (initialProducts && Array.isArray(initialProducts) && initialProducts.length > 0) {
+      const map = {}
+      initialProducts.forEach(p => {
+        if (p.id) map[String(p.id)] = p
+        if (p.name) {
+          const clean = p.name.toLowerCase().trim()
+          map[clean] = p
+          map[clean.replace(/[-_]/g, ' ')] = p
+        }
+      })
+      setProductsMap(map)
+      return
+    }
+
+    api.get('/products?limit=200')
+      .then(res => {
+        const prods = Array.isArray(res.data) ? res.data : (res.data?.data || [])
+        const map = {}
+        prods.forEach(p => {
+          if (p.id) map[String(p.id)] = p
+          if (p.name) {
+            const clean = p.name.toLowerCase().trim()
+            map[clean] = p
+            map[clean.replace(/[-_]/g, ' ')] = p
+          }
+        })
+        setProductsMap(map)
+      })
+      .catch(() => {})
+  }, [initialProducts])
 
   return (
     <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => (e.key === 'Enter' || e.key === 'Escape') && onClose()}>
@@ -164,6 +199,35 @@ export default function QuotePreviewModal({ quote, onClose, _onEdit, _onStatusCh
                     const disc = Number.parseFloat(item.discount ?? item.discount_amount ?? item.discountAmount ?? item.disc ?? 0)
                     const taxable = Number.parseFloat(item.amount || item.line_total || (gross - disc))
 
+                    const prod = (item.product_id && productsMap[String(item.product_id)]) ||
+                                 (item.id && productsMap[String(item.id)]) ||
+                                 (item.name && productsMap[item.name.toLowerCase().trim()]) ||
+                                 (item.product_name && productsMap[item.product_name.toLowerCase().trim()]) ||
+                                 null
+
+                    const bulkUnit = getBulkUnitDetails(prod?.unit || item.unit)
+                    let uomShort = (bulkUnit?.short || prod?.unit || item.unit || '').toLowerCase().replace(/s$/, '')
+                    if (!uomShort || ['bag', 'pack', 'box', 'unit'].includes(uomShort)) {
+                      uomShort = 'kg'
+                    }
+                    const pc = Number.parseFloat(prod?.price_covers ?? item.price_covers ?? 0)
+                    const bw = Number.parseFloat(prod?.bag_weight ?? item.bag_weight ?? 1)
+                    const rawP = Number.parseFloat(prod?.updated_price || prod?.price || item.rate || item.price || 0)
+
+                    let benchmarkRate = r
+                    let benchmarkLabel = ''
+                    let hasBenchmark = false
+
+                    if (pc > 0 && bw > 0 && pc !== bw) {
+                      benchmarkRate = (rawP / bw) * pc
+                      benchmarkLabel = `${pc} ${uomShort} price`
+                      hasBenchmark = true
+                    } else if (pc > 0) {
+                      benchmarkRate = rawP
+                      benchmarkLabel = `${pc} ${uomShort} price`
+                      hasBenchmark = true
+                    }
+
                     const explicitTaxAmt = Number.parseFloat(quote?.tax_amount || 0)
                     const totalAmt = Number.parseFloat(quote?.total_amount || 0)
                     const totalTaxable = items.reduce((s, it) => s + (Number.parseFloat(it.amount || it.line_total || 0)), 0)
@@ -180,9 +244,39 @@ export default function QuotePreviewModal({ quote, onClose, _onEdit, _onStatusCh
 
                     return (
                       <tr key={item.id || index} style={{ borderTop: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '9px 10px', fontWeight: 700, color: '#0f172a', verticalAlign: 'top' }}>{item.name || item.product_name || 'Item'}</td>
-                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{q}</td>
-                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{money(r)}</td>
+                        <td style={{ padding: '9px 10px', fontWeight: 700, color: '#0f172a', verticalAlign: 'top' }}>
+                          {item.name || item.product_name || 'Item'}
+                        </td>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontWeight: 600, color: '#0f172a' }}>{q}</span>
+                          {item.unit && (
+                            <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4, fontWeight: 500 }}>
+                              {q === 1 ? item.unit : (item.unit.endsWith('s') ? item.unit : `${item.unit}s`)}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                            <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                              {hasBenchmark ? money(benchmarkRate) : money(r)}
+                            </span>
+                            {benchmarkLabel && (
+                              <span style={{ fontSize: '0.69rem', color: '#64748b', fontWeight: 500 }}>
+                                {benchmarkLabel}
+                              </span>
+                            )}
+                            {hasBenchmark && (
+                              <span style={{ fontSize: '0.67rem', color: '#0d9488', fontWeight: 600 }}>
+                                ({money(r)} / {bw > 1 ? `${bw}${uomShort} ` : ''}{item.unit || (bw > 1 ? (bulkUnit?.name || 'Bag') : 'unit')})
+                              </span>
+                            )}
+                            {!hasBenchmark && item.unit && (
+                              <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                                / {bw > 1 ? `${bw}${uomShort} ` : ''}{item.unit}
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{money(gross)}</td>
                         <td style={{ padding: '9px 10px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap', color: disc > 0 ? '#dc2626' : '#64748b' }}>
                           {disc > 0 ? `- ${money(disc)}` : '-'}

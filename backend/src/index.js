@@ -3,6 +3,8 @@ import dotenv from 'dotenv'
 dotenv.config()
 if (fs.existsSync('.env.local')) {
   dotenv.config({ path: '.env.local', override: true })
+} else if (fs.existsSync('backend/.env.local')) {
+  dotenv.config({ path: 'backend/.env.local', override: true })
 }
 import dns from 'node:dns'
 const isDevelopment = process.env.NODE_ENV === 'development' && !process.env.VERCEL
@@ -83,12 +85,12 @@ app.use(cors({
   credentials: true,
 }))
 app.use(express.json({
-  limit: '10mb',
+  limit: '2mb',
   verify: (req, _res, buf) => {
     req.rawBody = buf.toString('utf-8')
   }
 }))
-app.use(express.urlencoded({ extended: true }))
+app.use(express.urlencoded({ extended: true, limit: '2mb' }))
 
 /* ── Response Gzip Compression (Production only) ── */
 if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {

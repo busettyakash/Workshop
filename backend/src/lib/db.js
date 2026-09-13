@@ -3,6 +3,8 @@ import dotenv from 'dotenv'
 dotenv.config()
 if (fs.existsSync('.env.local')) {
   dotenv.config({ path: '.env.local', override: true })
+} else if (fs.existsSync('backend/.env.local')) {
+  dotenv.config({ path: 'backend/.env.local', override: true })
 }
 
 import dns from 'node:dns'
@@ -49,7 +51,7 @@ const isDevelopment = process.env.NODE_ENV !== 'production' && !process.env.VERC
 const getPoolMax = () => {
   const configuredMax = Number.parseInt(process.env.PG_POOL_MAX, 10)
   if (Number.isInteger(configuredMax) && configuredMax > 0) return configuredMax
-  if (process.env.VERCEL) return 2
+  if (process.env.VERCEL) return 3  // Vercel: serverless — keep very small
   return 10
 }
 
@@ -58,16 +60,16 @@ const createPool = () => new Pool({
   application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
   ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
-  min: 1,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  min: process.env.VERCEL ? 0 : 1,
+  idleTimeoutMillis: process.env.VERCEL ? 5000 : 30000,
+  connectionTimeoutMillis: 5000,
   statement_timeout: 30000,
   idle_in_transaction_session_timeout: 10000,
   query_timeout: 30000,
-  allowExitOnIdle: false,
-  keepAlive: true,
-  keepAliveInitialDelayMillis: 5000,
-  maxUses: 1000,
+  allowExitOnIdle: true,
+  keepAlive: !process.env.VERCEL,        // disabled on Vercel — serverless connections are ephemeral
+  keepAliveInitialDelayMillis: 10000,
+  maxUses: 500,
 })
 
 const pool = globalThis.__workshopPgPool || createPool()

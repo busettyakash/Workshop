@@ -17,6 +17,7 @@ import ReportsPage from './pages/Reports/index'
 import ImportStock     from './pages/ImportStock/index'
 import ImportStockForm from './pages/ImportStock/ImportStockForm'
 import ImportStockNote from './pages/ImportStock/ImportStockNote'
+import ImportStockPricing from './pages/ImportStock/ImportStockPricing'
 import Paid    from './pages/Paid/index'
 import Unpaid  from './pages/Unpaid/index'
 import People   from './pages/People/index'
@@ -80,6 +81,8 @@ export default function App() {
         <Route path="/import-stock/add"      element={<PrivateRoute><ImportStockForm /></PrivateRoute>} />
         <Route path="/import-stock/edit/:id" element={<PrivateRoute><ImportStockForm /></PrivateRoute>} />
         <Route path="/import-stock/:id/note" element={<PrivateRoute><ImportStockNote /></PrivateRoute>} />
+        <Route path="/import-stock/:id/pricing" element={<PrivateRoute><ImportStockPricing /></PrivateRoute>} />
+        <Route path="/import-stock/:id/view" element={<PrivateRoute><ImportStockPricing /></PrivateRoute>} />
         <Route path="/paid"      element={<PrivateRoute><Paid /></PrivateRoute>} />
         <Route path="/unpaid"    element={<PrivateRoute><Unpaid /></PrivateRoute>} />
         <Route path="/people"    element={<PrivateRoute><People /></PrivateRoute>} />

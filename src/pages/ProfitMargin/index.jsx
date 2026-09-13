@@ -85,6 +85,7 @@ export default function ProfitMargin() {
       const q = search.toLowerCase().trim()
       list = list.filter(p => 
         (p.name && p.name.toLowerCase().includes(q)) ||
+        (p.hsn_code && p.hsn_code.toLowerCase().includes(q)) ||
         (p.sku && p.sku.toLowerCase().includes(q)) ||
         (p.category && p.category.toLowerCase().includes(q)) ||
         (p.buyer_name && p.buyer_name.toLowerCase().includes(q))
@@ -164,7 +165,7 @@ export default function ProfitMargin() {
 
     const headers = [
       'Product Name',
-      'SKU',
+      'HSN',
       'Category',
       'Stock (Bags / Units)',
       'Loose Qty',
@@ -183,7 +184,7 @@ export default function ProfitMargin() {
 
     const rows = filteredProducts.map(p => [
       `"${(p.name || '').replaceAll('"', '""')}"`,
-      `"${p.sku || ''}"`,
+      `"${p.hsn_code || p.sku || ''}"`,
       `"${p.category || ''}"`,
       p.stock || 0,
       p.loose_kg || 0,
@@ -397,7 +398,7 @@ export default function ProfitMargin() {
                                     {p.name}
                                   </span>
                                   <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                    SKU: {p.sku || '—'}
+                                    HSN: {p.hsn_code && p.hsn_code !== '—' ? p.hsn_code : (p.sku || '—')}
                                   </span>
                                 </div>
                               </div>

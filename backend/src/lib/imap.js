@@ -71,13 +71,31 @@ function matchesReferenceNumber(refSet, subjectClean, bodyClean) {
   return false
 }
 
+const IGNORED_SENDER_DOMAINS = [
+  'notifications@github.com',
+  'github.com',
+  'sonarcloud.io',
+  'sonarqube.org',
+  'vercel.com',
+  'insforge.app'
+]
+
 function isEmailWorkshopRelated({ fromAddress, subjectClean, bodyClean, workshopEmails, quoteNumbers, billNumbers }) {
+  // Never import automated bots / developer services
+  for (const domain of IGNORED_SENDER_DOMAINS) {
+    if (fromAddress.includes(domain)) return false
+  }
+
+  // Never import verification / auth emails into workshop inbox
+  if (subjectClean.includes('verification code') || subjectClean.includes('otp')) {
+    return false
+  }
+
   if (workshopEmails.has(fromAddress)) return true
   if (matchesReferenceNumber(quoteNumbers, subjectClean, bodyClean)) return true
   if (matchesReferenceNumber(billNumbers, subjectClean, bodyClean)) return true
 
   return (
-    subjectClean.includes('workshop') ||
     subjectClean.includes('quotation') ||
     subjectClean.includes('quote') ||
     subjectClean.includes('inv-') ||
@@ -127,6 +145,22 @@ export async function syncGmailInbox(ownerUserId, opts = {}) {
   if (!user || !pass) {
     console.warn('[IMAP] SMTP_USER / SMTP_PASS not set — skipping sync')
     return { synced: 0, error: 'Missing credentials' }
+  }
+
+  // ── Multi-tenant safety check ──
+  // The server-level IMAP credentials belong to the primary account (process.env.SMTP_USER).
+  // NEVER sync IMAP emails into a workspace that doesn't belong to this user.
+  const profileRes = await query(
+    'SELECT email FROM shop_profiles WHERE user_id::text = $1 OR LOWER(email) = LOWER($1) LIMIT 1',
+    [ownerUserId]
+  ).catch(() => ({ rows: [] }))
+
+  const ownerEmail = profileRes.rows[0]?.email?.toLowerCase().trim()
+  const configuredUser = user.toLowerCase().trim()
+
+  if (!ownerEmail || ownerEmail !== configuredUser) {
+    console.log(`[IMAP] Skipping sync: workspace ${ownerUserId} (${ownerEmail || 'unknown'}) does not match SMTP_USER (${configuredUser})`)
+    return { synced: 0, message: 'IMAP sync is only available for the configured account' }
   }
 
   const client = new ImapFlow({

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { X, Printer } from 'lucide-react'
 import api from '../../api/client'
+import { getBulkUnitDetails } from '../../utils/unitHelpers'
 import './BillPreview.css'
 
 const INR = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -421,10 +422,11 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                   <tr>
                     <th style={{ width: 90 }}>HSN CODE</th>
                     <th>PRODUCT NAME & DESC.</th>
-                    <th style={{ width: 100, textAlign: 'center' }}>QUANTITY</th>
-                    <th style={{ width: 120, textAlign: 'center' }}>GROSS SUBTOTAL</th>
-                    <th style={{ width: 100, textAlign: 'center' }}>DISCOUNT</th>
-                    <th style={{ width: 140, textAlign: 'center' }}>TAX RATE (C+S+I)</th>
+                    <th style={{ width: 90, textAlign: 'center' }}>QUANTITY</th>
+                    <th style={{ width: 120, textAlign: 'right' }}>RATE</th>
+                    <th style={{ width: 110, textAlign: 'right' }}>GROSS SUBTOTAL</th>
+                    <th style={{ width: 90, textAlign: 'right' }}>DISCOUNT</th>
+                    <th style={{ width: 130, textAlign: 'right' }}>TAX RATE (C+S+I)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -466,6 +468,29 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                     }
 
                     const { displayQty, displayUnit, subtext } = resolvePackDisplay(unitRaw, qty, bagWeight, dbProd?.unit, prodName, isQuote)
+                    const bulkUnit = getBulkUnitDetails(dbProd?.unit || unitRaw)
+                    let uomShort = (bulkUnit?.short || dbProd?.unit || unitRaw || '').toLowerCase().replace(/s$/, '')
+                    if (!uomShort || ['bag', 'pack', 'box', 'unit'].includes(uomShort)) {
+                      uomShort = 'kg'
+                    }
+                    const pc = Number.parseFloat(dbProd?.price_covers ?? li.price_covers ?? 0)
+                    const bw = bagWeight
+                    const rawP = Number.parseFloat(dbProd?.updated_price || dbProd?.price || price || 0)
+
+                    let benchmarkRate = price
+                    let benchmarkLabel = ''
+                    let hasBenchmark = false
+
+                    if (pc > 0 && bw > 0 && pc !== bw) {
+                      benchmarkRate = (rawP / bw) * pc
+                      benchmarkLabel = `${pc} ${uomShort} price`
+                      hasBenchmark = true
+                    } else if (pc > 0) {
+                      benchmarkRate = rawP
+                      benchmarkLabel = `${pc} ${uomShort} price`
+                      hasBenchmark = true
+                    }
+
                     const rawHsn = li.hsn_code || li.hsn || li.sku || dbProd?.hsn_code || dbProd?.sku || ''
                     const hsnCode = (!rawHsn || rawHsn === '—' || rawHsn === '-')
                       ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
@@ -492,6 +517,23 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                           {subtext && <div style={{ fontSize: 10, color: '#64748b' }}>{subtext}</div>}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11 }}>{displayQty} {displayUnit}</td>
+                        <td className="text-right" style={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                            <span style={{ fontWeight: 700, color: '#0f172a', fontSize: 11 }}>
+                              {hasBenchmark ? INR(benchmarkRate) : INR(price)}
+                            </span>
+                            {benchmarkLabel && (
+                              <span style={{ fontSize: 9, color: '#64748b', fontWeight: 500 }}>
+                                {benchmarkLabel}
+                              </span>
+                            )}
+                            {hasBenchmark && (
+                              <span style={{ fontSize: 9, color: '#0d9488', fontWeight: 600 }}>
+                                ({INR(price)} / {bw > 1 ? `${bw}${uomShort} ` : ''}{displayUnit || 'Bag'})
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="text-right" style={{ fontWeight: 700, fontSize: 11 }}>{INR(lineTotalGross)}</td>
                         <td className="text-right" style={{ fontSize: 11, fontWeight: 700, color: itemDisc > 0.01 ? '#dc2626' : '#64748b' }}>
                           {itemDisc > 0.01 ? `-${INR(itemDisc)}` : '-'}
@@ -503,7 +545,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                     )
                   }) : (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px' }}>No line items found</td>
+                      <td colSpan="7" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px' }}>No line items found</td>
                     </tr>
                   )}
                 </tbody>

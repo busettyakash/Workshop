@@ -59,3 +59,23 @@ export function deleteCached(redis, key) {
   deleteMemoryCache(key)
   redis.del(key).catch(() => { })
 }
+
+export function clearMemoryCachePrefix(prefix) {
+  for (const k of memoryCache.keys()) {
+    if (k.startsWith(prefix)) {
+      memoryCache.delete(k)
+    }
+  }
+}
+
+export async function deleteCachedPattern(redis, pattern) {
+  const prefix = pattern ? pattern.split('*')[0] : ''
+  clearMemoryCachePrefix(prefix)
+  try {
+    const keys = await redis.keys(pattern).catch(() => [])
+    for (const k of keys) {
+      deleteMemoryCache(k)
+      await redis.del(k).catch(() => { })
+    }
+  } catch { }
+}

@@ -7,12 +7,13 @@ import { getInvoiceEmailTemplate, getQuoteEmailTemplate } from '../utils/emailTe
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
 import redis from '../lib/redis.js'
+import { getCached, setCached, deleteCachedPattern } from '../lib/fastCache.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 import { executeWorkflowPipeline } from './workflows.js'
 
 const router = express.Router()
 
-// One-time schema migration — runs only once per server start
+// One-time schema migration — runs in parallel only once per server start
 let _initSchemaPromise = null
 async function initSchema() {
   await pool.query(`
@@ -27,20 +28,29 @@ async function initSchema() {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `).catch(() => {})
-  await pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT`).catch(() => {})
-  await pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => {})
-  await pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2)`).catch(() => {})
-  await pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {})
-  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {})
-  await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {})
+  await Promise.all([
+    pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS product_name TEXT`).catch(() => {}),
+    pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => {}),
+    pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2)`).catch(() => {}),
+    pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {}),
+    pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {}),
+    pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {})
+  ])
 }
 router.use((_req, _res, next) => {
   _initSchemaPromise ||= initSchema().catch(e => { _initSchemaPromise = null; throw e })
   _initSchemaPromise.then(() => next()).catch(next)
 })
 
-
 const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
+
+export async function clearQuoteCache(userId) {
+  try {
+    await deleteCachedPattern(redis, `quotes:${userId}:*`)
+    await deleteCachedPattern(redis, `quotes:default-user:*`)
+    await deleteCachedPattern(redis, `quotes:*`)
+  } catch {}
+}
 
 const triggerWorkflowForQuote = async (userId, quote, actionName = 'Record created') => {
   try {
@@ -347,7 +357,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
   const enrichedBillItems = enrichItemsWithCache(billItems || [], catalogMap)
 
   // Generate Email HTML using external template file (invoiceTemplate.js)
-  const invoiceHtml = getInvoiceEmailTemplate({ quote, bill, billItems: enrichedBillItems, shop })
+  const invoiceHtml = getInvoiceEmailTemplate({ quote, bill, billItems: enrichedBillItems, shop, catalogMap })
 
   const pdfBuffer = await generateInvoicePdfBuffer({ quote, bill, billItems: enrichedBillItems, shop, type: 'invoice' }).catch(e => {
     console.error('[Invoice PDF Generation Error]', e.message)
@@ -407,6 +417,10 @@ router.get('/', apiLimiter, async (req, res) => {
     const search = req.query.search || ''
     const status = req.query.status || ''
 
+    const cacheKey = `quotes:${userId}:${page}:${limit}:${search}:${status}`
+    const cached = await getCached(redis, cacheKey, 200)
+    if (cached) return res.json(cached)
+
     let countQuery = "SELECT COUNT(*) FROM quotes WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user')"
     let dataQuery = "SELECT * FROM quotes WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user')"
     const params = [userId]
@@ -436,13 +450,16 @@ router.get('/', apiLimiter, async (req, res) => {
 
     const total = Number.parseInt(countRes.rows[0].count, 10)
 
-    res.json({
+    const payload = {
       data: dataRes.rows,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit) || 1
-    })
+    }
+
+    setCached(redis, cacheKey, payload, 45)
+    res.json(payload)
   } catch (err) {
     console.error('[Quotes GET Error]', err)
     res.status(500).json({ error: 'Failed to fetch quotes' })
@@ -836,6 +853,7 @@ router.post('/:id/convert-to-bill', apiLimiter, async (req, res) => {
     }
 
     const bill = await convertQuoteToBillRecord(quoteRes.rows[0], userId)
+    clearQuoteCache(userId)
     res.json({ message: 'Converted to bill successfully and invoice sent to customer', bill })
   } catch (err) {
     console.error('[Convert to Bill Error]', err)
@@ -894,7 +912,7 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
     const enrichedItems = enrichItemsWithCache(rawItems || [], catalogMap)
 
     const quoteWithEnriched = { ...quote, line_items: enrichedItems }
-    const emailHtml = getQuoteEmailTemplate({ quote: quoteWithEnriched, acceptUrl, declineUrl, issueDateFmt, validUntilFmt })
+    const emailHtml = getQuoteEmailTemplate({ quote: quoteWithEnriched, acceptUrl, declineUrl, issueDateFmt, validUntilFmt, catalogMap })
 
     const { data, error } = await sendEmail({
       to: quote.customer_email,
@@ -1027,6 +1045,7 @@ router.post('/', apiLimiter, async (req, res) => {
       await triggerWorkflowForQuote(userId, quoteRecord, 'Accepted')
     }
 
+    clearQuoteCache(userId)
     res.status(existingQuoteRes.rows.length > 0 ? 200 : 201).json(quoteRecord)
   } catch (err) {
     console.error('[Quotes POST Error]', err)
@@ -1135,6 +1154,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
       await handleQuoteUpdateAccepted(updatedQuote, userId)
     }
 
+    clearQuoteCache(userId)
     res.json(updatedQuote)
   } catch (err) {
     console.error('[Quotes PUT Error]', err)
@@ -1191,6 +1211,7 @@ router.patch('/:id/status', apiLimiter, async (req, res) => {
       await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
     }
 
+    clearQuoteCache(userId)
     res.json(updatedQuote)
   } catch (err) {
     console.error('[Quotes Status PATCH Error]', err)
@@ -1205,12 +1226,25 @@ router.delete('/:id', apiLimiter, async (req, res) => {
     const { id } = req.params
 
     const result = await pool.query(
-      'DELETE FROM quotes WHERE id = $1 AND user_id = $2 RETURNING id',
+      `DELETE FROM quotes 
+       WHERE (id::text = $1::text OR quote_number = $1)
+         AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user')
+       RETURNING id`,
       [id, userId]
     )
 
+    await clearQuoteCache(userId)
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Quote not found' })
+      const exists = await pool.query(
+        'SELECT id FROM quotes WHERE id::text = $1::text OR quote_number = $1',
+        [id]
+      ).catch(() => ({ rows: [] }))
+
+      if (exists.rows.length === 0) {
+        return res.json({ message: 'Quote already deleted', id })
+      }
+      return res.status(404).json({ error: 'Quote not found in workspace' })
     }
 
     res.json({ message: 'Quote deleted successfully', id })

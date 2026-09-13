@@ -14,6 +14,14 @@ function formatNonClickablePhone(phone) {
   return `<span class="no-phone-link" style="color:#475569; text-decoration:none !important; pointer-events:none; cursor:default;">${unlinked}</span>`
 }
 
+function formatRateSubtext(hasBenchmark, rate, bw, uomShort, displayUnit) {
+  if (!hasBenchmark) return ''
+  const formattedRate = rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const bwPrefix = bw > 1 ? `${bw}${uomShort} ` : ''
+  const unitLabel = escapeHtml(displayUnit || 'Bag')
+  return `<div style="font-size:9.5px; color:#0d9488; font-weight:600;">(₹${formattedRate} / ${bwPrefix}${unitLabel})</div>`
+}
+
 function normalizeUnitRaw(rawUnit) {
   let uRaw = String(rawUnit || '').trim()
   if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
@@ -145,6 +153,29 @@ function buildInvoiceItemRow(item, catalogMap, isQuoteFlow, realTaxAmt, halfRate
     ? `1006${String(item.product_id || item.id || 1001).padStart(4, '0')}`
     : rawHsn
 
+  const pc = Number.parseFloat(catProd?.price_covers ?? item.price_covers ?? 0)
+  const rawP = Number.parseFloat(catProd?.updated_price || catProd?.price || rate || 0)
+  let uomShort = String(catProd?.unit || item.unit || '').toLowerCase().replace(/s$/, '')
+  if (!uomShort || ['bag', 'pack', 'box', 'unit'].includes(uomShort)) {
+    uomShort = 'kg'
+  }
+
+  let benchmarkRate = rate
+  let benchmarkLabel = ''
+  let hasBenchmark = false
+
+  if (pc > 0 && bw > 0 && pc !== bw) {
+    benchmarkRate = (rawP / bw) * pc
+    benchmarkLabel = `${pc} ${uomShort} price`
+    hasBenchmark = true
+  } else if (pc > 0) {
+    benchmarkRate = rawP
+    benchmarkLabel = `${pc} ${uomShort} price`
+    hasBenchmark = true
+  }
+
+  const rateSubtextHtml = formatRateSubtext(hasBenchmark, rate, bw, uomShort, displayUnit)
+
   return `
     <tr>
       <td style="padding:10px 12px; font-size:11px; font-family:monospace; color:#475569; border:1px solid #cbd5e1;">${escapeHtml(hsnCode)}</td>
@@ -154,6 +185,11 @@ function buildInvoiceItemRow(item, catalogMap, isQuoteFlow, realTaxAmt, halfRate
       </td>
       <td align="center" style="padding:10px 12px; font-size:12px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:center;">
         <div>${escapeHtml(displayQty ? `${displayQty} ${displayUnit}` : displayUnit)}</div>
+      </td>
+      <td align="right" style="padding:10px 12px; font-size:11.5px; border:1px solid #cbd5e1; text-align:right; line-height:1.4;">
+        <div style="font-weight:700; color:#0f172a;">₹${(hasBenchmark ? benchmarkRate : rate).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        ${benchmarkLabel ? `<div style="font-size:9.5px; color:#64748b; font-weight:500;">${escapeHtml(benchmarkLabel)}</div>` : ''}
+        ${rateSubtextHtml}
       </td>
       <td align="right" style="padding:10px 12px; font-size:12.5px; font-weight:700; color:#0f172a; border:1px solid #cbd5e1; text-align:right;">₹${lineTotalGross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
       <td align="right" style="padding:10px 12px; font-size:12px; font-weight:700; color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}; border:1px solid #cbd5e1; text-align:right;">
@@ -168,7 +204,7 @@ function buildInvoiceTableRows(itemsList, catalogMap, isQuoteFlow, realTaxAmt, h
   if (itemsList.length === 0) {
     return `
       <tr>
-        <td colspan="6" align="center" style="padding:20px; text-align:center; color:#94a3b8; border:1px solid #cbd5e1;">No line items found</td>
+        <td colspan="7" align="center" style="padding:20px; text-align:center; color:#94a3b8; border:1px solid #cbd5e1;">No line items found</td>
       </tr>
     `
   }
@@ -394,12 +430,13 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
         <table class="goods-table">
           <thead>
             <tr>
-              <th style="text-align:left; width:90px;">HSN CODE</th>
+              <th style="text-align:left; width:80px;">HSN CODE</th>
               <th style="text-align:left;">PRODUCT NAME & DESC.</th>
-              <th style="text-align:center; width:100px;">QUANTITY</th>
-              <th style="text-align:right; width:120px;">GROSS SUBTOTAL</th>
-              <th style="text-align:right; width:100px;">DISCOUNT</th>
-              <th style="text-align:right; width:140px;">TAX RATE (C+S+I)</th>
+              <th style="text-align:center; width:85px;">QUANTITY</th>
+              <th style="text-align:right; width:110px;">RATE</th>
+              <th style="text-align:right; width:105px;">GROSS SUBTOTAL</th>
+              <th style="text-align:right; width:85px;">DISCOUNT</th>
+              <th style="text-align:right; width:125px;">TAX RATE (C+S+I)</th>
             </tr>
           </thead>
           <tbody>

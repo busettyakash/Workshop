@@ -69,12 +69,12 @@ async function ensureWorkspaceTable() {
   `).catch(err => console.error('[DB] Error ensuring columns on shop_profiles:', err.message))
 }
 
-let ensureWorkspaceTablePromise
+let ensureWorkspaceTableStarted = false
 router.use(authLimiter)
 router.use((_req, _res, next) => {
-  if (!ensureWorkspaceTablePromise) {
-    ensureWorkspaceTablePromise = ensureWorkspaceTable().catch(err => {
-      ensureWorkspaceTablePromise = null
+  if (!ensureWorkspaceTableStarted) {
+    ensureWorkspaceTableStarted = true
+    ensureWorkspaceTable().catch(err => {
       console.warn('[DB Init Warning]', err.message)
     })
   }
@@ -376,10 +376,6 @@ async function resolveInvitedWorkspace(email) {
        ON (
          p.user_id::text = m.workspace_owner_id
          OR LOWER(p.email) = LOWER(m.workspace_owner_id)
-         OR LOWER(p.email) = LOWER(m.workspace_owner_id)
-         OR p.user_id::text = (
-           SELECT user_id::text FROM shop_profiles WHERE LOWER(email) = LOWER(m.workspace_owner_id) LIMIT 1
-         )
        )
      WHERE LOWER(m.member_email) = LOWER($1)
      ORDER BY m.created_at ASC
@@ -883,8 +879,15 @@ router.post('/login', authLimiter, async (req, res) => {
     const storedPassword = prof?.password  || null
     let token          = null
 
+    // Check Redis-cached password first (written after first successful InsForge login)
+    // This makes re-logins instant even after a Vercel cold start when the DB profile
+    // has no local password yet but Redis still holds the verified credential.
+    const redisCachedPw = !storedPassword
+      ? await redis.get(`pw_cache:${email.toLowerCase()}`).catch(() => null)
+      : null
+
     // ── Fast path: local password check (avoids remote InsForge round-trip) ──
-    if (prof && storedPassword && password === storedPassword) {
+    if (prof && (storedPassword === password || (redisCachedPw && redisCachedPw === password))) {
       userId = userId || getLocalUserId(email)
       token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
     } else {
@@ -946,9 +949,13 @@ router.post('/login', authLimiter, async (req, res) => {
 
         token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
 
-        // Cache the verified password locally so all future logins skip the remote network trip
+        // Cache the verified password so all future logins use the fast local path
+        // 1. Write to Redis immediately (survives cold starts, <1ms read next login)
+        // 2. Await the DB write so it's committed before the response
         if (password) {
-          query(
+          const cacheKey = `pw_cache:${email.toLowerCase()}`
+          redis.set(cacheKey, password, { ex: 3600 }).catch(() => {})
+          await query(
             'UPDATE shop_profiles SET password = $1 WHERE LOWER(email) = LOWER($2)',
             [password, email]
           ).catch(err => console.warn('[Auth Password Cache Notice]', err.message))

@@ -3,6 +3,8 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 import { clearProductHsnCache } from '../lib/productCache.js'
+import redis from '../lib/redis.js'
+import { getCached, setCached } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(apiLimiter)
@@ -137,7 +139,7 @@ async function fetchProductsWithCursor(res, { conditions, params, limit, orderCo
   return res.json({ data: rows, limit, hasNextPage, nextCursor })
 }
 
-async function fetchProductsWithOffset(res, { conditions, params, page, limit, offset, orderCol }) {
+async function fetchProductsWithOffset({ conditions, params, page, limit, offset, orderCol }) {
   const where = `WHERE ${conditions.join(' AND ')}`
   const queryParams = [...params, limit, offset]
   const { rows: rawRows } = await query(
@@ -154,7 +156,7 @@ async function fetchProductsWithOffset(res, { conditions, params, page, limit, o
     ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
     : null
 
-  return res.json({ data: rows, total, page, limit, totalPages, hasNextPage, nextCursor })
+  return { data: rows, total, page, limit, totalPages, hasNextPage, nextCursor }
 }
 
 /* GET /api/products */
@@ -180,11 +182,24 @@ router.get('/', async (req, res) => {
 
   const orderCol = getProductOrderColumn(sort)
 
+  // Cache non-search first-page results for 30s to avoid repeated DB hits
+  const canCache = !search && !cursor && page === 1 && !category
+  const cacheKey = canCache
+    ? `products:list:${userId}:${finalStatus || 'active'}:${sort || 'default'}:${limit}`
+    : null
+
   try {
+    if (cacheKey) {
+      const cached = await getCached(redis, cacheKey, 100)
+      if (cached) return res.json(cached)
+    }
+
     if (cursor) {
       return await fetchProductsWithCursor(res, { conditions, params, limit, orderCol, cursor })
     }
-    return await fetchProductsWithOffset(res, { conditions, params, page, limit, offset, orderCol })
+    const result = await fetchProductsWithOffset({ conditions, params, page, limit, offset, orderCol })
+    if (cacheKey && result) setCached(redis, cacheKey, result, 30)
+    return res.json(result)
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }

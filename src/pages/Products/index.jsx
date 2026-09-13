@@ -872,7 +872,7 @@ export default function Products() {
                         <th>PRODUCT NAME</th>
                         <th>HSN CODE</th>
                         <th>CATEGORY</th>
-                        <th>PRICE</th>
+                        <th>SELLING PRICE</th>
                         <th>UPDATED PRICE</th>
                         <th>STOCK</th>
                         <th>STATUS</th>

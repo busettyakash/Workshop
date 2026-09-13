@@ -96,10 +96,27 @@ async function fetchWorkshopKnownEntities(userId) {
   return { workshopEmails, quoteNumbers, billNumbers }
 }
 
+const IGNORED_SENDER_DOMAINS = [
+  'notifications@github.com',
+  'github.com',
+  'sonarcloud.io',
+  'sonarqube.org',
+  'vercel.com',
+  'insforge.app'
+]
+
 function isEmailWorkshopRelated(email, { workshopEmails, quoteNumbers, billNumbers }) {
-  const fromAddr = (email.from_email || '').trim()
-  const subj = (email.subject || '').trim()
-  const body = (email.body || '').trim()
+  const fromAddr = (email.from_email || '').trim().toLowerCase()
+  const subj = (email.subject || '').trim().toLowerCase()
+  const body = (email.body || '').trim().toLowerCase()
+
+  for (const domain of IGNORED_SENDER_DOMAINS) {
+    if (fromAddr.includes(domain)) return false
+  }
+
+  if (subj.includes('verification code') || subj.includes('otp')) {
+    return false
+  }
 
   if (workshopEmails.has(fromAddr)) return true
 
@@ -111,8 +128,7 @@ function isEmailWorkshopRelated(email, { workshopEmails, quoteNumbers, billNumbe
     if (bNum && (subj.includes(bNum) || body.includes(bNum))) return true
   }
 
-  const isWorkshopSubject = subj.includes('workshop') ||
-                           subj.includes('quotation') ||
+  const isWorkshopSubject = subj.includes('quotation') ||
                            subj.includes('quote') ||
                            subj.includes('inv-') ||
                            subj.includes('qt-')
@@ -198,6 +214,18 @@ router.post('/cleanup', async (req, res) => {
 /* POST /api/emails/sync — manually trigger IMAP inbox sync */
 router.post('/sync', async (req, res) => {
   const userId = req.workspaceId
+  const userEmail = (req.user?.email || '').toLowerCase().trim()
+  const configuredUser = (process.env.SMTP_USER || '').toLowerCase().trim()
+
+  // Guard against syncing another user's IMAP inbox into this workspace
+  if (!configuredUser || userEmail !== configuredUser) {
+    return res.json({
+      message: 'Inbox up to date',
+      synced: 0,
+      note: 'External Gmail IMAP sync is only active for the primary account.'
+    })
+  }
+
   try {
     const result = await syncGmailInbox(userId, { limit: 50 }).catch(err => ({ synced: 0, error: err.message }))
     await clearEmailsCache(userId).catch(() => {})
@@ -255,7 +283,7 @@ router.post('/', async (req, res) => {
           recipientUserId = recipientRes.rows[0]?.user_id || null
         }
 
-        if (recipientUserId) {
+        if (recipientUserId && recipientUserId !== userId) {
           const senderName = req.user?.shopName || userEmail
 
           await query(

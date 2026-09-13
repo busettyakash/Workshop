@@ -1,18 +1,38 @@
-import puppeteer from 'puppeteer'
 import PDFDocument from 'pdfkit'
 import { getProductHsnMap } from '../lib/productCache.js'
 
 let chromiumModule = null
 let puppeteerCoreModule = null
+let puppeteerModule = null
 
-try {
-  chromiumModule = await import('@sparticuz/chromium').then(m => m.default || m).catch(() => null)
-  puppeteerCoreModule = await import('puppeteer-core').then(m => m.default || m).catch(() => null)
-} catch { }
+async function ensurePuppeteer() {
+  if (!puppeteerModule) {
+    try {
+      puppeteerModule = await import('puppeteer').then(m => m.default || m).catch(() => null)
+    } catch { }
+  }
+  if (!puppeteerCoreModule) {
+    try {
+      puppeteerCoreModule = await import('puppeteer-core').then(m => m.default || m).catch(() => null)
+    } catch { }
+  }
+  if (!chromiumModule) {
+    try {
+      chromiumModule = await import('@sparticuz/chromium').then(m => m.default || m).catch(() => null)
+    } catch { }
+  }
+}
 
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
+function formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit) {
+  if (!hasBenchmark) return ''
+  const bwPrefix = bagWeight > 1 ? `${bagWeight}${uomShort} ` : ''
+  const unitLabel = displayUnit || 'Bag'
+  return `<div style="font-size:9px;color:#0d9488;font-weight:600;">(${INR(price)} / ${bwPrefix}${unitLabel})</div>`
+}
+
 function parseItems(items) {
   if (Array.isArray(items)) return items
   if (!items) return []
@@ -289,13 +309,41 @@ function renderInvoiceItemRow(li, i, { items, grossSubtotal, lineDiscounts, tota
     ? `1006${String(pId || (i + 1001)).padStart(4, '0')}`
     : rawHsn
 
-  return `<tr>
+  const pc = Number.parseFloat(dbProd?.price_covers ?? li.price_covers ?? 0)
+  const rawP = Number.parseFloat(dbProd?.updated_price || dbProd?.price || price || 0)
+  let uomShort = String(dbProd?.unit || rawUnit || '').toLowerCase().replace(/s$/, '')
+  if (!uomShort || ['bag', 'pack', 'box', 'unit'].includes(uomShort)) {
+    uomShort = 'kg'
+  }
+
+  let benchmarkRate = price
+  let benchmarkLabel = ''
+  let hasBenchmark = false
+
+  if (pc > 0 && bagWeight > 0 && pc !== bagWeight) {
+    benchmarkRate = (rawP / bagWeight) * pc
+    benchmarkLabel = `${pc} ${uomShort} price`
+    hasBenchmark = true
+  } else if (pc > 0) {
+    benchmarkRate = rawP
+    benchmarkLabel = `${pc} ${uomShort} price`
+    hasBenchmark = true
+  }
+
+    const rateSubtextHtml = formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit)
+
+    return `<tr>
     <td style="font-weight:600;color:#475569;font-size:10.5px;font-family:monospace;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">${hsnCode}</td>
     <td style="padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">
       <div style="font-weight:700;color:#0f172a;font-size:11.5px">${prodName}</div>
       ${subtext ? `<div style="font-size:10.5px;color:#64748b;margin-top:2px">${subtext}</div>` : ''}
     </td>
     <td style="text-align:center;font-weight:600;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${displayQty} ${displayUnit}</td>
+    <td style="text-align:right;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">
+      <div style="font-weight:700;color:#0f172a;">${INR(hasBenchmark ? benchmarkRate : price)}</div>
+      ${benchmarkLabel ? `<div style="font-size:9px;color:#64748b;font-weight:500;">${benchmarkLabel}</div>` : ''}
+      ${rateSubtextHtml}
+    </td>
     <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${INR(lineTotalGross)}</td>
     <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4;color:${itemDisc > 0.01 ? '#dc2626' : '#64748b'}">
       ${itemDisc > 0.01 ? `-${INR(itemDisc)}` : '-'}
@@ -362,7 +410,7 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
         halfTaxRate,
         taxAmt
       })).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:24px">No line items found</td></tr>'
+    : '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:24px">No line items found</td></tr>'
 
   const totalsHtml = `
     <div style="display:flex;border:1px solid #cbd5e1;background:#f8fafc;margin-bottom:20px;text-align:center;width:100%">
@@ -522,12 +570,13 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
     <table>
       <thead>
         <tr>
-          <th style="width:90px">HSN CODE</th>
+          <th style="width:80px">HSN CODE</th>
           <th>PRODUCT NAME &amp; DESC.</th>
-          <th style="width:100px;text-align:center">QUANTITY</th>
-          <th style="width:120px;text-align:right">GROSS SUBTOTAL</th>
-          <th style="width:100px;text-align:right">DISCOUNT</th>
-          <th style="width:140px;text-align:right">TAX RATE (C+S+I)</th>
+          <th style="width:85px;text-align:center">QUANTITY</th>
+          <th style="width:110px;text-align:right">RATE</th>
+          <th style="width:105px;text-align:right">GROSS SUBTOTAL</th>
+          <th style="width:85px;text-align:right">DISCOUNT</th>
+          <th style="width:125px;text-align:right">TAX RATE (C+S+I)</th>
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
@@ -818,8 +867,8 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
 
       const tableX = X + 14
       const tableW = W - 28
-      const colG = { hsn: tableX + 8, name: tableX + 72, qty: tableX + 205, gross: tableX + 270, disc: tableX + 348, tax: tableX + 418 }
-      const colGW = { hsn: 60, name: 130, qty: 60, gross: 75, disc: 66, tax: 84 }
+      const colG = { hsn: tableX + 6, name: tableX + 66, qty: tableX + 185, rate: tableX + 245, gross: tableX + 315, disc: tableX + 378, tax: tableX + 438 }
+      const colGW = { hsn: 56, name: 115, qty: 56, rate: 66, gross: 60, disc: 56, tax: 76 }
 
       // Table Header Row
       doc.rect(tableX, curY, tableW, 28).fill('#f8fafc')
@@ -828,6 +877,7 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
       doc.text('HSN CODE', colG.hsn, curY + 10)
       doc.text('PRODUCT NAME & DESC.', colG.name, curY + 10)
       doc.text('QUANTITY', colG.qty, curY + 10, { width: colGW.qty, align: 'center' })
+      doc.text('RATE', colG.rate, curY + 10, { width: colGW.rate, align: 'right' })
       doc.text('GROSS SUBTOTAL', colG.gross, curY + 10, { width: colGW.gross, align: 'right' })
       doc.text('DISCOUNT', colG.disc, curY + 10, { width: colGW.disc, align: 'right' })
       doc.text('TAX RATE (C+S+I)', colG.tax, curY + 10, { width: colGW.tax, align: 'right' })
@@ -856,6 +906,7 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
         }
 
         doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold').text(`${qty} ${unit}`, colG.qty, curY + 12, { width: colGW.qty, align: 'center' })
+        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold').text(INR(rate), colG.rate, curY + 12, { width: colGW.rate, align: 'right' })
         doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold').text(INR(gross), colG.gross, curY + 12, { width: colGW.gross, align: 'right' })
         
         if (disc > 0) {
@@ -972,6 +1023,9 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
 // ─────────────────────────────────────────────
 export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   try {
+    // Lazy-load puppeteer/chromium on first PDF request to keep startup memory low
+    await ensurePuppeteer()
+
     const catalogMap = await getProductHsnMap().catch(() => ({}))
     const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap, type })
 
@@ -1010,7 +1064,7 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
       if (exePath) {
         launchOptions.executablePath = exePath
       }
-      browser = await puppeteer.launch(launchOptions)
+      browser = await puppeteerModule.launch(launchOptions)
     }
 
     try {

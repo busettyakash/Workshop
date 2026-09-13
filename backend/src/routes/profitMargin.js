@@ -1,6 +1,8 @@
 import express from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
+import redis from '../lib/redis.js'
+import { getCached, setCached } from '../lib/fastCache.js'
 
 const router = express.Router()
 
@@ -81,6 +83,7 @@ function computeItemProfitMargin(r) {
     id: r.id,
     name: r.name,
     sku: r.sku,
+    hsn_code: r.hsn_code,
     category: r.category,
     unit: r.unit,
     stock,
@@ -119,13 +122,17 @@ router.get(['/', '/profit-margins'], async (req, res) => {
   }
 
   const userId = req.workspaceId
+  const cacheKey = `profit_margin:${userId}`
 
   try {
+    const cached = await getCached(redis, cacheKey, 200)
+    if (cached) return res.json(cached)
     const { rows } = await query(
       `SELECT 
         COALESCE(p.id, i.id) as id,
         COALESCE(p.name, i.name) as name,
         COALESCE(p.sku, i.sku, '—') as sku,
+        COALESCE(p.hsn_code, i.hsn_code, p.sku, i.sku, '—') as hsn_code,
         COALESCE(p.category, i.category, 'Others') as category,
         COALESCE(p.unit, i.unit, 'kgs') as unit,
         COALESCE(p.stock, i.stock, 0) as stock,
@@ -150,7 +157,7 @@ router.get(['/', '/profit-margins'], async (req, res) => {
     )
 
     const processed = rows.map(computeItemProfitMargin)
-
+    setCached(redis, cacheKey, processed, 60)
     res.json(processed)
   } catch (err) {
     res.status(500).json({ error: err.message })

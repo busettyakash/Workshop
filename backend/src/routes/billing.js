@@ -3,6 +3,7 @@ import crypto from 'node:crypto'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
+import { getCached, setCached } from '../lib/fastCache.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
 
@@ -13,18 +14,22 @@ router.use(requireAuth)
 let ensureBillingSchemaPromise
 
 async function ensureBillingSchema() {
-  await query(
-    `ALTER TABLE bill_items
-     ALTER COLUMN quantity TYPE NUMERIC(10, 2)
-     USING quantity::numeric(10, 2)`
-  ).catch(() => { })
-  await query(`ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => { })
-  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50)`).catch(() => { })
-  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(255)`).catch(() => { })
-  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255)`).catch(() => { })
-  await query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50)`).catch(() => { })
-  await query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => { })
-  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => { })
+  // Run all migrations in parallel to avoid 7 serial round-trips on first request
+  await Promise.all([
+    query(`ALTER TABLE bill_items ALTER COLUMN quantity TYPE NUMERIC(10, 2) USING quantity::numeric(10, 2)`).catch(() => {}),
+    query(`ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => {}),
+    query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS bill_number VARCHAR(50)`).catch(() => {}),
+    query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(255)`).catch(() => {}),
+    query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255)`).catch(() => {}),
+    query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50)`).catch(() => {}),
+    query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => {}),
+    // Composite indexes for billing queries (user_id + created_at, user_id + status)
+    query(`CREATE INDEX IF NOT EXISTS idx_bills_user_created ON bills (user_id, created_at DESC)`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_bills_user_status ON bills (user_id, status)`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_import_stock_user_created ON import_stock (user_id, created_at DESC)`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_quotes_user_created ON quotes (user_id, created_at DESC)`).catch(() => {}),
+  ])
 }
 
 router.use((_req, _res, next) => {
@@ -188,18 +193,32 @@ async function fetchBillsWithOffset({ where, params, page, limit, offset, orderC
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
-  const { sort } = req.query
+  const { sort, search } = req.query
 
   const { where, params } = buildBillingWhere(req.query, userId, true)
   const orderCol = resolveBillingSort(sort)
 
+  // Cache key — only cache non-search, non-cursor, first-page requests
+  const canCache = !search && !cursor && page === 1
+  const cacheKey = canCache
+    ? `billing:list:${userId}:${req.query.status || 'all'}:${req.query.month || ''}:${req.query.year || ''}:${sort || ''}:${limit}`
+    : null
+
   try {
+    if (cacheKey) {
+      const cached = await getCached(redis, cacheKey, 100)
+      if (cached) return res.json(cached)
+    }
+
     if (cursor) {
       const cursorResult = await fetchBillsWithCursor({ where, params, cursor, limit, orderCol })
       return res.json(cursorResult)
     }
 
     const offsetResult = await fetchBillsWithOffset({ where, params, page, limit, offset, orderCol })
+
+    if (cacheKey) setCached(redis, cacheKey, offsetResult, 30)
+
     res.json(offsetResult)
   } catch (err) {
     res.status(500).json({ error: err.message })

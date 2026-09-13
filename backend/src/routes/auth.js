@@ -1355,11 +1355,11 @@ router.put('/members/:id/permissions', apiLimiter, requireAuth, async (req, res)
       const memberEmail = finalMember.member_email.toLowerCase()
 
       // 1. Clear all caches for this member
+      deleteMemoryCache(`workspaces:${memberEmail}`)
+      deleteCached(redis, `ws_membership:${req.workspaceId}:${memberEmail}`)
       await Promise.all([
         redis.del(`ws_membership:${req.workspaceId}:${memberEmail}`).catch(() => {}),
-        redis.del(`workspaces:${memberEmail}`).catch(() => {}),
-        deleteMemoryCache(`workspaces:${memberEmail}`),
-        deleteCached(redis, `ws_membership:${req.workspaceId}:${memberEmail}`)
+        redis.del(`workspaces:${memberEmail}`).catch(() => {})
       ])
 
       // 2. Push new role+permissions to the member's live browser session via realtime

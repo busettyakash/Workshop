@@ -40,6 +40,41 @@ const formatIndianDateTime = (raw) => {
   }
 }
 
+function computeBuyRatePerUnit(rawBP, pc, bagWeight) {
+  if (rawBP <= 0) return '0.00'
+  if (pc > 0) return (rawBP / pc).toFixed(2)
+  if (bagWeight > 0) return (rawBP / bagWeight).toFixed(2)
+  return '0.00'
+}
+
+function computeSellRatePerUnit(sellingPriceVal, pc, bagWeight) {
+  if (pc > 0) return (sellingPriceVal / pc).toFixed(2)
+  if (bagWeight > 0) return (sellingPriceVal / bagWeight).toFixed(2)
+  return sellingPriceVal.toFixed(2)
+}
+
+function getStatusBadgeStyle(status) {
+  if (status === 'active') {
+    return { background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' }
+  }
+  if (status === 'added') {
+    return { background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }
+  }
+  return { background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }
+}
+
+function getBuyingPriceSubtext(rawBP, pc, buyRatePerUnit, uomShort) {
+  if (rawBP <= 0) return 'Purchase price from supplier'
+  if (pc > 0) return `₹${buyRatePerUnit} / ${uomShort} cost (${pc} ${uomShort} batch)`
+  return `₹${buyRatePerUnit} / ${uomShort} cost`
+}
+
+function computeHistoryUnitRate(curPrice, displayCoveragePrice, pc, bagWeight) {
+  if (pc > 0) return (displayCoveragePrice / pc).toFixed(2)
+  if (bagWeight > 0) return (curPrice / bagWeight).toFixed(2)
+  return curPrice.toFixed(2)
+}
+
 export default function ImportStockPricing() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -166,12 +201,124 @@ export default function ImportStockPricing() {
   const perBagPriceVal = rawP
 
   // Rates per 1 unit (e.g. per 1 kg)
-  const buyRatePerUnit = (rawBP > 0 && pc > 0) ? (rawBP / pc).toFixed(2) : (rawBP > 0 && bagWeight > 0 ? (rawBP / bagWeight).toFixed(2) : '0.00')
-  const sellRatePerUnit = (pc > 0) ? (sellingPriceVal / pc).toFixed(2) : (bagWeight > 0 ? (sellingPriceVal / bagWeight).toFixed(2) : sellingPriceVal.toFixed(2))
+  const buyRatePerUnit = computeBuyRatePerUnit(rawBP, pc, bagWeight)
+  const sellRatePerUnit = computeSellRatePerUnit(sellingPriceVal, pc, bagWeight)
   const activeRatePerUnit = (rawUP > 0 && pc > 0) ? (updatedPriceVal / pc).toFixed(2) : sellRatePerUnit
 
   const catStyle = getCategoryTagStyle(item.category)
+  const statusBadgeStyle = getStatusBadgeStyle(item.status)
   const stockDisplay = formatStockDisplay(item.stock, item.bag_weight, item.unit, item.loose_kg)
+
+  const renderHistoryTable = () => {
+    if (loadingHistory) {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+          <Loader2 size={24} className="ws-chat-loader-spin" style={{ color: '#2563eb' }} />
+        </div>
+      )
+    }
+    if (history.length === 0) {
+      return (
+        <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
+          No historical price records found.
+        </div>
+      )
+    }
+    return (
+      <table className="attio-table">
+        <thead>
+          <tr>
+            <th>EFFECTIVE DATE</th>
+            <th>PRICE / RATE</th>
+            <th>PER BAG PRICE</th>
+            <th>UNIT RATE</th>
+            <th>DIFFERENCE</th>
+            <th>REVISION NOTES</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((row, idx) => {
+            const prevRow = history[idx + 1]
+            const curPrice = Number.parseFloat(row.new_price || 0)
+            const prevPrice = prevRow ? Number.parseFloat(prevRow.new_price || 0) : null
+            const diff = prevPrice !== null ? (curPrice - prevPrice) : 0
+            const isUp = diff > 0
+
+            // Calculate rates
+            const bagPrice = curPrice
+            let displayCoveragePrice = curPrice
+            if (pc > 0 && bagWeight > 0 && pc !== bagWeight) {
+              displayCoveragePrice = (curPrice / bagWeight) * pc
+            }
+            const unitRate = computeHistoryUnitRate(curPrice, displayCoveragePrice, pc, bagWeight)
+
+            const dateStr = formatIndianDateTime(row.created_at || row.effective_date)
+
+            return (
+              <tr key={row.id || idx}>
+                <td>
+                  <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.85rem' }}>
+                    {dateStr}
+                  </div>
+                </td>
+                <td>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
+                      {formatINR(displayCoveragePrice)}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                      {pc > 0 ? `${pc} ${uomShort} rate` : `Per ${uomShort}`}
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 600, color: '#15803d', fontSize: '0.88rem' }}>
+                      {formatINR(bagPrice)}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                      Per {bagWeight} {uomShort} bag
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <span style={{ fontWeight: 600, color: '#2563eb', fontSize: '0.85rem' }}>
+                    ₹{unitRate} / {uomShort}
+                  </span>
+                </td>
+                <td>
+                  {prevPrice !== null && diff !== 0 ? (
+                    <span style={{
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      background: isUp ? '#dcfce7' : '#fee2e2',
+                      color: isUp ? '#15803d' : '#dc2626',
+                      border: `1px solid ${isUp ? '#bbf7d0' : '#fecaca'}`
+                    }}>
+                      {isUp ? `+${formatINR(diff)}` : `-${formatINR(Math.abs(diff))}`}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#9ca3af', fontSize: '0.78rem' }}>
+                      Initial Benchmark
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <span style={{ color: '#475569', fontSize: '0.8125rem' }}>
+                    {row.notes || 'Price adjustment'}
+                  </span>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    )
+  }
 
   return (
     <div className="ws-dash-layout">
@@ -202,9 +349,9 @@ export default function ImportStockPricing() {
                     fontWeight: 600,
                     padding: '1px 8px',
                     borderRadius: 4,
-                    background: item.status === 'active' ? '#dcfce7' : item.status === 'added' ? '#e0f2fe' : '#f1f5f9',
-                    color: item.status === 'active' ? '#15803d' : item.status === 'added' ? '#0369a1' : '#475569',
-                    border: `1px solid ${item.status === 'active' ? '#bbf7d0' : item.status === 'added' ? '#bae6fd' : '#e2e8f0'}`
+                    background: statusBadgeStyle.background,
+                    color: statusBadgeStyle.color,
+                    border: statusBadgeStyle.border
                   }}>
                     {item.status ? item.status.toUpperCase() : 'PENDING'}
                   </span>
@@ -257,7 +404,7 @@ export default function ImportStockPricing() {
                 {rawBP > 0 ? formatINR(rawBP) : '—'}
               </p>
               <span style={{ display: 'block', fontSize: '0.75rem', color: '#a16207', marginTop: 4, fontWeight: 500 }}>
-                {rawBP > 0 ? (pc > 0 ? `₹${buyRatePerUnit} / ${uomShort} cost (${pc} ${uomShort} batch)` : `₹${buyRatePerUnit} / ${uomShort} cost`) : 'Purchase price from supplier'}
+                {getBuyingPriceSubtext(rawBP, pc, buyRatePerUnit, uomShort)}
               </span>
             </div>
 
@@ -403,108 +550,7 @@ export default function ImportStockPricing() {
             </div>
 
             <div className="attio-table-wrap">
-              {loadingHistory ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-                  <Loader2 size={24} className="ws-chat-loader-spin" style={{ color: '#2563eb' }} />
-                </div>
-              ) : history.length === 0 ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
-                  No historical price records found.
-                </div>
-              ) : (
-                <table className="attio-table">
-                  <thead>
-                    <tr>
-                      <th>EFFECTIVE DATE</th>
-                      <th>PRICE / RATE</th>
-                      <th>PER BAG PRICE</th>
-                      <th>UNIT RATE</th>
-                      <th>DIFFERENCE</th>
-                      <th>REVISION NOTES</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((row, idx) => {
-                      const prevRow = history[idx + 1]
-                      const curPrice = Number.parseFloat(row.new_price || 0)
-                      const prevPrice = prevRow ? Number.parseFloat(prevRow.new_price || 0) : null
-                      const diff = prevPrice !== null ? (curPrice - prevPrice) : 0
-                      const isUp = diff > 0
-
-                      // Calculate rates
-                      const bagPrice = curPrice
-                      let displayCoveragePrice = curPrice
-                      if (pc > 0 && bagWeight > 0 && pc !== bagWeight) {
-                        displayCoveragePrice = (curPrice / bagWeight) * pc
-                      }
-                      const unitRate = (pc > 0) ? (displayCoveragePrice / pc).toFixed(2) : (bagWeight > 0 ? (curPrice / bagWeight).toFixed(2) : curPrice.toFixed(2))
-
-                      const dateStr = formatIndianDateTime(row.created_at || row.effective_date)
-
-                      return (
-                        <tr key={row.id || idx}>
-                          <td>
-                            <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.85rem' }}>
-                              {dateStr}
-                            </div>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
-                                {formatINR(displayCoveragePrice)}
-                              </span>
-                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                {pc > 0 ? `${pc} ${uomShort} rate` : `Per ${uomShort}`}
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span style={{ fontWeight: 600, color: '#15803d', fontSize: '0.88rem' }}>
-                                {formatINR(bagPrice)}
-                              </span>
-                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
-                                Per {bagWeight} {uomShort} bag
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            <span style={{ fontWeight: 600, color: '#2563eb', fontSize: '0.85rem' }}>
-                              ₹{unitRate} / {uomShort}
-                            </span>
-                          </td>
-                          <td>
-                            {prevPrice !== null && diff !== 0 ? (
-                              <span style={{
-                                padding: '3px 8px',
-                                borderRadius: 6,
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                background: isUp ? '#dcfce7' : '#fee2e2',
-                                color: isUp ? '#15803d' : '#dc2626',
-                                border: `1px solid ${isUp ? '#bbf7d0' : '#fecaca'}`
-                              }}>
-                                {isUp ? `+${formatINR(diff)}` : `-${formatINR(Math.abs(diff))}`}
-                              </span>
-                            ) : (
-                              <span style={{ color: '#9ca3af', fontSize: '0.78rem' }}>
-                                Initial Benchmark
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            <span style={{ color: '#475569', fontSize: '0.8125rem' }}>
-                              {row.notes || 'Price adjustment'}
-                            </span>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
+              {renderHistoryTable()}
             </div>
           </div>
 

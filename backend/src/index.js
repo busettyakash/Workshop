@@ -64,13 +64,21 @@ const app = express()
 app.disable('x-powered-by')
 const PORT = process.env.PORT || 5000
 
+function sanitizeLogInput(input) {
+  return typeof input === 'string' ? input.replace(/[\r\n]/g, '') : String(input || '').replace(/[\r\n]/g, '')
+}
+
 /* ── Request Logger Middleware ── */
 if (!process.env.VERCEL) {
   app.use((req, res, next) => {
     const start = Date.now()
     res.on('finish', () => {
       const duration = Date.now() - start
-      const logLine = `[Request] ${req.method} ${req.originalUrl} - Status: ${res.statusCode} (${duration}ms) - Auth: ${req.headers.authorization ? 'Yes' : 'No'} - Workspace: ${req.headers['x-workspace-id'] || 'None'}`
+      const safeMethod = sanitizeLogInput(req.method)
+      const safeUrl = sanitizeLogInput(req.originalUrl)
+      const safeWorkspace = sanitizeLogInput(req.headers['x-workspace-id'] || 'None')
+      const hasAuth = req.headers.authorization ? 'Yes' : 'No'
+      const logLine = `[Request] ${safeMethod} ${safeUrl} - Status: ${res.statusCode} (${duration}ms) - Auth: ${hasAuth} - Workspace: ${safeWorkspace}`
       console.log(logLine)
     })
     next()

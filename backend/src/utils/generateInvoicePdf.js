@@ -26,11 +26,10 @@ async function ensurePuppeteer() {
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
-function formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit) {
+function formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit = 'Bag') {
   if (!hasBenchmark) return ''
   const bwPrefix = bagWeight > 1 ? `${bagWeight}${uomShort} ` : ''
-  const unitLabel = displayUnit || 'Bag'
-  return `<div style="font-size:9px;color:#0d9488;font-weight:600;">(${INR(price)} / ${bwPrefix}${unitLabel})</div>`
+  return `<div style="font-size:9px;color:#0d9488;font-weight:600;">(${INR(price)} / ${bwPrefix}${displayUnit})</div>`
 }
 
 function parseItems(items) {

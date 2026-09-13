@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Mail, Lock, ArrowLeft, Phone, CreditCard } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router'
+import { Mail, Lock, ArrowLeft, Phone, CreditCard, User } from 'lucide-react'
 import WorkshopLogo from '../../components/WorkshopLogo'
 import Notification from '../../components/Notification'
 import AuthLayout from '../../components/layout/AuthLayout'
@@ -8,22 +8,36 @@ import Input from '../../components/ui/Input'
 import { authApi } from '../../services/authApi'
 import { useAppDispatch } from '../../redux/hooks'
 import { registerThunk } from '../../redux/slices/authSlice'
+import { getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import './Auth.css'
 
 export default function Signup() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
   const [searchParams] = useSearchParams()
-  const inviteFrom = searchParams.get('invite_from') || ''
-  const inviteWorkspace = searchParams.get('workspace') || ''
+  const fileInputRef = useRef(null)
+  
+  const getParam = (key) => searchParams.get(key) || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get(key) : '') || ''
+
+  const inviteEmail = getParam('invite_email') || getParam('email') || getParam('to') || ''
+  const inviteFrom = getParam('invite_from') || ''
+  const inviteWorkspace = getParam('workspace') || ''
+  const isInviteFlow = Boolean(inviteFrom || inviteWorkspace || inviteEmail)
+
   const [step, setStep] = useState(1) // 1 to 5
   const [form, setForm] = useState({
-    email: inviteFrom ? '' : '', password: '', confirmPassword: '',
+    email: inviteEmail || '', password: '', confirmPassword: '',
     companyName: '', workspaceHandle: '', workspaceHandleManual: false,
     billingCountry: 'India', referralSource: '',
-    phone: '', gstin: '',
-    usageType: 'Sales', inviteEmail: '', otp: ''
+    firstName: '', lastName: '', phone: '', gstin: '',
+    usageType: 'Sales', inviteEmail: '', otp: '', companyLogo: ''
   })
+  const [logoUrl, setLogoUrl] = useState('')
+
+  useEffect(() => {
+    // Ensure fresh signup never inherits previously cached avatars
+    localStorage.removeItem('ws_avatar_url')
+  }, [])
   const [errors, setErrors] = useState({})
   const [isLoading, setIsLoading] = useState(false)
   const [notification, setNotification] = useState(null) // { message, type }
@@ -34,6 +48,47 @@ export default function Signup() {
 
   const normalizeEmail = (value) => value.trim().toLowerCase()
   const normalizeOtp   = (value) => value.replace(/\D/g, '').slice(0, 6)
+
+  const handleLogoChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 10 * 1024 * 1024) {
+      showNotif('Logo image must be less than 10MB.', 'error')
+      return
+    }
+
+    if (!file.type.startsWith('image/')) {
+      showNotif('Please upload a valid image file (*.png, *.jpeg, *.webp).', 'error')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      if (reader.result) {
+        setLogoUrl(reader.result)
+        setForm(prev => ({ ...prev, companyLogo: reader.result }))
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleRemoveLogo = () => {
+    setLogoUrl('')
+    localStorage.removeItem('ws_avatar_url')
+    setForm(prev => ({ ...prev, companyLogo: '' }))
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  // Sync invite email if search params load after initial render
+  useEffect(() => {
+    const rawEmail = searchParams.get('invite_email') || searchParams.get('email') || searchParams.get('to') || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('invite_email') || new URLSearchParams(window.location.search).get('email') : '') || ''
+    if (rawEmail) {
+      setForm(prev => ({ ...prev, email: rawEmail }))
+    }
+  }, [searchParams])
 
   // Auto-generate workspace handle from company name
   useEffect(() => {
@@ -64,19 +119,81 @@ export default function Signup() {
     setForm(prev => ({ ...prev, workspaceHandle: e.target.value, workspaceHandleManual: true }))
   }
 
-  // ── Step 1: Validate & send OTP ──
+  // Password strength evaluation
+  const passRules = {
+    length:     form.password.length >= 8,
+    hasUpper:   /[A-Z]/.test(form.password),
+    hasLower:   /[a-z]/.test(form.password),
+    hasNumber:  /[0-9]/.test(form.password),
+    hasSpecial: /[^A-Za-z0-9]/.test(form.password)
+  }
+  const score = Object.values(passRules).filter(Boolean).length
+  const getPassStrength = () => {
+    if (!form.password) return { label: '', percent: '0%', color: '#e2e8f0', textColor: '#94a3b8' }
+    if (score <= 2) return { label: 'Weak', percent: '33%', color: '#ef4444', textColor: '#dc2626' }
+    if (score <= 4) return { label: 'Medium (Neutral)', percent: '66%', color: '#f59e0b', textColor: '#d97706' }
+    return { label: 'Strong', percent: '100%', color: '#10b981', textColor: '#16a34a' }
+  }
+  const passStrength = getPassStrength()
+
+  // ── Single-Step Invite Acceptance Handler ──
+  const handleInviteJoin = async (e) => {
+    e.preventDefault()
+    clearNotif()
+    const newErrors = {}
+    if (!form.email || !/^[^\s@]+@[^\s@.]+\.[^\s@.]+$/.test(form.email)) newErrors.email = 'Valid email is required.'
+    if (!form.password || form.password.length < 8)       newErrors.password = 'Password must be at least 8 characters.'
+    if (score < 3)                                         newErrors.password = 'Password is too weak. Please meet more criteria below.'
+    if (form.password !== form.confirmPassword)           newErrors.confirmPassword = 'Passwords do not match.'
+    if (Object.keys(newErrors).length) { setErrors(newErrors); return }
+
+    setIsLoading(true)
+    try {
+      const payload = {
+        email: form.email,
+        password: form.password,
+        firstName: form.firstName || form.email.split('@')[0],
+        lastName: form.lastName || 'Member',
+        first_name: form.firstName || form.email.split('@')[0],
+        last_name: form.lastName || 'Member',
+        shopName: inviteWorkspace || 'Workshop',
+        companyName: inviteWorkspace || 'Workshop',
+        isInvite: true,
+        inviteFrom,
+      }
+      const resultAction = await dispatch(registerThunk(payload))
+      if (registerThunk.fulfilled.match(resultAction)) {
+        showNotif(`Welcome to ${inviteWorkspace || 'Workshop'}! Redirecting…`, 'success')
+        const role = resultAction.payload?.activeRole
+        const perms = resultAction.payload?.activePermissions
+        const targetRoute = getFirstAccessibleRoute(perms, role)
+        navigate(targetRoute)
+      } else {
+        const errMsg = resultAction.payload || 'Failed to join workspace. Please try again.'
+        showNotif(errMsg, 'error')
+      }
+    } catch {
+      showNotif('Something went wrong. Please try again.', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // ── Step 1: Validate & send OTP (Normal multi-step flow) ──
   const handleStep1 = async (e) => {
     e.preventDefault()
     clearNotif()
     const newErrors = {}
-    if (!form.email || !/\S+@\S+\.\S+/.test(form.email)) newErrors.email = 'Valid email is required.'
-    if (!form.password || form.password.length < 6)       newErrors.password = 'Password must be at least 6 characters.'
+    if (!form.email || !/^[^\s@]+@[^\s@.]+\.[^\s@.]+$/.test(form.email)) newErrors.email = 'Valid email is required.'
+    if (!form.password || form.password.length < 8)       newErrors.password = 'Password must be at least 8 characters.'
+    if (score < 3)                                         newErrors.password = 'Password is too weak. Please meet more criteria below.'
     if (form.password !== form.confirmPassword)           newErrors.confirmPassword = 'Passwords do not match.'
     if (Object.keys(newErrors).length) { setErrors(newErrors); return }
 
     setIsLoading(true)
     try {
       await authApi.sendOtp(form.email)
+      setForm(prev => ({ ...prev, otp: '' }))
       showNotif(`Verification code sent to ${form.email}`, 'success')
       setStep(2)
       setResendCooldown(30)
@@ -117,8 +234,8 @@ export default function Signup() {
     try {
       await authApi.sendOtp(form.email)
       showNotif(`New code sent to ${form.email}`, 'info')
-      setResendCooldown(30)
       setForm(prev => ({ ...prev, otp: '' }))
+      setResendCooldown(30)
       setErrors(prev => ({ ...prev, otp: '' }))
     } catch {
       showNotif('Failed to resend OTP. Please try again.', 'error')
@@ -138,11 +255,17 @@ export default function Signup() {
     setStep(4)
   }
 
-  // ── Step 4: Business details ──
+  // ── Step 4: Personal & Business details ──
   const handleStep4 = (e) => {
     e.preventDefault()
     clearNotif()
     const newErrors = {}
+    if (!form.firstName?.trim()) {
+      newErrors.firstName = 'First name is required.'
+    }
+    if (!form.lastName?.trim()) {
+      newErrors.lastName = 'Last name is required.'
+    }
     if (!form.phone) {
       newErrors.phone = 'Phone number is required.'
     } else if (!/^[+\d\s\-()]{7,15}$/.test(form.phone)) {
@@ -155,7 +278,7 @@ export default function Signup() {
     }
     if (Object.keys(newErrors).length) {
       setErrors(newErrors)
-      showNotif('Please fill in all required business details.', 'warning')
+      showNotif('Please fill in all 4 required details (First Name, Last Name, Phone Number, GSTIN).', 'warning')
       return
     }
     setStep(5)
@@ -167,21 +290,35 @@ export default function Signup() {
     clearNotif()
     setIsLoading(true)
     try {
+      const derivedShopName = (form.companyName || form.workspaceHandle || (form.firstName ? `${form.firstName}'s Workshop` : '') || (form.email ? form.email.split('@')[0] : '') || 'My Workshop').trim()
+
       const payload = {
         email:           form.email,
         password:        form.password,
-        shopName:        form.companyName,
-        companyName:     form.companyName,
+        firstName:       form.firstName,
+        lastName:        form.lastName,
+        first_name:      form.firstName,
+        last_name:       form.lastName,
+        shopName:        derivedShopName,
+        companyName:     derivedShopName,
+        companyLogo:     logoUrl,
+        logoUrl:         logoUrl,
         phone:           form.phone,
         gstin:           form.gstin,
         billingCountry:  form.billingCountry,
         referralSource:  form.referralSource,
         usageType:       form.usageType,
-        workspaceHandle: form.workspaceHandle,
+        workspaceHandle: form.workspaceHandle || derivedShopName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
         inviteEmail:     form.inviteEmail,
       }
       const resultAction = await dispatch(registerThunk(payload))
       if (registerThunk.fulfilled.match(resultAction)) {
+        if (logoUrl) {
+          localStorage.setItem('ws_workspace_logo', logoUrl)
+          sessionStorage.setItem('ws_active_workspace_logo', logoUrl)
+          localStorage.removeItem('ws_avatar_url')
+          localStorage.removeItem('ws_user_avatar')
+        }
         showNotif('Workspace created! Redirecting to dashboard…', 'success')
         setTimeout(() => navigate('/dashboard'), 1200)
       } else {
@@ -203,7 +340,13 @@ export default function Signup() {
           <>
             <div className="ws-preview-sidebar">
               <div className="ws-preview-item ws-active">
-                <div className="ws-preview-avatar"><WorkshopLogo size={18} /></div>
+                <div className="ws-preview-avatar" style={{ overflow: 'hidden' }}>
+                  {logoUrl ? (
+                    <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <WorkshopLogo size={18} />
+                  )}
+                </div>
                 <span className="ws-preview-text">{form.companyName || 'Workspace title'}</span>
                 <ArrowLeft size={12} style={{ transform: 'rotate(-90deg)', marginLeft: 'auto', opacity: 0.5 }} />
               </div>
@@ -265,59 +408,222 @@ export default function Signup() {
 
       <div className="ws-auth-form-wrap">
 
-        {/* ── Invite context banner ── */}
-        {inviteFrom && step === 1 && (
-          <div style={{
-            background: 'linear-gradient(135deg, #e0f2fe, #f0e6ff)',
-            borderRadius: '12px',
-            padding: '14px 18px',
-            marginBottom: '18px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            border: '1px solid rgba(99, 102, 241, 0.15)',
-          }}>
-            <div style={{
-              width: '36px', height: '36px', borderRadius: '50%',
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontWeight: 700, fontSize: '14px', flexShrink: 0
-            }}>
-              {(inviteFrom[0] || '?').toUpperCase()}
-            </div>
-            <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.45 }}>
-              <strong>{inviteFrom}</strong> invited you to join
-              <strong style={{ color: '#6366f1' }}> {inviteWorkspace || 'their workspace'}</strong>.
-              Sign up below and you'll be added automatically.
-            </div>
-          </div>
-        )}
-
-        {/* ── STEP 1: Create account ── */}
-        {step === 1 && (
+        {/* ── INVITATION FLOW: Single Step Join ── */}
+        {isInviteFlow ? (
           <>
-            <div className="ws-auth-stepper">1/5</div>
-            <h1 className="ws-auth-step-title">Create your account</h1>
-            <p className="ws-auth-step-subtitle">Start your journey with Workshop today.</p>
-            <form className="ws-auth-form" onSubmit={handleStep1} noValidate>
-              <Input name="email" type="email" placeholder="Work email address" icon={Mail}
-                value={form.email} onChange={handleChange} error={errors.email} autoFocus />
-              <Input name="password" type="password" placeholder="Create a password (min 6 chars)" icon={Lock}
-                value={form.password} onChange={handleChange} error={errors.password} />
-              <Input name="confirmPassword" type="password" placeholder="Confirm your password" icon={Lock}
-                value={form.confirmPassword} onChange={handleChange} error={errors.confirmPassword} />
-              <button type="submit" className="ws-auth-submit-btn" disabled={isLoading}>
-                {isLoading ? 'Sending code…' : 'Continue'}
+            {/* Invite context banner */}
+            <div style={{
+              background: 'linear-gradient(135deg, #eff6ff, #f0fdf4)',
+              borderRadius: '12px',
+              padding: '14px 18px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              border: '1px solid #bfdbfe',
+            }}>
+              <div style={{
+                width: '38px', height: '38px', borderRadius: '50%',
+                background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontWeight: 700, fontSize: '15px', flexShrink: 0
+              }}>
+                {(inviteFrom[0] || 'W').toUpperCase()}
+              </div>
+              <div style={{ fontSize: '13px', color: '#1e293b', lineHeight: 1.45 }}>
+                {inviteFrom ? <strong>{inviteFrom}</strong> : 'You have been'} invited you to join
+                <strong style={{ color: '#2563eb' }}> {inviteWorkspace || 'the workspace'}</strong>.
+                Set your password below to complete setup.
+              </div>
+            </div>
+
+            <h1 className="ws-auth-step-title" style={{ fontSize: '1.6rem', marginBottom: '6px' }}>
+              Join {inviteWorkspace || 'Workspace'}
+            </h1>
+            <p className="ws-auth-step-subtitle" style={{ marginBottom: '20px' }}>
+              Create your account to collaborate as a team member.
+            </p>
+
+            <form className="ws-auth-form" onSubmit={handleInviteJoin} noValidate>
+              {/* Pre-filled Work Email Address */}
+              <Input
+                name="email"
+                type="email"
+                placeholder="Work email address"
+                icon={Mail}
+                value={form.email}
+                onChange={handleChange}
+                error={errors.email}
+                readOnly={Boolean(inviteEmail)}
+                style={inviteEmail ? { background: '#f8fafc', color: '#0f172a', fontWeight: 600 } : {}}
+              />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <Input
+                  name="firstName"
+                  placeholder="First name"
+                  icon={User}
+                  value={form.firstName}
+                  onChange={handleChange}
+                  error={errors.firstName}
+                />
+                <Input
+                  name="lastName"
+                  placeholder="Last name"
+                  value={form.lastName}
+                  onChange={handleChange}
+                  error={errors.lastName}
+                />
+              </div>
+
+              <Input
+                name="password"
+                type="password"
+                placeholder="Create a password (min 8 chars)"
+                icon={Lock}
+                value={form.password}
+                onChange={handleChange}
+                error={errors.password}
+              />
+
+              {/* Password Strength Meter & Live Checklist */}
+              {form.password && (
+                <div style={{ margin: '2px 0 8px', background: '#f8fafc', padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475467' }}>Password Strength:</span>
+                    <span style={{ 
+                      fontSize: '0.72rem', fontWeight: 700, 
+                      color: passStrength.textColor 
+                    }}>
+                      {passStrength.label}
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div style={{ width: '100%', height: 4, background: '#e2e8f0', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+                    <div style={{ 
+                      width: passStrength.percent, height: '100%', 
+                      background: passStrength.color, transition: 'all 0.3s ease' 
+                    }} />
+                  </div>
+
+                  {/* Checklist */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: '0.68rem' }}>
+                    <div style={{ color: passRules.length ? '#16a34a' : '#94a3b8', fontWeight: passRules.length ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      {passRules.length ? '✔' : '○'} Min 8 chars
+                    </div>
+                    <div style={{ color: passRules.hasUpper ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasUpper ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      {passRules.hasUpper ? '✔' : '○'} 1 Capital (A-Z)
+                    </div>
+                    <div style={{ color: passRules.hasLower ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasLower ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      {passRules.hasLower ? '✔' : '○'} 1 Small (a-z)
+                    </div>
+                    <div style={{ color: passRules.hasNumber ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasNumber ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      {passRules.hasNumber ? '✔' : '○'} 1 Number (0-9)
+                    </div>
+                    <div style={{ color: passRules.hasSpecial ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasSpecial ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3, gridColumn: 'span 2' }}>
+                      {passRules.hasSpecial ? '✔' : '○'} 1 Special (@, #, $, %, etc.)
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <Input
+                name="confirmPassword"
+                type="password"
+                placeholder="Confirm your password"
+                icon={Lock}
+                value={form.confirmPassword}
+                onChange={handleChange}
+                error={errors.confirmPassword}
+              />
+
+              <button
+                type="submit"
+                className="ws-auth-submit-btn"
+                disabled={isLoading}
+                style={{ marginTop: '8px', background: '#2563eb' }}
+              >
+                {isLoading ? 'Joining Workspace…' : `Join ${inviteWorkspace || 'Workspace'}`}
               </button>
-              <div className="ws-auth-switch">
-                Already have an account? <Link to="/login">Log in</Link>
+
+              <div className="ws-auth-switch" style={{ marginTop: '14px' }}>
+                Already have an account? <Link to={`/login?email=${encodeURIComponent(form.email)}`}>Log in</Link>
               </div>
             </form>
-            <p className="ws-auth-legal">
-              By inserting your details you confirm you agree to Workshop contacting you about our
-              products and services. You can opt out any time. Find out more in our{' '}
-              <a href="#">privacy policy</a>.
-            </p>
+          </>
+        ) : (
+          /* ── STANDARD FLOW: STEP 1 Create account ── */
+          <>
+            {step === 1 && (
+              <>
+                <div className="ws-auth-stepper">1/5</div>
+                <h1 className="ws-auth-step-title">Create your account</h1>
+                <p className="ws-auth-step-subtitle">Start your journey with Workshop today.</p>
+                <form className="ws-auth-form" onSubmit={handleStep1} noValidate>
+                  <Input name="email" type="email" placeholder="Work email address" icon={Mail}
+                    value={form.email} onChange={handleChange} error={errors.email} autoFocus />
+                  <Input name="password" type="password" placeholder="Create a password (min 8 chars)" icon={Lock}
+                    value={form.password} onChange={handleChange} error={errors.password} />
+
+                  {/* Password Strength Meter & Live Checklist */}
+                  {form.password && (
+                    <div style={{ margin: '2px 0 8px', background: '#f8fafc', padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475467' }}>Password Strength:</span>
+                        <span style={{ 
+                          fontSize: '0.72rem', fontWeight: 700, 
+                          color: passStrength.textColor 
+                        }}>
+                          {passStrength.label}
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div style={{ width: '100%', height: 4, background: '#e2e8f0', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+                        <div style={{ 
+                          width: passStrength.percent, height: '100%', 
+                          background: passStrength.color, transition: 'all 0.3s ease' 
+                        }} />
+                      </div>
+
+                      {/* Checklist */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: '0.68rem' }}>
+                        <div style={{ color: passRules.length ? '#16a34a' : '#94a3b8', fontWeight: passRules.length ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                          {passRules.length ? '✔' : '○'} Min 8 chars
+                        </div>
+                        <div style={{ color: passRules.hasUpper ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasUpper ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                          {passRules.hasUpper ? '✔' : '○'} 1 Capital (A-Z)
+                        </div>
+                        <div style={{ color: passRules.hasLower ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasLower ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                          {passRules.hasLower ? '✔' : '○'} 1 Small (a-z)
+                        </div>
+                        <div style={{ color: passRules.hasNumber ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasNumber ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+                          {passRules.hasNumber ? '✔' : '○'} 1 Number (0-9)
+                        </div>
+                        <div style={{ color: passRules.hasSpecial ? '#16a34a' : '#94a3b8', fontWeight: passRules.hasSpecial ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3, gridColumn: 'span 2' }}>
+                          {passRules.hasSpecial ? '✔' : '○'} 1 Special (@, #, $, %, etc.)
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <Input name="confirmPassword" type="password" placeholder="Confirm your password" icon={Lock}
+                    value={form.confirmPassword} onChange={handleChange} error={errors.confirmPassword} />
+                  <button type="submit" className="ws-auth-submit-btn" disabled={isLoading}>
+                    {isLoading ? 'Sending code…' : 'Continue'}
+                  </button>
+                  <div className="ws-auth-switch">
+                    Already have an account? <Link to="/login">Log in</Link>
+                  </div>
+                </form>
+                <p className="ws-auth-legal">
+                  By inserting your details you confirm you agree to Workshop contacting you about our
+                  products and services. You can opt out any time. Find out more in our{' '}
+                  <a href="#">privacy policy</a>.
+                </p>
+              </>
+            )}
           </>
         )}
 
@@ -378,12 +684,41 @@ export default function Signup() {
             <h1 className="ws-auth-step-title" style={{ textAlign: 'left' }}>Create your workspace</h1>
 
             <div className="ws-logo-upload-section">
-              <div className="ws-logo-preview"><WorkshopLogo size={28} /></div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                accept="image/png, image/jpeg, image/jpg, image/webp"
+                onChange={handleLogoChange}
+              />
+              <div className="ws-logo-preview" style={{ overflow: 'hidden' }}>
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="Company logo preview"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <WorkshopLogo size={28} />
+                )}
+              </div>
               <div className="ws-logo-actions">
                 <span className="ws-logo-label">Company logo</span>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" className="ws-logo-btn">Replace image</button>
-                  <button type="button" className="ws-logo-btn ws-remove">Remove</button>
+                  <button
+                    type="button"
+                    className="ws-logo-btn"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Replace image
+                  </button>
+                  <button
+                    type="button"
+                    className="ws-logo-btn ws-remove"
+                    onClick={handleRemoveLogo}
+                  >
+                    Remove
+                  </button>
                 </div>
                 <p className="ws-logo-hint">*.png, *.jpeg files up to 10MB at least 400px by 400px</p>
               </div>
@@ -451,17 +786,30 @@ export default function Signup() {
               </div>
             </div>
 
-            <div className="ws-step4-divider"><span>Business identity</span></div>
+            <div className="ws-step4-divider"><span>Personal & Business identity</span></div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="ws-form-field">
+                <label className="ws-field-label">First name *</label>
+                <Input name="firstName" type="text" placeholder="Enter first name" icon={User}
+                  value={form.firstName} onChange={handleChange} error={errors.firstName} />
+              </div>
+              <div className="ws-form-field">
+                <label className="ws-field-label">Last name *</label>
+                <Input name="lastName" type="text" placeholder="Enter last name" icon={User}
+                  value={form.lastName} onChange={handleChange} error={errors.lastName} />
+              </div>
+            </div>
 
             <div className="ws-form-field">
-              <label className="ws-field-label">Phone number</label>
-              <Input name="phone" type="tel" placeholder="+91 98765 43210" icon={Phone}
+              <label className="ws-field-label">Phone number *</label>
+              <Input name="phone" type="tel" placeholder="Enter phone number" icon={Phone}
                 value={form.phone} onChange={handleChange} error={errors.phone} />
             </div>
 
             <div className="ws-form-field">
-              <label className="ws-field-label">GSTIN</label>
-              <Input name="gstin" type="text" placeholder="22AAAAA0000A1Z5" icon={CreditCard}
+              <label className="ws-field-label">GSTIN *</label>
+              <Input name="gstin" type="text" placeholder="Enter GST number" icon={CreditCard}
                 value={form.gstin}
                 onChange={e => {
                   const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15)
@@ -469,7 +817,7 @@ export default function Signup() {
                   if (errors.gstin) setErrors(prev => ({ ...prev, gstin: '' }))
                 }}
                 error={errors.gstin} />
-              <p className="ws-field-hint">15-character GST Identification Number (e.g., 22AAAAA0000A1Z5)</p>
+              <p className="ws-field-hint">15-character GST Identification Number</p>
             </div>
 
             <button type="submit" className="ws-auth-submit-btn" style={{ marginTop: '8px' }}>

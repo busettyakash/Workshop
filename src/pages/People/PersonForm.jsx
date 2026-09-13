@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
@@ -7,6 +7,7 @@ import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/ui
 import { ArrowLeft, Loader2, Info } from 'lucide-react'
 import api from '../../api/client'
 import '../Dashboard/Dashboard.css'
+import { canEditModule } from '../../utils/permissionUtils'
 
 const PERSONA_OPTIONS = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
 const STATUS_OPTIONS  = ['active', 'inactive']
@@ -52,9 +53,13 @@ const S = {
 
 export default function PersonForm() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+  const returnUrl = searchParams.get('returnUrl')
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
+
+  const canEdit = canEditModule('people')
 
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
@@ -62,13 +67,18 @@ export default function PersonForm() {
   const [focus, setFocus] = useState(null)
 
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', persona: 'Lead', status: 'active', notes: ''
+    name: '', company: '', email: '', phone: '', persona: 'Lead', status: 'active', notes: ''
   })
 
   useEffect(() => {
+    if (!canEdit) {
+      dispatch(addToast({ message: 'You do not have permission to create or edit people', type: 'error' }))
+      navigate('/people', { replace: true })
+      return
+    }
     dispatch(setActiveNav('People'))
     if (id) fetchPerson()
-  }, [id, dispatch])
+  }, [id, dispatch, canEdit])
 
   const fetchPerson = async () => {
     try {
@@ -77,6 +87,7 @@ export default function PersonForm() {
       if (item) {
         setForm({
           name: item.name || '',
+          company: item.company || item.company_name || '',
           email: item.email || '',
           phone: item.phone || '',
           persona: item.persona || 'Lead',
@@ -108,14 +119,22 @@ export default function PersonForm() {
 
     setSaving(true)
     try {
+      const payload = { ...form, company_name: form.company }
       if (id) {
-        await api.put(`/people/${id}`, form)
+        await api.put(`/people/${id}`, payload)
         dispatch(addToast({ message: 'Person updated successfully!', type: 'success' }))
+        navigate(returnUrl || '/people')
       } else {
-        await api.post('/people', form)
+        const res = await api.post('/people', payload)
+        const newPerson = res.data?.data || res.data
         dispatch(addToast({ message: 'Person added successfully!', type: 'success' }))
+        if (returnUrl) {
+          const sep = returnUrl.includes('?') ? '&' : '?'
+          navigate(newPerson?.id ? `${returnUrl}${sep}createdPersonId=${newPerson.id}` : returnUrl)
+        } else {
+          navigate('/people')
+        }
       }
-      navigate('/people')
     } catch {
       dispatch(addToast({ message: 'Failed to save person details', type: 'error' }))
     } finally {
@@ -139,7 +158,7 @@ export default function PersonForm() {
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
             <button
-              onClick={() => navigate('/people')}
+              onClick={() => navigate(returnUrl || '/people')}
               style={{ background: '#f3f4f6', border: 'none', borderRadius: '8px', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6b7280', flexShrink: 0 }}
               onMouseEnter={e => e.currentTarget.style.background = '#e5e7eb'}
               onMouseLeave={e => e.currentTarget.style.background = '#f3f4f6'}
@@ -172,20 +191,29 @@ export default function PersonForm() {
                     <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.9375rem', margin: 0 }}>Contact Information</p>
                   </div>
                   <div style={{ padding: '20px' }}>
-                    <div style={S.field}>
-                      <label style={S.label}>Full Name <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Akash Busetty" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
-                      {errors.name && <span style={S.error}>{errors.name}</span>}
+                    <div style={{ display: 'grid', gridTemplateColumns: (form.persona === 'Vendor' || form.persona === 'Customer') ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 20 }}>
+                      <div>
+                        <label style={S.label}>Full Name <span style={{ color: '#dc2626' }}>*</span></label>
+                        <input name="name" value={form.name} onChange={handleChange} placeholder="Full Name" style={inp('name')} onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} />
+                        {errors.name && <span style={S.error}>{errors.name}</span>}
+                      </div>
+
+                      {(form.persona === 'Vendor' || form.persona === 'Customer') && (
+                        <div>
+                          <label style={S.label}>Company / Shop Name</label>
+                          <input name="company" value={form.company} onChange={handleChange} placeholder="Company / Shop Name" style={inp('company')} onFocus={() => setFocus('company')} onBlur={() => setFocus(null)} />
+                        </div>
+                      )}
                     </div>
                     
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
                       <div>
                         <label style={S.label}>Email Address</label>
-                        <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="email@example.com" style={inp('email')} onFocus={() => setFocus('email')} onBlur={() => setFocus(null)} />
+                        <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="Email Address" style={inp('email')} onFocus={() => setFocus('email')} onBlur={() => setFocus(null)} />
                       </div>
                       <div>
                         <label style={S.label}>Phone Number</label>
-                        <input name="phone" type="tel" value={form.phone} onChange={handleChange} placeholder="+91 98765 43210" style={inp('phone')} onFocus={() => setFocus('phone')} onBlur={() => setFocus(null)} />
+                        <input name="phone" type="tel" value={form.phone} onChange={handleChange} placeholder="Phone Number" style={inp('phone')} onFocus={() => setFocus('phone')} onBlur={() => setFocus(null)} />
                       </div>
                     </div>
 
@@ -245,7 +273,8 @@ export default function PersonForm() {
                   <button
                     type="submit"
                     disabled={saving}
-                    style={{ width: '100%', height: 40, border: 'none', borderRadius: '8px', background: saving ? '#9ca3af' : '#111827', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                    className="btn-blue"
+                    style={{ width: '100%', justifyContent: 'center', background: saving ? '#9ca3af' : undefined, cursor: saving ? 'not-allowed' : 'pointer' }}
                   >
                     {saving && <Loader2 size={14} className="ws-chat-loader-spin" />}
                     {saving ? 'Saving...' : id ? 'Update Person' : 'Save Person'}

@@ -16,13 +16,13 @@ export default function ProductsTable() {
           <p className="ws-table-sub">Your latest inventory snapshot</p>
         </div>
         <div className="ws-table-actions">
-          <button className="ws-table-btn">
+          <button type="button" className="ws-table-btn">
             <Filter size={13} /> Filter
           </button>
-          <button className="ws-table-btn">
+          <button type="button" className="ws-table-btn">
             <ArrowUpDown size={13} /> Sort
           </button>
-          <button className="ws-table-btn ws-table-btn--primary">
+          <button type="button" className="ws-table-btn ws-table-btn--primary">
             <Plus size={13} /> Add Product
           </button>
         </div>
@@ -33,7 +33,7 @@ export default function ProductsTable() {
           <thead>
             <tr>
               <th>Product Name</th>
-              <th>SKU</th>
+              <th>HSN Code</th>
               <th>Category</th>
               <th>Status</th>
               <th>Price</th>
@@ -45,7 +45,9 @@ export default function ProductsTable() {
               return (
                 <tr key={row.id}>
                   <td className="ws-td-name">{row.name}</td>
-                  <td className="ws-td-mono">{row.sku}</td>
+                  <td className="ws-td-mono" style={{ fontFamily: 'monospace', color: '#475569', fontWeight: 600 }}>
+                    {row.hsn_code || row.sku || '10064000'}
+                  </td>
                   <td>{row.category}</td>
                   <td>
                     <span

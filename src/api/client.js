@@ -1,11 +1,8 @@
-// API client — uses relative /api in production (Vercel proxies to backend)
-// and localhost:5000 in local development
+// API client — uses relative /api (proxied to localhost:5000 in dev via Vite proxy, and to backend in production)
 import axios from 'axios'
 
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-
 const api = axios.create({
-  baseURL: isLocal ? 'http://localhost:5000/api' : '/api',
+  baseURL: import.meta.env.VITE_API_URL || '/api',
   timeout: 15000,
 })
 
@@ -16,14 +13,29 @@ api.interceptors.request.use((config) => {
   
   const activeWorkspaceId = sessionStorage.getItem('ws_active_workspace_id')
   if (activeWorkspaceId) config.headers['x-workspace-id'] = activeWorkspaceId
+
+  if (import.meta.env.DEV) {
+    console.log(`📡 [API Request] ${config.method?.toUpperCase()} ${config.url || ''}`)
+  }
   
   return config
 })
 
-// Handle 401 — clear storage and redirect to login ONLY when not already on auth pages
+// Handle responses, logging, and 401 redirect
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    if (import.meta.env.DEV) {
+      console.log(`✅ [API Response ${res.status}] ${res.config.url || ''}`, res.data)
+    }
+    return res
+  },
   (err) => {
+    if (import.meta.env.DEV) {
+      console.error(
+        `❌ [API Error ${err.response?.status || 'Network'}] ${err.config?.url || ''}`,
+        err.response?.data || err.message
+      )
+    }
     if (err.response?.status === 401) {
       const onAuthPage = ['/login', '/signup'].some(p => window.location.pathname.startsWith(p))
       if (!onAuthPage) {

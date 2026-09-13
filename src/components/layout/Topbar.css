@@ -14,22 +14,43 @@
 .ws-topbar-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.ws-topbar-menu-btn {
-  width: 30px;
-  height: 30px;
+.ws-topbar-expand-zone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-topbar-expand-zone .ws-sb-collapse-btn {
+  opacity: 1;
+  width: 26px;
+}
+
+.ws-topbar-expand-zone .ws-topbar-divider {
+  opacity: 1;
+}
+
+.ws-topbar-divider {
+  width: 1px;
+  height: 18px;
+  background-color: var(--color-border);
+  margin: 0 2px;
+}
+
+.ws-topbar-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-primary);
+}
+
+.ws-topbar-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
-  color: var(--color-gray-500);
-  transition: all var(--transition-base);
-}
-.ws-topbar-menu-btn:hover {
-  background: var(--color-surface-active);
-  color: var(--color-text-primary);
+  color: var(--color-gray-700);
 }
 
 .ws-topbar-title {

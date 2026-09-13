@@ -1,7 +1,7 @@
 // Validation helpers
 
 export const validateEmail = (email) => {
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  const re = /^[^\s@]+@[^\s@.]+\.[^\s@.]+$/
   return re.test(email)
 }
 

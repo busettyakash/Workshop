@@ -18,10 +18,10 @@ async function clearImportStockCache(userId) {
     // Use prefix deletion (avoids slow O(N) redis.keys scan)
     clearMemoryCachePrefix(`import_stock:${userId}`)
     clearMemoryCachePrefix(`import_stock_note:${userId}`)
+    deleteCached(redis, `profit_margin:${userId}`)
     await Promise.all([
       deleteCachedPattern(redis, `import_stock:${userId}*`),
       deleteCachedPattern(redis, `import_stock_note:${userId}*`),
-      deleteCached(redis, `profit_margin:${userId}`),
     ]).catch(() => {})
   } catch (_err) {
     console.warn('%s Failed to clear import stock cache', LOG_PREFIX)

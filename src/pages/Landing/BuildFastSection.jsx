@@ -98,7 +98,7 @@ export default function BuildFastSection() {
               <div className="ws-build-highlight-card">
                 <div className="ws-build-highlight-card-label">Latest GST Invoice</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.88rem', color: '#0f172a' }}>
-                  INV-10482
+                  <span>INV-10482</span>
                   <span style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#16a34a', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>PAID</span>
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 2, fontWeight: 500 }}>

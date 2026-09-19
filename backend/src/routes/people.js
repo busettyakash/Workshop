@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached, deleteCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
+import { getCached, setCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(requireAuth)

@@ -111,7 +111,7 @@ export default function AiChatDrawer() {
     if (!text) return ''
     const parts = text.split(/(\*\*[^*]+\*\*)/g)
     return parts.map((p, i) =>
-      p.startsWith('**') ? <strong key={i} style={{ fontWeight: 700 }}>{p.slice(2, -2)}</strong> : p
+      p.startsWith('**') ? <strong key={`bold-${i}`} style={{ fontWeight: 700 }}>{p.slice(2, -2)}</strong> : p
     )
   }
 
@@ -165,7 +165,7 @@ export default function AiChatDrawer() {
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                         {headers.map((h, hIdx) => (
-                          <th key={hIdx} style={{ padding: '8px 10px', fontWeight: 650, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                          <th key={`th-${hIdx}-${h}`} style={{ padding: '8px 10px', fontWeight: 650, color: '#0f172a', whiteSpace: 'nowrap' }}>
                             {renderInlineBold(h)}
                           </th>
                         ))}
@@ -173,9 +173,9 @@ export default function AiChatDrawer() {
                     </thead>
                     <tbody>
                       {dataRows.map((row, rIdx) => (
-                        <tr key={rIdx} style={{ borderBottom: rIdx === dataRows.length - 1 ? 'none' : '1px solid #f1f5f9', background: rIdx % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                        <tr key={`row-${rIdx}`} style={{ borderBottom: rIdx === dataRows.length - 1 ? 'none' : '1px solid #f1f5f9', background: rIdx % 2 === 0 ? '#ffffff' : '#fafafa' }}>
                           {row.map((cell, cIdx) => (
-                            <td key={cIdx} style={{ padding: '7px 10px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                            <td key={`cell-${rIdx}-${cIdx}`} style={{ padding: '7px 10px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                               {renderInlineBold(cell)}
                             </td>
                           ))}
@@ -200,8 +200,8 @@ export default function AiChatDrawer() {
         inTable = true
         rawTableLines.push(trimmed)
         return
-      } else {
-        if (inTable) flushTable(idx)
+      } else if (inTable) {
+        flushTable(idx)
       }
 
       if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
@@ -212,8 +212,8 @@ export default function AiChatDrawer() {
           </li>
         )
         return
-      } else {
-        if (inList) flushList(idx)
+      } else if (inList) {
+        flushList(idx)
       }
 
       if (trimmed.startsWith('# ')) {
@@ -311,9 +311,9 @@ export default function AiChatDrawer() {
               </div>
 
               <div className="ws-ai-suggestions-list">
-                {SUGGESTIONS.map((sug, i) => (
+                {SUGGESTIONS.map((sug) => (
                   <button
-                    key={i}
+                    key={sug}
                     type="button"
                     className="ws-ai-suggestion-chip"
                     onClick={() => handleSend(sug)}

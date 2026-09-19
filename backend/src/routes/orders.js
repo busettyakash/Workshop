@@ -89,26 +89,6 @@ async function fetchOrdersWithCursor(res, { conditions, params, limit, cursor })
   return res.json({ data: rows, limit, hasNextPage, nextCursor })
 }
 
-async function fetchOrdersWithOffset(res, { conditions, params, page, limit, offset }) {
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-  const countRes = await query(`SELECT COUNT(*) FROM (${ordersUnion(where)}) counted_orders`, params)
-  const total = Number.parseInt(countRes.rows[0].count, 10) || 0
-  const totalPages = Math.ceil(total / limit) || 1
-
-  params.push(limit, offset)
-  const { rows } = await query(
-    `${ordersUnion(where)} ORDER BY created_at DESC, id DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params
-  )
-
-  const hasNextPage = page < totalPages
-  const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
-  const nextCursor = (hasNextPage && lastRow)
-    ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
-    : null
-
-  return res.json({ data: rows, total, page, limit, totalPages, hasNextPage, nextCursor })
-}
 
 /* GET /api/orders */
 router.get('/', async (req, res) => {

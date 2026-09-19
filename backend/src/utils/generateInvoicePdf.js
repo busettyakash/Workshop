@@ -29,11 +29,11 @@ async function ensurePuppeteer() {
 function escapeHtml(str) {
   if (str === null || str === undefined) return ''
   return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
 }
 
 function formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit = 'Bag') {
@@ -1115,8 +1115,8 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
               hostname === 'localhost' ||
               hostname === loopbackIpv4 ||
               hostname === '::1' ||
-              /^10\./.test(hostname) ||
-              /^192\.168\./.test(hostname) ||
+              hostname.startsWith('10.') ||
+              hostname.startsWith('192.168.') ||
               /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
             ) {
               return req.abort()

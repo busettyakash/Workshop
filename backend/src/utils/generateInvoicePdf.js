@@ -723,10 +723,14 @@ function calculatePdfKitAmounts(items, quote, bill) {
   }
 }
 
+function formatPdfKitINR(v) {
+  return 'Rs. ' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 // ─────────────────────────────────────────────
 // PDFKit Template Matching Screenshot Exactly
 // ─────────────────────────────────────────────
-async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
+export async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   return new Promise((resolve) => {
     try {
       const doc = new PDFDocument({ margin: 30, size: 'A4', bufferPages: true })
@@ -882,30 +886,57 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
 
       const tableX = X + 14
       const tableW = W - 28
-      const colG = { hsn: tableX + 6, name: tableX + 66, qty: tableX + 185, rate: tableX + 245, gross: tableX + 315, disc: tableX + 378, tax: tableX + 438 }
-      const colGW = { hsn: 56, name: 115, qty: 56, rate: 66, gross: 60, disc: 56, tax: 76 }
+
+      const tableCols = [
+        { id: 'hsn', label: 'HSN CODE', width: 62, align: 'left', padL: 6, padR: 4 },
+        { id: 'name', label: 'PRODUCT NAME & DESC.', width: 146, align: 'left', padL: 6, padR: 4 },
+        { id: 'qty', label: 'QUANTITY', width: 56, align: 'center', padL: 2, padR: 2 },
+        { id: 'rate', label: 'RATE', width: 65, align: 'right', padL: 2, padR: 6 },
+        { id: 'gross', label: 'GROSS SUBTOTAL', width: 68, align: 'right', padL: 2, padR: 6 },
+        { id: 'disc', label: 'DISCOUNT', width: 45, align: 'right', padL: 2, padR: 6 },
+        { id: 'tax', label: 'TAX RATE (C+S+I)', width: 65, align: 'right', padL: 2, padR: 6 }
+      ]
+
+      let colAccX = tableX
+      for (const col of tableCols) {
+        col.x = colAccX
+        colAccX += col.width
+      }
 
       // Table Header Row
-      doc.rect(tableX, curY, tableW, 28).fill('#f8fafc')
-      doc.strokeColor('#cbd5e1').lineWidth(0.75).rect(tableX, curY, tableW, 28).stroke()
-      doc.fontSize(7).fillColor('#475569').font('Helvetica-Bold')
-      doc.text('HSN CODE', colG.hsn, curY + 10)
-      doc.text('PRODUCT NAME & DESC.', colG.name, curY + 10)
-      doc.text('QUANTITY', colG.qty, curY + 10, { width: colGW.qty, align: 'center' })
-      doc.text('RATE', colG.rate, curY + 10, { width: colGW.rate, align: 'right' })
-      doc.text('GROSS SUBTOTAL', colG.gross, curY + 10, { width: colGW.gross, align: 'right' })
-      doc.text('DISCOUNT', colG.disc, curY + 10, { width: colGW.disc, align: 'right' })
-      doc.text('TAX RATE (C+S+I)', colG.tax, curY + 10, { width: colGW.tax, align: 'right' })
+      const headerH = 26
+      doc.rect(tableX, curY, tableW, headerH).fill('#f8fafc')
+      doc.strokeColor('#cbd5e1').lineWidth(0.75).rect(tableX, curY, tableW, headerH).stroke()
 
-      curY += 28
+      // Header vertical grid borders between columns
+      doc.strokeColor('#cbd5e1').lineWidth(0.5)
+      for (let i = 1; i < tableCols.length; i++) {
+        doc.moveTo(tableCols[i].x, curY).lineTo(tableCols[i].x, curY + headerH).stroke()
+      }
+
+      // Header Labels
+      doc.fontSize(6.8).fillColor('#475569').font('Helvetica-Bold')
+      for (const col of tableCols) {
+        const textX = col.x + col.padL
+        const textW = col.width - col.padL - col.padR
+        doc.text(col.label, textX, curY + 9, { width: textW, align: col.align, lineBreak: false })
+      }
+
+      curY += headerH
 
       // Table Item Rows
-      items.forEach((it, idx) => {
+      items.forEach((it) => {
         const rowH = 34
         doc.rect(tableX, curY, tableW, rowH).fill('#ffffff')
-        doc.strokeColor('#e2e8f0').lineWidth(0.5).rect(tableX, curY, tableW, rowH).stroke()
+        doc.strokeColor('#cbd5e1').lineWidth(0.5).rect(tableX, curY, tableW, rowH).stroke()
 
-        const name = it.product_name || it.name || `Item ${idx + 1}`
+        // Vertical column dividers
+        doc.strokeColor('#cbd5e1').lineWidth(0.5)
+        for (let i = 1; i < tableCols.length; i++) {
+          doc.moveTo(tableCols[i].x, curY).lineTo(tableCols[i].x, curY + rowH).stroke()
+        }
+
+        const name = it.product_name || it.name || 'Item'
         const hsn = it.hsn_code || '70534921'
         const unit = it.unit || 'Bag'
         const qty = Number.parseFloat(it.quantity || 1)
@@ -914,23 +945,95 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
         const disc = getExplicitLineDiscount(it)
         const packSubtext = it.subtext || (it.bag_weight ? `${it.bag_weight}kg ${unit}` : '')
 
-        doc.fontSize(7.5).fillColor('#334155').font('Helvetica').text(hsn, colG.hsn, curY + 12)
-        doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold').text(name, colG.name, curY + 8)
+        // Col 0: HSN CODE
+        doc.fontSize(7.5).fillColor('#334155').font('Helvetica')
+          .text(hsn, tableCols[0].x + tableCols[0].padL, curY + 12, {
+            width: tableCols[0].width - tableCols[0].padL - tableCols[0].padR,
+            align: 'left',
+            lineBreak: false
+          })
+
+        // Col 1: PRODUCT NAME & DESC
         if (packSubtext) {
-          doc.fontSize(7).fillColor('#64748b').font('Helvetica').text(packSubtext, colG.name, curY + 20)
-        }
-
-        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold').text(`${qty} ${unit}`, colG.qty, curY + 12, { width: colGW.qty, align: 'center' })
-        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold').text(INR(rate), colG.rate, curY + 12, { width: colGW.rate, align: 'right' })
-        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold').text(INR(gross), colG.gross, curY + 12, { width: colGW.gross, align: 'right' })
-        
-        if (disc > 0) {
-          doc.fontSize(8).fillColor('#dc2626').font('Helvetica-Bold').text(`-${INR(disc)}`, colG.disc, curY + 12, { width: colGW.disc, align: 'right' })
+          doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold')
+            .text(name, tableCols[1].x + tableCols[1].padL, curY + 6, {
+              width: tableCols[1].width - tableCols[1].padL - tableCols[1].padR,
+              align: 'left',
+              lineBreak: false,
+              ellipsis: true
+            })
+          doc.fontSize(7).fillColor('#64748b').font('Helvetica')
+            .text(packSubtext, tableCols[1].x + tableCols[1].padL, curY + 19, {
+              width: tableCols[1].width - tableCols[1].padL - tableCols[1].padR,
+              align: 'left',
+              lineBreak: false,
+              ellipsis: true
+            })
         } else {
-          doc.fontSize(8).fillColor('#64748b').font('Helvetica').text('—', colG.disc, curY + 12, { width: colGW.disc, align: 'right' })
+          doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold')
+            .text(name, tableCols[1].x + tableCols[1].padL, curY + 12, {
+              width: tableCols[1].width - tableCols[1].padL - tableCols[1].padR,
+              align: 'left',
+              lineBreak: false,
+              ellipsis: true
+            })
         }
 
-        doc.fontSize(7).fillColor('#475569').font('Helvetica').text(`CGST (${halfRate}%) + SGST (${halfRate}%)`, colG.tax, curY + 12, { width: colGW.tax, align: 'right' })
+        // Col 2: QUANTITY
+        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold')
+          .text(`${qty} ${unit}`, tableCols[2].x + tableCols[2].padL, curY + 12, {
+            width: tableCols[2].width - tableCols[2].padL - tableCols[2].padR,
+            align: 'center',
+            lineBreak: false
+          })
+
+        // Col 3: RATE
+        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold')
+          .text(formatPdfKitINR(rate), tableCols[3].x + tableCols[3].padL, curY + 12, {
+            width: tableCols[3].width - tableCols[3].padL - tableCols[3].padR,
+            align: 'right',
+            lineBreak: false
+          })
+
+        // Col 4: GROSS SUBTOTAL
+        doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold')
+          .text(formatPdfKitINR(gross), tableCols[4].x + tableCols[4].padL, curY + 12, {
+            width: tableCols[4].width - tableCols[4].padL - tableCols[4].padR,
+            align: 'right',
+            lineBreak: false
+          })
+
+        // Col 5: DISCOUNT
+        if (disc > 0) {
+          doc.fontSize(8).fillColor('#dc2626').font('Helvetica-Bold')
+            .text(`-${formatPdfKitINR(disc)}`, tableCols[5].x + tableCols[5].padL, curY + 12, {
+              width: tableCols[5].width - tableCols[5].padL - tableCols[5].padR,
+              align: 'right',
+              lineBreak: false
+            })
+        } else {
+          doc.fontSize(8).fillColor('#94a3b8').font('Helvetica')
+            .text('—', tableCols[5].x + tableCols[5].padL, curY + 12, {
+              width: tableCols[5].width - tableCols[5].padL - tableCols[5].padR,
+              align: 'center',
+              lineBreak: false
+            })
+        }
+
+        // Col 6: TAX RATE (C+S+I)
+        const totalTaxPercent = (Number(halfRate) * 2).toFixed(0)
+        doc.fontSize(7.5).fillColor('#334155').font('Helvetica-Bold')
+          .text(`${totalTaxPercent}% GST`, tableCols[6].x + tableCols[6].padL, curY + 7, {
+            width: tableCols[6].width - tableCols[6].padL - tableCols[6].padR,
+            align: 'right',
+            lineBreak: false
+          })
+        doc.fontSize(6.5).fillColor('#64748b').font('Helvetica')
+          .text(`(${halfRate}%+${halfRate}%)`, tableCols[6].x + tableCols[6].padL, curY + 19, {
+            width: tableCols[6].width - tableCols[6].padL - tableCols[6].padR,
+            align: 'right',
+            lineBreak: false
+          })
 
         curY += rowH
       })
@@ -948,42 +1051,42 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
       let bX = tableX
 
       // Box 1: Gross Subtotal
-      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('GROSS SUBTOTAL', bX, curY + 7, { width: sumBoxW, align: 'center' })
-      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(INR(grossSubtotal), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('GROSS SUBTOTAL', bX + 2, curY + 7, { width: sumBoxW - 4, align: 'center', lineBreak: false })
+      doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold').text(formatPdfKitINR(grossSubtotal), bX + 2, curY + 20, { width: sumBoxW - 4, align: 'center', lineBreak: false })
       bX += sumBoxW
       doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
 
       // Box 2: Total Discount (if discount > 0)
       if (totalDiscount > 0) {
         doc.rect(bX, curY, sumBoxW, sumBoxH).fill('#fef2f2')
-        doc.fontSize(6.5).fillColor('#991b1b').font('Helvetica-Bold').text('TOTAL DISCOUNT', bX, curY + 7, { width: sumBoxW, align: 'center' })
-        doc.fontSize(9).fillColor('#dc2626').font('Helvetica-Bold').text(`- ${INR(totalDiscount)}`, bX, curY + 20, { width: sumBoxW, align: 'center' })
+        doc.fontSize(6.5).fillColor('#991b1b').font('Helvetica-Bold').text('TOTAL DISCOUNT', bX + 2, curY + 7, { width: sumBoxW - 4, align: 'center', lineBreak: false })
+        doc.fontSize(8.5).fillColor('#dc2626').font('Helvetica-Bold').text(`- ${formatPdfKitINR(totalDiscount)}`, bX + 2, curY + 20, { width: sumBoxW - 4, align: 'center', lineBreak: false })
         bX += sumBoxW
         doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
       }
 
       // Box 3: Taxable Subtotal
-      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text("TOT. TAX'BLE AMT", bX, curY + 7, { width: sumBoxW, align: 'center' })
-      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(INR(taxableSubtotal), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text("TOT. TAX'BLE AMT", bX + 2, curY + 7, { width: sumBoxW - 4, align: 'center', lineBreak: false })
+      doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold').text(formatPdfKitINR(taxableSubtotal), bX + 2, curY + 20, { width: sumBoxW - 4, align: 'center', lineBreak: false })
       bX += sumBoxW
       doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
 
       // Box 4: CGST
-      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('CGST AMT', bX, curY + 7, { width: sumBoxW, align: 'center' })
-      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(INR(cgst), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('CGST AMT', bX + 2, curY + 7, { width: sumBoxW - 4, align: 'center', lineBreak: false })
+      doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold').text(formatPdfKitINR(cgst), bX + 2, curY + 20, { width: sumBoxW - 4, align: 'center', lineBreak: false })
       bX += sumBoxW
       doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
 
       // Box 5: SGST
-      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('SGST AMT', bX, curY + 7, { width: sumBoxW, align: 'center' })
-      doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text(INR(sgst), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      doc.fontSize(6.5).fillColor('#64748b').font('Helvetica-Bold').text('SGST AMT', bX + 2, curY + 7, { width: sumBoxW - 4, align: 'center', lineBreak: false })
+      doc.fontSize(8.5).fillColor('#0f172a').font('Helvetica-Bold').text(formatPdfKitINR(sgst), bX + 2, curY + 20, { width: sumBoxW - 4, align: 'center', lineBreak: false })
       bX += sumBoxW
       doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(bX, curY).lineTo(bX, curY + sumBoxH).stroke()
 
       // Box 6: Final Total Box (Solid Dark Navy)
       doc.rect(bX, curY, sumBoxW, sumBoxH).fill('#0f172a')
-      doc.fontSize(6.5).fillColor('#94a3b8').font('Helvetica-Bold').text(isQuote ? 'TOTAL QUOTE.AMT' : 'TOTAL INVOICE AMT', bX, curY + 7, { width: sumBoxW, align: 'center' })
-      doc.fontSize(9.5).fillColor('#ffffff').font('Helvetica-Bold').text(INR(totalAmount), bX, curY + 20, { width: sumBoxW, align: 'center' })
+      doc.fontSize(6.5).fillColor('#94a3b8').font('Helvetica-Bold').text(isQuote ? 'TOTAL QUOTE AMT' : 'TOTAL INVOICE AMT', bX + 2, curY + 7, { width: sumBoxW - 4, align: 'center', lineBreak: false })
+      doc.fontSize(9.5).fillColor('#ffffff').font('Helvetica-Bold').text(formatPdfKitINR(totalAmount), bX + 2, curY + 20, { width: sumBoxW - 4, align: 'center', lineBreak: false })
 
       curY += sumBoxH + 18
 

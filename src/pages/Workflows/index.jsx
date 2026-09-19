@@ -819,7 +819,8 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
   const fetchRuns = async (isBackground = false) => {
     if (!isBackground) setLoading(true)
     try {
-      const res = await api.get(workflowId ? `/workflows/${workflowId}/runs` : '/workflows/all-runs')
+      const endpoint = workflowId ? `/workflows/${workflowId}/runs` : '/workflows/all-runs'
+      const res = await api.get(`${endpoint}?_t=${Date.now()}`)
       setRuns(res.data || [])
     } catch { /* silent */ }
     if (!isBackground) setLoading(false)
@@ -851,14 +852,14 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
     return () => clearInterval(timer)
   }, [runs, workflowId])
 
-  // Live polling for selected run logs only while executing
+  // Live polling for selected run logs while executing or shortly after completion
   useEffect(() => {
     if (!selectedRun) return
     let isMounted = true
 
     const fetchLogs = async () => {
       try {
-        const res = await api.get(`/workflows/${workflowId || selectedRun.workflow_id}/runs/${selectedRun.id}/logs`)
+        const res = await api.get(`/workflows/${workflowId || selectedRun.workflow_id}/runs/${selectedRun.id}/logs?_t=${Date.now()}`)
         if (isMounted) setLogs(res.data || [])
       } catch { /* silent */ }
     }
@@ -866,15 +867,24 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
     setLoadingLogs(true)
     fetchLogs().finally(() => { if (isMounted) setLoadingLogs(false) })
 
-    if (selectedRun?.status !== 'Executing') return
+    if (selectedRun?.status === 'Executing') {
+      const logTimer = setInterval(() => {
+        fetchLogs()
+      }, 2000)
+      return () => {
+        isMounted = false
+        clearInterval(logTimer)
+      }
+    }
 
-    const logTimer = setInterval(() => {
+    // When status is Completed, trigger a quick follow-up fetch to capture any trailing logs
+    const graceTimer = setTimeout(() => {
       fetchLogs()
-    }, 2500)
+    }, 1200)
 
     return () => {
       isMounted = false
-      clearInterval(logTimer)
+      clearTimeout(graceTimer)
     }
   }, [selectedRun?.id, selectedRun?.status, workflowId])
 

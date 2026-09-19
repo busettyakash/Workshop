@@ -571,7 +571,7 @@ async function healStalledRuns() {
       `SELECT r.*, w.nodes 
        FROM workflow_runs r
        LEFT JOIN workflows w ON r.workflow_id = w.id
-       WHERE r.status = 'Executing' AND r.created_at < NOW() - INTERVAL '45 seconds'`
+       WHERE r.status = 'Executing' AND r.created_at < NOW() - INTERVAL '5 minutes'`
     )
 
     for (const run of rows) {
@@ -591,6 +591,7 @@ async function healStalledRuns() {
 
 /* GET /api/workflows/all-runs — All recent workflow execution runs */
 router.get('/all-runs', async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
   try {
     await healStalledRuns()
     const { rows } = await query(
@@ -968,6 +969,7 @@ router.delete('/:id', async (req, res) => {
 
 /* GET /api/workflows/:id/runs */
 router.get('/:id/runs', async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
   try {
     await healStalledRuns()
     const { rows } = await query(
@@ -1177,6 +1179,9 @@ function deduplicateWorkflowLogs(logs) {
 
 /* GET /api/workflows/:id/runs/:runId/logs */
 router.get('/:id/runs/:runId/logs', async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  res.set('Pragma', 'no-cache')
+  res.set('Expires', '0')
   try {
     await healStalledRuns()
     const logKey = `run:${req.params.runId}:logs`

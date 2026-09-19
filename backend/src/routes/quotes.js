@@ -806,11 +806,16 @@ async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
     await decreaseProductStockForQuote(items, quote.user_id, quote.quote_number || quote.id)
 
     const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
-    // Dispatch workflow automation asynchronously in background to ensure immediate HTTP response
-    setImmediate(() => {
-      triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted')
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.RENDER || process.env.PREVIEW)
+    if (isServerless) {
+      await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted')
         .catch(e => console.error('[Workflow Trigger Error]', e.message))
-    })
+    } else {
+      setImmediate(() => {
+        triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted')
+          .catch(e => console.error('[Workflow Trigger Error]', e.message))
+      })
+    }
 
     const emailNoticeText = isEmailEnabled
       ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
@@ -835,10 +840,16 @@ async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
 
 async function handleQuoteDeclinedResponse(quote) {
   const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id, 'declined')
-  setImmediate(() => {
-    triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined')
+  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.RENDER || process.env.PREVIEW)
+  if (isServerless) {
+    await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined')
       .catch(e => console.error('[Workflow Trigger Error]', e.message))
-  })
+  } else {
+    setImmediate(() => {
+      triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined')
+        .catch(e => console.error('[Workflow Trigger Error]', e.message))
+    })
+  }
 
   const emailNoticeText = isEmailEnabled
     ? ` A confirmation and follow-up has been sent to your email (<strong>${quote.customer_email || 'your email'}</strong>).`

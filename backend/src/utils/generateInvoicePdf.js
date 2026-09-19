@@ -1038,6 +1038,16 @@ async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], s
 // ─────────────────────────────────────────────
 export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
   try {
+    const isLinux = process.platform === 'linux'
+    const isLambda = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)
+    const exePath = getSystemBrowserPath()
+
+    // Fast-path for Linux preview / Docker environments without a system Chrome installation:
+    // Avoids 30-second Puppeteer launch timeouts by using the ultra-fast (30ms) PDFKit generator directly.
+    if (isLinux && !exePath && !isLambda) {
+      return await generatePdfKitFallback({ quote, bill, billItems, shop, type })
+    }
+
     // Lazy-load puppeteer/chromium on first PDF request to keep startup memory low
     await ensurePuppeteer()
 
@@ -1045,9 +1055,8 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
     const html = buildInvoiceHtml({ quote, bill, billItems, shop, catalogMap, type })
 
     let browser = null
-    const isLinux = process.platform === 'linux'
 
-    if (isLinux && chromiumModule && puppeteerCoreModule) {
+    if (isLinux && isLambda && chromiumModule && puppeteerCoreModule) {
       try {
         const executablePath = await chromiumModule.executablePath()
         if (executablePath) {
@@ -1055,7 +1064,8 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
             args: chromiumModule.args,
             defaultViewport: chromiumModule.defaultViewport,
             executablePath,
-            headless: chromiumModule.headless
+            headless: chromiumModule.headless,
+            timeout: 4000
           })
         }
       } catch (sparticuzErr) {
@@ -1064,18 +1074,20 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
     }
 
     if (!browser) {
+      if (!puppeteerModule || (isLinux && !exePath)) {
+        return await generatePdfKitFallback({ quote, bill, billItems, shop, type })
+      }
       const launchOptions = {
         headless: true,
+        timeout: 4000,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-gpu',
           '--disable-dev-shm-usage',
-          '--single-process',
           '--no-zygote'
         ]
       }
-      const exePath = getSystemBrowserPath()
       if (exePath) {
         launchOptions.executablePath = exePath
       }
@@ -1128,7 +1140,7 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
           req.abort()
         }
       })
-      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 20000 })
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 5000 })
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,

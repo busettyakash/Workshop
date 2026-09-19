@@ -3,7 +3,7 @@ import crypto from 'node:crypto'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
+import { deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
 
@@ -209,33 +209,21 @@ async function fetchBillsWithOffset({ where, params, page, limit, offset, orderC
 
 /* GET /api/billing?status=paid|unpaid&date=YYYY-MM-DD&month=1-12&year=2026 */
 router.get('/', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   const userId = req.workspaceId
   const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
-  const { sort, search } = req.query
+  const { sort } = req.query
 
   const { where, params } = buildBillingWhere(req.query, userId, true)
   const orderCol = resolveBillingSort(sort)
 
-  // Cache key — only cache non-search, non-cursor, first-page requests
-  const canCache = !search && !cursor && page === 1
-  const cacheKey = canCache
-    ? `billing:list:${userId}:${req.query.status || 'all'}:${req.query.date || ''}:${req.query.month || ''}:${req.query.year || ''}:${req.query.startDate || ''}:${req.query.endDate || ''}:${sort || ''}:${limit}`
-    : null
-
   try {
-    if (cacheKey) {
-      const cached = await getCached(redis, cacheKey, 100)
-      if (cached) return res.json(cached)
-    }
-
     if (cursor) {
       const cursorResult = await fetchBillsWithCursor({ where, params, cursor, limit, orderCol })
       return res.json(cursorResult)
     }
 
     const offsetResult = await fetchBillsWithOffset({ where, params, page, limit, offset, orderCol })
-
-    if (cacheKey) setCached(redis, cacheKey, offsetResult, 30)
 
     res.json(offsetResult)
   } catch (err) {
@@ -245,19 +233,15 @@ router.get('/', async (req, res) => {
 
 /* GET /api/billing/summary — paid/unpaid totals with optional date/month/year filters */
 router.get('/summary', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   const userId = req.workspaceId
-  const cacheKey = `billing:summary:${userId}:${req.query.date || ''}:${req.query.month || ''}:${req.query.year || ''}:${req.query.startDate || ''}:${req.query.endDate || ''}`
   try {
-    const cached = await getCached(redis, cacheKey, 100)
-    if (cached) return res.json(cached)
-
     const { where, params } = buildBillingWhere(req.query, userId, false)
     const { rows } = await query(
       `SELECT b.status, COUNT(*) AS count, COALESCE(SUM(b.amount),0) AS total
        FROM bills b ${where} GROUP BY b.status`,
       params
     )
-    setCached(redis, cacheKey, rows, 30)
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -266,6 +250,7 @@ router.get('/summary', async (req, res) => {
 
 /* GET /api/billing/daily-stats — bills grouped by day: count, revenue, paid count, pending count */
 router.get('/daily-stats', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   const userId = req.workspaceId
   const { month, year, startDate, endDate } = req.query
 
@@ -295,12 +280,8 @@ router.get('/daily-stats', async (req, res) => {
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`
-  const cacheKey = `billing:daily-stats:${userId}:${startDate || ''}:${endDate || ''}:${month || ''}:${year || ''}`
 
   try {
-    const cached = await getCached(redis, cacheKey, 150)
-    if (cached) return res.json(cached)
-
     const { rows } = await query(
       `SELECT
          (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day,
@@ -316,7 +297,6 @@ router.get('/daily-stats', async (req, res) => {
        ORDER BY (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date DESC`,
       params
     )
-    setCached(redis, cacheKey, rows, 60)
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -325,12 +305,9 @@ router.get('/daily-stats', async (req, res) => {
 
 /* GET /api/billing/:id */
 router.get('/:id', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   const userId = req.workspaceId
-  const cacheKey = `billing:item:${userId}:${req.params.id}`
   try {
-    const cached = await getCached(redis, cacheKey, 100)
-    if (cached) return res.json(cached)
-
     const { rows } = await query(
       `SELECT b.*,
          COALESCE(p.name, 'General Customer') AS customer_name,
@@ -345,7 +322,6 @@ router.get('/:id', async (req, res) => {
       [req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
-    setCached(redis, cacheKey, rows[0], 120)
     return res.json(rows[0])
   } catch (err) {
     return res.status(500).json({ error: err.message })

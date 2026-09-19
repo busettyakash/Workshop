@@ -273,6 +273,7 @@ export default function Billing() {
   const [dailyLoading, setDailyLoading] = useState(false)
   const [dailyRangeMonth, setDailyRangeMonth] = useState('')
   const [dailyRangeYear, setDailyRangeYear] = useState('')
+  const fetchRequestRef = useRef(0)
 
   const handlePrevDay = () => {
     const baseDateStr = filterDate || todayStr
@@ -389,6 +390,8 @@ export default function Billing() {
   }
 
   const fetchData = async (currentPage = page) => {
+    const requestId = fetchRequestRef.current + 1
+    fetchRequestRef.current = requestId
     setLoading(true)
     try {
       const statusParam = filterStatus === 'all' ? '' : filterStatus
@@ -412,6 +415,7 @@ export default function Billing() {
         api.get(`/billing?${queryParams.toString()}`),
         api.get(`/billing/summary?${summaryParams.toString()}`)
       ])
+      if (requestId !== fetchRequestRef.current) return
       setBills(billsRes.data?.data || [])
       setTotal(billsRes.data?.total || 0)
       let rev = 0, totalCount = 0, pendingCount = 0, paidCount = 0
@@ -424,9 +428,10 @@ export default function Billing() {
       })
       setSummary({ revenue: rev, count: totalCount, pending: pendingCount, paid: paidCount })
     } catch {
+      if (requestId !== fetchRequestRef.current) return
       dispatch(addToast({ message: 'Failed to load billing details', type: 'error' }))
     } finally {
-      setLoading(false)
+      if (requestId === fetchRequestRef.current) setLoading(false)
     }
   }
 

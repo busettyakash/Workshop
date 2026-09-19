@@ -37,9 +37,6 @@ async function gatherWorkshopMetadata(ownerUserId, user) {
   const workshopEmails = new Set()
   if (user) workshopEmails.add(user.toLowerCase().trim())
 
-  const custRes = await query(`SELECT LOWER(email) as email FROM customers WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [ownerUserId]).catch(() => ({ rows: [] }))
-  custRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
-
   const peopleRes = await query(`SELECT LOWER(email) as email FROM people WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [ownerUserId]).catch(() => ({ rows: [] }))
   peopleRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
 

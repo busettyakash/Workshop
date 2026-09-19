@@ -169,4 +169,44 @@ export const query = async (text, params) => {
   }
 }
 
+/**
+ * Run multiple SQL queries on the SAME pool connection in series.
+ * Saves N-1 pool.connect() + set_config() round-trips vs calling query() separately.
+ * Use when you need sequential queries that must share the same RLS session.
+ */
+export const querySerial = async (queries) => {
+  const store = dbLocalStorage.getStore()
+  const client = await pool.connect()
+  const results = []
+  try {
+    const targetUserId = store || null
+    const targetBypass = !store
+
+    if (client.currentUserId !== targetUserId || client.bypassRls !== targetBypass) {
+      if (store) {
+        await client.query(`SELECT set_config('app.current_user_id', $1, false), set_config('app.bypass_rls', 'off', false)`, [store])
+      } else {
+        await client.query(`SELECT set_config('app.current_user_id', '', false), set_config('app.bypass_rls', 'on', false)`)
+      }
+      client.currentUserId = targetUserId
+      client.bypassRls = targetBypass
+    }
+
+    for (const { text, params: p } of queries) {
+      const start = Date.now()
+      const result = await client.query(text, p)
+      const duration = Date.now() - start
+      if (isDevelopment) {
+        const displayQuery = text.replace(/\s+/g, ' ').trim()
+        console.log(`[DB Serial] (${duration}ms) ${displayQuery.substring(0, 120)}${displayQuery.length > 120 ? '...' : ''}`)
+      }
+      results.push(result)
+    }
+  } finally {
+    client.release()
+  }
+  return results
+}
+
 export default pool
+

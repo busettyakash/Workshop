@@ -15,6 +15,11 @@ import { getRandomString } from '../../utils/cryptoUtils'
 import { hasModulePermission, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 import './Dashboard.css'
 
+const cleanChatTitle = (title) => {
+  if (!title) return 'Untitled chat'
+  return title.replace(/^[^\w\s]+/, '').trim() || title
+}
+
 export default function Dashboard() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
@@ -598,12 +603,10 @@ export default function Dashboard() {
                       }}
                       title="Open recent chat conversation"
                     >
-                      <Clock size={13} style={{ color: '#64748b', flexShrink: 0 }} />
                       <span style={{ color: '#64748b', fontWeight: 500 }}>Recent chat:</span>
                       <span style={{ color: '#0f172a', fontWeight: 600, maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {sessions[0].title}
+                        {cleanChatTitle(sessions[0].title)}
                       </span>
-                      <ChevronRight size={13} style={{ color: '#94a3b8', flexShrink: 0 }} />
                     </div>
                   </div>
                 )}
@@ -779,7 +782,7 @@ export default function Dashboard() {
                             onClick={() => navigate(`/dashboard?session=${s.id}`)}
                           >
                             <div className="ws-chat-history-item-content">
-                              <span className="ws-chat-history-item-title">{s.title}</span>
+                              <span className="ws-chat-history-item-title">{cleanChatTitle(s.title)}</span>
                               <span className="ws-chat-history-item-msg">{s.last_message}</span>
                             </div>
                             <button 

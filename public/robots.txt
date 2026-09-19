@@ -1,0 +1,28 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+Allow: /privacy
+Allow: /terms
+
+# Disallow private app routes from search engine indexing
+Disallow: /dashboard
+Disallow: /billing
+Disallow: /products
+Disallow: /quotes
+Disallow: /orders
+Disallow: /workflows
+Disallow: /reports
+Disallow: /notes
+Disallow: /emails
+Disallow: /settings
+Disallow: /account-settings
+Disallow: /workspace-settings
+Disallow: /import-stock
+Disallow: /paid
+Disallow: /unpaid
+Disallow: /people
+Disallow: /profit-margin
+Disallow: /price-history
+Disallow: /api/
+
+Sitemap: /sitemap.xml

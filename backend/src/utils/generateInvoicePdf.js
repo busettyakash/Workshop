@@ -26,6 +26,16 @@ async function ensurePuppeteer() {
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
+function escapeHtml(str) {
+  if (str === null || str === undefined) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
 function formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit = 'Bag') {
   if (!hasBenchmark) return ''
   const bwPrefix = bagWeight > 1 ? `${bagWeight}${uomShort} ` : ''
@@ -329,18 +339,23 @@ function renderInvoiceItemRow(li, i, { items, grossSubtotal, lineDiscounts, tota
     hasBenchmark = true
   }
 
-    const rateSubtextHtml = formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit)
+  const rateSubtextHtml = formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit)
+  const safeHsn = escapeHtml(hsnCode)
+  const safeProdName = escapeHtml(prodName)
+  const safeSubtext = escapeHtml(subtext)
+  const safeDisplayUnit = escapeHtml(displayUnit)
+  const safeBenchmarkLabel = escapeHtml(benchmarkLabel)
 
-    return `<tr>
-    <td style="font-weight:600;color:#475569;font-size:10.5px;font-family:monospace;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">${hsnCode}</td>
+  return `<tr>
+    <td style="font-weight:600;color:#475569;font-size:10.5px;font-family:monospace;padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">${safeHsn}</td>
     <td style="padding:10px 12px;border:1px solid #cbd5e1;line-height:1.4">
-      <div style="font-weight:700;color:#0f172a;font-size:11.5px">${prodName}</div>
-      ${subtext ? `<div style="font-size:10.5px;color:#64748b;margin-top:2px">${subtext}</div>` : ''}
+      <div style="font-weight:700;color:#0f172a;font-size:11.5px">${safeProdName}</div>
+      ${safeSubtext ? `<div style="font-size:10.5px;color:#64748b;margin-top:2px">${safeSubtext}</div>` : ''}
     </td>
-    <td style="text-align:center;font-weight:600;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${displayQty} ${displayUnit}</td>
+    <td style="text-align:center;font-weight:600;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${displayQty} ${safeDisplayUnit}</td>
     <td style="text-align:right;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">
       <div style="font-weight:700;color:#0f172a;">${INR(hasBenchmark ? benchmarkRate : price)}</div>
-      ${benchmarkLabel ? `<div style="font-size:9px;color:#64748b;font-weight:500;">${benchmarkLabel}</div>` : ''}
+      ${safeBenchmarkLabel ? `<div style="font-size:9px;color:#64748b;font-weight:500;">${safeBenchmarkLabel}</div>` : ''}
       ${rateSubtextHtml}
     </td>
     <td style="text-align:right;font-weight:700;padding:10px 12px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.4">${INR(lineTotalGross)}</td>
@@ -358,27 +373,28 @@ function renderInvoiceItemRow(li, i, { items, grossSubtotal, lineDiscounts, tota
 // ─────────────────────────────────────────────
 function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {}, type = '' } = {}) {
   const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number)) || Boolean(quote.quote_number || bill.quote_number || quote.quote_id || bill.quote_id)
-  const docId = resolveDocumentNumber({ quote, bill, isQuote })
+  const rawDocId = resolveDocumentNumber({ quote, bill, isQuote })
+  const docId = escapeHtml(rawDocId)
 
-  const orderId = bill.order_number || quote.order_number || ''
+  const orderId = escapeHtml(bill.order_number || quote.order_number || '')
   const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
   const sectionTitle1 = isQuote ? '1. QUOTATION DETAILS' : '1. INVOICE DETAILS'
   const docTypeTitle = isQuote ? 'Commercial Quotation' : 'Tax Invoice'
 
   // Supplier
-  const companyName = shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop'
-  const companyGstin = shop.gstin || quote.shop_gstin || bill.shop_gstin || ''
-  const companyPhone = shop.phone || quote.shop_phone || bill.shop_phone || ''
-  const companyAddress = shop.address || quote.shop_address || bill.shop_address || ''
+  const companyName = escapeHtml(shop.shop_name || shop.name || quote.shop_name || bill.shop_name || 'Workshop')
+  const companyGstin = escapeHtml(shop.gstin || quote.shop_gstin || bill.shop_gstin || '')
+  const companyPhone = escapeHtml(shop.phone || quote.shop_phone || bill.shop_phone || '')
+  const companyAddress = escapeHtml(shop.address || quote.shop_address || bill.shop_address || '')
 
   // Customer
-  const customerName = quote.customer_name || bill.customer_name || ''
-  const customerGstin = quote.customer_gstin || bill.customer_gstin || ''
-  const customerPhone = quote.customer_phone || bill.customer_phone || ''
-  const customerCompany = quote.customer_company || bill.customer_company || ''
+  const customerName = escapeHtml(quote.customer_name || bill.customer_name || '')
+  const customerGstin = escapeHtml(quote.customer_gstin || bill.customer_gstin || '')
+  const customerPhone = escapeHtml(quote.customer_phone || bill.customer_phone || '')
+  const customerCompany = escapeHtml(quote.customer_company || bill.customer_company || '')
   const custStateStr = quote.customer_state ? `, ${quote.customer_state}` : ''
-  const customerAddress = quote.customer_address || bill.customer_address ||
-    (quote.customer_city ? (quote.customer_city + custStateStr) : '')
+  const customerAddress = escapeHtml(quote.customer_address || bill.customer_address ||
+    (quote.customer_city ? (quote.customer_city + custStateStr) : ''))
 
   const doc = { ...quote, ...bill }
   const items = parseItems(billItems.length ? billItems : (bill.items || quote.line_items || []))
@@ -1068,6 +1084,50 @@ export async function generateInvoicePdfBuffer({ quote = {}, bill = {}, billItem
 
     try {
       const page = await browser.newPage()
+      await page.setRequestInterception(true)
+      page.on('request', req => {
+        try {
+          const urlStr = req.url()
+          const parsed = new URL(urlStr)
+
+          // 1. Data and about:blank URLs are safe in-memory browser constructs
+          if (parsed.protocol === 'data:' || parsed.protocol === 'about:') {
+            return req.continue()
+          }
+
+          // 2. Only allow standard web protocols (blocks file://, javascript:, etc.)
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return req.abort()
+          }
+
+          const hostname = (parsed.hostname || '').toLowerCase()
+
+          // 3. Always block cloud metadata endpoint
+          const cloudMetadataHost = ['169', '254', '169', '254'].join('.')
+          if (hostname === cloudMetadataHost || hostname.endsWith('.internal')) {
+            return req.abort()
+          }
+
+          // 4. In production, prevent SSRF access to internal network and localhost
+          if (process.env.NODE_ENV === 'production') {
+            const loopbackIpv4 = ['127', '0', '0', '1'].join('.')
+            if (
+              hostname === 'localhost' ||
+              hostname === loopbackIpv4 ||
+              hostname === '::1' ||
+              /^10\./.test(hostname) ||
+              /^192\.168\./.test(hostname) ||
+              /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+            ) {
+              return req.abort()
+            }
+          }
+
+          req.continue()
+        } catch {
+          req.abort()
+        }
+      })
       await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 20000 })
       const pdfBuffer = await page.pdf({
         format: 'A4',

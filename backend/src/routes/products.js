@@ -4,11 +4,20 @@ import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 import { clearProductHsnCache } from '../lib/productCache.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached } from '../lib/fastCache.js'
+import { getCached, setCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(apiLimiter)
 router.use(requireAuth)
+
+export async function clearProductsCache(userId) {
+  try {
+    clearMemoryCachePrefix(`products:list:${userId}`)
+    clearMemoryCachePrefix(`products:${userId}`)
+    await deleteCachedPattern(redis, `products:list:${userId}*`).catch(() => {})
+    await deleteCachedPattern(redis, `products:${userId}*`).catch(() => {})
+  } catch (_e) {}
+}
 
 import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
 
@@ -45,8 +54,6 @@ async function ensureProductsSchema() {
       notes TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     )`).catch(() => {}),
-    query(`CREATE INDEX IF NOT EXISTS idx_products_user_status ON public.products (user_id, status)`).catch(() => {}),
-    query(`CREATE INDEX IF NOT EXISTS idx_products_user_created ON public.products (user_id, created_at DESC)`).catch(() => {}),
     query(`ALTER TABLE product_price_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_price_history FORCE ROW LEVEL SECURITY;`).catch(() => {}),
     query(`ALTER TABLE product_stock_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_stock_history FORCE ROW LEVEL SECURITY;`).catch(() => {})
   ])
@@ -163,7 +170,7 @@ async function fetchProductsWithOffset({ conditions, params, page, limit, offset
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
-  const { search, category, status, sort } = req.query
+  const { search, category, status, sort, _t } = req.query
 
   const params = [userId]
   const conditions = ['(user_id::text = $1::text OR user_id = \'default-user\' OR $1 = \'default-user\')']
@@ -183,15 +190,18 @@ router.get('/', async (req, res) => {
   const orderCol = getProductOrderColumn(sort)
 
   // Cache non-search first-page results for 30s to avoid repeated DB hits
-  const canCache = !search && !cursor && page === 1 && !category
+  const canCache = !search && !cursor && page === 1 && !category && !_t
   const cacheKey = canCache
     ? `products:list:${userId}:${finalStatus || 'active'}:${sort || 'default'}:${limit}`
     : null
 
   try {
     if (cacheKey) {
-      const cached = await getCached(redis, cacheKey, 100)
-      if (cached) return res.json(cached)
+      const cached = await getCached(redis, cacheKey, 60)
+      if (cached) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+        return res.json(cached)
+      }
     }
 
     if (cursor) {
@@ -199,6 +209,7 @@ router.get('/', async (req, res) => {
     }
     const result = await fetchProductsWithOffset({ conditions, params, page, limit, offset, orderCol })
     if (cacheKey && result) setCached(redis, cacheKey, result, 30)
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
     return res.json(result)
   } catch (err) {
     return res.status(500).json({ error: err.message })
@@ -405,6 +416,7 @@ router.post('/', async (req, res) => {
     )
     const newProduct = rows[0]
     clearProductHsnCache()
+    await clearProductsCache(userId)
     await logPriceHistory(newProduct.id, userId, null, newProduct.price, new Date().toISOString().split('T')[0], 'Initial Base Price')
     if (newProduct.updated_price) {
       await logPriceHistory(newProduct.id, userId, newProduct.price, newProduct.updated_price, newProduct.updated_price_date, 'Updated Price')
@@ -550,6 +562,7 @@ router.put('/:id', async (req, res) => {
 
     const updatedProd = rows[0]
     clearProductHsnCache()
+    await clearProductsCache(userId)
 
     await recordProductStockAndPriceUpdates(updatedProd, oldProduct, userId, {
       isUpdatedPriceChanged,
@@ -569,8 +582,11 @@ router.delete('/:id', async (req, res) => {
   const userId = req.workspaceId
   try {
     const { rows } = await query('DELETE FROM products WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, userId])
-    if (!rows.length) return res.status(404).json({ error: 'Product not found' })
+    await clearProductsCache(userId)
     clearProductHsnCache()
+    if (!rows.length) {
+      return res.json({ message: 'Product already deleted' })
+    }
     res.json({ message: 'Product deleted successfully' })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -600,6 +616,7 @@ router.patch('/:id/stock', async (req, res) => {
       'UPDATE products SET stock = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 RETURNING *',
       [newStock, req.params.id, userId]
     )
+    await clearProductsCache(userId)
 
     if (qtyDiff !== 0) {
       const changeType = qtyDiff > 0 ? 'added' : 'deducted'

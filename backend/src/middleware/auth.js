@@ -8,7 +8,10 @@ import { getCached, setCached, getMemoryCache, setMemoryCache, withTimeout } fro
 //  Constants
 // ─────────────────────────────────────────────
 
-const LOCAL_JWT_SECRET = process.env.JWT_SECRET || 'dev_secret'
+const LOCAL_JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'dev_secret')
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error('FATAL SECURITY WARNING: JWT_SECRET environment variable is missing in production mode!')
+}
 
 const MOCK_DEV_USER = {
   id: '00000000-0000-0000-0000-000000000001',

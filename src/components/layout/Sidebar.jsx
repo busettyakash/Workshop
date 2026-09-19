@@ -46,6 +46,11 @@ import { authApi } from '../../services/authApi'
 import { isOwnerOrAdmin, hasModulePermission } from '../../utils/permissionUtils'
 import './Sidebar.css'
 
+const cleanChatTitle = (title) => {
+  if (!title) return 'Untitled chat'
+  return title.replace(/^[^\w\s]+/, '').trim() || title
+}
+
 const ICON_MAP = {
   Home: <HomeIcon size={16} />,
   Tasks: <TasksIcon size={16} />,
@@ -1646,10 +1651,10 @@ export default function Sidebar() {
                               to={`/dashboard?session=${chat.id}`}
                               className={`ws-sb-subitem ws-sb-chat-subitem ${isActive ? 'active' : ''}`}
                               onClick={() => handleNav('Home')}
-                              title={chat.title || 'Untitled chat'}
+                              title={cleanChatTitle(chat.title)}
                             >
                               <MessageSquare size={13} style={{ flexShrink: 0, color: isActive ? '#2563eb' : '#6b7280' }} />
-                              <span>{chat.title || 'Untitled chat'}</span>
+                              <span>{cleanChatTitle(chat.title)}</span>
                             </Link>
                             <button
                               type="button"
@@ -1783,7 +1788,7 @@ export default function Sidebar() {
                       >
                         <MessageSquare size={14} style={{ flexShrink: 0, color: isActive ? '#2563eb' : '#64748b' }} />
                         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-                          {chat.title || 'Untitled chat'}
+                          {cleanChatTitle(chat.title)}
                         </span>
                       </button>
                       <button

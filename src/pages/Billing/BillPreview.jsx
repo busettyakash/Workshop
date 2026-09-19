@@ -425,7 +425,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                     <th style={{ width: 90, textAlign: 'center' }}>QUANTITY</th>
                     <th style={{ width: 120, textAlign: 'right' }}>RATE</th>
                     <th style={{ width: 110, textAlign: 'right' }}>GROSS SUBTOTAL</th>
-                    <th style={{ width: 90, textAlign: 'right' }}>DISCOUNT</th>
+                    <th style={{ width: 105, textAlign: 'right', whiteSpace: 'nowrap' }}>DISCOUNT</th>
                     <th style={{ width: 130, textAlign: 'right' }}>TAX RATE (C+S+I)</th>
                   </tr>
                 </thead>
@@ -534,11 +534,11 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                             )}
                           </div>
                         </td>
-                        <td className="text-right" style={{ fontWeight: 700, fontSize: 11 }}>{INR(lineTotalGross)}</td>
-                        <td className="text-right" style={{ fontSize: 11, fontWeight: 700, color: itemDisc > 0.01 ? '#dc2626' : '#64748b' }}>
-                          {itemDisc > 0.01 ? `-${INR(itemDisc)}` : '-'}
+                        <td className="text-right" style={{ fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>{INR(lineTotalGross)}</td>
+                        <td className="text-right" style={{ fontSize: 11, fontWeight: 700, color: itemDisc > 0.01 ? '#dc2626' : '#64748b', whiteSpace: 'nowrap', textAlign: 'right', minWidth: 95 }}>
+                          {itemDisc > 0.01 ? `- ${INR(itemDisc)}` : '—'}
                         </td>
-                        <td className="text-right" style={{ fontSize: 10, color: '#475569' }}>
+                        <td className="text-right" style={{ fontSize: 10, color: '#475569', whiteSpace: 'nowrap' }}>
                           {taxAmt > 0 ? `CGST (${halfTaxRate}%) + SGST (${halfTaxRate}%)` : `-`}
                         </td>
                       </tr>

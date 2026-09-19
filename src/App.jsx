@@ -1,11 +1,14 @@
-import React from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
+import React, { useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router'
 
 // Pages
 import Landing     from './pages/Landing/index'
 import Login       from './pages/Auth/Login'
 import Signup      from './pages/Auth/Signup'
 import ForgotPassword from './pages/Auth/ForgotPassword'
+import PrivacyPolicy from './pages/Legal/PrivacyPolicy'
+import TermsOfService from './pages/Legal/TermsOfService'
+import NotFound from './pages/NotFound/index'
 
 // Pages
 import Dashboard   from './pages/Dashboard/index'
@@ -35,6 +38,7 @@ import WorkspaceSettings from './pages/WorkspaceSettings/index'
 // UI
 import ToastContainer from './components/ui/Toast'
 import ErrorBoundary from './components/ui/ErrorBoundary'
+import AiChatDrawer from './components/chat/AiChatDrawer'
 
 // Redux
 import { useAppSelector } from './redux/hooks'
@@ -46,15 +50,32 @@ function PrivateRoute({ children }) {
   return isAuth ? children : <Navigate to="/login" replace />
 }
 
+/* ── Scroll To Top On Route Change ── */
+function ScrollToTop() {
+  const { pathname, hash } = useLocation()
+
+  useEffect(() => {
+    if (!hash) {
+      window.scrollTo(0, 0)
+    }
+  }, [pathname, hash])
+
+  return null
+}
+
 export default function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <ErrorBoundary>
         <ToastContainer />
+        <AiChatDrawer />
         <Routes>
         {/* Public */}
         <Route path="/"               element={<Landing />} />
+        <Route path="/privacy"        element={<PrivacyPolicy />} />
+        <Route path="/terms"          element={<TermsOfService />} />
         <Route path="/login"          element={<Login />} />
         <Route path="/signup"         element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -88,10 +109,9 @@ export default function App() {
         <Route path="/people"    element={<PrivateRoute><People /></PrivateRoute>} />
         <Route path="/people/add" element={<PrivateRoute><PersonForm /></PrivateRoute>} />
         <Route path="/people/edit/:id" element={<PrivateRoute><PersonForm /></PrivateRoute>} />
-        <Route path="/settings"  element={<PrivateRoute><Settings /></PrivateRoute>} />
 
         {/* 404 */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       </ErrorBoundary>
     </BrowserRouter>

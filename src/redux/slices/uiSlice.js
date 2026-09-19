@@ -4,7 +4,7 @@ const initialState = {
   sidebarOpen:           true,
   sidebarTriggerHovered: false,
   sidebarContentHovered: false,
-  chatOpen:              true,
+  chatOpen:              false,
   allChatsPanelOpen:     false,
   activeNav:             'Home',
   toasts:                [],

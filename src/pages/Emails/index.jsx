@@ -5,6 +5,7 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { useLocation, useNavigate } from 'react-router'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
 import { Mail, Send, Trash2, Plus, Search, Paperclip, Loader2, X, RefreshCw } from 'lucide-react'
+import DOMPurify from 'dompurify'
 import api from '../../api/client'
 import { useAuth } from '../../hooks/useAuth'
 import { hasModulePermission, getFirstAccessibleRoute } from '../../utils/permissionUtils'
@@ -473,7 +474,7 @@ export default function Emails() {
                   {selected.body && (selected.body.trim().startsWith('<') || selected.body.includes('</div>') || selected.body.includes('</p>') || selected.body.includes('<h3')) ? (
                     <div
                       style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6, margin: '0 0 24px' }}
-                      dangerouslySetInnerHTML={{ __html: selected.body }}
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selected.body) }}
                     />
                   ) : (
                     <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.8, margin: '0 0 24px', whiteSpace: 'pre-wrap' }}>

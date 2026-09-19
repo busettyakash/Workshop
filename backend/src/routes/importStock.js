@@ -1,8 +1,8 @@
 import { Router } from 'express'
-import { query } from '../lib/db.js'
+import { query, querySerial } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached, deleteCached } from '../lib/fastCache.js'
+import { getCached, setCached, deleteCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -15,13 +15,14 @@ let ensureImportStockSchemaPromise
 
 async function clearImportStockCache(userId) {
   try {
-    const keys1 = await redis.keys(`import_stock:${userId}*`).catch(() => [])
-    const keys2 = await redis.keys(`import_stock_note:${userId}*`).catch(() => [])
-    const allKeys = [...keys1, ...keys2]
-    for (const key of allKeys) {
-      deleteCached(redis, key)
-    }
-    deleteCached(redis, `profit_margin:${userId}`)
+    // Use prefix deletion (avoids slow O(N) redis.keys scan)
+    clearMemoryCachePrefix(`import_stock:${userId}`)
+    clearMemoryCachePrefix(`import_stock_note:${userId}`)
+    await Promise.all([
+      deleteCachedPattern(redis, `import_stock:${userId}*`),
+      deleteCachedPattern(redis, `import_stock_note:${userId}*`),
+      deleteCached(redis, `profit_margin:${userId}`),
+    ]).catch(() => {})
   } catch (_err) {
     console.warn('%s Failed to clear import stock cache', LOG_PREFIX)
   }
@@ -45,6 +46,9 @@ async function ensureImportStockSchema() {
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS note TEXT;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS add_stock_qty NUMERIC;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(10, 2) DEFAULT 0;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10, 2) DEFAULT 0;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS total_amount DECIMAL(10, 2) DEFAULT 0;
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS balance_due DECIMAL(10, 2) DEFAULT 0;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);
     END $$;
     CREATE TABLE IF NOT EXISTS import_stock_payments (
@@ -68,12 +72,85 @@ async function ensureImportStockSchema() {
     CREATE POLICY user_isolation_policy ON public.import_stock_payments FOR ALL USING ((user_id = current_setting('app.current_user_id'::text, true)) OR (current_setting('app.bypass_rls'::text, true) = 'on'::text));
   `).catch(() => {})
 
-  // Run schema additions
+  // Run schema additions and sync financials for existing records
   // (Data fixes are run in background without blocking incoming requests)
   Promise.all([
     query(`UPDATE import_stock SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {}),
     query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {}),
+    query(`
+      UPDATE import_stock i
+      SET 
+        total_amount = CASE 
+          WHEN COALESCE(i.price_covers, 0) > 0 THEN 
+            ROUND((COALESCE(i.stock, 0) * COALESCE(i.bag_weight, 1) * (COALESCE(i.buying_price, 0) / i.price_covers))::numeric, 2)
+          ELSE 
+            ROUND((COALESCE(i.stock, 0) * COALESCE(i.buying_price, 0))::numeric, 2)
+        END,
+        amount_paid = COALESCE((SELECT SUM(amount) FROM import_stock_payments p WHERE p.import_stock_id = i.id), 0),
+        paid_amount = COALESCE((SELECT SUM(amount) FROM import_stock_payments p WHERE p.import_stock_id = i.id), 0),
+        balance_due = GREATEST(0, (
+          CASE 
+            WHEN COALESCE(i.price_covers, 0) > 0 THEN 
+              ROUND((COALESCE(i.stock, 0) * COALESCE(i.bag_weight, 1) * (COALESCE(i.buying_price, 0) / i.price_covers))::numeric, 2)
+            ELSE 
+              ROUND((COALESCE(i.stock, 0) * COALESCE(i.buying_price, 0))::numeric, 2)
+          END
+        ) - COALESCE((SELECT SUM(amount) FROM import_stock_payments p WHERE p.import_stock_id = i.id), 0))
+    `).catch((err) => console.warn('[ImportStock] Initial financials sync warning:', err.message)),
   ]).catch(() => {})
+}
+
+async function syncImportStockFinancials(importStockId, userId) {
+  try {
+    // Use querySerial to run all 3 statements on ONE db connection
+    // (avoids 2 extra pool.connect() + set_config() round-trips)
+    const [itemRes, payRes] = await querySerial([
+      {
+        text: `SELECT id, stock, bag_weight, buying_price, price_covers FROM import_stock WHERE id = $1 AND user_id = $2`,
+        params: [importStockId, userId]
+      },
+      {
+        text: `SELECT COALESCE(SUM(amount), 0) AS total_paid, 
+                (SELECT payment_mode FROM import_stock_payments WHERE import_stock_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1) as last_payment_mode
+         FROM import_stock_payments 
+         WHERE import_stock_id = $1 AND user_id = $2`,
+        params: [importStockId, userId]
+      },
+    ])
+
+    if (!itemRes.rows.length) return
+
+    const item = itemRes.rows[0]
+    const stockQty = Number.parseFloat(item.stock || 0)
+    const bagWeight = Number.parseFloat(item.bag_weight || 1)
+    const buyingPrice = Number.parseFloat(item.buying_price || 0)
+    const priceCovers = Number.parseFloat(item.price_covers || 0)
+
+    let totalAmount = 0
+    if (priceCovers > 0) {
+      totalAmount = stockQty * bagWeight * (buyingPrice / priceCovers)
+    } else {
+      totalAmount = stockQty * buyingPrice
+    }
+    totalAmount = Math.round(totalAmount * 100) / 100
+
+    const totalPaid = Math.round(Number.parseFloat(payRes.rows[0]?.total_paid || 0) * 100) / 100
+    const lastPaymentMode = payRes.rows[0]?.last_payment_mode || null
+    const balanceDue = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100)
+
+    await query(
+      `UPDATE import_stock 
+       SET total_amount = $1,
+           amount_paid = $2,
+           paid_amount = $2,
+           balance_due = $3,
+           payment_mode = COALESCE($4, payment_mode)
+       WHERE id = $5 AND user_id = $6`,
+      [totalAmount, totalPaid, balanceDue, lastPaymentMode, importStockId, userId]
+    )
+  } catch (err) {
+    console.error('[ImportStock] Error syncing financials:', err.message)
+  }
 }
 
 router.use(async (_req, _res, next) => {
@@ -237,71 +314,73 @@ router.get('/', async (req, res) => {
 /* GET /api/import-stock/:id */
 router.get('/:id', async (req, res) => {
   const userId = req.workspaceId
-  console.log('%s GET /:id', LOG_PREFIX)
+  const noteKey = `import_stock_note:${userId}:${req.params.id}`
   try {
+    // Serve from cache (60s TTL) — cleared on every payment add/delete/edit
+    const cached = await getCached(redis, noteKey, 100)
+    if (cached) {
+      return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
+    }
 
-    const { rows } = await query(
-      `SELECT i.id, i.status, i.created_at, i.updated_at, i.user_id, i.buying_price, i.buyer_name, i.buyer_phone, i.buyer_city, i.buyer_state, i.add_stock_qty, i.paid_amount, i.payment_mode,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.name, i.name) ELSE i.name END AS name,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.sku, i.sku) ELSE i.sku END AS sku,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.category, i.category) ELSE i.category END AS category,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.price, i.price) ELSE i.price END AS price,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.price_covers, i.price_covers) ELSE i.price_covers END AS price_covers,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price) ELSE i.updated_price END AS updated_price,
-        CASE 
-          WHEN i.status = 'added' AND p.updated_price IS NOT NULL THEN COALESCE(GREATEST(p.updated_price_date, (p.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), p.updated_price_date, i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
-          WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
-          ELSE COALESCE(p.updated_price_date, i.updated_price_date)
-        END AS updated_price_date,
-        i.stock AS stock,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.unit, i.unit) ELSE i.unit END AS unit,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.description, i.description) ELSE i.description END AS description,
-        CASE WHEN i.status = 'added' THEN COALESCE(p.bag_weight, i.bag_weight) ELSE i.bag_weight END AS bag_weight,
-        i.loose_kg AS loose_kg
-       FROM import_stock i
-       LEFT JOIN LATERAL (
-         SELECT name, sku, category, price, price_covers, updated_price, updated_price_date, stock, unit, description, bag_weight, loose_kg, updated_at
-         FROM products 
-         WHERE (user_id::text = i.user_id::text OR user_id = 'default-user')
-           AND (
-             (i.sku IS NOT NULL AND i.sku <> '' AND i.sku <> 'N/A' AND (sku = i.sku OR hsn_code = i.sku))
-             OR (LOWER(TRIM(name)) = LOWER(TRIM(i.name)))
-           ) 
-         ORDER BY updated_at DESC, created_at DESC LIMIT 1
-       ) p ON true
-       WHERE i.id = $1 AND i.user_id = $2`, 
-      [req.params.id, userId]
-    )
-    if (!rows.length) {
+    // Run all 3 queries in parallel to avoid 3 sequential round-trips
+    const [stockRes, paymentsRes] = await Promise.all([
+      query(
+        `SELECT i.id, i.status, i.created_at, i.updated_at, i.user_id, i.buying_price, i.buyer_name, i.buyer_phone, i.buyer_city, i.buyer_state, i.add_stock_qty, i.paid_amount, i.payment_mode, i.total_amount, i.amount_paid, i.balance_due,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.name, i.name) ELSE i.name END AS name,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.sku, i.sku) ELSE i.sku END AS sku,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.category, i.category) ELSE i.category END AS category,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.price, i.price) ELSE i.price END AS price,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.price_covers, i.price_covers) ELSE i.price_covers END AS price_covers,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.updated_price, i.updated_price) ELSE i.updated_price END AS updated_price,
+          CASE 
+            WHEN i.status = 'added' AND p.updated_price IS NOT NULL THEN COALESCE(GREATEST(p.updated_price_date, (p.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), p.updated_price_date, i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
+            WHEN i.updated_price IS NOT NULL THEN COALESCE(GREATEST(i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date), i.updated_price_date, (i.updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)
+            ELSE COALESCE(p.updated_price_date, i.updated_price_date)
+          END AS updated_price_date,
+          i.stock AS stock,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.unit, i.unit) ELSE i.unit END AS unit,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.description, i.description) ELSE i.description END AS description,
+          CASE WHEN i.status = 'added' THEN COALESCE(p.bag_weight, i.bag_weight) ELSE i.bag_weight END AS bag_weight,
+          COALESCE(p.loose_kg, i.loose_kg) AS loose_kg,
+          COALESCE(p.stock, i.stock) AS live_product_stock
+         FROM import_stock i
+         LEFT JOIN LATERAL (
+           SELECT name, sku, category, price, price_covers, updated_price, updated_price_date, stock, unit, description, bag_weight, loose_kg, updated_at
+           FROM products 
+           WHERE (user_id::text = i.user_id::text OR user_id = 'default-user')
+             AND (
+               (i.sku IS NOT NULL AND i.sku <> '' AND i.sku <> 'N/A' AND (sku = i.sku OR hsn_code = i.sku))
+               OR (LOWER(TRIM(name)) = LOWER(TRIM(i.name)))
+             ) 
+           ORDER BY updated_at DESC, created_at DESC LIMIT 1
+         ) p ON true
+         WHERE i.id = $1 AND i.user_id = $2`,
+        [req.params.id, userId]
+      ),
+      query(
+        `SELECT id, amount, payment_mode, payment_date, COALESCE(note, notes) as note, created_at 
+         FROM import_stock_payments 
+         WHERE import_stock_id = $1 AND user_id = $2 
+         ORDER BY created_at DESC`,
+        [req.params.id, userId]
+      ),
+    ])
+
+    if (!stockRes.rows.length) {
       console.warn('%s GET /:id — NOT FOUND', LOG_PREFIX)
       return res.status(404).json({ error: 'Import stock not found' })
     }
-    console.log('%s GET /:id — found', LOG_PREFIX)
-    
-    const payments = await query(
-      `SELECT id, amount, payment_mode, payment_date, COALESCE(note, notes) as note, created_at 
-       FROM import_stock_payments 
-       WHERE import_stock_id = $1 AND user_id = $2 
-       ORDER BY created_at DESC`, 
-      [req.params.id, userId]
-    )
-    
-    const rec = rows[0]
-    const prodRes = await query(
-      `SELECT stock, loose_kg FROM products WHERE user_id=$1 AND (sku=$2 OR name=$3) LIMIT 1`,
-      [userId, rec.sku || 'N/A', rec.name]
-    )
-    const liveProductStock = prodRes.rows.length > 0 ? Number.parseFloat(prodRes.rows[0].stock || 0) : null
-    const looseKg = prodRes.rows.length > 0 ? Number.parseFloat(prodRes.rows[0].loose_kg || 0) : 0
 
+    const rec = stockRes.rows[0]
     const responsePayload = {
       data: {
         ...rec,
-        live_product_stock: liveProductStock,
-        loose_kg: looseKg,
-        payments: payments.rows
+        payments: paymentsRes.rows
       }
     }
+
+    // Cache for 60s — invalidated on any payment or stock edit
+    setCached(redis, noteKey, responsePayload, 60)
     res.json(responsePayload)
   } catch (err) {
     console.error('%s GET /:id ERROR', LOG_PREFIX)
@@ -335,6 +414,7 @@ router.post('/', async (req, res) => {
       ]
     )
     console.log('%s POST / SUCCESS', LOG_PREFIX)
+    await syncImportStockFinancials(rows[0].id, userId)
     await clearImportStockCache(userId)
     res.status(201).json(rows[0])
   } catch (err) {
@@ -461,6 +541,7 @@ router.put('/:id', async (req, res) => {
       await syncProductStockFromImportEdit(userId, oldRec, req.body, finalUpdatedPrice, finalPriceDate, req.params.id)
     }
 
+    await syncImportStockFinancials(req.params.id, userId)
     console.log('%s PUT /:id — SUCCESS', LOG_PREFIX)
     await clearImportStockCache(userId)
     return res.json(rows[0])
@@ -516,6 +597,7 @@ router.post('/:id/payments', async (req, res) => {
         paymentNote
       ]
     )
+    await syncImportStockFinancials(req.params.id, userId)
     await clearImportStockCache(userId)
     res.status(201).json(rows[0])
   } catch (err) {
@@ -532,6 +614,7 @@ router.delete('/:id/payments/:paymentId', async (req, res) => {
        WHERE id = $1 AND import_stock_id = $2 AND user_id = $3`,
       [req.params.paymentId, req.params.id, userId]
     )
+    await syncImportStockFinancials(req.params.id, userId)
     await clearImportStockCache(userId)
     res.json({ success: true })
   } catch (err) {

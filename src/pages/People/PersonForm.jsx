@@ -55,6 +55,7 @@ export default function PersonForm() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
   const returnUrl = searchParams.get('returnUrl')
+  const defaultPersona = searchParams.get('persona') || 'Lead'
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
@@ -67,7 +68,7 @@ export default function PersonForm() {
   const [focus, setFocus] = useState(null)
 
   const [form, setForm] = useState({
-    name: '', company: '', email: '', phone: '', persona: 'Lead', status: 'active', notes: ''
+    name: '', company: '', email: '', phone: '', persona: defaultPersona, status: 'active', notes: ''
   })
 
   useEffect(() => {

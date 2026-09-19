@@ -323,7 +323,7 @@ export default function BillForm() {
   const fetchData = async () => {
     try {
       const [resCust, resProd] = await Promise.all([
-        api.get('/people?limit=100'),
+        api.get('/people?persona=Customer&limit=200'),
         api.get('/products?status=active&limit=100')
       ])
       const custs = resCust.data?.data || []
@@ -589,13 +589,14 @@ const calcMaxStock = (prod, itemUnit) => {
 
     setSaving(true)
     try {
+      const totalDiscount = lineDiscounts + discountAmt
       const payload = {
         bill_number: form.bill_number ? form.bill_number.trim() : undefined,
         customer_id: form.customer_id || null,
         amount: total,
         status: form.status,
         due_date: form.status === 'unpaid' ? form.due_date : null,
-        discount: Number.parseFloat(form.discount || 0),
+        discount: Number.parseFloat(totalDiscount || 0),
         tax_rate: Number.parseFloat(form.tax_rate || 0),
         notes: form.notes,
         items: lineItems.map(li => ({
@@ -829,7 +830,7 @@ const calcMaxStock = (prod, itemUnit) => {
                     <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem', margin: 0 }}>Select Customer</p>
                     <button
                       type="button"
-                      onClick={() => navigate('/people/add?returnUrl=/billing/add')}
+                      onClick={() => navigate('/people/add?persona=Customer&returnUrl=/billing/add')}
                       style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}
                     >
                       <UserPlus size={13} /> + Add Customer

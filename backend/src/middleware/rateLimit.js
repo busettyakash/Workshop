@@ -10,7 +10,7 @@ export const apiLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 2000, // High throughput limit for multiple user/team logins
+  max: 60, // Limit auth attempts to 60 per 15 min per IP to prevent brute-force
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests to auth endpoints, please try again later.' }

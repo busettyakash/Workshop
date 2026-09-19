@@ -76,9 +76,6 @@ async function fetchWorkshopKnownEntities(userId) {
   const quoteNumbers = new Set()
   const billNumbers = new Set()
 
-  const custRes = await query(`SELECT LOWER(email) as email FROM customers WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [userId]).catch(() => ({ rows: [] }))
-  custRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
-
   const peopleRes = await query(`SELECT LOWER(email) as email FROM people WHERE user_id = $1 AND email IS NOT NULL AND email != ''`, [userId]).catch(() => ({ rows: [] }))
   peopleRes.rows.forEach(r => workshopEmails.add(r.email.trim()))
 

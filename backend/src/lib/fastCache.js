@@ -14,7 +14,8 @@ export function getMemoryCache(key) {
 
 export function setMemoryCache(key, value, ttlSeconds = 300) {
   memoryCache.set(key, {
-    value,
+    // Always store the parsed object — avoid double JSON.parse on every hit
+    value: typeof value === 'string' ? (() => { try { return JSON.parse(value) } catch { return value } })() : value,
     expiresAt: now() + ttlSeconds * 1000,
   })
 }
@@ -38,21 +39,30 @@ export async function withTimeout(promise, timeoutMs = 250) {
 }
 
 export async function getCached(redis, key, timeoutMs = 250) {
+  // 1. Memory cache — instant, no network round-trip
   const memoryValue = getMemoryCache(key)
   if (memoryValue !== null) return memoryValue
 
+  // 2. Redis cache — with timeout so it never blocks the request
   const redisValue = await withTimeout(redis.get(key).catch(() => null), timeoutMs)
   if (redisValue !== null && redisValue !== undefined) {
-    setMemoryCache(key, redisValue)
-    return redisValue
+    // Parse JSON if string, store as object in memory
+    const parsed = typeof redisValue === 'string'
+      ? (() => { try { return JSON.parse(redisValue) } catch { return redisValue } })()
+      : redisValue
+    setMemoryCache(key, parsed, 120) // keep in memory for 2 min
+    return parsed
   }
 
   return null
 }
 
 export function setCached(redis, key, value, ttlSeconds = 300) {
+  // Store parsed object in memory — avoid JSON.stringify/parse overhead on hits
   setMemoryCache(key, value, ttlSeconds)
-  redis.set(key, value, { ex: ttlSeconds }).catch(() => { })
+  // Store JSON string in Redis
+  const str = typeof value === 'string' ? value : JSON.stringify(value)
+  redis.set(key, str, { ex: ttlSeconds }).catch(() => { })
 }
 
 export function deleteCached(redis, key) {
@@ -78,4 +88,13 @@ export async function deleteCachedPattern(redis, pattern) {
       await redis.del(k).catch(() => { })
     }
   } catch { }
+}
+
+// Run multiple queries on the SAME db connection to avoid repeated pool.connect + set_config overhead
+export async function queryBatch(dbQuery, queries) {
+  const results = []
+  for (const { text, params } of queries) {
+    results.push(await dbQuery(text, params))
+  }
+  return results
 }

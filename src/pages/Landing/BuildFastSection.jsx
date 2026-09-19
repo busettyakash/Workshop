@@ -1,14 +1,17 @@
 import React from 'react'
+import { Link } from 'react-router'
 import './Landing.css'
 import {
-  Mail,
-  Search,
-  Sparkles
+  FileText,
+  Receipt,
+  Sparkles,
+  CheckCircle2,
+  Send
 } from 'lucide-react'
 
 /**
- * "Build fast" section — matching Screenshot 134408
- * Center: big headline + CTA + filter tabs + customer profile card
+ * "Build fast" section — showcases Workshop's real GST billing,
+ * quotation dispatch, and live inventory sync operations.
  */
 export default function BuildFastSection() {
   return (
@@ -25,90 +28,94 @@ export default function BuildFastSection() {
             </span>
           </h2>
           <div style={{ marginTop: 20 }}>
-            <a href="/signup" className="ws-outline-btn">Start for free</a>
+            <Link to="/signup" className="ws-outline-btn">Start for free</Link>
           </div>
         </div>
 
-
-
-        {/* ── Customer profile card ── */}
+        {/* ── Customer & Billing Operations Card ── */}
         <div className="ws-build-profile">
-          {/* Left — contact info */}
+          {/* Left — Business / Customer Info */}
           <div className="ws-build-contact">
             <div className="ws-build-contact-top">
-              <div className="ws-build-avatar">RS</div>
+              <div className="ws-build-avatar" style={{ background: '#2563eb', color: '#ffffff' }}>SV</div>
               <div>
-                <div className="ws-build-name">Rahul Sharma</div>
-                <div className="ws-build-role">Manager at Electronics Hub</div>
+                <div className="ws-build-name">Sri Venkateswara Traders</div>
+                <div className="ws-build-role">Wholesale &amp; Retail Partner · GST Registered</div>
               </div>
             </div>
 
-            <button className="ws-build-compose">
-              <Mail size={14} style={{ marginRight: 6 }} /> Compose email
-            </button>
+            <Link to="/billing/new" className="ws-build-compose" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <FileText size={14} style={{ marginRight: 6 }} /> Create GST Invoice
+            </Link>
 
             <div className="ws-build-details">
-              <div className="ws-build-detail-label">▾ Details</div>
+              <div className="ws-build-detail-label">▾ Customer Details</div>
               <div className="ws-build-detail-row">
-                <span>Name</span>
-                <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>Rahul Sharma</span>
+                <span>Contact Person</span>
+                <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>Rajesh Kumar</span>
               </div>
               <div className="ws-build-detail-row">
-                <span>Description</span>
-                <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>Manager at Electronics Hub</span>
+                <span>GSTIN</span>
+                <span style={{ fontWeight: 600, fontFamily: 'monospace', color: '#1e40af' }}>36AAACR1234F1Z5</span>
               </div>
               <div className="ws-build-detail-row">
-                <span>Email</span>
-                <a href="#" onClick={e => e.preventDefault()} className="ws-build-detail-link">rahul@electronichub.com</a>
+                <span>Phone</span>
+                <span style={{ color: 'var(--color-text-primary)' }}>+91 98490 12345</span>
               </div>
               <div className="ws-build-detail-row">
                 <span>Location</span>
-                <span>Mumbai, India</span>
+                <span>Hyderabad, Telangana</span>
               </div>
               <div className="ws-build-detail-row">
-                <span>Company</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 500 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />{' '}
-                  Electronics Hub
+                <span>Account Status</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, color: '#059669' }}>
+                  <CheckCircle2 size={13} /> Verified GSTIN
                 </span>
               </div>
               <div className="ws-build-detail-row">
-                <span>Last interaction</span>
-                <span style={{ color: 'var(--color-text-secondary)' }}>6 hours ago</span>
+                <span>Ledger Balance</span>
+                <span style={{ fontWeight: 600, color: '#059669' }}>₹0 (All Invoices Paid)</span>
               </div>
             </div>
           </div>
 
-          {/* Right — highlights */}
+          {/* Right — Highlights & Live Operations */}
           <div className="ws-build-highlights">
             <div className="ws-build-highlights-header">
-              <Search size={14} style={{ marginRight: 6 }} /> Highlights
+              Operations Overview
             </div>
 
             <div className="ws-build-highlight-card" style={{ marginBottom: 10 }}>
-              <div className="ws-build-highlight-card-label">Summary <Sparkles size={12} style={{ opacity: 0.4, marginLeft: 4 }} /></div>
+              <div className="ws-build-highlight-card-label">
+                Summary
+              </div>
               <p className="ws-build-highlight-card-body" style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.5 }}>
-                Rahul Sharma, the Manager at Electronics Hub, is leading the
-                initiative to modernize their data infrastructure and inventory pipeline.
+                Active wholesale buyer with 24 GST Tax Invoices. Quotation <strong>QT-8204</strong> for 100 Bags (Sona Masoori Rice &amp; Wheat) was emailed with a secure HMAC token, confirmed by the customer, and converted to <strong>INV-10482</strong> with automatic inventory deduction.
               </p>
             </div>
 
             <div className="ws-build-highlight-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <div className="ws-build-highlight-card">
-                <div className="ws-build-highlight-card-label">Company</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: '0.84rem' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />{' '}
-                  Electronics Hub
+                <div className="ws-build-highlight-card-label">Latest GST Invoice</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.88rem', color: '#0f172a' }}>
+                  INV-10482
+                  <span style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#16a34a', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>PAID</span>
                 </div>
-                <div style={{ fontSize: '0.74rem', color: 'var(--color-text-tertiary)', marginTop: 2 }}>Mumbai, India</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 2, fontWeight: 500 }}>
+                  ₹54,200 · CGST (9%) + SGST (9%)
+                </div>
               </div>
+
               <div className="ws-build-highlight-card">
-                <div className="ws-build-highlight-card-label">Sales Outreach</div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 500 }}>
-                  <strong>Step 2</strong> Automated email
+                <div className="ws-build-highlight-card-label">Quote &amp; Inventory Sync</div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>
+                  <strong>QT-8204</strong> Accepted &amp; Deducted
                 </div>
-                <div className="ws-build-progress-bar">
-                  <div className="ws-build-progress-fill" style={{ width: '60%' }} />
+                <div className="ws-build-progress-bar" style={{ marginTop: 6 }}>
+                  <div className="ws-build-progress-fill" style={{ width: '100%', background: '#059669' }} />
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#059669', marginTop: 3, fontWeight: 600 }}>
+                  100 Bags Auto-Deducted from Stock
                 </div>
               </div>
             </div>

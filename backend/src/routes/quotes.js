@@ -11,6 +11,7 @@ import { getCached, setCached, deleteCachedPattern } from '../lib/fastCache.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 import { executeWorkflowPipeline } from './workflows.js'
 import { clearBillingCache } from './billing.js'
+import { clearOrdersCache } from './orders.js'
 
 const router = express.Router()
 
@@ -47,6 +48,7 @@ const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
 
 export async function clearQuoteCache(userId) {
   try {
+    clearOrdersCache(userId)
     await deleteCachedPattern(redis, `quotes:${userId}:*`)
     await deleteCachedPattern(redis, `quotes:default-user:*`)
     await deleteCachedPattern(redis, `quotes:*`)
@@ -474,13 +476,80 @@ function resolveQuoteStatusLabel(quote, isAcc, isDec) {
   return quote.status || 'Processed'
 }
 
-function buildAlreadyRespondedHtml(quote) {
-  const isAcc = String(quote.status || '').toLowerCase() === 'accepted'
-  const isDec = String(quote.status || '').toLowerCase() === 'declined'
+function getStatusTheme(isAcc, isDec) {
+  if (isAcc) {
+    return {
+      bg: '#dcfce7',
+      color: '#15803d',
+      border: '#bbf7d0',
+      icon: '✓',
+      infoBg: '#f0fdf4',
+      infoColor: '#166534',
+      infoBorder: '#bbf7d0'
+    }
+  }
+  if (isDec) {
+    return {
+      bg: '#fee2e2',
+      color: '#b91c1c',
+      border: '#fecaca',
+      icon: '✕',
+      infoBg: '#f1f5f9',
+      infoColor: '#475569',
+      infoBorder: '#e2e8f0'
+    }
+  }
+  return {
+    bg: '#fef3c7',
+    color: '#b45309',
+    border: '#fde68a',
+    icon: '⏳',
+    infoBg: '#f1f5f9',
+    infoColor: '#475569',
+    infoBorder: '#e2e8f0'
+  }
+}
+
+function getStatusText(quote, isAcc, isDec, statusLabel) {
+  if (isAcc) {
+    return {
+      title: 'Quotation Confirmed & Accepted',
+      heading: 'Quotation Confirmed!',
+      subtitle: `Quotation <strong>#${quote.quote_number}</strong> was accepted and has been registered in our system.`,
+      info: '✅ <strong>Order Recorded & Invoiced.</strong> Your order is safely confirmed. If you have questions or need any adjustments, please contact us.'
+    }
+  }
+  if (isDec) {
+    return {
+      title: 'Quotation Declined',
+      heading: 'Quotation Declined',
+      subtitle: `Quotation <strong>#${quote.quote_number}</strong> has been marked as declined.`,
+      info: 'No orders or invoices were generated. If you would like an updated quote, please reach out to us.'
+    }
+  }
+  return {
+    title: `Quotation ${statusLabel}`,
+    heading: `Quotation ${statusLabel}`,
+    subtitle: `Quotation <strong>#${quote.quote_number}</strong> has already been ${statusLabel.toLowerCase()}.`,
+    info: 'No further action is required. Please contact us if you have questions.'
+  }
+}
+
+function buildAlreadyRespondedHtml(quote, billInfo = null) {
+  const currentStatus = String(quote.status || '').toLowerCase()
+  const isAcc = ['accepted', 'converted'].includes(currentStatus)
+  const isDec = currentStatus === 'declined'
   const statusLabel = resolveQuoteStatusLabel(quote, isAcc, isDec)
-  const statusBadgeBg = isAcc ? '#dcfce7' : '#fee2e2'
-  const statusBadgeColor = isAcc ? '#15803d' : '#b91c1c'
-  const statusBadgeBorder = isAcc ? '#bbf7d0' : '#fecaca'
+
+  const theme = getStatusTheme(isAcc, isDec)
+  const text = getStatusText(quote, isAcc, isDec, statusLabel)
+
+  const orderNumber = quote.order_number || ''
+  const billNumber = billInfo?.bill_number || ''
+  const formattedAmount = Number.parseFloat(quote.total_amount || 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
 
   return `
     <!DOCTYPE html>
@@ -488,8 +557,9 @@ function buildAlreadyRespondedHtml(quote) {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Link Inactive · Quotation #${quote.quote_number || ''}</title>
+        <title>${text.title} · #${quote.quote_number || ''}</title>
         <style>
+          * { box-sizing: border-box; }
           body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background: #f8fafc;
@@ -498,67 +568,129 @@ function buildAlreadyRespondedHtml(quote) {
             justify-content: center;
             min-height: 100vh;
             margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
+            padding: 24px 16px;
           }
           .card {
             background: #ffffff;
-            border-radius: 16px;
+            border-radius: 18px;
             border: 1px solid #e2e8f0;
-            padding: 36px 32px;
-            max-width: 480px;
+            padding: 38px 32px;
+            max-width: 490px;
             width: 100%;
             text-align: center;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.05);
           }
-          .icon {
-            font-size: 2.75rem;
-            margin-bottom: 12px;
+          .icon-wrapper {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 16px;
+            border-radius: 50%;
+            background: ${theme.bg};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: 800;
+            color: ${theme.color};
+            box-shadow: 0 4px 12px ${isAcc ? 'rgba(21,128,61,0.12)' : 'rgba(0,0,0,0.04)'};
           }
           .badge {
             display: inline-block;
-            padding: 5px 16px;
+            padding: 6px 18px;
             border-radius: 20px;
             font-weight: 700;
             font-size: 0.85rem;
-            background: ${statusBadgeBg};
-            color: ${statusBadgeColor};
-            border: 1px solid ${statusBadgeBorder};
-            margin-bottom: 16px;
+            background: ${theme.bg};
+            color: ${theme.color};
+            border: 1px solid ${theme.border};
+            margin-bottom: 14px;
           }
-          h3 {
-            margin: 0 0 8px;
+          h2 {
+            margin: 0 0 10px;
             color: #0f172a;
-            font-size: 1.25rem;
+            font-size: 1.35rem;
             font-weight: 700;
           }
-          p {
+          .subtitle {
             color: #64748b;
-            font-size: 0.9rem;
+            font-size: 0.92rem;
             line-height: 1.55;
-            margin: 0 0 16px;
+            margin: 0 0 20px;
+          }
+          .details-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            text-align: left;
+          }
+          .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 7px 0;
+            font-size: 0.88rem;
+            border-bottom: 1px dashed #e2e8f0;
+          }
+          .detail-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+          }
+          .detail-label {
+            color: #64748b;
+            font-weight: 500;
+          }
+          .detail-val {
+            color: #0f172a;
+            font-weight: 600;
           }
           .info-box {
-            background: #f1f5f9;
+            background: ${theme.infoBg};
             border-radius: 10px;
             padding: 14px 16px;
-            font-size: 0.825rem;
-            color: #475569;
+            font-size: 0.85rem;
+            color: ${theme.infoColor};
             line-height: 1.5;
-            border: 1px solid #e2e8f0;
+            border: 1px solid ${theme.infoBorder};
+            text-align: center;
           }
         </style>
       </head>
       <body>
         <div class="card">
-          <div class="icon">🔒</div>
-          <div class="badge">Link Inactive · Already ${statusLabel}</div>
-          <h3>This Link Is No Longer Active</h3>
-          <p>
-            Quotation <strong>#${quote.quote_number}</strong> has already been <strong>${statusLabel.toLowerCase()}</strong>. For security and to prevent duplicate orders or conflicting actions, response links can only be used once.
-          </p>
+          <div class="icon-wrapper">${theme.icon}</div>
+          <div class="badge">Quotation ${statusLabel}</div>
+          <h2>${text.heading}</h2>
+          <p class="subtitle">${text.subtitle}</p>
+
+          <div class="details-card">
+            <div class="detail-row">
+              <span class="detail-label">Quotation ID</span>
+              <span class="detail-val">#${quote.quote_number || 'N/A'}</span>
+            </div>
+            ${orderNumber ? `
+            <div class="detail-row">
+              <span class="detail-label">Order Number</span>
+              <span class="detail-val">${orderNumber}</span>
+            </div>` : ''}
+            ${billNumber ? `
+            <div class="detail-row">
+              <span class="detail-label">Invoice Generated</span>
+              <span class="detail-val">#${billNumber}</span>
+            </div>` : ''}
+            <div class="detail-row">
+              <span class="detail-label">Customer</span>
+              <span class="detail-val">${quote.customer_name || 'Valued Customer'}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Total Amount</span>
+              <span class="detail-val" style="color: #0f172a; font-size: 0.95rem; font-weight: 700;">₹${formattedAmount}</span>
+            </div>
+          </div>
+
           <div class="info-box">
-            No further action is required. If you need any revisions, pricing adjustments, or a new quotation, please feel free to reach out to us.
+            ${text.info}
           </div>
         </div>
       </body>
@@ -669,11 +801,16 @@ async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
     const bill = billRes.rows[0]
     await insertBillItemsForConvertedQuote(bill.id, items)
     await clearBillingCache(quote.user_id)
+    clearOrdersCache(quote.user_id)
 
     await decreaseProductStockForQuote(items, quote.user_id, quote.quote_number || quote.id)
 
     const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id)
-    await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted').catch(e => console.error('[Workflow Trigger Error]', e.message))
+    // Dispatch workflow automation asynchronously in background to ensure immediate HTTP response
+    setImmediate(() => {
+      triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Accepted', order_number: generatedOrderNum }, 'Accepted')
+        .catch(e => console.error('[Workflow Trigger Error]', e.message))
+    })
 
     const emailNoticeText = isEmailEnabled
       ? ` The official billing invoice will come to your mail (<strong>${quote.customer_email || 'your email'}</strong>) — please check your inbox!`
@@ -698,7 +835,10 @@ async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
 
 async function handleQuoteDeclinedResponse(quote) {
   const isEmailEnabled = await isEmailStepActiveInWorkflow(quote.user_id, 'declined')
-  await triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined').catch(e => console.error('[Workflow Trigger Error]', e.message))
+  setImmediate(() => {
+    triggerWorkflowForQuote(quote.user_id || 'default-user', { ...quote, status: 'Declined' }, 'Declined')
+      .catch(e => console.error('[Workflow Trigger Error]', e.message))
+  })
 
   const emailNoticeText = isEmailEnabled
     ? ` A confirmation and follow-up has been sent to your email (<strong>${quote.customer_email || 'your email'}</strong>).`
@@ -740,10 +880,19 @@ function buildQuoteResponseRecordedHtml(quote, action, autoBillNotice) {
   `
 }
 
+const QUOTE_SIGNING_SECRET = process.env.JWT_SECRET || 'workshop_quote_salt_key'
+
+export function computeQuoteToken(quoteId, createdAt = '') {
+  return crypto.createHmac('sha256', QUOTE_SIGNING_SECRET)
+    .update(`${quoteId}:${createdAt}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
 /* ── PUBLIC RESPONSE ENDPOINT: GET /api/quotes/respond ── */
 router.get('/respond', emailLimiter, async (req, res) => {
   try {
-    const { id, action } = req.query
+    const { id, action, token } = req.query
     if (!id || !['Accepted', 'Declined'].includes(action)) {
       return res.status(400).send('<h3>Invalid quotation response request.</h3>')
     }
@@ -755,9 +904,23 @@ router.get('/respond', emailLimiter, async (req, res) => {
 
     const quote = quoteRes.rows[0]
 
+    // Verify cryptographic token to prevent IDOR attacks
+    const expectedToken = computeQuoteToken(quote.id, quote.created_at)
+    if (!token || token !== expectedToken) {
+      return res.status(403).send('<h3>Forbidden: Invalid or missing quotation response token.</h3>')
+    }
+
     const currentStatus = String(quote.status || '').trim().toLowerCase()
     if (['accepted', 'declined', 'converted', 'expired'].includes(currentStatus)) {
-      return res.send(buildAlreadyRespondedHtml(quote))
+      let billInfo = null
+      if (['accepted', 'converted'].includes(currentStatus)) {
+        const bRes = await pool.query(
+          'SELECT bill_number FROM bills WHERE order_number = $1 OR notes LIKE $2 ORDER BY id DESC LIMIT 1',
+          [quote.order_number || '', `%${quote.quote_number}%`]
+        ).catch(() => ({ rows: [] }))
+        if (bRes.rows.length > 0) billInfo = bRes.rows[0]
+      }
+      return res.send(buildAlreadyRespondedHtml(quote, billInfo))
     }
 
     const generatedOrderNum = (quote.order_number && quote.order_number !== 'null') ? quote.order_number : `ORD-${crypto.randomInt(10000, 100000)}`
@@ -773,7 +936,14 @@ router.get('/respond', emailLimiter, async (req, res) => {
 
     if (updateRes.rows.length === 0) {
       const latestQuote = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]).catch(() => ({ rows: [quote] }))
-      return res.send(buildAlreadyRespondedHtml(latestQuote.rows[0] || quote))
+      const finalQuote = latestQuote.rows[0] || quote
+      let billInfo = null
+      const bRes = await pool.query(
+        'SELECT bill_number FROM bills WHERE order_number = $1 OR notes LIKE $2 ORDER BY id DESC LIMIT 1',
+        [finalQuote.order_number || '', `%${finalQuote.quote_number}%`]
+      ).catch(() => ({ rows: [] }))
+      if (bRes.rows.length > 0) billInfo = bRes.rows[0]
+      return res.send(buildAlreadyRespondedHtml(finalQuote, billInfo))
     }
 
     const updatedQuote = updateRes.rows[0]
@@ -887,8 +1057,9 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
       const reqProtocol = (req.headers['x-forwarded-proto'] === 'https' || req.protocol === 'https') ? 'https' : 'http'
       backendBase = `${reqProtocol}://${safeHost}`
     }
-    const acceptUrl = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Accepted`
-    const declineUrl = `${backendBase}/api/quotes/respond?id=${quote.id}&action=Declined`
+    const token = computeQuoteToken(quote.id, quote.created_at)
+    const acceptUrl = `${backendBase}/api/quotes/respond?id=${quote.id}&token=${token}&action=Accepted`
+    const declineUrl = `${backendBase}/api/quotes/respond?id=${quote.id}&token=${token}&action=Declined`
 
     function formatPrettyDate(d) {
       if (!d) return '—'

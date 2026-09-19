@@ -9,14 +9,25 @@ import { logStockHistory } from './products.js'
 
 export async function clearBillingCache(userId) {
   try {
+    // Clear memory caches immediately (sync, instant)
     clearMemoryCachePrefix('billing:')
     clearMemoryCachePrefix('reports:')
-    await deleteCachedPattern(redis, 'billing:*')
-    await deleteCachedPattern(redis, 'reports:*')
+
+    // Clear Redis in parallel (fire-and-forget, don't block the response)
+    const tasks = [
+      deleteCachedPattern(redis, 'reports:*'),
+    ]
     if (userId) {
-      await deleteCachedPattern(redis, `billing:list:${userId}:*`)
-      await deleteCachedPattern(redis, `*${userId}*`)
+      tasks.push(
+        deleteCachedPattern(redis, `billing:list:${userId}:*`),
+        deleteCachedPattern(redis, `billing:summary:${userId}:*`),
+        deleteCachedPattern(redis, `billing:daily-stats:${userId}:*`),
+        deleteCachedPattern(redis, `billing:item:${userId}:*`),
+      )
+    } else {
+      tasks.push(deleteCachedPattern(redis, 'billing:*'))
     }
+    await Promise.all(tasks)
   } catch (err) {
     console.warn('[Billing Cache Clear Warning]', err.message)
   }
@@ -38,12 +49,7 @@ async function ensureBillingSchema() {
     query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255)`).catch(() => {}),
     query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50)`).catch(() => {}),
     query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => {}),
-    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => {}),
-    // Composite indexes for billing queries (user_id + created_at, user_id + status)
-    query(`CREATE INDEX IF NOT EXISTS idx_bills_user_created ON bills (user_id, created_at DESC)`).catch(() => {}),
-    query(`CREATE INDEX IF NOT EXISTS idx_bills_user_status ON bills (user_id, status)`).catch(() => {}),
-    query(`CREATE INDEX IF NOT EXISTS idx_import_stock_user_created ON import_stock (user_id, created_at DESC)`).catch(() => {}),
-    query(`CREATE INDEX IF NOT EXISTS idx_quotes_user_created ON quotes (user_id, created_at DESC)`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => {})
   ])
 }
 
@@ -125,8 +131,8 @@ async function fetchBillsWithCursor({ where, params, cursor, limit, orderCol }) 
 
   const { rows } = await query(
     `SELECT b.*,
-       COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
-       COALESCE(p.phone, cust.phone, '') AS customer_phone,
+       COALESCE(p.name, 'General Customer') AS customer_name,
+       COALESCE(p.phone, '') AS customer_phone,
        COALESCE(b.created_by_name, sp.first_name || ' ' || sp.last_name, sp.shop_name, 'Admin') AS created_by_name,
        COALESCE(b.created_by_role, 'Admin') AS created_by_role,
        COALESCE(b.created_by_email, sp.email, '') AS created_by_email,
@@ -135,7 +141,6 @@ async function fetchBillsWithCursor({ where, params, cursor, limit, orderCol }) 
        sp.phone AS shop_phone
      FROM bills b
      LEFT JOIN people p ON b.customer_id = p.id
-     LEFT JOIN customers cust ON b.customer_id = cust.id
      LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
      ${cursorWhere} ORDER BY ${orderCol}
      LIMIT $${cursorParams.length}`,
@@ -159,14 +164,13 @@ async function fetchBillsWithOffset({ where, params, page, limit, offset, orderC
     query(
       `SELECT COUNT(*) FROM bills b 
        LEFT JOIN people p ON b.customer_id = p.id
-       LEFT JOIN customers cust ON b.customer_id = cust.id
        ${where}`,
       countParams
     ),
     query(
       `SELECT b.*,
-         COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
-         COALESCE(p.phone, cust.phone, '') AS customer_phone,
+         COALESCE(p.name, 'General Customer') AS customer_name,
+         COALESCE(p.phone, '') AS customer_phone,
          COALESCE(b.created_by_name, sp.first_name || ' ' || sp.last_name, sp.shop_name, 'Admin') AS created_by_name,
          COALESCE(b.created_by_role, 'Admin') AS created_by_role,
          COALESCE(b.created_by_email, sp.email, '') AS created_by_email,
@@ -175,7 +179,6 @@ async function fetchBillsWithOffset({ where, params, page, limit, offset, orderC
          sp.phone AS shop_phone
        FROM bills b
        LEFT JOIN people p ON b.customer_id = p.id
-       LEFT JOIN customers cust ON b.customer_id = cust.id
        LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
        ${where} ORDER BY ${orderCol}
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
@@ -243,13 +246,18 @@ router.get('/', async (req, res) => {
 /* GET /api/billing/summary — paid/unpaid totals with optional date/month/year filters */
 router.get('/summary', async (req, res) => {
   const userId = req.workspaceId
+  const cacheKey = `billing:summary:${userId}:${req.query.date || ''}:${req.query.month || ''}:${req.query.year || ''}:${req.query.startDate || ''}:${req.query.endDate || ''}`
   try {
+    const cached = await getCached(redis, cacheKey, 100)
+    if (cached) return res.json(cached)
+
     const { where, params } = buildBillingWhere(req.query, userId, false)
     const { rows } = await query(
       `SELECT b.status, COUNT(*) AS count, COALESCE(SUM(b.amount),0) AS total
        FROM bills b ${where} GROUP BY b.status`,
       params
     )
+    setCached(redis, cacheKey, rows, 30)
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -287,8 +295,12 @@ router.get('/daily-stats', async (req, res) => {
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`
+  const cacheKey = `billing:daily-stats:${userId}:${startDate || ''}:${endDate || ''}:${month || ''}:${year || ''}`
 
   try {
+    const cached = await getCached(redis, cacheKey, 150)
+    if (cached) return res.json(cached)
+
     const { rows } = await query(
       `SELECT
          (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS day,
@@ -304,6 +316,7 @@ router.get('/daily-stats', async (req, res) => {
        ORDER BY (b.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date DESC`,
       params
     )
+    setCached(redis, cacheKey, rows, 60)
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -313,22 +326,26 @@ router.get('/daily-stats', async (req, res) => {
 /* GET /api/billing/:id */
 router.get('/:id', async (req, res) => {
   const userId = req.workspaceId
+  const cacheKey = `billing:item:${userId}:${req.params.id}`
   try {
+    const cached = await getCached(redis, cacheKey, 100)
+    if (cached) return res.json(cached)
+
     const { rows } = await query(
       `SELECT b.*,
-         COALESCE(p.name, cust.name, 'General Customer') AS customer_name,
-         COALESCE(p.phone, cust.phone, '') AS customer_phone,
+         COALESCE(p.name, 'General Customer') AS customer_name,
+         COALESCE(p.phone, '') AS customer_phone,
          sp.shop_name,
          sp.gstin AS shop_gstin,
          sp.phone AS shop_phone
        FROM bills b
        LEFT JOIN people p ON b.customer_id = p.id
-       LEFT JOIN customers cust ON b.customer_id = cust.id
        LEFT JOIN shop_profiles sp ON b.user_id::text = sp.user_id::text
        WHERE b.id=$1 AND (b.user_id::text = $2::text OR b.user_id = 'default-user' OR $2 = 'default-user')`,
       [req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
+    setCached(redis, cacheKey, rows[0], 120)
     return res.json(rows[0])
   } catch (err) {
     return res.status(500).json({ error: err.message })
@@ -544,13 +561,17 @@ router.post('/', async (req, res) => {
   const creatorEmail = req.user?.email || ''
   const creatorRole = req.memberRole || (String(req.workspaceId) === String(req.user?.id) ? 'Owner' : 'Member')
 
+  const lineDiscountsSum = (items || []).reduce((acc, it) => acc + (Number.parseFloat(it.discount) || 0), 0)
+  const orderDiscount = Number.parseFloat(discount || 0)
+  const finalDiscount = orderDiscount >= lineDiscountsSum ? orderDiscount : (orderDiscount + lineDiscountsSum)
+
   try {
     const insertedRows = await insertBillRecord({
       parsedCustomerId,
       billNumber,
       finalItemsJson,
       finalAmount,
-      discount,
+      discount: finalDiscount,
       due_date,
       notes,
       status,

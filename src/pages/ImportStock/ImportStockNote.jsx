@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { ArrowLeft, Loader2, Edit3, Trash2, Copy, Check, FileText, X, Wallet, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Edit3, Trash2, Copy, Check, FileText, X, Wallet, CheckCircle2, AlertTriangle } from 'lucide-react'
 import api from '../../api/client'
 import { getBulkUnitDetails } from '../../utils/unitHelpers'
 import '../Dashboard/Dashboard.css'
@@ -26,6 +26,7 @@ export default function ImportStockNote() {
   const [payMode, setPayMode] = useState('')
   const [payments, setPayments] = useState([])
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null })
+  const [confirmOverpayModal, setConfirmOverpayModal] = useState(false)
 
   const formatNumberWithCommas = (val) => {
     if (val === null || val === undefined || val === '') return ''
@@ -73,52 +74,6 @@ export default function ImportStockNote() {
       navigate('/import-stock')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleSavePayment = async () => {
-    if (!paidAmt || Number.parseFloat(paidAmt) <= 0) {
-      dispatch(addToast({ message: 'Please enter a valid amount', type: 'error' }))
-      return
-    }
-    if (!payMode) {
-      dispatch(addToast({ message: 'Please select a payment mode', type: 'error' }))
-      return
-    }
-    setSaving(true)
-    try {
-      const res = await api.post(`/import-stock/${id}/payments`, {
-        amount: Number.parseFloat(paidAmt),
-        payment_mode: payMode
-      })
-      dispatch(addToast({ message: 'Payment recorded successfully!', type: 'success' }))
-      setPayments(prev => [res.data, ...prev])
-      setPaidAmt('')
-      setPayMode('')
-    } catch (err) {
-      const errMsg = err.response?.data?.error || err.message || 'Unknown error'
-      dispatch(addToast({ message: `Failed to record payment: ${errMsg}`, type: 'error' }))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleDeletePaymentClick = (paymentId) => {
-    setConfirmDelete({ isOpen: true, id: paymentId })
-  }
-
-  const handleConfirmDeletePayment = async () => {
-    const paymentId = confirmDelete.id
-    if (!paymentId) return
-    try {
-      await api.delete(`/import-stock/${id}/payments/${paymentId}`)
-      dispatch(addToast({ message: 'Payment log deleted successfully!', type: 'success' }))
-      setPayments(prev => prev.filter(p => p.id !== paymentId))
-    } catch (err) {
-      console.error(err)
-      dispatch(addToast({ message: 'Failed to delete payment log', type: 'error' }))
-    } finally {
-      setConfirmDelete({ isOpen: false, id: null })
     }
   }
 
@@ -170,6 +125,63 @@ export default function ImportStockNote() {
     stock: prevStock
   })
   const totalStockCost = prevStockCost + addStockCost
+
+  const numericPaidAmt = Number.parseFloat(paidAmt) || 0
+  const isOverTotalCost = calculatedSupplierCost > 0 && numericPaidAmt > calculatedSupplierCost
+  const isOverDueBalance = remainingBalance > 0 && numericPaidAmt > remainingBalance
+
+  const handleSavePayment = async (forceProceed = false) => {
+    if (!paidAmt || Number.isNaN(numericPaidAmt) || numericPaidAmt <= 0) {
+      dispatch(addToast({ message: 'Please enter a valid amount', type: 'error' }))
+      return
+    }
+    if (!payMode) {
+      dispatch(addToast({ message: 'Please select a payment mode', type: 'error' }))
+      return
+    }
+
+    if (!forceProceed && (isOverTotalCost || isOverDueBalance)) {
+      setConfirmOverpayModal(true)
+      return
+    }
+
+    setSaving(true)
+    try {
+      const res = await api.post(`/import-stock/${id}/payments`, {
+        amount: numericPaidAmt,
+        payment_mode: payMode
+      })
+      dispatch(addToast({ message: 'Payment recorded successfully!', type: 'success' }))
+      setPayments(prev => [res.data, ...prev])
+      setPaidAmt('')
+      setPayMode('')
+      setConfirmOverpayModal(false)
+    } catch (err) {
+      const errMsg = err.response?.data?.error || err.message || 'Unknown error'
+      dispatch(addToast({ message: `Failed to record payment: ${errMsg}`, type: 'error' }))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeletePaymentClick = (paymentId) => {
+    setConfirmDelete({ isOpen: true, id: paymentId })
+  }
+
+  const handleConfirmDeletePayment = async () => {
+    const paymentId = confirmDelete.id
+    if (!paymentId) return
+    try {
+      await api.delete(`/import-stock/${id}/payments/${paymentId}`)
+      dispatch(addToast({ message: 'Payment log deleted successfully!', type: 'success' }))
+      setPayments(prev => prev.filter(p => p.id !== paymentId))
+    } catch (err) {
+      console.error(err)
+      dispatch(addToast({ message: 'Failed to delete payment log', type: 'error' }))
+    } finally {
+      setConfirmDelete({ isOpen: false, id: null })
+    }
+  }
 
   return (
     <div className="ws-dash-layout">
@@ -380,17 +392,21 @@ export default function ImportStockNote() {
                               style={{
                                 width: '100%', boxSizing: 'border-box',
                                 height: 36, padding: '0 10px 0 24px',
-                                border: '1.5px solid #cbd5e1', borderRadius: 7,
+                                border: (isOverTotalCost || isOverDueBalance) ? '1.5px solid #f59e0b' : '1.5px solid #cbd5e1',
+                                borderRadius: 7,
                                 fontSize: '0.84rem', fontWeight: 600, color: '#0f172a',
-                                outline: 'none', background: '#ffffff',
+                                outline: 'none',
+                                background: (isOverTotalCost || isOverDueBalance) ? '#fffdf7' : '#ffffff',
                                 transition: 'border-color 0.15s, box-shadow 0.15s'
                               }}
                               onFocus={e => {
-                                e.target.style.borderColor = '#2563eb'
-                                e.target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.12)'
+                                const isWarn = isOverTotalCost || isOverDueBalance
+                                e.target.style.borderColor = isWarn ? '#d97706' : '#2563eb'
+                                e.target.style.boxShadow = isWarn ? '0 0 0 3px rgba(217, 119, 6, 0.15)' : '0 0 0 3px rgba(37,99,235,0.12)'
                               }}
                               onBlur={e => {
-                                e.target.style.borderColor = '#cbd5e1'
+                                const isWarn = isOverTotalCost || isOverDueBalance
+                                e.target.style.borderColor = isWarn ? '#f59e0b' : '#cbd5e1'
                                 e.target.style.boxShadow = 'none'
                               }}
                             />
@@ -436,7 +452,7 @@ export default function ImportStockNote() {
                         <div>
                           <button
                             type="button"
-                            onClick={handleSavePayment}
+                            onClick={() => handleSavePayment(false)}
                             disabled={saving}
                             style={{
                               height: 36,
@@ -463,6 +479,42 @@ export default function ImportStockNote() {
                           </button>
                         </div>
                       </div>
+
+                      {/* Real-time Overpayment Warning Notice */}
+                      {(isOverTotalCost || isOverDueBalance) && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 10,
+                          padding: '10px 14px',
+                          background: '#fffbeb',
+                          border: '1.5px solid #fcd34d',
+                          borderRadius: 8,
+                          color: '#92400e',
+                          fontSize: '0.78rem',
+                          lineHeight: 1.45,
+                          boxShadow: '0 1px 2px rgba(245, 158, 11, 0.06)'
+                        }}>
+                          <AlertTriangle size={18} style={{ color: '#d97706', flexShrink: 0, marginTop: 1 }} />
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#b45309', marginBottom: 2 }}>
+                              {isOverTotalCost ? 'Warning: Payment Exceeds Total Supplier Cost' : 'Warning: Payment Exceeds Remaining Balance'}
+                            </div>
+                            <div>
+                              Entered amount <strong>₹{numericPaidAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> is greater than the{' '}
+                              {isOverTotalCost ? (
+                                <>
+                                  Total Supplier Cost of <strong>₹{calculatedSupplierCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> (Remaining Due: <strong>₹{remainingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>) by <strong style={{ color: '#b91c1c' }}>₹{(numericPaidAmt - calculatedSupplierCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                </>
+                              ) : (
+                                <>
+                                  Remaining Due of <strong>₹{remainingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> by <strong style={{ color: '#b91c1c' }}>₹{(numericPaidAmt - remainingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                </>
+                              )}.
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Custom User notes if edited */}
@@ -614,6 +666,22 @@ export default function ImportStockNote() {
         message="Are you sure you want to delete this payment log?"
         onConfirm={handleConfirmDeletePayment}
         onCancel={() => setConfirmDelete({ isOpen: false, id: null })}
+      />
+
+      <ConfirmModal
+        isOpen={confirmOverpayModal}
+        title="Excess Supplier Payment Warning"
+        message={
+          isOverTotalCost
+            ? `The entered payment amount (₹${numericPaidAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) exceeds the Total Supplier Cost of ₹${calculatedSupplierCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })} by ₹${(numericPaidAmt - calculatedSupplierCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Are you sure you want to proceed and record this excess payment?`
+            : `The entered payment amount (₹${numericPaidAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) exceeds the remaining balance due of ₹${remainingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} by ₹${(numericPaidAmt - remainingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Are you sure you want to proceed and record this excess payment?`
+        }
+        confirmLabel="Yes, Record Payment"
+        cancelLabel="Cancel & Edit"
+        confirmBg="#d97706"
+        confirmHoverBg="#b45309"
+        onConfirm={() => handleSavePayment(true)}
+        onCancel={() => setConfirmOverpayModal(false)}
       />
     </div>
   )

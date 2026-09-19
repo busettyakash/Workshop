@@ -2,7 +2,7 @@ import { Router }     from 'express'
 import insforge       from '../lib/insforge.js'
 import { query }      from '../lib/db.js'
 import redis          from '../lib/redis.js'
-import { deleteCached, getMemoryCache, setMemoryCache, deleteMemoryCache } from '../lib/fastCache.js'
+import { deleteCached, getCached, setCached, getMemoryCache, setMemoryCache, deleteMemoryCache } from '../lib/fastCache.js'
 import resend         from '../lib/resend.js'
 import { sendEmail }  from '../lib/smtp.js'
 import {
@@ -11,18 +11,51 @@ import {
   getInviteEmailTemplate,
 } from '../utils/emailTemplates.js'
 import jwt            from 'jsonwebtoken'
-import { createHash, randomInt } from 'node:crypto'
+import { createHash, randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { requireAuth }  from '../middleware/auth.js'
 import { apiLimiter, authLimiter }   from '../middleware/rateLimit.js'
 
 // ─────────────────────────────────────────────
-//  Constants
+//  Constants & Security Config
 // ─────────────────────────────────────────────
 
 const OTP_TTL_SECONDS       = 300
 const OTP_COOLDOWN_SECONDS  = 60
 const OTP_SEND_LOCK_SECONDS = 30
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret'
+const OTP_MAX_ATTEMPTS      = 5
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'dev_secret')
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error('FATAL SECURITY WARNING: JWT_SECRET environment variable is missing in production mode!')
+}
+
+// ─────────────────────────────────────────────
+//  Password Hashing & Verification (scrypt)
+// ─────────────────────────────────────────────
+
+export function hashPassword(password) {
+  if (!password) return null
+  const salt = randomBytes(16).toString('hex')
+  const hash = scryptSync(password, salt, 64).toString('hex')
+  return `scrypt:${salt}:${hash}`
+}
+
+export function verifyPassword(password, storedHash) {
+  if (!password || !storedHash) return false
+  if (storedHash.startsWith('scrypt:')) {
+    const parts = storedHash.split(':')
+    if (parts.length !== 3) return false
+    const salt = parts[1]
+    const key = parts[2]
+    try {
+      const derivedKey = scryptSync(password, salt, 64).toString('hex')
+      return timingSafeEqual(Buffer.from(derivedKey, 'hex'), Buffer.from(key, 'hex'))
+    } catch {
+      return false
+    }
+  }
+  // Legacy plaintext check (will be transparently upgraded to scrypt upon login)
+  return storedHash === password
+}
 
 // ─────────────────────────────────────────────
 //  In-memory fallback (used when Redis is down)
@@ -42,31 +75,34 @@ const router = Router()
 // ─────────────────────────────────────────────
 
 async function ensureWorkspaceTable() {
-  await query(`
-    CREATE TABLE IF NOT EXISTS workspace_members (
-      id SERIAL PRIMARY KEY,
-      workspace_owner_id TEXT NOT NULL,
-      member_email TEXT NOT NULL,
-      role TEXT DEFAULT 'Member',
-      permissions JSONB DEFAULT '{}'::jsonb,
-      created_at TIMESTAMP DEFAULT NOW(),
-      UNIQUE (workspace_owner_id, member_email)
-    );
-    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
-    ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE workspace_members FORCE ROW LEVEL SECURITY;
-  `).catch(err => console.error('[DB] Error ensuring workspace_members table:', err.message))
+  // Run both migration batches in parallel to cut startup latency
+  await Promise.all([
+    query(`
+      CREATE TABLE IF NOT EXISTS workspace_members (
+        id SERIAL PRIMARY KEY,
+        workspace_owner_id TEXT NOT NULL,
+        member_email TEXT NOT NULL,
+        role TEXT DEFAULT 'Member',
+        permissions JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (workspace_owner_id, member_email)
+      );
+      ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
+      ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE workspace_members FORCE ROW LEVEL SECURITY;
+    `).catch(err => console.error('[DB] Error ensuring workspace_members table:', err.message)),
 
-  await query(`
-    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
-    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
-    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
-    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
-    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(50);
-    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT;
-    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT;
-    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
-  `).catch(err => console.error('[DB] Error ensuring columns on shop_profiles:', err.message))
+    query(`
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(50);
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT;
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT;
+      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+    `).catch(err => console.error('[DB] Error ensuring columns on shop_profiles:', err.message)),
+  ])
 }
 
 let ensureWorkspaceTableStarted = false
@@ -186,6 +222,29 @@ async function clearOtp(email) {
 async function readStoredOtp(email) {
   const fromRedis = await redis.get(getOtpKey(email)).catch(() => null)
   return fromRedis ?? getMemoryValue(getOtpKey(email))
+}
+
+const getOtpAttemptsKey = email => `otp_attempts:${email}`
+
+async function recordFailedOtpAttempt(email) {
+  const key = getOtpAttemptsKey(email)
+  const current = (await redis.get(key).catch(() => null)) || getMemoryValue(key) || 0
+  const updated = Number(current) + 1
+  redis.set(key, updated, { ex: 900 }).catch(() => {})
+  setMemoryValue(key, updated, 900)
+  return updated
+}
+
+async function isOtpLockedOut(email) {
+  const key = getOtpAttemptsKey(email)
+  const attempts = (await redis.get(key).catch(() => null)) || getMemoryValue(key) || 0
+  return Number(attempts) >= OTP_MAX_ATTEMPTS
+}
+
+async function clearOtpAttempts(email) {
+  const key = getOtpAttemptsKey(email)
+  redis.del(key).catch(() => {})
+  memoryStore.delete(key)
 }
 
 // ─────────────────────────────────────────────
@@ -627,14 +686,21 @@ router.post('/reset-password', authLimiter, async (req, res) => {
     return res.status(400).json({ message: 'Password must be at least 6 characters long' })
   }
 
+  if (await isOtpLockedOut(email)) {
+    return res.status(429).json({ message: 'Too many failed OTP attempts. Please request a new OTP.' })
+  }
+
   try {
     const storedOtp = await readStoredOtp(email)
-    if (String(storedOtp) !== otp) {
+    if (!storedOtp || String(storedOtp) !== otp) {
+      await recordFailedOtpAttempt(email)
       return res.status(400).json({ message: 'Invalid or expired OTP' })
     }
 
     await clearOtp(email)
-    await query('UPDATE shop_profiles SET password = $1 WHERE email = $2', [newPassword, email])
+    await clearOtpAttempts(email)
+    const hashedPassword = hashPassword(newPassword)
+    await query('UPDATE shop_profiles SET password = $1 WHERE email = $2', [hashedPassword, email])
 
     console.log('[RESET PASSWORD] Password updated successfully')
     res.json({ message: 'Password reset successfully. You can now log in with your new password.' })
@@ -650,14 +716,20 @@ router.post('/verify-otp', authLimiter, async (req, res) => {
   const otp   = normalizeOtp(req.body?.otp)
   if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' })
 
+  if (await isOtpLockedOut(email)) {
+    return res.status(429).json({ message: 'Too many failed OTP attempts. Please request a new OTP.' })
+  }
+
   try {
     const storedOtp = await readStoredOtp(email)
     console.log('[OTP VERIFY] Processing OTP verification attempt')
 
-    if (String(storedOtp) === otp) {
+    if (storedOtp && String(storedOtp) === otp) {
       await clearOtp(email)
+      await clearOtpAttempts(email)
       res.json({ message: 'OTP verified successfully' })
     } else {
+      await recordFailedOtpAttempt(email)
       res.status(400).json({ message: 'Invalid or expired OTP' })
     }
   } catch (err) {
@@ -770,8 +842,9 @@ router.post('/register', authLimiter, async (req, res) => {
     }
 
     const userId = insforgeData?.user?.id || getLocalUserId(email)
+    const hashedPassword = password ? hashPassword(password) : null
 
-    // Persist local profile
+    // Persist local profile with salted scrypt hashed password
     await query(
       `INSERT INTO shop_profiles
          (email, user_id, shop_name, first_name, last_name, phone, gstin,
@@ -792,7 +865,7 @@ router.post('/register', authLimiter, async (req, res) => {
       [
         email, userId, actualShopName, actualFirstName, actualLastName,
         actualPhone || null, actualGstin || null, workspaceHandle || null,
-        billingCountry || null, referralSource || null, usageType || null, password || null,
+        billingCountry || null, referralSource || null, usageType || null, hashedPassword,
         actualLogo
       ]
     ).catch(err => console.error('DB Insert Error', err))
@@ -879,15 +952,14 @@ router.post('/login', authLimiter, async (req, res) => {
     const storedPassword = prof?.password  || null
     let token          = null
 
-    // Check Redis-cached password first (written after first successful InsForge login)
-    // This makes re-logins instant even after a Vercel cold start when the DB profile
-    // has no local password yet but Redis still holds the verified credential.
-    const redisCachedPw = !storedPassword
-      ? await redis.get(`pw_cache:${email.toLowerCase()}`).catch(() => null)
-      : null
-
-    // ── Fast path: local password check (avoids remote InsForge round-trip) ──
-    if (prof && (storedPassword === password || (redisCachedPw && redisCachedPw === password))) {
+    // ── Fast path: local password check with secure hash verification ──
+    const isPasswordValid = prof && verifyPassword(password, storedPassword)
+    if (prof && isPasswordValid) {
+      // Auto-upgrade legacy plaintext passwords to secure scrypt hash on successful login
+      if (storedPassword && !storedPassword.startsWith('scrypt:')) {
+        const upgradedHash = hashPassword(password)
+        await query('UPDATE shop_profiles SET password = $1 WHERE LOWER(email) = LOWER($2)', [upgradedHash, email]).catch(() => {})
+      }
       userId = userId || getLocalUserId(email)
       token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
     } else {
@@ -915,8 +987,6 @@ router.post('/login', authLimiter, async (req, res) => {
         userId = prof?.user_id || insforgeUserId || getLocalUserId(email)
 
         // ── Auto-create shop_profiles for invited members who signed up via InsForge ──
-        // This handles the production case where InsForge created the user in auth.users
-        // (via invite or OAuth) but there is no corresponding shop_profiles row yet.
         if (!prof) {
           const isInvitedMember = await query(
             'SELECT 1 FROM workspace_members WHERE LOWER(member_email) = LOWER($1) LIMIT 1',
@@ -924,7 +994,6 @@ router.post('/login', authLimiter, async (req, res) => {
           ).then(r => r.rows.length > 0).catch(() => false)
 
           if (isInvitedMember) {
-            // Derive a display name from InsForge user metadata or email prefix
             const meta = data.user?.user_metadata || {}
             firstName  = meta.first_name || meta.firstName || meta.full_name?.split(' ')[0] || email.split('@')[0]
             lastName   = meta.last_name  || meta.lastName  || meta.full_name?.split(' ').slice(1).join(' ') || ''
@@ -942,23 +1011,19 @@ router.post('/login', authLimiter, async (req, res) => {
 
             console.log(`[Login] Auto-created shop_profiles for invited member: ${email.replace(/[\r\n]/g, '_')}`)
           } else {
-            // Not invited, not registered locally — truly no account
             return res.status(401).json({ message: 'No account found with this email. Please sign up first.' })
           }
         }
 
         token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
 
-        // Cache the verified password so all future logins use the fast local path
-        // 1. Write to Redis immediately (survives cold starts, <1ms read next login)
-        // 2. Await the DB write so it's committed before the response
+        // Save hashed password in DB (never plaintext, and never in Redis cache)
         if (password) {
-          const cacheKey = `pw_cache:${email.toLowerCase()}`
-          redis.set(cacheKey, password, { ex: 3600 }).catch(() => {})
+          const hashedPassword = hashPassword(password)
           await query(
             'UPDATE shop_profiles SET password = $1 WHERE LOWER(email) = LOWER($2)',
-            [password, email]
-          ).catch(err => console.warn('[Auth Password Cache Notice]', err.message))
+            [hashedPassword, email]
+          ).catch(err => console.warn('[Auth Password Hash Notice]', err.message))
         }
       } catch (authErr) {
         console.warn('[InsForge Auth SignIn Notice]', authErr.message)
@@ -1180,10 +1245,19 @@ function formatOwnWorkspace(own, ownUserId, fallbackShopName, email) {
 router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
   const email = normalizeEmail(req.user.email)
   const cacheKey = `workspaces:${email}`
+
+  // 1. Memory cache (0ms)
   const cached = getMemoryCache(cacheKey)
-  if (cached) {
-    return res.json(cached)
-  }
+  if (cached) return res.json(cached)
+
+  // 2. Redis cache — survives server restarts (120ms timeout to not block)
+  try {
+    const redisCached = await getCached(redis, cacheKey, 120)
+    if (redisCached) {
+      setMemoryCache(cacheKey, redisCached, 120)
+      return res.json(redisCached)
+    }
+  } catch { /* Redis miss is fine, fall through to DB */ }
 
   try {
     const ownUserId = req.user.id || req.workspaceId
@@ -1231,7 +1305,9 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
       workspaces = invitedEntries
     }
 
-    setMemoryCache(cacheKey, workspaces, 60)
+    // Store in both memory (120s) and Redis (120s)
+    setMemoryCache(cacheKey, workspaces, 120)
+    setCached(redis, cacheKey, workspaces, 120)
     res.json(workspaces)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -1516,13 +1592,16 @@ router.post('/update-password', apiLimiter, requireAuth, async (req, res) => {
     const storedPass = rows[0]?.password
     let isPasswordValid = true
 
-    if (storedPass && storedPass !== currentPassword) {
-      // Double-check via InsForge if local password doesn't match
-      try {
-        const { error } = await insforge.auth.signInWithPassword({ email, password: currentPassword })
-        if (error) isPasswordValid = false
-      } catch {
-        isPasswordValid = false
+    if (storedPass) {
+      isPasswordValid = verifyPassword(currentPassword, storedPass)
+      if (!isPasswordValid) {
+        // Double-check via InsForge if local password doesn't match
+        try {
+          const { error } = await insforge.auth.signInWithPassword({ email, password: currentPassword })
+          if (!error) isPasswordValid = true
+        } catch {
+          isPasswordValid = false
+        }
       }
     }
 
@@ -1530,10 +1609,14 @@ router.post('/update-password', apiLimiter, requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'Current password is incorrect' })
     }
 
+    const hashedNewPassword = hashPassword(newPassword)
     await query(
       'UPDATE shop_profiles SET password = $1 WHERE LOWER(email) = LOWER($2)',
-      [newPassword, email]
+      [hashedNewPassword, email]
     )
+
+    // Clear any stale Redis caches
+    await redis.del(`pw_cache:${email.toLowerCase()}`).catch(() => {})
 
     // Sync to InsForge auth if available
     await insforge.auth.updateUser({ password: newPassword }).catch(() => {})
@@ -1820,7 +1903,6 @@ router.delete('/workspace', apiLimiter, requireAuth, async (req, res) => {
         query(`DELETE FROM quotes WHERE user_id::text IN (${inClause})`, targets),
         query(`DELETE FROM orders WHERE user_id::text IN (${inClause})`, targets),
         query(`DELETE FROM people WHERE user_id::text IN (${inClause})`, targets),
-        query(`DELETE FROM customers WHERE user_id::text IN (${inClause})`, targets),
         query(`DELETE FROM notes WHERE user_id::text IN (${inClause})`, targets),
         query(`DELETE FROM emails WHERE user_id::text IN (${inClause})`, targets),
         query(`DELETE FROM import_stock WHERE user_id::text IN (${inClause})`, targets),

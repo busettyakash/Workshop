@@ -27,6 +27,7 @@ async function createTables() {
       DROP TABLE IF EXISTS deal_logs CASCADE;
       DROP TABLE IF EXISTS deals CASCADE;
       DROP TABLE IF EXISTS companies CASCADE;
+      DROP TABLE IF EXISTS customers CASCADE;
     `).catch(() => {});
 
     await pool.query(`
@@ -134,21 +135,6 @@ async function createTables() {
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS add_stock_qty NUMERIC;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(10, 2) DEFAULT 0;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);
-
-      CREATE TABLE IF NOT EXISTS customers (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255),
-        phone VARCHAR(50),
-        address TEXT,
-        gst_number VARCHAR(50),
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
-
-      ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT;
-      ALTER TABLE customers ADD COLUMN IF NOT EXISTS gst_number VARCHAR(50);
-      ALTER TABLE customers ADD COLUMN IF NOT EXISTS user_id TEXT;
 
       CREATE TABLE IF NOT EXISTS people (
         id           SERIAL PRIMARY KEY,
@@ -361,7 +347,7 @@ async function createTables() {
     // ── Enforce RLS on all tables with user isolation ──
     const allTables = [
       'bill_items', 'shop_profiles', 'bill_templates', 'workspace_members',
-      'products', 'product_price_history', 'product_stock_history', 'import_stock', 'customers', 'people', 'bills', 'notifications',
+      'products', 'product_price_history', 'product_stock_history', 'import_stock', 'people', 'bills', 'notifications',
       'workflows', 'workflow_runs', 'chat_sessions', 'notes', 'emails', 'uoms', 'quotes'
     ];
 
@@ -453,7 +439,6 @@ async function createTables() {
       "CREATE INDEX IF NOT EXISTS idx_quotes_user_id ON quotes(user_id)",
       "CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status)",
       "CREATE INDEX IF NOT EXISTS idx_people_user_id ON people(user_id)",
-      "CREATE INDEX IF NOT EXISTS idx_customers_user_id ON customers(user_id)",
       "CREATE INDEX IF NOT EXISTS idx_import_stock_user_id ON import_stock(user_id)"
     ];
 

@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached, deleteCached } from '../lib/fastCache.js'
+import { getCached, setCached, deleteCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -44,10 +44,12 @@ router.use(async (_req, _res, next) => {
   }
 })
 
-async function clearPeopleCache(userId) {
+export async function clearPeopleCache(userId) {
   try {
-    const keys = await redis.keys(`people:${userId}:*`).catch(() => [])
-    for (const k of keys) { deleteCached(redis, k) }
+    // Clear in-memory cache immediately (sync, instant)
+    clearMemoryCachePrefix(`people:${userId}:`)
+    // Clear Redis in background (no await needed to unblock the response)
+    deleteCachedPattern(redis, `people:${userId}:*`).catch(() => {})
   } catch (_e) {}
 }
 
@@ -57,7 +59,7 @@ async function clearPeopleCache(userId) {
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
-  const { search = '', status = '', persona = '', sort = '' } = req.query
+  const { search = '', status = '', persona = '', sort = '', _t } = req.query
 
   const params = [userId]
   const conditions = ['user_id = $1']
@@ -78,13 +80,16 @@ router.get('/', async (req, res) => {
   if (sort === 'name_asc') orderCol = 'name ASC, id DESC'
   else if (sort === 'name_desc') orderCol = 'name DESC, id DESC'
 
-  const cacheKey = `people:${userId}:${JSON.stringify({ page, limit, offset, cursor, search, status, persona, sort })}`
+  // Skip cache when _t (cache-bust) param is present — always serve fresh DB data
+  const cacheKey = _t ? null : `people:${userId}:${JSON.stringify({ page, limit, offset, cursor, search, status, persona, sort })}`
 
   try {
-    const cached = await getCached(redis, cacheKey, 200)
-    if (cached) {
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
-      return res.json(cached)
+    if (cacheKey) {
+      const cached = await getCached(redis, cacheKey, 200)
+      if (cached) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+        return res.json(cached)
+      }
     }
 
     if (cursor) {
@@ -105,7 +110,7 @@ router.get('/', async (req, res) => {
         : null
 
       const result = { data: rows, limit, hasNextPage, nextCursor }
-      setCached(redis, cacheKey, result, 60)
+      if (cacheKey) setCached(redis, cacheKey, result, 60)
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
       return res.json(result)
     }
@@ -122,7 +127,7 @@ router.get('/', async (req, res) => {
     const totalPages = Math.ceil(total / limit) || 1
 
     const result = { data: rows, total, page, limit, totalPages }
-    setCached(redis, cacheKey, result, 60)
+    if (cacheKey) setCached(redis, cacheKey, result, 60)
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
     return res.json(result)
   } catch (err) {

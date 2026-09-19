@@ -45,7 +45,7 @@ const tools = [
           dataset: {
             type: 'string',
             enum: ['products', 'bills', 'quotes', 'people', 'import_stock', 'notes', 'deals', 'top_products', 'revenue_summary', 'quotes_summary'],
-            description: 'The dataset to query'
+            description: 'The dataset to query. Use "import_stock" when asked about purchased stock, supplier payments, money owed to suppliers/buyers for stock batches, or remaining balance on imported products. Use "bills" for customer sales invoices.'
           },
           search: { type: 'string', description: 'Optional keyword to search across names, SKUs, or titles' },
           status: { type: 'string', description: 'Optional status filter (e.g. active, paid, unpaid, pending, accepted)' },
@@ -199,33 +199,93 @@ async function callOpenRouterWithFallback(apiMessages) {
 const DATASET_HANDLERS = {
   products: async (userId, searchPattern, status, limit) => {
     if (searchPattern && status) {
-      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 AND (name ILIKE $3 OR sku ILIKE $3) ORDER BY id DESC LIMIT $4', [userId, status, searchPattern, limit])
+      return query('SELECT name, sku, hsn_code, category, price, stock, unit, status, description FROM products WHERE (user_id::text = $1::text OR user_id = \'default-user\' OR $1 = \'default-user\') AND status = $2 AND (name ILIKE $3 OR sku ILIKE $3 OR hsn_code ILIKE $3) ORDER BY id DESC LIMIT $4', [userId, status, searchPattern, limit])
     }
     if (searchPattern) {
-      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
+      return query('SELECT name, sku, hsn_code, category, price, stock, unit, status, description FROM products WHERE (user_id::text = $1::text OR user_id = \'default-user\' OR $1 = \'default-user\') AND (name ILIKE $2 OR sku ILIKE $2 OR hsn_code ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
     }
     if (status) {
-      return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3', [userId, status, limit])
+      return query('SELECT name, sku, hsn_code, category, price, stock, unit, status, description FROM products WHERE (user_id::text = $1::text OR user_id = \'default-user\' OR $1 = \'default-user\') AND status = $2 ORDER BY id DESC LIMIT $3', [userId, status, limit])
     }
-    return query('SELECT name, sku, category, price, stock, unit, status, description FROM products WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+    return query('SELECT name, sku, hsn_code, category, price, stock, unit, status, description FROM products WHERE (user_id::text = $1::text OR user_id = \'default-user\' OR $1 = \'default-user\') ORDER BY id DESC LIMIT $2', [userId, limit])
   },
   import_stock: async (userId, searchPattern, _status, limit) => {
+    let sql = `
+      SELECT 
+        i.id,
+        i.name,
+        i.sku,
+        i.category,
+        i.stock,
+        i.unit,
+        i.bag_weight,
+        i.buying_price,
+        i.price_covers,
+        i.buyer_name AS supplier_name,
+        i.buyer_phone,
+        i.buyer_city,
+        i.buyer_state,
+        ROUND(
+          (i.stock::numeric * COALESCE(NULLIF(i.bag_weight::numeric, 0), 1) * (COALESCE(i.buying_price::numeric, 0) / COALESCE(NULLIF(i.price_covers::numeric, 0), 1))),
+          2
+        ) AS total_supplier_cost,
+        COALESCE(
+          (SELECT SUM(isp.amount) FROM import_stock_payments isp WHERE isp.import_stock_id = i.id),
+          0
+        ) AS total_paid_to_supplier,
+        ROUND(
+          (i.stock::numeric * COALESCE(NULLIF(i.bag_weight::numeric, 0), 1) * (COALESCE(i.buying_price::numeric, 0) / COALESCE(NULLIF(i.price_covers::numeric, 0), 1))) - 
+          COALESCE((SELECT SUM(isp.amount) FROM import_stock_payments isp WHERE isp.import_stock_id = i.id), 0),
+          2
+        ) AS remaining_balance_due,
+        i.status,
+        i.created_at
+      FROM import_stock i
+      WHERE (i.user_id::text = $1::text OR i.user_id = 'default-user' OR $1 = 'default-user')
+    `
+    const params = [userId]
     if (searchPattern) {
-      return query('SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 AND (name ILIKE $2 OR sku ILIKE $2) ORDER BY id DESC LIMIT $3', [userId, searchPattern, limit])
+      params.push(searchPattern)
+      sql += ` AND (i.name ILIKE $${params.length} OR i.sku ILIKE $${params.length} OR i.buyer_name ILIKE $${params.length})`
     }
-    return query('SELECT name, sku, category, price, stock, unit, status, description FROM import_stock WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+    params.push(limit)
+    sql += ` ORDER BY i.id DESC LIMIT $${params.length}`
+    return query(sql, params)
   },
-  bills: async (userId, _searchPattern, status, limit) => {
+  bills: async (userId, searchPattern, status, limit) => {
+    let sql = `SELECT b.id, b.bill_number, b.amount, b.discount, b.status, b.due_date, b.created_at, b.items, p.name AS customer_name 
+               FROM bills b 
+               LEFT JOIN people p ON b.customer_id = p.id 
+               WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')`
+    const params = [userId]
     if (status) {
-      return query('SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 AND b.status = $2 ORDER BY b.id DESC LIMIT $3', [userId, status, limit])
+      params.push(status)
+      sql += ` AND b.status = $${params.length}`
     }
-    return query('SELECT b.id, b.amount, b.discount, b.status, b.due_date, b.created_at, p.name AS customer_name FROM bills b LEFT JOIN people p ON b.customer_id = p.id WHERE b.user_id = $1 ORDER BY b.id DESC LIMIT $2', [userId, limit])
+    if (searchPattern) {
+      params.push(searchPattern)
+      sql += ` AND (b.bill_number ILIKE $${params.length} OR p.name ILIKE $${params.length} OR b.items::text ILIKE $${params.length})`
+    }
+    params.push(limit)
+    sql += ` ORDER BY b.id DESC LIMIT $${params.length}`
+    return query(sql, params)
   },
-  quotes: async (userId, _searchPattern, status, limit) => {
+  quotes: async (userId, searchPattern, status, limit) => {
+    let sql = `SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until 
+               FROM quotes 
+               WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user')`
+    const params = [userId]
     if (status) {
-      return query('SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT $3', [userId, status, limit])
+      params.push(status)
+      sql += ` AND status = $${params.length}`
     }
-    return query('SELECT quote_number, customer_name, customer_email, total_amount, status, issue_date, valid_until FROM quotes WHERE user_id = $1 ORDER BY id DESC LIMIT $2', [userId, limit])
+    if (searchPattern) {
+      params.push(searchPattern)
+      sql += ` AND (quote_number ILIKE $${params.length} OR customer_name ILIKE $${params.length})`
+    }
+    params.push(limit)
+    sql += ` ORDER BY id DESC LIMIT $${params.length}`
+    return query(sql, params)
   },
   people: async (userId, searchPattern, _status, limit) => {
     if (searchPattern) {
@@ -408,33 +468,15 @@ router.post('/', async (req, res) => {
 You help users with: sales analysis, inventory management, customer relations, billing, workflow automation, and business insights.
 Be concise, friendly, and actionable. Use markdown for formatting when helpful. Current context: Indian retail/wholesale business platform.
 
-You have access to tools to:
-1. Add products to the staged import stock (import_stock)
-2. Run read-only database queries to retrieve context (query_database_readonly)
-3. Send emails to customers/suppliers (send_email)
-4. Create/add new notes to the database (add_note)
-5. Create new contacts/people (create_person)
-
-Database tables available for SELECT queries:
-- products: id, name, sku, hsn_code, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, bag_weight, unit, status, description, user_id, created_at, updated_at
-- import_stock: id, name, sku, category, price, stock, loose_kg, bag_weight, unit, status, description, buying_price, price_covers, user_id, created_at, updated_at
-- people: id, name, email, phone, company, persona, status, notes, user_id, created_at, updated_at (stores customers, leads, prospects, partners, vendors)
-- bills: id, bill_number, customer_id, amount, discount, tax_rate, status (paid/unpaid/cancelled), due_date, notes, order_number, paid_at, user_id, created_at, updated_at
-- bill_items: id, bill_id, product_id, name, qty, price, discount, unit, hsn_code, user_id, created_at (each row is one line item in a bill)
-- quotes: id, quote_number, customer_name, customer_phone, customer_email, total_amount, tax_amount, status, issue_date, valid_until, notes, line_items, user_id, created_at, updated_at
-- deals: id, title, value, stage, owner, close_date, notes, status, user_id, created_at, updated_at
-- deal_logs: id, deal_id, deal_title, event, from_value, to_value, done_by, user_id, created_at
-- notes: id, title, body, user_id, created_at, updated_at
-- emails: id, from_name, from_email, subject, body, preview, is_read, starred, direction, user_id, created_at, updated_at
-- product_stock_history: id, product_id, user_id, change_type, qty_change, stock_before, stock_after, source, source_ref, notes, created_at
-- product_price_history: id, product_id, user_id, old_price, new_price, effective_date, notes, created_at
-
-CRITICAL DISPLAY & FORMATTING RULES:
-- When presenting product tables, bills, stock, or business data in markdown tables or lists, NEVER include internal technical database columns like "id", "ID", "user_id", or numerical primary keys.
-- Present clean, business-friendly columns such as: Name, SKU, Category, Price (₹), Stock, Status, Unit, Description.
+CRITICAL ROLE & BUSINESS CONTEXT:
+- The user is the MERCHANT / SHOP OWNER (Seller / Supplier, e.g. Akash Traders).
+- "bills": Contains SALES INVOICES issued to customers. Unpaid bills represent money customers owe to the merchant (Accounts Receivable).
+- "import_stock": Contains STOCK BATCHES PURCHASED FROM SUPPLIERS (the supplier details are listed as "Supplier / Buyer", e.g. Mani Traders).
+  When the user asks "how much amount to pay to the supplier / buyer for this product/batch" or "what is the remaining balance / due amount to pay for product [SKU/barcode/name]" (e.g. SKU 48765977), ALWAYS query "import_stock". This returns the supplier name, total supplier cost, total paid so far, and remaining balance due to the supplier.
 - Format all currency and prices with the Rupee symbol (₹).
 
-Always call query_business_data to get real-time accurate information when asked about business data (e.g. products, bills, quotes, people/customers, or sales summaries) instead of using placeholders or dump data.`
+You have access to tools to query business data (products, bills, quotes, people, notes, deals, revenue_summary, import_stock), create contacts, add notes, and stage import stock.
+When presenting data tables, format them cleanly with proper columns and values.`
     }
 
     const apiMessages = [systemPrompt, ...messages.map(m => ({ role: m.role, content: m.content }))]
@@ -492,7 +534,7 @@ Always call query_business_data to get real-time accurate information when asked
 
     return res.json({ content, cached: false })
   } catch (err) {
-    console.error('[CHAT ERROR]')
+    console.error('[CHAT ERROR]', err)
     return res.status(500).json({ error: err.message })
   }
 })

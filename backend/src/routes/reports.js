@@ -98,15 +98,14 @@ router.get('/top-customers', async (req, res) => {
     if (cached) return res.json(cached)
 
     const { rows } = await query(
-      `SELECT COALESCE(NULLIF(TRIM(c.name), ''), NULLIF(TRIM(cust.name), ''), 'Walking Customer') AS name, 
-              MAX(COALESCE(c.email, cust.email, '—')) AS email, 
+      `SELECT COALESCE(NULLIF(TRIM(c.name), ''), 'Walking Customer') AS name, 
+              MAX(COALESCE(c.email, '—')) AS email, 
               COUNT(DISTINCT b.id) AS orders, 
               COALESCE(SUM(b.amount), 0) AS total_spent
        FROM bills b
        LEFT JOIN people c ON b.customer_id = c.id
-       LEFT JOIN customers cust ON b.customer_id = cust.id
        WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
-       GROUP BY COALESCE(NULLIF(TRIM(c.name), ''), NULLIF(TRIM(cust.name), ''), 'Walking Customer')
+       GROUP BY COALESCE(NULLIF(TRIM(c.name), ''), 'Walking Customer')
        ORDER BY total_spent DESC LIMIT 15`,
       [userId]
     )
@@ -297,7 +296,6 @@ async function queryBarData({ timeConfig, series, customerCondition, statusCondi
     ? `JOIN bill_items bi ON bi.bill_id = b.id
        LEFT JOIN products p ON bi.product_id = p.id
        LEFT JOIN people c ON b.customer_id = c.id
-       LEFT JOIN customers cust ON b.customer_id = cust.id
        LEFT JOIN (SELECT bill_id, NULLIF(SUM(quantity * price), 0) as subtotal FROM bill_items GROUP BY bill_id) bt ON bt.bill_id = b.id`
     : `JOIN bill_items bi ON bi.bill_id = b.id
        LEFT JOIN products p ON bi.product_id = p.id
@@ -389,7 +387,6 @@ async function queryDonutData({ dateCondition, customerCondition, statusConditio
     ? `JOIN bill_items bi ON bi.bill_id = b.id
        LEFT JOIN products p ON bi.product_id = p.id
        LEFT JOIN people c ON b.customer_id = c.id
-       LEFT JOIN customers cust ON b.customer_id = cust.id
        LEFT JOIN (SELECT bill_id, NULLIF(SUM(quantity * price), 0) as subtotal FROM bill_items GROUP BY bill_id) bt ON bt.bill_id = b.id`
     : `JOIN bill_items bi ON bi.bill_id = b.id
        LEFT JOIN products p ON bi.product_id = p.id
@@ -558,10 +555,10 @@ function buildCategoryBreakdownFilters(userId, category, customerFilter, product
   let customerCondition = ''
   if (customerFilter && customerFilter !== 'All Customers') {
     if (customerFilter.toLowerCase().includes('walk') || customerFilter.toLowerCase().includes('general')) {
-      customerCondition = `AND (b.customer_id IS NULL OR c.name ILIKE '%walk%' OR cust.name ILIKE '%walk%' OR c.name IS NULL)`
+      customerCondition = `AND (b.customer_id IS NULL OR c.name ILIKE '%walk%' OR c.name IS NULL)`
     } else {
       params.push(customerFilter)
-      customerCondition = `AND (c.name = $${params.length} OR c.name ILIKE $${params.length} OR cust.name = $${params.length} OR cust.name ILIKE $${params.length})`
+      customerCondition = `AND (c.name = $${params.length} OR c.name ILIKE $${params.length})`
     }
   }
 
@@ -588,7 +585,6 @@ function getCategoryBarQuery(groupBy, dateCondition, customerCondition, prodFilt
       JOIN bill_items bi ON bi.bill_id = b.id
       JOIN products p ON bi.product_id = p.id
       LEFT JOIN people c ON b.customer_id = c.id
-      LEFT JOIN customers cust ON b.customer_id = cust.id
       LEFT JOIN (SELECT bill_id, NULLIF(SUM(quantity * price), 0) as subtotal FROM bill_items GROUP BY bill_id) bt ON bt.bill_id = b.id
       WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
         AND COALESCE(NULLIF(TRIM(p.category), ''), 'Others') ILIKE $2
@@ -609,7 +605,6 @@ function getCategoryBarQuery(groupBy, dateCondition, customerCondition, prodFilt
     JOIN bill_items bi ON bi.bill_id = b.id
     JOIN products p ON bi.product_id = p.id
     LEFT JOIN people c ON b.customer_id = c.id
-    LEFT JOIN customers cust ON b.customer_id = cust.id
     LEFT JOIN (SELECT bill_id, NULLIF(SUM(quantity * price), 0) as subtotal FROM bill_items GROUP BY bill_id) bt ON bt.bill_id = b.id
     WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
       AND COALESCE(NULLIF(TRIM(p.category), ''), 'Others') ILIKE $2
@@ -691,7 +686,6 @@ async function queryCategoryDonutData({ params, dateCondition, customerCondition
     JOIN bill_items bi ON bi.bill_id = b.id
     JOIN products p ON bi.product_id = p.id
     LEFT JOIN people c ON b.customer_id = c.id
-    LEFT JOIN customers cust ON b.customer_id = cust.id
     LEFT JOIN (SELECT bill_id, NULLIF(SUM(quantity * price), 0) as subtotal FROM bill_items GROUP BY bill_id) bt ON bt.bill_id = b.id
     WHERE (b.user_id::text = $1::text OR b.user_id = 'default-user' OR $1 = 'default-user')
       AND COALESCE(NULLIF(TRIM(p.category), ''), 'Others') ILIKE $2

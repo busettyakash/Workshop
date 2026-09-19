@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import dotenv from 'dotenv'
+// Workshop Backend Server
 dotenv.config()
 if (fs.existsSync('.env.local')) {
   dotenv.config({ path: '.env.local', override: true })
@@ -46,7 +47,6 @@ import cors from 'cors'
 import authRoutes from './routes/auth.js'
 import productRoutes from './routes/products.js'
 import billingRoutes from './routes/billing.js'
-import customerRoutes from './routes/customers.js'
 import reportRoutes from './routes/reports.js'
 import workflowRoutes from './routes/workflows.js'
 import chatRoutes from './routes/chat.js'
@@ -87,9 +87,49 @@ if (!process.env.VERCEL) {
 
 import zlib from 'node:zlib'
 
+const allowedOriginsList = [
+  process.env.FRONTEND_URL,
+  ...(process.env.ALLOWED_ORIGINS || '').split(','),
+]
+  .filter(Boolean)
+  .map(o => o.trim().toLowerCase())
+
 /* ── Middleware ── */
 app.use(cors({
-  origin: (origin, callback) => callback(null, true),
+  origin: (origin, callback) => {
+    // Allow non-browser / server-to-server requests (no origin header)
+    if (!origin) return callback(null, true)
+
+    const lowerOrigin = origin.toLowerCase()
+    if (allowedOriginsList.includes(lowerOrigin)) {
+      return callback(null, true)
+    }
+
+    try {
+      const parsed = new URL(origin)
+
+      // 1. Allow local development (any port)
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+      ) {
+        return callback(null, true)
+      }
+
+      // 2. Allow Vercel preview & production deployments (*.vercel.app)
+      if (parsed.hostname.endsWith('.vercel.app')) {
+        return callback(null, true)
+      }
+    } catch {}
+
+    // 3. Fallback: If no explicit origins are configured yet, allow with a warning
+    // to ensure preview/production never breaks unintentionally
+    if (allowedOriginsList.length === 0) {
+      return callback(null, true)
+    }
+
+    return callback(null, false)
+  },
   credentials: true,
 }))
 app.use(express.json({
@@ -170,7 +210,6 @@ app.get('/api/metrics', (_req, res) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/products', productRoutes)
 app.use('/api/billing', billingRoutes)
-app.use('/api/customers', customerRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/workflows', workflowRoutes)
 app.use('/api/chat', chatRoutes)

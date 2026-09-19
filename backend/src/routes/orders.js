@@ -3,10 +3,19 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
+import redis from '../lib/redis.js'
+import { getCached, setCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(apiLimiter)
 router.use(requireAuth)
+
+export function clearOrdersCache(userId) {
+  try {
+    clearMemoryCachePrefix(`orders:${userId}:`)
+    deleteCachedPattern(redis, `orders:${userId}:*`).catch(() => {})
+  } catch (_e) {}
+}
 
 let ensureOrdersSchemaPromise
 
@@ -105,7 +114,18 @@ async function fetchOrdersWithOffset(res, { conditions, params, page, limit, off
 router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { page, limit, offset, cursor } = parsePaginationParams(req.query, 20)
-  const { search } = req.query
+  const { search, _t } = req.query
+
+  const canCache = !search && !cursor && page === 1 && !_t
+  const cacheKey = canCache ? `orders:${userId}:list:${limit}` : null
+
+  if (cacheKey) {
+    const cached = await getCached(redis, cacheKey, 60)
+    if (cached) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+      return res.json(cached)
+    }
+  }
 
   const params = [userId]
   const conditions = []
@@ -124,7 +144,28 @@ router.get('/', async (req, res) => {
     if (cursor?.created_at && cursor?.id) {
       return await fetchOrdersWithCursor(res, { conditions, params, limit, cursor })
     }
-    return await fetchOrdersWithOffset(res, { conditions, params, page, limit, offset })
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+    const countRes = await query(`SELECT COUNT(*) FROM (${ordersUnion(where)}) counted_orders`, params)
+    const total = Number.parseInt(countRes.rows[0].count, 10) || 0
+    const totalPages = Math.ceil(total / limit) || 1
+
+    params.push(limit, offset)
+    const { rows } = await query(
+      `${ordersUnion(where)} ORDER BY created_at DESC, id DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    )
+
+    const hasNextPage = page < totalPages
+    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+    const nextCursor = (hasNextPage && lastRow)
+      ? encodeCursor({ created_at: lastRow.created_at, id: lastRow.id })
+      : null
+
+    const result = { data: rows, total, page, limit, totalPages, hasNextPage, nextCursor }
+    if (cacheKey) setCached(redis, cacheKey, result, 60)
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+    return res.json(result)
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
@@ -132,13 +173,24 @@ router.get('/', async (req, res) => {
 
 /* GET /api/orders/summary */
 router.get('/summary', async (req, res) => {
+  const userId = req.workspaceId
+  const { _t } = req.query
+  const cacheKey = !_t ? `orders:${userId}:summary` : null
+
   try {
+    if (cacheKey) {
+      const cached = await getCached(redis, cacheKey, 60)
+      if (cached) return res.json(cached)
+    }
+
     const { rows } = await query(
       `SELECT status, COUNT(*) AS count, COALESCE(SUM(total_amount), 0) AS total
        FROM (${ordersUnion()}) order_summary
        GROUP BY status`,
-      [req.workspaceId]
+      [userId]
     )
+
+    if (cacheKey) setCached(redis, cacheKey, rows, 60)
     res.json(rows)
   } catch (err) {
     console.error('[Orders Summary Error]', err)
@@ -148,12 +200,19 @@ router.get('/summary', async (req, res) => {
 
 /* GET /api/orders/:id */
 router.get('/:id', async (req, res) => {
-  const params = [req.workspaceId, req.params.id]
-  const conditions = ['id::text = $2::text']
-
+  const userId = req.workspaceId
+  const cacheKey = `orders:${userId}:item:${req.params.id}`
   try {
+    const cached = await getCached(redis, cacheKey, 120)
+    if (cached) return res.json(cached)
+
+    const params = [userId, req.params.id]
+    const conditions = ['id::text = $2::text']
+
     const { rows } = await query(ordersUnion(`WHERE ${conditions.join(' AND ')}`), params)
     if (!rows.length) return res.status(404).json({ error: 'Order not found' })
+
+    setCached(redis, cacheKey, rows[0], 120)
     res.json(rows[0])
   } catch (err) {
     console.error('[Order GET Error]', err)

@@ -80,7 +80,7 @@ export default function People() {
   const fetchPeople = async (currentPage = page) => {
     setLoading(true)
     try {
-      const res = await api.get(`/people?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}&persona=${filterPersona}&status=${filterStatus}`)
+      const res = await api.get(`/people?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}&persona=${filterPersona}&status=${filterStatus}&_t=${Date.now()}`)
       setPeople(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch {

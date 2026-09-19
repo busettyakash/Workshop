@@ -467,26 +467,6 @@ router.get('/', apiLimiter, async (req, res) => {
   }
 })
 
-/* ── GET /api/quotes/:id ── */
-router.get('/:id', apiLimiter, async (req, res) => {
-  res.set('Cache-Control', 'no-store')
-  try {
-    const userId = getUserId(req)
-    const { id } = req.params
-    const { rows } = await pool.query(
-      `SELECT * FROM quotes 
-       WHERE (id::text = $1 OR quote_number = $1)
-         AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user')
-       LIMIT 1`,
-      [id, userId]
-    )
-    if (!rows.length) return res.status(404).json({ error: 'Quote not found' })
-    res.json(rows[0])
-  } catch (err) {
-    console.error('[Quote GET :id Error]', err)
-    res.status(500).json({ error: 'Failed to fetch quote' })
-  }
-})
 
 
 function resolveQuoteStatusLabel(quote, isAcc, isDec) {
@@ -1296,6 +1276,28 @@ async function handleQuoteUpdateAccepted(updatedQuote, userId) {
 
   await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
 }
+ 
+/* ── GET /api/quotes/:id ── */
+router.get('/:id', apiLimiter, async (req, res, next) => {
+  if (req.params.id === 'respond') return next()
+  res.set('Cache-Control', 'no-store')
+  try {
+    const userId = getUserId(req)
+    const { id } = req.params
+    const { rows } = await pool.query(
+      `SELECT * FROM quotes 
+       WHERE (id::text = $1 OR quote_number = $1)
+         AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user')
+       LIMIT 1`,
+      [id, userId]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Quote not found' })
+    res.json(rows[0])
+  } catch (err) {
+    console.error('[Quote GET :id Error]', err)
+    res.status(500).json({ error: 'Failed to fetch quote' })
+  }
+})
 
 /* ── PUT /api/quotes/:id ── */
 router.put('/:id', apiLimiter, async (req, res) => {

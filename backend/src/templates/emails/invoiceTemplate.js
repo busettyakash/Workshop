@@ -18,14 +18,17 @@ function formatRateSubtext(hasBenchmark, rate, bw, uomShort, displayUnit) {
   if (!hasBenchmark) return ''
   const formattedRate = rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const bwPrefix = bw > 1 ? `${bw}${uomShort} ` : ''
-  const unitLabel = escapeHtml(displayUnit || 'Bag')
+  const unitLabel = escapeHtml(String(displayUnit || 'Bag').replace(/s$/, ''))
   return `<div style="font-size:9.5px; color:#0d9488; font-weight:600;">(₹${formattedRate} / ${bwPrefix}${unitLabel})</div>`
 }
 
 function normalizeUnitRaw(rawUnit) {
   let uRaw = String(rawUnit || '').trim()
+  const lower = uRaw.toLowerCase()
+  if (lower.includes('bag')) return 'bag'
+  if (lower.includes('box') || lower.includes('carton')) return 'box'
+  if (lower.includes('pack') || lower.includes('pkt')) return 'pack'
   if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
-    const lower = uRaw.toLowerCase()
     if (lower.includes('/ltr') || lower.includes('ltr')) return 'ltrs'
     if (lower.includes('/kg') || lower.includes('kg')) return 'kgs'
     if (lower.includes('/mtr') || lower.includes('mtr')) return 'mtrs'
@@ -63,12 +66,15 @@ function resolveVolumeUnit(u, qty, bw) {
   return null
 }
 
-function resolveWeightUnit(u, qty, bw, isQuoteFlow) {
-  if (['bag', 'bags'].includes(u) || (isQuoteFlow && ['kgs', 'kg', 'kilogram', 'kilograms'].includes(u))) {
-    return { displayQty: qty, displayUnit: 'Bag', subtext: bw > 1 ? `${bw}kg Bag` : 'Bag' }
-  }
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'kgs', subtext: bw > 1 ? `${bw}kg Bag` : 'kgs' }
+function resolveWeightUnit(u, qty, bw, isQuoteFlow = false) {
+  if (['bag', 'bags', 'kgs', 'kg', 'kilogram', 'kilograms'].includes(u) || bw > 1) {
+    if (isQuoteFlow) {
+      const bagUnit = Number.parseFloat(qty) === 1 ? 'Bag' : 'Bags'
+      const sub = bw > 1 ? `Bag (${bw}kg)` : 'Bag'
+      return { displayQty: qty, displayUnit: bagUnit, subtext: sub }
+    }
+    const sub = bw > 1 ? `Bag (${bw}kg)` : 'kgs'
+    return { displayQty: qty, displayUnit: 'kgs', subtext: sub }
   }
   return null
 }
@@ -269,7 +275,15 @@ export const getInvoiceEmailTemplate = ({ quote, bill, billItems = [], shop = {}
   const totalAmount = Number.parseFloat(bill?.amount || bill?.total_amount || quote?.total_amount || 0)
   const taxAmt = Number.parseFloat(quote?.tax_amount || 0)
 
-  const isQuoteFlow = Boolean(quote && (quote.quote_number || quote.id || !bill))
+  const notesStr = String(quote?.notes || bill?.notes || '')
+  const isQuoteFlow = Boolean(
+    (quote && (quote.quote_number || quote.id || !bill)) ||
+    bill?.quote_number ||
+    bill?.quote_id ||
+    /quotation|QT-[A-Z0-9]+/i.test(notesStr) ||
+    (bill?.order_number && /^ORD-/i.test(String(bill.order_number))) ||
+    (quote?.order_number && /^ORD-/i.test(String(quote.order_number)))
+  )
 
   const items = (billItems && billItems.length > 0) ? billItems : (quote?.line_items || [])
   let itemsList = []

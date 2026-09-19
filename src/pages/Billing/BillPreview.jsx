@@ -38,16 +38,23 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
 
   let uRaw = String(rawUnit || '').trim()
 
-  if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
-    if (uRaw.toLowerCase().includes('/ltr') || uRaw.toLowerCase().includes('ltr')) {
+  const lower = uRaw.toLowerCase()
+  if (lower.includes('bag')) {
+    uRaw = 'bag'
+  } else if (lower.includes('box') || lower.includes('carton')) {
+    uRaw = 'box'
+  } else if (lower.includes('pack') || lower.includes('pkt')) {
+    uRaw = 'pack'
+  } else if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
+    if (lower.includes('/ltr') || lower.includes('ltr')) {
       uRaw = 'ltrs'
-    } else if (uRaw.toLowerCase().includes('/kg') || uRaw.toLowerCase().includes('kg')) {
+    } else if (lower.includes('/kg') || lower.includes('kg')) {
       uRaw = 'kgs'
-    } else if (uRaw.toLowerCase().includes('/mtr') || uRaw.toLowerCase().includes('mtr')) {
+    } else if (lower.includes('/mtr') || lower.includes('mtr')) {
       uRaw = 'mtrs'
-    } else if (uRaw.toLowerCase().includes('/box') || uRaw.toLowerCase().includes('box')) {
+    } else if (lower.includes('/box') || lower.includes('box')) {
       uRaw = 'box'
-    } else if (uRaw.toLowerCase().includes('/pc') || uRaw.toLowerCase().includes('pc')) {
+    } else if (lower.includes('/pc') || lower.includes('pc')) {
       uRaw = 'pcs'
     } else {
       uRaw = uRaw.split(':')[0].trim()
@@ -98,12 +105,14 @@ function resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName = '', isQu
   }
 
   // 5. Weight / Kilograms / Bags
-  if (['bag', 'bags'].includes(u) || (isQuoteFlow && ['kgs', 'kg', 'kilogram', 'kilograms'].includes(u))) {
-    const sub = bw > 1 ? `${bw}kg Bag` : 'Bag'
-    return { displayQty: qty, displayUnit: 'Bag', subtext: sub }
-  }
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'kgs', subtext: bw > 1 ? `${bw}kg Bag` : 'kgs' }
+  if (['bag', 'bags', 'kgs', 'kg', 'kilogram', 'kilograms'].includes(u) || bw > 1) {
+    if (isQuoteFlow) {
+      const bagUnit = Number.parseFloat(qty) === 1 ? 'Bag' : 'Bags'
+      const sub = bw > 1 ? `Bag (${bw}kg)` : 'Bag'
+      return { displayQty: qty, displayUnit: bagUnit, subtext: sub }
+    }
+    const sub = bw > 1 ? `Bag (${bw}kg)` : 'kgs'
+    return { displayQty: qty, displayUnit: 'kgs', subtext: sub }
   }
 
   const fallbackUnit = uRaw || dbUnitStr || 'unit'
@@ -114,7 +123,19 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
   const printRef = useRef(null)
 
   const doc = bill || quote || {}
-  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill && Boolean(quote || doc.quote_number)) || Boolean(doc.quote_number || doc.quote_id)
+  const notesStr = String(doc.notes || bill?.notes || quote?.notes || '')
+  const hasQuoteRef = Boolean(
+    doc.quote_number ||
+    bill?.quote_number ||
+    quote?.quote_number ||
+    doc.quote_id ||
+    bill?.quote_id ||
+    quote?.quote_id ||
+    /quotation|QT-[A-Z0-9]+/i.test(notesStr) ||
+    (doc.order_number && /^ORD-/i.test(String(doc.order_number)))
+  )
+  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill && Boolean(quote || hasQuoteRef)) || (!bill?.id && hasQuoteRef)
+  const isQuoteFlow = type === 'quotation' || hasQuoteRef
 
   const [profile] = useState({
     shopName: shopName || doc.shop_name || '',
@@ -467,7 +488,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                       }
                     }
 
-                    const { displayQty, displayUnit, subtext } = resolvePackDisplay(unitRaw, qty, bagWeight, dbProd?.unit, prodName, isQuote)
+                    const { displayQty, displayUnit, subtext } = resolvePackDisplay(unitRaw, qty, bagWeight, dbProd?.unit, prodName, isQuoteFlow)
                     const bulkUnit = getBulkUnitDetails(dbProd?.unit || unitRaw)
                     let uomShort = (bulkUnit?.short || dbProd?.unit || unitRaw || '').toLowerCase().replace(/s$/, '')
                     if (!uomShort || ['bag', 'pack', 'box', 'unit'].includes(uomShort)) {
@@ -529,7 +550,7 @@ export default function BillPreview({ bill, quote, type, shopName, shopGstin, sh
                             )}
                             {hasBenchmark && (
                               <span style={{ fontSize: 9, color: '#0d9488', fontWeight: 600 }}>
-                                ({INR(price)} / {bw > 1 ? `${bw}${uomShort} ` : ''}{displayUnit || 'Bag'})
+                                ({INR(price)} / {bw > 1 ? `${bw}${uomShort} ` : ''}{String(displayUnit || 'Bag').replace(/s$/, '')})
                               </span>
                             )}
                           </div>

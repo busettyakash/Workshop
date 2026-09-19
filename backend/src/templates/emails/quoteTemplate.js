@@ -18,7 +18,7 @@ function formatRateSubtext(hasBenchmark, rate, bw, uomShort, displayUnit) {
   if (!hasBenchmark) return ''
   const formattedRate = rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const bwPrefix = bw > 1 ? `${bw}${uomShort} ` : ''
-  const unitLabel = escapeHtml(displayUnit || 'Bag')
+  const unitLabel = escapeHtml(String(displayUnit || 'Bag').replace(/s$/, ''))
   return `<div style="font-size:9.5px; color:#0d9488; font-weight:600;">(₹${formattedRate} / ${bwPrefix}${unitLabel})</div>`
 }
 
@@ -37,8 +37,11 @@ function getExplicitLineDiscount(li) {
 
 function normalizeUnitRaw(rawUnit) {
   let uRaw = String(rawUnit || '').trim()
+  const lower = uRaw.toLowerCase()
+  if (lower.includes('bag')) return 'bag'
+  if (lower.includes('box') || lower.includes('carton')) return 'box'
+  if (lower.includes('pack') || lower.includes('pkt')) return 'pack'
   if (uRaw.includes(':') || uRaw.includes('₹') || uRaw.includes('/')) {
-    const lower = uRaw.toLowerCase()
     if (lower.includes('/ltr') || lower.includes('ltr')) return 'ltrs'
     if (lower.includes('/kg') || lower.includes('kg')) return 'kgs'
     if (lower.includes('/mtr') || lower.includes('mtr')) return 'mtrs'
@@ -77,9 +80,14 @@ function resolveVolumeUnit(u, qty, bw) {
 }
 
 function resolveWeightUnit(u, qty, bw) {
-  if (['bag', 'bags', 'kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
-    const sub = bw > 1 ? `${bw}kg Bag` : 'Bag'
-    return { displayQty: qty, displayUnit: 'Bag', subtext: sub }
+  const isBag = ['bag', 'bags'].includes(u) || bw > 1
+  if (isBag) {
+    const bagUnit = Number.parseFloat(qty) === 1 ? 'Bag' : 'Bags'
+    const sub = bw > 1 ? `Bag (${bw}kg)` : 'Bag'
+    return { displayQty: qty, displayUnit: bagUnit, subtext: sub }
+  }
+  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
+    return { displayQty: qty, displayUnit: 'kgs', subtext: 'kgs' }
   }
   return null
 }

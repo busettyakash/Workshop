@@ -39,7 +39,8 @@ function escapeHtml(str) {
 function formatPdfRateSubtext(hasBenchmark, price, bagWeight, uomShort, displayUnit = 'Bag') {
   if (!hasBenchmark) return ''
   const bwPrefix = bagWeight > 1 ? `${bagWeight}${uomShort} ` : ''
-  return `<div style="font-size:9px;color:#0d9488;font-weight:600;">(${INR(price)} / ${bwPrefix}${displayUnit})</div>`
+  const unitLabel = String(displayUnit || 'Bag').replace(/s$/, '')
+  return `<div style="font-size:9px;color:#0d9488;font-weight:600;">(${INR(price)} / ${bwPrefix}${unitLabel})</div>`
 }
 
 function parseItems(items) {
@@ -85,8 +86,11 @@ function inferBagWeight(bw, pNameLower) {
 
 function cleanUnitStr(rawUnit) {
   let uClean = String(rawUnit || '').trim()
+  const lower = uClean.toLowerCase()
+  if (lower.includes('bag')) return 'bag'
+  if (lower.includes('box') || lower.includes('carton')) return 'box'
+  if (lower.includes('pack') || lower.includes('pkt')) return 'pack'
   if (uClean.includes(':') || uClean.includes('₹') || uClean.includes('/')) {
-    const lower = uClean.toLowerCase()
     if (lower.includes('/ltr') || lower.includes('ltr')) return 'ltrs'
     if (lower.includes('/kg') || lower.includes('kg')) return 'kgs'
     if (lower.includes('/mtr') || lower.includes('mtr')) return 'mtrs'
@@ -137,12 +141,15 @@ function resolveVolumeUnit(u, qty, bw) {
   return null
 }
 
-function resolveWeightUnit(u, qty, bw, isQuote) {
-  if (['bag', 'bags'].includes(u) || (isQuote && ['kgs', 'kg', 'kilogram', 'kilograms'].includes(u))) {
-    return { displayQty: qty, displayUnit: 'Bag', subtext: bw > 1 ? `${bw}kg Bag` : 'Bag' }
-  }
-  if (['kgs', 'kg', 'kilogram', 'kilograms'].includes(u)) {
-    return { displayQty: qty, displayUnit: 'kgs', subtext: bw > 1 ? `${bw}kg Bag` : 'kgs' }
+function resolveWeightUnit(u, qty, bw, isQuote = false) {
+  if (['bag', 'bags', 'kgs', 'kg', 'kilogram', 'kilograms'].includes(u) || bw > 1) {
+    if (isQuote) {
+      const bagUnit = Number.parseFloat(qty) === 1 ? 'Bag' : 'Bags'
+      const sub = bw > 1 ? `Bag (${bw}kg)` : 'Bag'
+      return { displayQty: qty, displayUnit: bagUnit, subtext: sub }
+    }
+    const sub = bw > 1 ? `Bag (${bw}kg)` : 'kgs'
+    return { displayQty: qty, displayUnit: 'kgs', subtext: sub }
   }
   return null
 }
@@ -372,7 +379,18 @@ function renderInvoiceItemRow(li, i, { items, grossSubtotal, lineDiscounts, tota
 // HTML Builder  (mirrors BillPreview.jsx exactly)
 // ─────────────────────────────────────────────
 function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {}, type = '' } = {}) {
-  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number)) || Boolean(quote.quote_number || bill.quote_number || quote.quote_id || bill.quote_id)
+  const notesStr = String(quote.notes || bill.notes || '')
+  const hasQuoteRef = Boolean(
+    type === 'quotation' ||
+    quote.quote_number ||
+    bill.quote_number ||
+    quote.quote_id ||
+    bill.quote_id ||
+    /quotation|QT-[A-Z0-9]+/i.test(notesStr) ||
+    (bill.order_number && /^ORD-/i.test(String(bill.order_number))) ||
+    (quote.order_number && /^ORD-/i.test(String(quote.order_number)))
+  )
+  const isQuote = type === 'quotation' || (type !== 'invoice' && !bill.bill_number && !bill.id && Boolean(quote.id || quote.quote_number)) || (!bill.id && hasQuoteRef)
   const rawDocId = resolveDocumentNumber({ quote, bill, isQuote })
   const docId = escapeHtml(rawDocId)
 
@@ -421,7 +439,7 @@ function buildInvoiceHtml({ quote = {}, bill = {}, billItems = [], shop = {}, ca
         lineDiscounts,
         totalDiscount,
         catalogMap,
-        isQuote,
+        isQuote: hasQuoteRef,
         halfTaxRate,
         taxAmt
       })).join('')
@@ -730,7 +748,7 @@ function formatPdfKitINR(v) {
 // ─────────────────────────────────────────────
 // PDFKit Template Matching Screenshot Exactly
 // ─────────────────────────────────────────────
-export async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, type = '' } = {}) {
+export async function generatePdfKitFallback({ quote = {}, bill = {}, billItems = [], shop = {}, catalogMap = {}, type = '' } = {}) {
   return new Promise((resolve) => {
     try {
       const doc = new PDFDocument({ margin: 30, size: 'A4', bufferPages: true })
@@ -738,7 +756,19 @@ export async function generatePdfKitFallback({ quote = {}, bill = {}, billItems 
       doc.on('data', chunk => chunks.push(chunk))
       doc.on('end', () => resolve(Buffer.concat(chunks)))
 
-      const isQuote = type === 'quote' || (!bill?.id && quote?.quote_number)
+      const notesStr = String(quote.notes || bill.notes || '')
+      const hasQuoteRef = Boolean(
+        type === 'quote' ||
+        type === 'quotation' ||
+        quote.quote_number ||
+        bill.quote_number ||
+        quote.quote_id ||
+        bill.quote_id ||
+        /quotation|QT-[A-Z0-9]+/i.test(notesStr) ||
+        (bill.order_number && /^ORD-/i.test(String(bill.order_number))) ||
+        (quote.order_number && /^ORD-/i.test(String(quote.order_number)))
+      )
+      const isQuote = type === 'quote' || type === 'quotation' || (!bill?.id && quote?.quote_number)
       const bannerLabel = isQuote ? 'QUOTATION' : 'TAX INVOICE'
       const docId = isQuote ? (quote.quote_number || 'QT-001') : (bill.bill_number || `INV-${String(bill.id || 1).padStart(6, '0')}`)
       const orderId = quote.order_number || bill.order_number || ''
@@ -938,12 +968,22 @@ export async function generatePdfKitFallback({ quote = {}, bill = {}, billItems 
 
         const name = it.product_name || it.name || 'Item'
         const hsn = it.hsn_code || '70534921'
-        const unit = it.unit || 'Bag'
-        const qty = Number.parseFloat(it.quantity || 1)
+        const qty = Number.parseFloat(it.quantity || it.qty || 1)
         const rate = Number.parseFloat(it.price || it.rate || 0)
         const gross = qty * rate
         const disc = getExplicitLineDiscount(it)
-        const packSubtext = it.subtext || (it.bag_weight ? `${it.bag_weight}kg ${unit}` : '')
+
+        const pId = it.product_id || it.productId || it.id
+        const dbProd = (pId && catalogMap[String(pId)]) || null
+        const bw = Number.parseFloat(it.bag_weight ?? it.bagWeight ?? dbProd?.bag_weight ?? 0)
+        const packInfo = resolvePackDisplay(it.unit || dbProd?.unit, qty, bw, dbProd?.unit, name, hasQuoteRef)
+        let fallbackUnit = 'kgs'
+        if (bw > 1 && hasQuoteRef) {
+          fallbackUnit = qty === 1 ? 'Bag' : 'Bags'
+        }
+        const displayUnit = packInfo.displayUnit || it.unit || fallbackUnit
+        const defaultSubtext = bw > 1 ? `Bag (${bw}kg)` : ''
+        const packSubtext = it.subtext || packInfo.subtext || defaultSubtext
 
         // Col 0: HSN CODE
         doc.fontSize(7.5).fillColor('#334155').font('Helvetica')
@@ -981,7 +1021,7 @@ export async function generatePdfKitFallback({ quote = {}, bill = {}, billItems 
 
         // Col 2: QUANTITY
         doc.fontSize(8).fillColor('#0f172a').font('Helvetica-Bold')
-          .text(`${qty} ${unit}`, tableCols[2].x + tableCols[2].padL, curY + 12, {
+          .text(`${qty} ${displayUnit}`, tableCols[2].x + tableCols[2].padL, curY + 12, {
             width: tableCols[2].width - tableCols[2].padL - tableCols[2].padR,
             align: 'center',
             lineBreak: false

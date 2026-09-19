@@ -10,6 +10,7 @@ import redis from '../lib/redis.js'
 import { getCached, setCached, deleteCachedPattern } from '../lib/fastCache.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 import { executeWorkflowPipeline } from './workflows.js'
+import { clearBillingCache } from './billing.js'
 
 const router = express.Router()
 
@@ -667,6 +668,7 @@ async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
 
     const bill = billRes.rows[0]
     await insertBillItemsForConvertedQuote(bill.id, items)
+    await clearBillingCache(quote.user_id)
 
     await decreaseProductStockForQuote(items, quote.user_id, quote.quote_number || quote.id)
 
@@ -828,6 +830,7 @@ async function convertQuoteToBillRecord(quote, userId) {
 
   const bill = billRes.rows[0]
   const createdItems = await insertBillItemsForConvertedQuote(bill.id, items)
+  await clearBillingCache(userId)
 
   const orderNum = quote.order_number || `ORD-${quote.quote_number ? quote.quote_number.replace(/^QT-?/i, '') : quote.id}`
   await pool.query("UPDATE quotes SET status = 'Accepted', order_number = $1, updated_at = NOW() WHERE id = $2", [orderNum, quote.id])
@@ -1086,6 +1089,7 @@ async function handleQuoteUpdateAccepted(updatedQuote, userId) {
         userId
       ]
     ).catch(() => ({ rows: [] }))
+    await clearBillingCache(userId)
   }
 
   await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')

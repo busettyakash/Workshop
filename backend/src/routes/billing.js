@@ -3,9 +3,24 @@ import crypto from 'node:crypto'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached } from '../lib/fastCache.js'
+import { getCached, setCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
+
+export async function clearBillingCache(userId) {
+  try {
+    clearMemoryCachePrefix('billing:')
+    clearMemoryCachePrefix('reports:')
+    await deleteCachedPattern(redis, 'billing:*')
+    await deleteCachedPattern(redis, 'reports:*')
+    if (userId) {
+      await deleteCachedPattern(redis, `billing:list:${userId}:*`)
+      await deleteCachedPattern(redis, `*${userId}*`)
+    }
+  } catch (err) {
+    console.warn('[Billing Cache Clear Warning]', err.message)
+  }
+}
 
 
 const router = Router()
@@ -201,7 +216,7 @@ router.get('/', async (req, res) => {
   // Cache key — only cache non-search, non-cursor, first-page requests
   const canCache = !search && !cursor && page === 1
   const cacheKey = canCache
-    ? `billing:list:${userId}:${req.query.status || 'all'}:${req.query.month || ''}:${req.query.year || ''}:${sort || ''}:${limit}`
+    ? `billing:list:${userId}:${req.query.status || 'all'}:${req.query.date || ''}:${req.query.month || ''}:${req.query.year || ''}:${req.query.startDate || ''}:${req.query.endDate || ''}:${sort || ''}:${limit}`
     : null
 
   try {
@@ -489,9 +504,8 @@ async function deductStockForBillItems(items, userId, billId) {
     await deductStockForItem(item, userId, billId)
   }
   if (userId) {
-    const keys1 = await redis.keys(`import_stock:${userId}*`).catch(() => [])
-    const keys2 = await redis.keys(`import_stock_note:${userId}*`).catch(() => [])
-    for (const k of [...keys1, ...keys2]) { await redis.del(k).catch(() => { }) }
+    await deleteCachedPattern(redis, `import_stock:${userId}*`)
+    await deleteCachedPattern(redis, `import_stock_note:${userId}*`)
   }
 }
 
@@ -552,10 +566,7 @@ router.post('/', async (req, res) => {
     }
     await deductStockForBillItems(enrichedItems, userId, billRecord?.id)
 
-    try {
-      const keys = await redis.keys(`*${userId}*`).catch(() => [])
-      for (const key of keys) { await redis.del(key).catch(() => { }) }
-    } catch { }
+    await clearBillingCache(userId)
 
     return res.status(201).json(billRecord)
   } catch (err) {
@@ -576,10 +587,7 @@ router.patch('/:id/pay', async (req, res) => {
     )
     if (!rows.length) return res.status(404).json({ error: 'Bill not found' })
 
-    try {
-      const keys = await redis.keys(`*${userId}*`).catch(() => [])
-      for (const key of keys) { await redis.del(key).catch(() => { }) }
-    } catch (_err) { }
+    await clearBillingCache(userId)
 
     res.json(rows[0])
   } catch (err) {
@@ -600,10 +608,7 @@ router.delete('/:id', async (req, res) => {
     const deletedBill = rows[0]
     const invoiceNum = deletedBill.bill_number || `INV-${String(deletedBill.id).padStart(5, '0')}`
 
-    try {
-      const keys = await redis.keys(`*${userId}*`).catch(() => [])
-      for (const key of keys) { await redis.del(key).catch(() => { }) }
-    } catch (_err) { }
+    await clearBillingCache(userId)
 
     res.json({ message: `Bill ${invoiceNum} deleted successfully`, bill_number: invoiceNum, id: deletedBill.id })
   } catch (err) {

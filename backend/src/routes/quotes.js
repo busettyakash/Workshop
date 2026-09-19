@@ -7,7 +7,7 @@ import { getInvoiceEmailTemplate, getQuoteEmailTemplate } from '../utils/emailTe
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
 import { logStockHistory } from './products.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached, deleteCachedPattern } from '../lib/fastCache.js'
+import { deleteCachedPattern } from '../lib/fastCache.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
 import { executeWorkflowPipeline } from './workflows.js'
 import { clearBillingCache } from './billing.js'
@@ -36,7 +36,9 @@ async function initSchema() {
     pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2)`).catch(() => {}),
     pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {}),
     pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {}),
-    pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {})
+    pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {}),
+    pool.query(`CREATE INDEX IF NOT EXISTS idx_quotes_user_created ON quotes (user_id, created_at DESC)`).catch(() => {}),
+    pool.query(`CREATE INDEX IF NOT EXISTS idx_quotes_number ON quotes (quote_number)`).catch(() => {})
   ])
 }
 router.use((_req, _res, next) => {
@@ -44,7 +46,7 @@ router.use((_req, _res, next) => {
   _initSchemaPromise.then(() => next()).catch(next)
 })
 
-const getUserId = (req) => req.headers['x-workspace-id'] || 'default-user'
+const getUserId = (req) => req.workspaceId || req.headers['x-workspace-id'] || req.user?.id || 'default-user'
 
 export async function clearQuoteCache(userId) {
   try {
@@ -412,6 +414,7 @@ const sendInvoiceEmailToCustomer = async (quote, bill, billItems, _orderNumber =
 
 /* ── GET /api/quotes ── */
 router.get('/', apiLimiter, async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   try {
     const userId = getUserId(req)
     const page = Number.parseInt(req.query.page, 10) || 1
@@ -419,10 +422,6 @@ router.get('/', apiLimiter, async (req, res) => {
     const offset = (page - 1) * limit
     const search = req.query.search || ''
     const status = req.query.status || ''
-
-    const cacheKey = `quotes:${userId}:${page}:${limit}:${search}:${status}`
-    const cached = await getCached(redis, cacheKey, 200)
-    if (cached) return res.json(cached)
 
     let countQuery = "SELECT COUNT(*) FROM quotes WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user')"
     let dataQuery = "SELECT * FROM quotes WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user')"
@@ -461,11 +460,31 @@ router.get('/', apiLimiter, async (req, res) => {
       totalPages: Math.ceil(total / limit) || 1
     }
 
-    setCached(redis, cacheKey, payload, 45)
     res.json(payload)
   } catch (err) {
     console.error('[Quotes GET Error]', err)
     res.status(500).json({ error: 'Failed to fetch quotes' })
+  }
+})
+
+/* ── GET /api/quotes/:id ── */
+router.get('/:id', apiLimiter, async (req, res) => {
+  res.set('Cache-Control', 'no-store')
+  try {
+    const userId = getUserId(req)
+    const { id } = req.params
+    const { rows } = await pool.query(
+      `SELECT * FROM quotes 
+       WHERE (id::text = $1 OR quote_number = $1)
+         AND (user_id::text = $2::text OR user_id = 'default-user' OR $2 = 'default-user')
+       LIMIT 1`,
+      [id, userId]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Quote not found' })
+    res.json(rows[0])
+  } catch (err) {
+    console.error('[Quote GET :id Error]', err)
+    res.status(500).json({ error: 'Failed to fetch quote' })
   }
 })
 
@@ -902,6 +921,7 @@ export function computeQuoteToken(quoteId, createdAt = '') {
 
 /* ── PUBLIC RESPONSE ENDPOINT: GET /api/quotes/respond ── */
 router.get('/respond', emailLimiter, async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   try {
     const { id, action, token } = req.query
     if (!id || !['Accepted', 'Declined'].includes(action)) {

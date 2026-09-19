@@ -5,7 +5,7 @@ import { sendEmail } from '../lib/smtp.js'
 import { syncGmailInbox } from '../lib/imap.js'
 import redis from '../lib/redis.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
-import { getCached, setCached, deleteMemoryCache } from '../lib/fastCache.js'
+import { deleteMemoryCache } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(apiLimiter)
@@ -157,6 +157,7 @@ const cleanupInbox = async (userId) => {
 
 /* GET /api/emails */
 router.get('/', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   const userId = req.workspaceId
   const { search, direction = 'inbox' } = req.query
 
@@ -174,23 +175,12 @@ router.get('/', async (req, res) => {
     where += ` AND (from_name ILIKE $${idx} OR from_email ILIKE $${idx} OR subject ILIKE $${idx} OR body ILIKE $${idx})`
   }
 
-  const cacheKey = `emails:${userId}:${direction}:${search || ''}`
-  try {
-    const cached = await getCached(redis, cacheKey, 100)
-    if (cached) {
-      return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
-    }
-  } catch (cErr) {
-    console.error('[Emails Cache Read Error]', cErr.message)
-  }
-
   try {
     const { rows } = await query(
       `SELECT * FROM emails ${where} ORDER BY created_at DESC`,
       params
     )
     const resultPayload = { data: rows, total: rows.length }
-    setCached(redis, cacheKey, resultPayload, 300)
     res.json(resultPayload)
   } catch (err) {
     res.status(500).json({ error: err.message })

@@ -3,7 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
 import redis from '../lib/redis.js'
-import { getCached, setCached, deleteMemoryCache } from '../lib/fastCache.js'
+import { deleteMemoryCache } from '../lib/fastCache.js'
 import { verifyQStashSignature, setLocalStepRunner } from '../lib/qstash.js'
 import { sendEmail } from '../lib/smtp.js'
 import { generateInvoicePdfBuffer } from '../utils/generateInvoicePdf.js'
@@ -707,15 +707,8 @@ try {
 
 /* GET /api/workflows */
 router.get('/', async (req, res) => {
-  const cacheKey = `workflows:list:${req.workspaceId}`
+  res.set('Cache-Control', 'no-store')
   try {
-    const cached = await getCached(redis, cacheKey, 100)
-    if (cached) {
-      try {
-        const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached
-        if (Array.isArray(parsed) && parsed.length > 0) return res.json(parsed)
-      } catch { /* ignore parse error and fetch fresh */ }
-    }
 
     const { rows } = await query(
       `SELECT w.*, 
@@ -789,9 +782,6 @@ router.get('/', async (req, res) => {
         [req.workspaceId, primaryLiveId]
       ).catch(() => {})
     }
-
-    // Cache for fast access (TTL: 60 seconds)
-    setCached(redis, cacheKey, resultRows, 60)
 
     res.json(resultRows)
   } catch (err) {

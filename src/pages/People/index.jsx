@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
@@ -35,6 +35,7 @@ export default function People() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [showFilterBar, setShowFilterBar] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
+  const fetchRequestRef = useRef(0)
 
   const isAllSelected = people.length > 0 && selectedIds.length === people.length
   const handleSelectAll = (e) => {
@@ -78,15 +79,19 @@ export default function People() {
   }, [dispatch, page, search, sort, filterPersona, filterStatus, location.key, canRead])
 
   const fetchPeople = async (currentPage = page) => {
+    const requestId = fetchRequestRef.current + 1
+    fetchRequestRef.current = requestId
     setLoading(true)
     try {
       const res = await api.get(`/people?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}&persona=${filterPersona}&status=${filterStatus}&_t=${Date.now()}`)
+      if (requestId !== fetchRequestRef.current) return
       setPeople(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch {
+      if (requestId !== fetchRequestRef.current) return
       dispatch(addToast({ message: 'Failed to load people', type: 'error' }))
     } finally {
-      setLoading(false)
+      if (requestId === fetchRequestRef.current) setLoading(false)
     }
   }
 

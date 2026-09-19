@@ -640,6 +640,7 @@ export default function Products() {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterStatus, setFilterStatus] = useState('active') // default active
   const [showFilterBar, setShowFilterBar] = useState(false)
+  const fetchRequestRef = useRef(0)
 
   const totalPages = Math.ceil(total / limit) || 1
   const getPageNumbers = () => {
@@ -659,16 +660,20 @@ export default function Products() {
   }
 
   const fetchProducts = async (currentPage = page) => {
+    const requestId = fetchRequestRef.current + 1
+    fetchRequestRef.current = requestId
     setLoading(true)
     try {
-      const res = await api.get(`/products?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}&category=${filterCategory}&status=${filterStatus}`)
+      const res = await api.get(`/products?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&sort=${sort}&category=${filterCategory}&status=${filterStatus}&_t=${Date.now()}`)
+      if (requestId !== fetchRequestRef.current) return
       setProducts(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
+      if (requestId !== fetchRequestRef.current) return
       console.error(err)
       dispatch(addToast({ message: 'Failed to load products', type: 'error' }))
     } finally {
-      setLoading(false)
+      if (requestId === fetchRequestRef.current) setLoading(false)
     }
   }
 

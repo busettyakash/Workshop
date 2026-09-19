@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
@@ -333,8 +333,11 @@ export default function Orders() {
 
   const [selectedOrders, setSelectedOrders] = useState([])
   const [showCompareModal, setShowCompareModal] = useState(false)
+  const fetchRequestRef = useRef(0)
 
   const fetchOrders = async () => {
+    const requestId = fetchRequestRef.current + 1
+    fetchRequestRef.current = requestId
     setLoading(true)
     try {
       const res = await api.get('/orders', {
@@ -342,18 +345,21 @@ export default function Orders() {
           page,
           limit,
           search: search.trim() || undefined,
+          _t: Date.now(),
         },
       })
+      if (requestId !== fetchRequestRef.current) return
       setOrders(res.data?.data || [])
       setTotal(res.data?.total || 0)
       setTotalPages(res.data?.totalPages || 1)
     } catch (err) {
+      if (requestId !== fetchRequestRef.current) return
       dispatch(addToast({ message: err.response?.data?.error || 'Failed to load orders', type: 'error' }))
       setOrders([])
       setTotal(0)
       setTotalPages(1)
     } finally {
-      setLoading(false)
+      if (requestId === fetchRequestRef.current) setLoading(false)
     }
   }
 

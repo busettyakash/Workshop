@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
@@ -55,6 +55,7 @@ export default function Notes() {
   const [newAttachName, setNewAttachName] = useState(null)
   const [newAttachData, setNewAttachData] = useState(null)
   const [creating, setCreating] = useState(false)
+  const fetchRequestRef = useRef(0)
 
   useEffect(() => {
     dispatch(setActiveNav('Notes'))
@@ -64,9 +65,12 @@ export default function Notes() {
   }, [dispatch])
 
   const fetchNotes = async (q = '') => {
+    const requestId = fetchRequestRef.current + 1
+    fetchRequestRef.current = requestId
     setLoading(true)
     try {
-      const res = await api.get(`/notes${q ? `?search=${encodeURIComponent(q)}` : ''}`)
+      const res = await api.get(`/notes${q ? `?search=${encodeURIComponent(q)}&_t=${Date.now()}` : `?_t=${Date.now()}`}`)
+      if (requestId !== fetchRequestRef.current) return
       const data = res.data?.data || []
       setNotes(data)
       // Keep selection in sync
@@ -77,9 +81,10 @@ export default function Notes() {
         setSelected(data[0] || null)
       }
     } catch {
+      if (requestId !== fetchRequestRef.current) return
       dispatch(addToast({ message: 'Failed to load notes', type: 'error' }))
     } finally {
-      setLoading(false)
+      if (requestId === fetchRequestRef.current) setLoading(false)
     }
   }
 

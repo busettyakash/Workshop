@@ -3,7 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
-import { getCached, setCached, deleteMemoryCache } from '../lib/fastCache.js'
+import { deleteMemoryCache } from '../lib/fastCache.js'
 
 const router = Router()
 router.use(apiLimiter)
@@ -54,6 +54,7 @@ router.use((_req, _res, next) => {
 
 /* GET /api/notes */
 router.get('/', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   const userId = req.workspaceId
   const { search } = req.query
   const params = [userId]
@@ -64,23 +65,12 @@ router.get('/', async (req, res) => {
     where += ` AND (title ILIKE $${params.length} OR body ILIKE $${params.length})`
   }
 
-  const cacheKey = `notes:${userId}:${search || ''}`
-  try {
-    const cached = await getCached(redis, cacheKey, 100)
-    if (cached) {
-      return res.json(typeof cached === 'string' ? JSON.parse(cached) : cached)
-    }
-  } catch (cErr) {
-    console.error('[Notes Cache Read Error]', cErr.message)
-  }
-
   try {
     const { rows } = await query(
       `SELECT * FROM notes ${where} ORDER BY updated_at DESC`,
       params
     )
     const resultPayload = { data: rows, total: rows.length }
-    setCached(redis, cacheKey, resultPayload, 300)
     res.json(resultPayload)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -89,6 +79,7 @@ router.get('/', async (req, res) => {
 
 /* GET /api/notes/:id */
 router.get('/:id', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   const userId = req.workspaceId
   try {
     const { rows } = await query(

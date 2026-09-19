@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
@@ -71,22 +71,27 @@ export default function Emails() {
 
   // Reply State
   const [replyText, setReplyText] = useState('')
+  const fetchRequestRef = useRef(0)
 
   const fetchEmails = useCallback(async (q = '', dir = 'inbox', options = {}) => {
+    const requestId = fetchRequestRef.current + 1
+    fetchRequestRef.current = requestId
     if (!options.silent) setLoading(true)
     try {
-      const params = new URLSearchParams({ direction: dir })
+      const params = new URLSearchParams({ direction: dir, _t: Date.now() })
       if (q) params.set('search', q)
       const res = await api.get(`/emails?${params}`)
+      if (requestId !== fetchRequestRef.current) return
       const data = res.data?.data || []
       setEmails(data)
       setSelected(current => current ? (data.find(e => e.id === current.id) || null) : current)
     } catch {
+      if (requestId !== fetchRequestRef.current) return
       if (!options.silent) {
         dispatch(addToast({ message: 'Failed to load emails', type: 'error' }))
       }
     } finally {
-      if (!options.silent) setLoading(false)
+      if (requestId === fetchRequestRef.current && !options.silent) setLoading(false)
     }
   }, [dispatch])
 

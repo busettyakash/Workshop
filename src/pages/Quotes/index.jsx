@@ -1488,6 +1488,7 @@ export default function Quotes() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [showFilterBar, setShowFilterBar] = useState(false)
+  const fetchRequestRef = useRef(0)
 
   const totalPages = Math.ceil(total / limit) || 1
   const getPageNumbers = () => {
@@ -1507,18 +1508,22 @@ export default function Quotes() {
   }
 
   const fetchQuotes = async (currentPage = page, isBackground = false) => {
+    const requestId = fetchRequestRef.current + 1
+    fetchRequestRef.current = requestId
     if (!isBackground) setLoading(true)
     try {
-      const res = await api.get(`/quotes?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&status=${filterStatus}`)
+      const res = await api.get(`/quotes?page=${currentPage}&limit=${limit}&search=${encodeURIComponent(search)}&status=${filterStatus}&_t=${Date.now()}`)
+      if (requestId !== fetchRequestRef.current) return
       setQuotes(res.data?.data || [])
       setTotal(res.data?.total || 0)
     } catch (err) {
+      if (requestId !== fetchRequestRef.current) return
       console.error(err)
       if (!isBackground) {
         dispatch(addToast({ message: 'Failed to load quotes', type: 'error' }))
       }
     } finally {
-      if (!isBackground) setLoading(false)
+      if (requestId === fetchRequestRef.current && !isBackground) setLoading(false)
     }
   }
 

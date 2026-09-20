@@ -1147,23 +1147,6 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                   {sendingEmail ? 'Sending…' : (isEdit || formData.status === 'Sent' || formData.status === 'Declined' ? 'Resend Quotation to Customer' : 'Save & Send Email')}
                 </button>
 
-                {/* Accept & Convert to Bill — disabled: only triggers via customer email link */}
-                <div style={{ position: 'relative', display: 'inline-flex' }} title="Billing invoices trigger automatically ONLY when the customer ACCEPTS the quotation. Rejected quotes do not generate bills.">
-                  <button
-                    type="button"
-                    disabled
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      padding: '0 12px', height: 32, borderRadius: 5, border: '1px solid #cbd5e1',
-                      background: '#f1f5f9', color: '#64748b',
-                      fontWeight: 600, fontSize: '0.78rem', cursor: 'not-allowed',
-                      opacity: 0.85
-                    }}
-                  >
-                    <Receipt size={13} />
-                    {formData.status === 'Accepted' ? 'Auto-Billed on Acceptance ✅' : formData.status === 'Declined' ? 'Quotation Declined (No Bill) ❌' : 'Auto-Billed on Acceptance ⚡'}
-                  </button>
-                </div>
               </div>
             </div>
           </div>

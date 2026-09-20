@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import { authApi } from '../../services/authApi'
+import { clearCache } from '../../utils/apiCache'
 
 // ── Async Thunks ──────────────────────────────────────────
 export const loginThunk = createAsyncThunk(
@@ -109,6 +110,8 @@ const authSlice = createSlice({
       sessionStorage.removeItem('ws_active_permissions')
       sessionStorage.removeItem('ws_perms_synced')
       sessionStorage.removeItem('ws_favorites')
+      // Wipe in-memory API cache so no data leaks to the next user/workspace
+      clearCache()
     },
     clearError(state) {
       state.error = null

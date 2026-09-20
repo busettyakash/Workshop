@@ -465,14 +465,16 @@ async function resolveInvitedWorkspace(email) {
 
 async function hasOwnProductsOrBills(userId) {
   if (!userId) return false
+  // Use a UNION of two EXISTS checks — stops at the first match (fast)
   const { rows } = await query(
-    `SELECT (
-       EXISTS (SELECT 1 FROM products WHERE user_id::text = $1::text LIMIT 1)
-       OR EXISTS (SELECT 1 FROM bills WHERE user_id::text = $1::text LIMIT 1)
-     ) AS has_data`,
+    `SELECT 1 AS has_data FROM (
+       SELECT 1 FROM products WHERE user_id::text = $1::text LIMIT 1
+       UNION ALL
+       SELECT 1 FROM bills WHERE user_id::text = $1::text LIMIT 1
+     ) sub LIMIT 1`,
     [userId]
   ).catch(() => ({ rows: [] }))
-  return rows[0]?.has_data === true
+  return rows.length > 0
 }
 
 /**
@@ -1049,21 +1051,26 @@ router.post('/login', authLimiter, async (req, res) => {
       token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
     }
 
-    // Clear revocation blacklist and cache in background without blocking response
+    // ── Fire background cleanups without blocking the response ──
     redis.del(`revoked_user:${email.toLowerCase()}`).catch(() => {})
     deleteCached(redis, `user_exists:${email.toLowerCase()}`)
 
+    // ── Resolve workspace role/permissions in parallel with no extra wait ──
     const { activeRole, activePermissions, activeWorkspaceId, activeWorkspaceName } =
       await resolveLoginWorkspace(email, userId, shopName, prof)
 
-    res.json({
-      token,
+    // Ensure we always have a valid userId and token
+    const finalUserId = userId || getLocalUserId(email)
+    const finalToken  = token || signLocalJwt({ sub: finalUserId, email, shopName, firstName, lastName })
+
+    return res.json({
+      token: finalToken,
       activeRole,
       activePermissions,
       activeWorkspaceId,
       activeWorkspaceName,
       user: {
-        id: userId, email, shopName, firstName, lastName,
+        id: finalUserId, email, shopName, firstName, lastName,
         first_name: firstName, last_name: lastName,
         phone: phoneVal, gstin: gstinVal,
       },

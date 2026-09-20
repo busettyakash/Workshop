@@ -595,7 +595,7 @@ async function notifyInvitedUser({ inviteeEmail, senderName, role }) {
 // ─────────────────────────────────────────────
 
 /* POST /api/auth/check-email — Check if email is already registered (used by login UI) */
-router.post('/check-email', authLimiter, async (req, res) => {
+router.post('/check-email', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   if (!email) return res.status(400).json({ message: 'Email is required' })
 
@@ -629,7 +629,7 @@ router.post('/check-email', authLimiter, async (req, res) => {
 })
 
 /* POST /api/auth/send-otp — Signup flow: email must NOT exist, then send OTP */
-router.post('/send-otp', authLimiter, async (req, res) => {
+router.post('/send-otp', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   if (!email) return res.status(400).json({ message: 'Email is required' })
 
@@ -653,7 +653,7 @@ router.post('/send-otp', authLimiter, async (req, res) => {
 })
 
 /* POST /api/auth/send-reset-otp — Forgot-password flow: email must exist, then send OTP */
-router.post('/send-reset-otp', authLimiter, async (req, res) => {
+router.post('/send-reset-otp', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   if (!email) return res.status(400).json({ message: 'Email is required' })
 
@@ -676,7 +676,7 @@ router.post('/send-reset-otp', authLimiter, async (req, res) => {
 })
 
 /* POST /api/auth/reset-password — Verify OTP and persist a new password */
-router.post('/reset-password', authLimiter, async (req, res) => {
+router.post('/reset-password', async (req, res) => {
   const email       = normalizeEmail(req.body?.email)
   const otp         = normalizeOtp(req.body?.otp)
   const { newPassword } = req.body
@@ -713,7 +713,7 @@ router.post('/reset-password', authLimiter, async (req, res) => {
 })
 
 /* POST /api/auth/verify-otp — Verify a signup OTP without consuming it (consumed on register) */
-router.post('/verify-otp', authLimiter, async (req, res) => {
+router.post('/verify-otp', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   const otp   = normalizeOtp(req.body?.otp)
   if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' })
@@ -809,7 +809,7 @@ async function resolveDefaultPendingWorkspace(email) {
   return { defaultWorkspaceId: null, defaultWorkspaceName: null }
 }
 
-router.post('/register', authLimiter, async (req, res) => {
+router.post('/register', async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   const {
     password, workspaceHandle, billingCountry, referralSource, usageType, inviteEmail, gstin,
@@ -933,7 +933,7 @@ router.post('/register', authLimiter, async (req, res) => {
 })
 
 /* POST /api/auth/login — Authenticate and return a session token */
-router.post('/login', authLimiter, async (req, res) => {
+router.post('/login', async (req, res) => {
   const email    = normalizeEmail(req.body?.email)
   const { password } = req.body
   if (!email || !password) return res.status(400).json({ message: 'email and password required' })
@@ -1081,7 +1081,7 @@ router.post('/login', authLimiter, async (req, res) => {
 })
 
 /* POST /api/auth/logout */
-router.post('/logout', authLimiter, async (req, res) => {
+router.post('/logout', async (req, res) => {
   try {
     await insforge.auth.signOut()
     res.json({ message: 'Logged out successfully' })

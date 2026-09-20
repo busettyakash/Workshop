@@ -72,7 +72,22 @@ const uiSlice = createSlice({
   },
 })
 
-export const { toggleSidebar, setSidebarOpen, setSidebarTriggerHovered, setSidebarContentHovered, clearSidebarHover, toggleChat, setChatOpen, toggleAllChatsPanel, setAllChatsPanelOpen, setActiveNav, toggleConfigure, setConfigureOpen, addToast, removeToast } = uiSlice.actions
+export const {
+  toggleSidebar,
+  setSidebarOpen,
+  setSidebarTriggerHovered,
+  setSidebarContentHovered,
+  clearSidebarHover,
+  toggleChat,
+  setChatOpen,
+  toggleAllChatsPanel,
+  setAllChatsPanelOpen,
+  setActiveNav,
+  toggleConfigure,
+  setConfigureOpen,
+  addToast,
+  removeToast,
+} = uiSlice.actions
 export default uiSlice.reducer
 
 export const selectSidebarOpen           = (state) => state.ui.sidebarOpen

@@ -57,8 +57,7 @@ export function getTTLForUrl(url = '') {
 // Map<cacheKey, { data, expiresAt }>
 const _store = new Map()
 
-// In-flight promise deduplication
-// Map<cacheKey, Promise>
+// In-flight promise deduplication — Map<cacheKey, Promise<AxiosResponse>>
 const _inFlight = new Map()
 
 /**
@@ -68,7 +67,7 @@ const _inFlight = new Map()
 export function buildCacheKey(url = '', params = {}) {
   const wsId = sessionStorage.getItem('ws_active_workspace_id') || 'default'
   const sorted = Object.keys(params)
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .map((k) => `${k}=${params[k]}`)
     .join('&')
   return `${wsId}::${url}${sorted ? `?${sorted}` : ''}`
@@ -117,15 +116,20 @@ export function clearCache() {
   _inFlight.clear()
 }
 
-/** Get the in-flight promise for a key (deduplication). */
+/**
+ * Get the in-flight promise for a key.
+ * Returns null if no request is currently in-flight for this key.
+ */
 export function getInFlight(key) {
-  return _inFlight.get(key) || null
+  return _inFlight.get(key) ?? null
 }
 
-/** Register an in-flight promise for a key. */
+/**
+ * Register an in-flight request promise.
+ * Automatically cleans itself up when the promise settles.
+ */
 export function setInFlight(key, promise) {
   _inFlight.set(key, promise)
-  // Auto-remove when the promise settles (success or error)
   promise.finally(() => _inFlight.delete(key))
 }
 

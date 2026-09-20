@@ -6,10 +6,8 @@ import {
   cacheSet,
   clearCache,
   getCacheStats,
-  getInFlight,
   getTTLForUrl,
   invalidatePrefix,
-  setInFlight,
 } from '../utils/apiCache'
 
 // ── Axios instance ────────────────────────────────────────────────────────────
@@ -59,17 +57,7 @@ api.interceptors.request.use((config) => {
         return config
       }
 
-      // 2. Deduplicate concurrent identical requests
-      const inflight = getInFlight(key)
-      if (inflight) {
-        if (import.meta.env.DEV) {
-          console.log(`🔄 [In-Flight dedup] ${config.url}`)
-        }
-        config.adapter = () => inflight
-        return config
-      }
-
-      // 3. Tag config so the response interceptor can cache it
+      // 2. Tag config so the response interceptor can cache it
       config._cacheKey = key
       config._cacheTTL = ttl
     }

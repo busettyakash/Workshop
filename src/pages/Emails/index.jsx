@@ -316,25 +316,31 @@ export default function Emails() {
 
             {/* Email list */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              {loading ? (
+              {loading && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Loader2 size={20} className="ws-chat-loader-spin" style={{ color: '#9ca3af' }} />
                 </div>
-              ) : emails.length === 0 ? (
+              )}
+              {!loading && emails.length === 0 && (
                 <div style={{ padding: '48px 16px', textAlign: 'center', color: '#9ca3af' }}>
                   <p style={{ fontSize: '0.82rem', margin: 0 }}>No emails found</p>
                 </div>
-              ) : (
+              )}
+              {!loading && emails.length > 0 && (
                 emails.map(email => (
-                  <div
+                  <button
+                    type="button"
                     key={email.id}
-                    role="button"
-                    tabIndex={0}
                     onClick={() => handleSelect(email)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelect(email) }}
                     style={{
-                      padding: '10px 14px', cursor: 'pointer',
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '10px 14px',
+                      cursor: 'pointer',
                       background: selected?.id === email.id ? '#f0f4ff' : (!email.is_read ? '#f8faff' : 'transparent'),
+                      borderTop: 'none',
+                      borderRight: 'none',
                       borderBottom: '1px solid #f3f4f6',
                       borderLeft: selected?.id === email.id ? '2px solid #3d68f5' : '2px solid transparent',
                       transition: 'all 0.15s'
@@ -348,15 +354,19 @@ export default function Emails() {
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                          <span style={{ fontSize: '0.83rem', fontWeight: !email.is_read ? 600 : 500, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: email.is_read ? 500 : 700, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {directionTab === 'inbox' ? email.from_name : `To: ${email.from_email}`}
                           </span>
-                          <span style={{ fontSize: '0.7rem', color: '#9ca3af', flexShrink: 0, marginLeft: 8 }}>{formatDate(email.created_at)}</span>
+                          <span style={{ fontSize: '0.7rem', color: '#9ca3af', flexShrink: 0 }}>
+                            {formatDate(email.created_at)}
+                          </span>
                         </div>
-                        <div style={{ fontSize: '0.8rem', fontWeight: !email.is_read ? 600 : 400, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2 }}>{email.subject}</div>
-                        {email.preview && (
-                          <div style={{ fontSize: '0.76rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.preview}</div>
-                        )}
+                        <div style={{ fontSize: '0.78rem', fontWeight: email.is_read ? 400 : 600, color: email.is_read ? '#4b5563' : '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2 }}>
+                          {email.subject}
+                        </div>
+                        <div style={{ fontSize: '0.73rem', color: '#9ca3af', overflow: 'hidden', textNowrap: 'nowrap', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {email.body}
+                        </div>
                         {email.attachment_name && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, color: '#6b7280', fontSize: '0.7rem' }}>
                             <Paperclip size={10} />
@@ -365,7 +375,7 @@ export default function Emails() {
                         )}
                       </div>
                     </div>
-                  </div>
+                  </button>
                 ))
               )}
             </div>
@@ -373,7 +383,7 @@ export default function Emails() {
 
           {/* ── Right panel: email detail or compose ── */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#fff' }}>
-            {composing ? (
+            {composing && (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
                 {/* Compose Header */}
                 <div style={{ padding: '20px 28px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
@@ -443,7 +453,8 @@ export default function Emails() {
                   </button>
                 </div>
               </div>
-            ) : selected ? (
+            )}
+            {!composing && selected && (
               <>
                 {/* Email header */}
                 <div style={{ padding: '20px 28px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 }}>
@@ -529,7 +540,8 @@ export default function Emails() {
                   </div>
                 )}
               </>
-            ) : !loading && (
+            )}
+            {!composing && !selected && !loading && (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
                 <Mail size={40} style={{ marginBottom: 12, opacity: 0.35 }} />
                 <p style={{ fontSize: '0.875rem', fontWeight: 500 }}>Select an email to read</p>

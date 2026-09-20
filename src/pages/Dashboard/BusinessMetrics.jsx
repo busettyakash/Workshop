@@ -327,27 +327,33 @@ export default function BusinessMetrics({
         <div className="ws-bm-header-right" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Tax Mode Selector (Without GST / With GST) */}
           <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '2px', borderRadius: '7px', border: '1px solid #e2e8f0' }}>
-            {['Without GST', 'With GST'].map(mode => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setTaxMode(mode)}
-                style={{
-                  padding: '4px 10px',
-                  fontSize: '0.74rem',
-                  fontWeight: taxMode === mode ? 700 : 500,
-                  color: taxMode === mode ? (mode === 'With GST' ? '#059669' : '#1e293b') : '#64748b',
-                  background: taxMode === mode ? '#ffffff' : 'transparent',
-                  border: 'none',
-                  borderRadius: '5px',
-                  boxShadow: taxMode === mode ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                {mode}
-              </button>
-            ))}
+            {['Without GST', 'With GST'].map(mode => {
+              let modeColor = '#64748b'
+              if (taxMode === mode) {
+                modeColor = mode === 'With GST' ? '#059669' : '#1e293b'
+              }
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setTaxMode(mode)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.74rem',
+                    fontWeight: taxMode === mode ? 700 : 500,
+                    color: modeColor,
+                    background: taxMode === mode ? '#ffffff' : 'transparent',
+                    border: 'none',
+                    borderRadius: '5px',
+                    boxShadow: taxMode === mode ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {mode}
+                </button>
+              )
+            })}
           </div>
 
           {/* Filters */}
@@ -629,8 +635,8 @@ export default function BusinessMetrics({
 
             <div className="ws-bm-bar-chart">
               <div className="ws-bm-gridlines">
-                {ticksDesc.map((_, i) => (
-                  <div key={i} className="ws-bm-gridline" />
+                {ticksDesc.map((tickVal) => (
+                  <div key={`gridline_${tickVal}`} className="ws-bm-gridline" />
                 ))}
               </div>
 
@@ -643,11 +649,11 @@ export default function BusinessMetrics({
                   const periodGstDiff = Math.max(0, periodTotalWithGst - periodTotalWithoutGst)
 
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={grp.label}
                       className="ws-bm-bar-group"
-                      role="button"
-                      tabIndex={0}
+                      style={{ background: 'transparent', border: 'none', padding: 0 }}
                       aria-label={`Metrics for ${grp.label}`}
                       onMouseEnter={() => setHoveredBar(gi)}
                       onMouseLeave={() => { setHoveredBar(null); setHoveredSeriesKey(null) }}
@@ -676,12 +682,17 @@ export default function BusinessMetrics({
                           barOpacity = 1
                         }
 
+                        let barTitle = `${s.label}: ₹${valWithoutGst.toLocaleString('en-IN')}`
+                        if (taxMode === 'With GST') {
+                          barTitle = `${s.label} (With GST): ₹${valWithGst.toLocaleString('en-IN')}`
+                        } else if (taxMode !== 'Without GST') {
+                          barTitle = `${s.label}: ₹${valWithoutGst.toLocaleString('en-IN')} (With GST: ₹${valWithGst.toLocaleString('en-IN')})`
+                        }
+
                         return (
                           <div
                             key={s.key}
                             className="ws-bm-bar"
-                            role={!isDrilldown ? "button" : undefined}
-                            tabIndex={!isDrilldown ? 0 : undefined}
                             onMouseEnter={(e) => {
                               e.stopPropagation()
                               setHoveredSeriesKey(s.key)
@@ -707,21 +718,14 @@ export default function BusinessMetrics({
                               cursor: !isDrilldown ? 'pointer' : 'default',
                               transition: 'all 0.15s ease'
                             }}
-                            title={
-                              taxMode === 'Without GST'
-                                ? `${s.label}: ₹${valWithoutGst.toLocaleString('en-IN')}`
-                                : taxMode === 'With GST'
-                                  ? `${s.label} (With GST): ₹${valWithGst.toLocaleString('en-IN')}`
-                                  : `${s.label}: ₹${valWithoutGst.toLocaleString('en-IN')} (With GST: ₹${valWithGst.toLocaleString('en-IN')})`
-                            }
+                            title={barTitle}
                           />
                         )
                       })}
 
                       {isVisible && (
-                        <div 
+                        <section 
                           className="ws-bm-tooltip"
-                          role="region"
                           aria-label={`${grp.label} details`}
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => e.stopPropagation()}
@@ -888,9 +892,9 @@ export default function BusinessMetrics({
                               Click to drilldown →
                             </button>
                           )}
-                        </div>
+                        </section>
                       )}
-                    </div>
+                    </button>
                   )
                 })}
               </div>
@@ -917,11 +921,12 @@ export default function BusinessMetrics({
                 const revWithout = s.revenue || 0
                 const revWith = s.revenue_with_gst || s.revenue || 0
                 const revToShow = taxMode === 'With GST' ? revWith : revWithout
-                const titleText = taxMode === 'Both'
-                  ? `Without GST: ₹${Math.round(revWithout).toLocaleString('en-IN')}\nWith GST: ₹${Math.round(revWith).toLocaleString('en-IN')}`
-                  : taxMode === 'With GST'
-                    ? `With GST: ₹${Math.round(revWith).toLocaleString('en-IN')}`
-                    : `Without GST: ₹${Math.round(revWithout).toLocaleString('en-IN')}`
+                let titleText = `Without GST: ₹${Math.round(revWithout).toLocaleString('en-IN')}`
+                if (taxMode === 'Both') {
+                  titleText = `Without GST: ₹${Math.round(revWithout).toLocaleString('en-IN')}\nWith GST: ₹${Math.round(revWith).toLocaleString('en-IN')}`
+                } else if (taxMode === 'With GST') {
+                  titleText = `With GST: ₹${Math.round(revWith).toLocaleString('en-IN')}`
+                }
                 return (
                   <div 
                     key={s.label} 
@@ -947,9 +952,9 @@ export default function BusinessMetrics({
           <div className="ws-bm-donut-wrap">
             {hasDonutData ? (
               <svg viewBox="0 0 180 180" className="ws-bm-donut-svg">
-                {donutPaths.map((p, i) => (
+                {donutPaths.map(p => (
                   <path 
-                    key={i} 
+                    key={`donut_path_${p.label}_${p.color}`} 
                     d={p.d} 
                     fill={p.color} 
                     opacity="0.9" 
@@ -996,7 +1001,11 @@ function formatProductUnits(prod) {
     const fullBags = Math.floor(totalWeight / bw)
     const looseKg = Math.round((totalWeight % bw) * 100) / 100
 
-    const bagsPart = fullBags > 0 ? `${fullBags.toLocaleString('en-IN')} ${fullBags === 1 ? 'Bag' : 'Bags'}` : ''
+    let bagsPart = ''
+    if (fullBags > 0) {
+      const bagUnit = fullBags === 1 ? 'Bag' : 'Bags'
+      bagsPart = `${fullBags.toLocaleString('en-IN')} ${bagUnit}`
+    }
     const loosePart = looseKg > 0 ? `${looseKg.toLocaleString('en-IN')} kgs` : ''
     const bagsText = [bagsPart, loosePart].filter(Boolean).join(' ') || '0 Bags'
     const weightText = `${Math.round(totalWeight).toLocaleString('en-IN')} kgs`
@@ -1113,7 +1122,7 @@ function ProductPerformanceTable({ selectedCategory, displayDonutSegments, taxMo
                 </td>
               </tr>
             ) : (
-              displayDonutSegments.map((prod, idx) => {
+              displayDonutSegments.map((prod) => {
                 const revWithout = Math.round(Number(prod.revenue) || 0)
                 const revWith = Math.round(Number(prod.revenue_with_gst || prod.revenue) || 0)
                 const revToShow = taxMode === 'With GST' ? revWith : revWithout
@@ -1121,7 +1130,7 @@ function ProductPerformanceTable({ selectedCategory, displayDonutSegments, taxMo
 
                 return (
                   <tr 
-                    key={idx} 
+                    key={`seg_prod_${prod.name || prod.label || prod.id || revWithout}`} 
                     style={{ 
                       borderBottom: '1px solid #f1f5f9',
                       transition: 'background-color 0.15s ease'

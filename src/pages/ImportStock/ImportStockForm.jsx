@@ -342,18 +342,57 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
   const rawPrice = Number.parseFloat(form.price || 0)
 
   // Calculate displaying Selling Price for the form input
-  const sellPriceDisplay = form.price_100 !== undefined && form.price_100 !== ''
-    ? form.price_100
-    : (rawPrice > 0 ? (pc > 0 && bw > 0 && pc !== bw ? ((rawPrice / bw) * pc).toFixed(2) : rawPrice.toFixed(2)) : '')
+  let sellPriceDisplay = ''
+  if (form.price_100 !== undefined && form.price_100 !== '') {
+    sellPriceDisplay = form.price_100
+  } else if (rawPrice > 0) {
+    if (pc > 0 && bw > 0 && pc !== bw) {
+      sellPriceDisplay = ((rawPrice / bw) * pc).toFixed(2)
+    } else {
+      sellPriceDisplay = rawPrice.toFixed(2)
+    }
+  }
 
   const sell100 = Number.parseFloat(sellPriceDisplay) || 0
 
-  const sellRatePerUnit = sell100 > 0
-    ? (pc > 0 ? (sell100 / pc).toFixed(2) : (bw > 0 ? (sell100 / bw).toFixed(2) : '0.00'))
-    : (rawPrice > 0 ? (bw > 0 ? (rawPrice / bw).toFixed(2) : rawPrice.toFixed(2)) : '0.00')
-  const buyRatePerUnit = Number.parseFloat(form.buying_price || 0) > 0
-    ? (pc > 0 ? (Number.parseFloat(form.buying_price) / pc).toFixed(2) : (bw > 0 ? (Number.parseFloat(form.buying_price) / bw).toFixed(2) : '0.00'))
-    : '0.00'
+  let sellRatePerUnit = '0.00'
+  if (sell100 > 0) {
+    if (pc > 0) {
+      sellRatePerUnit = (sell100 / pc).toFixed(2)
+    } else if (bw > 0) {
+      sellRatePerUnit = (sell100 / bw).toFixed(2)
+    }
+  } else if (rawPrice > 0) {
+    if (bw > 0) {
+      sellRatePerUnit = (rawPrice / bw).toFixed(2)
+    } else {
+      sellRatePerUnit = rawPrice.toFixed(2)
+    }
+  }
+
+  const numericBuyingPrice = Number.parseFloat(form.buying_price || 0)
+  let buyRatePerUnit = '0.00'
+  if (numericBuyingPrice > 0) {
+    if (pc > 0) {
+      buyRatePerUnit = (numericBuyingPrice / pc).toFixed(2)
+    } else if (bw > 0) {
+      buyRatePerUnit = (numericBuyingPrice / bw).toFixed(2)
+    }
+  }
+
+  let updatedPricePlaceholder = '3300'
+  if (pc === 1) {
+    updatedPricePlaceholder = `Price per ${getUnitSingular(uomShort)}`
+  } else if (pc > 0) {
+    updatedPricePlaceholder = `Price for ${pc} ${getUnitPlural(uomShort)}`
+  }
+
+  let submitButtonText = 'Save Product to Stock'
+  if (saving) {
+    submitButtonText = 'Saving Product...'
+  } else if (id) {
+    submitButtonText = 'Update Product'
+  }
 
   return (
     <div className="ws-dash-layout">
@@ -385,57 +424,51 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
 
           {/* ── Stepper Navigation Bar (Increased box sizes by 2%) ── */}
           <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto 16px', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 10 }}>
-            <div
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
               onClick={() => setStep(1)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setStep(1) }}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
-                background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
+                background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`, textAlign: 'left'
               }}
             >
               <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 1 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>1</div>
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 1 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
                 Step 1: Supplier & Buyer Details
               </div>
-            </div>
+            </button>
 
             <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-            <div
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
               onClick={() => { if (validateStep1()) setStep(2) }}
-              onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && validateStep1()) setStep(2) }}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
-                background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
+                background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`, textAlign: 'left'
               }}
             >
               <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 2 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>2</div>
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 2 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
                 Step 2: Products & Line Items
               </div>
-            </div>
+            </button>
 
             <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-            <div
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
               onClick={() => { if (validateStep1() && validateStep2()) setStep(3) }}
-              onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && validateStep1() && validateStep2()) setStep(3) }}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
-                background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`
+                background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`, textAlign: 'left'
               }}
             >
               <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 3 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>3</div>
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 3 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
                 Step 3: Review & Save
               </div>
-            </div>
+            </button>
           </div>
 
           {loading ? (
@@ -675,9 +708,12 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                           const val = e.target.value
                           const bw = Number.parseFloat(form.bag_weight || 1)
                           const pc = Number.parseFloat(form.price_covers || 0)
-                          const calculatedPrice = val
-                            ? (pc > 0 ? ((Number.parseFloat(val) / pc) * bw).toFixed(2) : Number.parseFloat(val).toFixed(2))
-                            : ''
+                          let calculatedPrice = ''
+                          if (val) {
+                            calculatedPrice = pc > 0
+                              ? ((Number.parseFloat(val) / pc) * bw).toFixed(2)
+                              : Number.parseFloat(val).toFixed(2)
+                          }
                           setForm(prev => ({ ...prev, price_100: val, price: calculatedPrice }))
                           if (errors.price) setErrors(prev => ({ ...prev, price: '' }))
                         }}
@@ -810,7 +846,7 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                             updated_price_date: todayStr
                           }))
                         }}
-                        placeholder={pc > 0 ? (pc === 1 ? `Price per ${getUnitSingular(uomShort)}` : `Price for ${pc} ${getUnitPlural(uomShort)}`) : '3300'}
+                        placeholder={updatedPricePlaceholder}
                         style={inp('updated_price_100')}
                         onFocus={() => setFocus('updated_price_100')}
                         onBlur={() => setFocus(null)}
@@ -1002,7 +1038,7 @@ Total Volume / Weight: ${(Number.parseFloat(form.stock || 0) * bw).toLocaleStrin
                       style={{ height: 34, padding: '0 22px', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', borderRadius: 6, cursor: saving ? 'not-allowed' : 'pointer' }}
                     >
                       {saving && <Loader2 size={15} className="ws-chat-loader-spin" />}
-                      {saving ? 'Saving Product...' : (id ? 'Update Product' : 'Save Product to Stock')}
+                      {submitButtonText}
                     </button>
                   </div>
                 </div>

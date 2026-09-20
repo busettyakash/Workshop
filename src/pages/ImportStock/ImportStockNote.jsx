@@ -82,9 +82,16 @@ export default function ImportStockNote() {
   const unitPlural = bulkUnit?.pluralName || 'Bags / Units'
   const bw = Number.parseFloat(stockItem?.bag_weight || 1)
   
-  const buyRatePerUnit = stockItem && Number.parseFloat(stockItem.buying_price || 0) > 0
-    ? (stockItem.price_covers > 0 ? (Number.parseFloat(stockItem.buying_price) / stockItem.price_covers).toFixed(2) : (bw > 0 ? (Number.parseFloat(stockItem.buying_price) / bw).toFixed(2) : '0.00'))
-    : '0.00'
+  let buyRatePerUnit = '0.00'
+  const numericBuyingPrice = Number.parseFloat(stockItem?.buying_price || 0)
+  if (stockItem && numericBuyingPrice > 0) {
+    const pc = Number.parseFloat(stockItem.price_covers || 0)
+    if (pc > 0) {
+      buyRatePerUnit = (numericBuyingPrice / pc).toFixed(2)
+    } else if (bw > 0) {
+      buyRatePerUnit = (numericBuyingPrice / bw).toFixed(2)
+    }
+  }
 
   const calcTotalSupplierCost = (item) => {
     if (!item) return 0

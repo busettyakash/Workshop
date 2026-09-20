@@ -324,7 +324,12 @@ export default function Dashboard() {
 
     const isNew = Boolean(customOpts.isNewChat)
     const activeConvId = customOpts.conversationId || (isNew ? `conv_${Date.now()}_${getRandomString(6)}` : conversationId)
-    const baseMessages = isNew ? [] : (customOpts.messages !== undefined ? customOpts.messages : messages)
+    let baseMessages = messages
+    if (isNew) {
+      baseMessages = []
+    } else if (customOpts.messages !== undefined) {
+      baseMessages = customOpts.messages
+    }
 
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     const userMsg = { id: Date.now(), role: 'user', content: text, time }
@@ -334,9 +339,10 @@ export default function Dashboard() {
     if (!overrideText) setInputText('')
     setIsLoading(true)
 
-    let currentTitle = isNew ? (text.length > 35 ? text.slice(0, 35) + '…' : text) : chatTitle
+    const trimmedTitle = text.length > 35 ? `${text.slice(0, 35)}…` : text
+    let currentTitle = isNew ? trimmedTitle : chatTitle
     if (!isNew && (baseMessages.length === 0 || chatTitle === 'Untitled chat')) {
-      currentTitle = text.length > 35 ? text.slice(0, 35) + '…' : text
+      currentTitle = trimmedTitle
       setChatTitle(currentTitle)
     }
 
@@ -463,29 +469,42 @@ export default function Dashboard() {
             const headers = cleanRows[0]
             const dataRows = cleanRows.slice(1)
 
+            let headerCount = 0
+            let rowCount = 0
             elements.push(
               <div key={`table-${key}`} style={{ margin: '14px 0', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', maxWidth: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem', textAlign: 'left' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        {headers.map((h, hIdx) => (
-                          <th key={hIdx} style={{ padding: '10px 14px', fontWeight: 650, color: '#0f172a', whiteSpace: 'nowrap' }}>
-                            {renderInlineBold(h)}
-                          </th>
-                        ))}
+                        {headers.map(h => {
+                          headerCount += 1
+                          return (
+                            <th key={`th_${headerCount}_${h}`} style={{ padding: '10px 14px', fontWeight: 650, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                              {renderInlineBold(h)}
+                            </th>
+                          )
+                        })}
                       </tr>
                     </thead>
                     <tbody>
-                      {dataRows.map((row, rIdx) => (
-                        <tr key={rIdx} style={{ borderBottom: rIdx === dataRows.length - 1 ? 'none' : '1px solid #f1f5f9', background: rIdx % 2 === 0 ? '#ffffff' : '#fafafa' }}>
-                          {row.map((cell, cIdx) => (
-                            <td key={cIdx} style={{ padding: '9px 14px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                              {renderInlineBold(cell)}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
+                      {dataRows.map(row => {
+                        rowCount += 1
+                        const rowKey = `r_${rowCount}_${row[0] || ''}`
+                        let cellCount = 0
+                        return (
+                          <tr key={rowKey} style={{ borderBottom: rowCount === dataRows.length ? 'none' : '1px solid #f1f5f9', background: rowCount % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                            {row.map(cell => {
+                              cellCount += 1
+                              return (
+                                <td key={`cell_${rowKey}_${cellCount}`} style={{ padding: '9px 14px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                  {renderInlineBold(cell)}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -574,9 +593,8 @@ export default function Dashboard() {
                 {/* Recent Chat Indicator Pill (Cleanly separated) */}
                 {sessions.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-                    <div 
-                      role="button"
-                      tabIndex={0}
+                    <button 
+                      type="button"
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -592,7 +610,6 @@ export default function Dashboard() {
                         maxWidth: '100%'
                       }}
                       onClick={() => navigate(`/dashboard?session=${sessions[0].id}`)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/dashboard?session=${sessions[0].id}`) }}
                       onMouseEnter={e => {
                         e.currentTarget.style.borderColor = '#cbd5e1'
                         e.currentTarget.style.background = '#f1f5f9'
@@ -607,7 +624,7 @@ export default function Dashboard() {
                       <span style={{ color: '#0f172a', fontWeight: 600, maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {cleanChatTitle(sessions[0].title)}
                       </span>
-                    </div>
+                    </button>
                   </div>
                 )}
 
@@ -649,11 +666,12 @@ export default function Dashboard() {
                       <Link to="/notes" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', textDecoration: 'none' }}>View all</Link>
                     </div>
 
-                    {notesLoading ? (
+                    {notesLoading && (
                       <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
                         <Loader2 size={18} className="ws-chat-loader-spin" style={{ color: '#d1d5db' }} />
                       </div>
-                    ) : recentNotes.length === 0 ? (
+                    )}
+                    {!notesLoading && recentNotes.length === 0 && (
                       <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
                         <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No notes yet</p>
                         <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Capture ideas, meeting notes and more</p>
@@ -661,7 +679,8 @@ export default function Dashboard() {
                           <Plus size={13} /> New note
                         </Link>
                       </div>
-                    ) : (
+                    )}
+                    {!notesLoading && recentNotes.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {recentNotes.map(note => (
                           <Link key={note.id} to="/notes" style={{ textDecoration: 'none', display: 'block' }}>
@@ -690,11 +709,12 @@ export default function Dashboard() {
                       <Link to="/emails" style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3d68f5', textDecoration: 'none' }}>View all</Link>
                     </div>
 
-                    {emailsLoading ? (
+                    {emailsLoading && (
                       <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
                         <Loader2 size={18} className="ws-chat-loader-spin" style={{ color: '#d1d5db' }} />
                       </div>
-                    ) : recentEmails.length === 0 ? (
+                    )}
+                    {!emailsLoading && recentEmails.length === 0 && (
                       <div style={{ padding: '28px 20px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, textAlign: 'center' }}>
                         <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>No emails yet</p>
                         <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 14px' }}>Compose your first email or wait for replies</p>
@@ -702,7 +722,8 @@ export default function Dashboard() {
                           <Plus size={13} /> Compose
                         </Link>
                       </div>
-                    ) : (
+                    )}
+                    {!emailsLoading && recentEmails.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {recentEmails.map(email => (
                           <Link key={email.id} to="/emails" style={{ textDecoration: 'none', display: 'block' }}>
@@ -876,12 +897,13 @@ export default function Dashboard() {
 
             {/* Chat message list area */}
             <main style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
-              {sessionLoading ? (
+              {sessionLoading && (
                 <div style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
                   <Loader2 size={32} className="ws-chat-loader-spin" style={{ color: '#2563eb' }} />
                   <span style={{ fontSize: '0.88rem', fontWeight: 500, color: '#64748b' }}>Loading conversation...</span>
                 </div>
-              ) : messages.length === 0 ? (
+              )}
+              {!sessionLoading && messages.length === 0 && (
                 <div style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 16px 20px' }}>
                   
                   {/* Title */}
@@ -984,7 +1006,9 @@ export default function Dashboard() {
                   </div>
 
                 </div>
-              ) : (
+              )}
+
+              {!sessionLoading && messages.length > 0 && (
                 <div style={{ maxWidth: 720, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
                   {messages.map((msg, idx) => (
                     <div key={msg.id || `msg-${idx}`} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>

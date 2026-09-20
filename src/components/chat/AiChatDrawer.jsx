@@ -110,9 +110,14 @@ export default function AiChatDrawer() {
   const renderInlineBold = (text) => {
     if (!text) return ''
     const parts = text.split(/(\*\*[^*]+\*\*)/g)
-    return parts.map((p, i) =>
-      p.startsWith('**') ? <strong key={`bold-${i}`} style={{ fontWeight: 700 }}>{p.slice(2, -2)}</strong> : p
-    )
+    let boldCounter = 0
+    return parts.map(p => {
+      if (p.startsWith('**')) {
+        boldCounter += 1
+        return <strong key={`bold_${boldCounter}_${p.slice(2, 8)}`} style={{ fontWeight: 700 }}>{p.slice(2, -2)}</strong>
+      }
+      return p
+    })
   }
 
   const renderMarkdown = (text) => {
@@ -123,11 +128,13 @@ export default function AiChatDrawer() {
     let inList = false
     let inTable = false
     let rawTableLines = []
+    let elementCounter = 0
 
-    const flushList = (key) => {
+    const flushList = () => {
       if (listItems.length > 0) {
+        elementCounter += 1
         elements.push(
-          <ul key={`ul-${key}`} style={{ margin: '6px 0', paddingLeft: '18px', listStyleType: 'disc' }}>
+          <ul key={`ul-${elementCounter}`} style={{ margin: '6px 0', paddingLeft: '18px', listStyleType: 'disc' }}>
             {listItems}
           </ul>
         )
@@ -136,7 +143,7 @@ export default function AiChatDrawer() {
       inList = false
     }
 
-    const flushTable = (key) => {
+    const flushTable = () => {
       if (rawTableLines.length > 0) {
         const parsedRows = rawTableLines
           .map(line => line.split('|').map(c => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1))
@@ -145,42 +152,59 @@ export default function AiChatDrawer() {
         if (parsedRows.length > 0) {
           const headerRow = parsedRows[0]
           const excludedIndices = new Set()
-          headerRow.forEach((col, cIdx) => {
+          let colIdx = 0
+          for (const col of headerRow) {
             const cleanCol = col.replaceAll('*', '').trim().toLowerCase()
             if (cleanCol === 'id' || cleanCol === 'user_id' || cleanCol === 'uid') {
-              excludedIndices.add(cIdx)
+              excludedIndices.add(colIdx)
             }
-          })
+            colIdx += 1
+          }
 
           const cleanRows = parsedRows.map(row => row.filter((_, idx) => !excludedIndices.has(idx)))
 
           if (cleanRows.length > 0) {
             const headers = cleanRows[0]
             const dataRows = cleanRows.slice(1)
+            elementCounter += 1
+
+            let headerColCount = 0
+            let rowCount = 0
 
             elements.push(
-              <div key={`table-${key}`} style={{ margin: '10px 0', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', maxWidth: '100%' }}>
+              <div key={`table-${elementCounter}`} style={{ margin: '10px 0', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', maxWidth: '100%' }}>
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        {headers.map((h, hIdx) => (
-                          <th key={`th-${hIdx}-${h}`} style={{ padding: '8px 10px', fontWeight: 650, color: '#0f172a', whiteSpace: 'nowrap' }}>
-                            {renderInlineBold(h)}
-                          </th>
-                        ))}
+                        {headers.map(h => {
+                          headerColCount += 1
+                          return (
+                            <th key={`th-${headerColCount}-${h}`} style={{ padding: '8px 10px', fontWeight: 650, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                              {renderInlineBold(h)}
+                            </th>
+                          )
+                        })}
                       </tr>
                     </thead>
                     <tbody>
-                      {dataRows.map((row, rIdx) => (
-                        <tr key={`row-${rIdx}`} style={{ borderBottom: rIdx === dataRows.length - 1 ? 'none' : '1px solid #f1f5f9', background: rIdx % 2 === 0 ? '#ffffff' : '#fafafa' }}>
-                          {row.map((cell, cIdx) => (
-                            <td key={`cell-${rIdx}-${cIdx}`} style={{ padding: '7px 10px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                              {renderInlineBold(cell)}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
+                      {dataRows.map(row => {
+                        rowCount += 1
+                        const rowSignature = `r_${rowCount}_${row[0] || ''}`
+                        let cellCount = 0
+                        return (
+                          <tr key={rowSignature} style={{ borderBottom: rowCount === dataRows.length ? 'none' : '1px solid #f1f5f9', background: rowCount % 2 === 0 ? '#fafafa' : '#ffffff' }}>
+                            {row.map(cell => {
+                              cellCount += 1
+                              return (
+                                <td key={`cell-${rowSignature}-${cellCount}`} style={{ padding: '7px 10px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                  {renderInlineBold(cell)}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -193,54 +217,56 @@ export default function AiChatDrawer() {
       inTable = false
     }
 
-    lines.forEach((line, idx) => {
+    let lineCounter = 0
+    for (const line of lines) {
+      lineCounter += 1
       const trimmed = line.trim()
       if (trimmed.startsWith('|')) {
-        if (inList) flushList(idx)
+        if (inList) flushList()
         inTable = true
         rawTableLines.push(trimmed)
-        return
+        continue
       } else if (inTable) {
-        flushTable(idx)
+        flushTable()
       }
 
       if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
         inList = true
         listItems.push(
-          <li key={`li-${idx}`} style={{ fontSize: '0.84rem', color: '#374151', margin: '3px 0', lineHeight: 1.45 }}>
+          <li key={`li-${lineCounter}`} style={{ fontSize: '0.84rem', color: '#374151', margin: '3px 0', lineHeight: 1.45 }}>
             {renderInlineBold(trimmed.slice(2))}
           </li>
         )
-        return
+        continue
       } else if (inList) {
-        flushList(idx)
+        flushList()
       }
 
       if (trimmed.startsWith('# ')) {
-        elements.push(<h1 key={idx} style={{ fontSize: '1.15rem', fontWeight: 700, margin: '10px 0 6px', color: '#111827' }}>{trimmed.slice(2)}</h1>)
+        elements.push(<h1 key={`h1-${lineCounter}`} style={{ fontSize: '1.15rem', fontWeight: 700, margin: '10px 0 6px', color: '#111827' }}>{trimmed.slice(2)}</h1>)
       } else if (trimmed.startsWith('## ')) {
-        elements.push(<h2 key={idx} style={{ fontSize: '1.05rem', fontWeight: 600, margin: '8px 0 4px', color: '#111827' }}>{trimmed.slice(3)}</h2>)
+        elements.push(<h2 key={`h2-${lineCounter}`} style={{ fontSize: '1.05rem', fontWeight: 600, margin: '8px 0 4px', color: '#111827' }}>{trimmed.slice(3)}</h2>)
       } else if (trimmed.startsWith('### ')) {
-        elements.push(<h3 key={idx} style={{ fontSize: '0.92rem', fontWeight: 600, margin: '8px 0 4px', color: '#111827' }}>{trimmed.slice(4)}</h3>)
+        elements.push(<h3 key={`h3-${lineCounter}`} style={{ fontSize: '0.92rem', fontWeight: 600, margin: '8px 0 4px', color: '#111827' }}>{trimmed.slice(4)}</h3>)
       } else if (trimmed.startsWith('> ')) {
         elements.push(
-          <blockquote key={idx} style={{ borderLeft: '3px solid #e2e8f0', paddingLeft: '10px', color: '#64748b', margin: '8px 0', fontStyle: 'italic' }}>
+          <blockquote key={`bq-${lineCounter}`} style={{ borderLeft: '3px solid #e2e8f0', paddingLeft: '10px', color: '#64748b', margin: '8px 0', fontStyle: 'italic' }}>
             {renderInlineBold(trimmed.slice(2))}
           </blockquote>
         )
       } else if (trimmed === '') {
-        elements.push(<div key={idx} style={{ height: '6px' }} />)
+        elements.push(<div key={`sp-${lineCounter}`} style={{ height: '6px' }} />)
       } else {
         elements.push(
-          <div key={idx} style={{ margin: '3px 0', fontSize: '0.84rem', color: '#334155', lineHeight: 1.5 }}>
+          <div key={`div-${lineCounter}`} style={{ margin: '3px 0', fontSize: '0.84rem', color: '#334155', lineHeight: 1.5 }}>
             {renderInlineBold(line)}
           </div>
         )
       }
-    })
+    }
 
-    if (inList) flushList('end')
-    if (inTable) flushTable('end')
+    if (inList) flushList()
+    if (inTable) flushTable()
     return elements
   }
 

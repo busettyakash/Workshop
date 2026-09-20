@@ -76,8 +76,14 @@ function PricingModal({ product, onClose }) {
   if (!product) return null
 
   return (
-    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
-      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close dialog"
+        style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', background: 'transparent', border: 'none', cursor: 'default' }}
+      />
+      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%', position: 'relative', zIndex: 1 }}>
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title" style={{ margin: 0 }}>Pricing & Price History</h3>
@@ -131,11 +137,13 @@ function PricingModal({ product, onClose }) {
               <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{history.length} record{history.length === 1 ? '' : 's'}</span>
             </div>
 
-            {loadingHistory ? (
+            {loadingHistory && (
               <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '0.8125rem' }}>Loading price history...</div>
-            ) : history.length === 0 ? (
+            )}
+            {!loadingHistory && history.length === 0 && (
               <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '0.8125rem' }}>No historical price records found</div>
-            ) : (
+            )}
+            {!loadingHistory && history.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
                 {history.map((item, idx) => {
                   const newRaw = Number.parseFloat(item.new_price || 0)
@@ -301,14 +309,24 @@ export default function ImportStock() {
         const pc = Number.parseFloat(p.price_covers || 0)
         const bw = Number.parseFloat(p.bag_weight || 1)
         const rawBP = Number.parseFloat(p.buying_price || 0)
-        const bpSubtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+        let bpSubtext = `Per ${uomShort} price`
+        if (pc > 0) {
+          bpSubtext = `${pc} ${uomShort} price`
+        } else if (bw > 1) {
+          bpSubtext = `${bw} ${uomShort} price`
+        }
 
         const rawP = Number.parseFloat(p.price || 0)
         let priceVal = rawP
         if (pc > 0 && bw > 0 && pc !== bw) {
           priceVal = (rawP / bw) * pc
         }
-        const spSubtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+        let spSubtext = `Per ${uomShort} price`
+        if (pc > 0) {
+          spSubtext = `${pc} ${uomShort} price`
+        } else if (bw > 1) {
+          spSubtext = `${bw} ${uomShort} price`
+        }
 
         const rawUP = Number.parseFloat(p.updated_price || 0)
         const stockText = formatStockDisplay(p.stock, p.bag_weight, p.unit, p.loose_kg)

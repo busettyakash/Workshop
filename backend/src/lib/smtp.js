@@ -11,13 +11,15 @@ const createTransporter = () => nodemailer.createTransport({
   maxConnections: isServerless ? 1 : 5,
   maxMessages: 100,
   rateLimit: 14,
+  keepAlive: true,
+  idleTimeout: 30000,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-  connectionTimeout: 20000,
-  greetingTimeout: 15000,
-  socketTimeout: 30000,
+  connectionTimeout: 15000,
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
   tls: {
     rejectUnauthorized: false
   }

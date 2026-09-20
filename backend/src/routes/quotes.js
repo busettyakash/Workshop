@@ -1069,7 +1069,10 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
     const userId = getUserId(req)
     const { id } = req.params
 
-    const quoteRes = await pool.query('SELECT * FROM quotes WHERE id = $1 AND user_id = $2', [id, userId])
+    const [quoteRes, catalogMap] = await Promise.all([
+      pool.query('SELECT * FROM quotes WHERE id = $1 AND user_id = $2', [id, userId]),
+      getProductHsnMap()
+    ])
     if (quoteRes.rows.length === 0) {
       return res.status(404).json({ error: 'Quote not found' })
     }
@@ -1111,7 +1114,6 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
       try { rawItems = JSON.parse(quote.line_items) } catch { }
     }
     if (!Array.isArray(rawItems)) rawItems = []
-    const catalogMap = await getProductHsnMap()
     const enrichedItems = enrichItemsWithCache(rawItems || [], catalogMap)
 
     const quoteWithEnriched = { ...quote, line_items: enrichedItems }
@@ -1127,21 +1129,22 @@ router.post('/:id/send-email', emailLimiter, async (req, res) => {
       return res.status(500).json({ error: error.message })
     }
 
-    await pool.query("UPDATE quotes SET status = 'Sent', updated_at = NOW() WHERE id = $1", [id])
-
-    // Save outgoing email into emails table so it appears in Sent tab
-    await pool.query(
-      `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'sent', $6, NOW(), NOW())`,
-      [
-        quote.customer_name || quote.customer_email,
-        quote.customer_email,
-        `Quotation #${quote.quote_number} from Workshop`,
-        emailHtml,
-        `Quotation #${quote.quote_number} for ₹${Number.parseFloat(quote.total_amount || 0).toFixed(2)} sent to ${quote.customer_name}`,
-        userId
-      ]
-    ).catch(eErr => console.error('[Quote Email Save Error]', eErr.message))
+    // Save status and log email in parallel
+    await Promise.all([
+      pool.query("UPDATE quotes SET status = 'Sent', updated_at = NOW() WHERE id = $1", [id]),
+      pool.query(
+        `INSERT INTO emails (from_name, from_email, subject, body, preview, direction, user_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'sent', $6, NOW(), NOW())`,
+        [
+          quote.customer_name || quote.customer_email,
+          quote.customer_email,
+          `Quotation #${quote.quote_number} from Workshop`,
+          emailHtml,
+          `Quotation #${quote.quote_number} for ₹${Number.parseFloat(quote.total_amount || 0).toFixed(2)} sent to ${quote.customer_name}`,
+          userId
+        ]
+      ).catch(eErr => console.error('[Quote Email Save Error]', eErr.message))
+    ])
 
     res.json({ message: `Quotation sent successfully to ${quote.customer_email}`, mailId: data?.id })
   } catch (err) {

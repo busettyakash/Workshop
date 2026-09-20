@@ -96,8 +96,13 @@ api.interceptors.response.use(
     const method = err.config?.method?.toLowerCase()
     if (method && method !== 'get') {
       const url = err.config?.url || ''
-      const prefix = url.split('/').slice(0, 2).join('/')
-      if (prefix) invalidatePrefix(prefix)
+      const prefix = `/${(url || '').replace(/^\//, '').split('/')[0]}`
+      if (prefix && prefix !== '/') {
+        const targets = CROSS_RESOURCE_INVALIDATIONS[prefix] || [prefix]
+        for (const target of targets) {
+          invalidatePrefix(target)
+        }
+      }
     }
 
     if (err.response?.status === 401) {
@@ -120,6 +125,17 @@ api.interceptors.response.use(
 // We patch the core methods to auto-bust relevant cache entries.
 const MUTATING_METHODS = ['post', 'put', 'patch', 'delete']
 
+const CROSS_RESOURCE_INVALIDATIONS = {
+  '/import-stock': ['/import-stock', '/products', '/reports', '/dashboard', '/profit-margin'],
+  '/products': ['/products', '/import-stock', '/reports', '/dashboard', '/profit-margin'],
+  '/billing': ['/billing', '/products', '/import-stock', '/orders', '/reports', '/dashboard'],
+  '/orders': ['/orders', '/quotes', '/billing', '/reports', '/dashboard'],
+  '/quotes': ['/quotes', '/orders', '/billing'],
+  '/people': ['/people', '/reports', '/dashboard'],
+  '/notes': ['/notes', '/dashboard'],
+  '/emails': ['/emails', '/dashboard'],
+}
+
 MUTATING_METHODS.forEach((method) => {
   const original = api[method].bind(api)
   api[method] = async (url, ...args) => {
@@ -127,9 +143,12 @@ MUTATING_METHODS.forEach((method) => {
     // Derive the root resource prefix: e.g. "/billing/123" → "/billing"
     const prefix = `/${(url || '').replace(/^\//, '').split('/')[0]}`
     if (prefix && prefix !== '/') {
-      invalidatePrefix(prefix)
+      const targets = CROSS_RESOURCE_INVALIDATIONS[prefix] || [prefix]
+      for (const target of targets) {
+        invalidatePrefix(target)
+      }
       if (import.meta.env.DEV) {
-        console.log(`🗑️ [Cache INVALIDATE] prefix="${prefix}" after ${method.toUpperCase()} ${url}`)
+        console.log(`🗑️ [Cache INVALIDATE] targets=${JSON.stringify(targets)} after ${method.toUpperCase()} ${url}`)
       }
     }
     return result

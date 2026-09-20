@@ -46,10 +46,8 @@ router.use((_req, _res, next) => {
 
 export async function clearPeopleCache(userId) {
   try {
-    // Clear in-memory cache immediately (sync, instant)
     clearMemoryCachePrefix(`people:${userId}:`)
-    // Clear Redis in background (no await needed to unblock the response)
-    deleteCachedPattern(redis, `people:${userId}:*`).catch(() => {})
+    await deleteCachedPattern(redis, `people:${userId}:*`).catch(() => {})
   } catch (_e) {}
 }
 
@@ -169,7 +167,7 @@ router.post('/', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW()) RETURNING *`,
       [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', compVal, compVal, userId, creatorName, creatorEmail, creatorRole]
     )
-    clearPeopleCache(userId)
+    await clearPeopleCache(userId)
     res.status(201).json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -201,7 +199,7 @@ router.put('/:id', async (req, res) => {
       [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', compVal, compVal, req.params.id, userId]
     )
     if (!rows.length) return res.status(404).json({ error: 'Person not found' })
-    clearPeopleCache(userId)
+    await clearPeopleCache(userId)
     res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -213,7 +211,7 @@ router.delete('/:id', async (req, res) => {
   const userId = req.workspaceId
   try {
     await query('DELETE FROM people WHERE id=$1 AND user_id = $2', [req.params.id, userId])
-    clearPeopleCache(userId)
+    await clearPeopleCache(userId)
     res.json({ message: 'Person deleted' })
   } catch (err) {
     res.status(500).json({ error: err.message })

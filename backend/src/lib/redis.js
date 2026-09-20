@@ -23,10 +23,16 @@ const redis = new Proxy(rawRedis, {
     if (typeof orig !== 'function' || !keyPrefix) return orig
 
     return function (...args) {
-      if (args.length > 0 && typeof args[0] === 'string' && !args[0].startsWith(keyPrefix)) {
-        args[0] = keyPrefix + args[0]
-      }
-      return orig.apply(target, args)
+      const modifiedArgs = args.map(arg => {
+        if (typeof arg === 'string' && !arg.startsWith(keyPrefix)) {
+          return keyPrefix + arg
+        }
+        if (Array.isArray(arg)) {
+          return arg.map(item => (typeof item === 'string' && !item.startsWith(keyPrefix)) ? keyPrefix + item : item)
+        }
+        return arg
+      })
+      return orig.apply(target, modifiedArgs)
     }
   }
 })

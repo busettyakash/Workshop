@@ -3,6 +3,7 @@ import { query, querySerial } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { getCached, setCached, deleteCached, deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
+import { clearProductsCache } from './products.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -22,6 +23,7 @@ async function clearImportStockCache(userId) {
     await Promise.all([
       deleteCachedPattern(redis, `import_stock:${userId}*`),
       deleteCachedPattern(redis, `import_stock_note:${userId}*`),
+      clearProductsCache(userId),
     ]).catch(() => {})
   } catch (_err) {
     console.warn('%s Failed to clear import stock cache', LOG_PREFIX)
@@ -434,7 +436,7 @@ router.post('/', async (req, res) => {
       ]
     )
     console.log('%s POST / SUCCESS', LOG_PREFIX)
-    clearImportStockCache(userId).catch(() => {})
+    await clearImportStockCache(userId)
     res.status(201).json(rows[0])
   } catch (err) {
     console.error('%s POST / ERROR', LOG_PREFIX)
@@ -787,7 +789,7 @@ router.post('/bulk-add-to-products', async (req, res) => {
       [ids, userId]
     )
 
-    clearImportStockCache(userId).catch(() => {})
+    await clearImportStockCache(userId)
     console.log(`${LOG_PREFIX} POST /bulk-add-to-products — SUCCESS, ${importRows.length} products added`)
     return res.json({ message: `${importRows.length} products added successfully`, data: rows })
   } catch (err) {
@@ -820,7 +822,7 @@ router.post('/:id/add-to-products', async (req, res) => {
       [req.params.id, userId]
     )
 
-    clearImportStockCache(userId).catch(() => {})
+    await clearImportStockCache(userId)
     console.log('%s POST /:id/add-to-products — SUCCESS', LOG_PREFIX)
     return res.json(rows[0])
   } catch (err) {

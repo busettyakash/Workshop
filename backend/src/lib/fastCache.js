@@ -24,7 +24,7 @@ export function deleteMemoryCache(key) {
   memoryCache.delete(key)
 }
 
-export async function withTimeout(promise, timeoutMs = 250) {
+export async function withTimeout(promise, timeoutMs = 800) {
   let timer
   try {
     return await Promise.race([
@@ -38,36 +38,41 @@ export async function withTimeout(promise, timeoutMs = 250) {
   }
 }
 
-export async function getCached(redis, key, timeoutMs = 250) {
-  // 1. Memory cache — instant, no network round-trip
+export async function getCached(redis, key, timeoutMs = 800) {
+  // 1. Memory cache — only for immediate short-term burst deduplication (3s max)
   const memoryValue = getMemoryCache(key)
   if (memoryValue !== null) return memoryValue
 
-  // 2. Redis cache — with timeout so it never blocks the request
+  // 2. Redis cache — distributed across all containers/instances
   const redisValue = await withTimeout(redis.get(key).catch(() => null), timeoutMs)
   if (redisValue !== null && redisValue !== undefined) {
-    // Parse JSON if string, store as object in memory
+    // Parse JSON if string, store as object in memory with short TTL (3s)
+    // to prevent cross-container stale cache divergence while still buffering rapid bursts
     const parsed = typeof redisValue === 'string'
       ? (() => { try { return JSON.parse(redisValue) } catch { return redisValue } })()
       : redisValue
-    setMemoryCache(key, parsed, 120) // keep in memory for 2 min
+    setMemoryCache(key, parsed, 3)
     return parsed
   }
 
   return null
 }
 
-export function setCached(redis, key, value, ttlSeconds = 300) {
-  // Store parsed object in memory — avoid JSON.stringify/parse overhead on hits
-  setMemoryCache(key, value, ttlSeconds)
+export async function setCached(redis, key, value, ttlSeconds = 300) {
+  // Short in-memory buffer (max 3s) so mutations quickly propagate across instances
+  const memTtl = Math.min(ttlSeconds, 3)
+  setMemoryCache(key, value, memTtl)
   // Store JSON string in Redis
   const str = typeof value === 'string' ? value : JSON.stringify(value)
-  redis.set(key, str, { ex: ttlSeconds }).catch(() => { })
+  await redis.set(key, str, { ex: ttlSeconds }).catch(() => { })
 }
 
-export function deleteCached(redis, key) {
+export async function deleteCached(redis, key) {
   deleteMemoryCache(key)
-  redis.del(key).catch(() => { })
+  if (typeof key === 'string' && key.startsWith('local:')) {
+    deleteMemoryCache(key.slice(6))
+  }
+  return await redis.del(key).catch(() => { })
 }
 
 export function clearMemoryCachePrefix(prefix) {
@@ -81,13 +86,26 @@ export function clearMemoryCachePrefix(prefix) {
 export async function deleteCachedPattern(redis, pattern) {
   const prefix = pattern ? pattern.split('*')[0] : ''
   clearMemoryCachePrefix(prefix)
+  if (prefix.startsWith('local:')) {
+    clearMemoryCachePrefix(prefix.slice(6))
+  }
   try {
     const keys = await redis.keys(pattern).catch(() => [])
-    for (const k of keys) {
-      deleteMemoryCache(k)
-      await redis.del(k).catch(() => { })
+    if (keys && keys.length > 0) {
+      for (const k of keys) {
+        deleteMemoryCache(k)
+        if (typeof k === 'string' && k.startsWith('local:')) {
+          deleteMemoryCache(k.slice(6))
+        }
+      }
+      // Delete in batches from Redis to avoid huge single-line limits
+      const chunkSize = 50
+      for (let i = 0; i < keys.length; i += chunkSize) {
+        const chunk = keys.slice(i, i + chunkSize)
+        await redis.del(...chunk).catch(() => {})
+      }
     }
-  } catch { }
+  } catch (_err) {}
 }
 
 // Run multiple queries on the SAME db connection to avoid repeated pool.connect + set_config overhead

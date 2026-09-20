@@ -5,7 +5,7 @@ import { requireAuth } from '../middleware/auth.js'
 import redis from '../lib/redis.js'
 import { deleteCachedPattern, clearMemoryCachePrefix } from '../lib/fastCache.js'
 import { getProductHsnMap, enrichItemsWithCache } from '../lib/productCache.js'
-import { logStockHistory } from './products.js'
+import { logStockHistory, clearProductsCache } from './products.js'
 
 export async function clearBillingCache(userId) {
   try {
@@ -503,8 +503,11 @@ async function deductStockForBillItems(items, userId, billId) {
     await deductStockForItem(item, userId, billId)
   }
   if (userId) {
-    await deleteCachedPattern(redis, `import_stock:${userId}*`)
-    await deleteCachedPattern(redis, `import_stock_note:${userId}*`)
+    await Promise.all([
+      deleteCachedPattern(redis, `import_stock:${userId}*`),
+      deleteCachedPattern(redis, `import_stock_note:${userId}*`),
+      clearProductsCache(userId),
+    ]).catch(() => {})
   }
 }
 

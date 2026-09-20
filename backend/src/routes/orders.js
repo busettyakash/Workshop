@@ -10,10 +10,10 @@ const router = Router()
 router.use(apiLimiter)
 router.use(requireAuth)
 
-export function clearOrdersCache(userId) {
+export async function clearOrdersCache(userId) {
   try {
     clearMemoryCachePrefix(`orders:${userId}:`)
-    deleteCachedPattern(redis, `orders:${userId}:*`).catch(() => {})
+    await deleteCachedPattern(redis, `orders:${userId}:*`).catch(() => {})
   } catch (_e) {}
 }
 

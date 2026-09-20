@@ -14,8 +14,14 @@ export async function clearProductsCache(userId) {
   try {
     clearMemoryCachePrefix(`products:list:${userId}`)
     clearMemoryCachePrefix(`products:${userId}`)
-    await deleteCachedPattern(redis, `products:list:${userId}*`).catch(() => {})
-    await deleteCachedPattern(redis, `products:${userId}*`).catch(() => {})
+    clearMemoryCachePrefix('products:list:default-user')
+    clearMemoryCachePrefix('products:default-user')
+    await Promise.all([
+      deleteCachedPattern(redis, `products:list:${userId}*`),
+      deleteCachedPattern(redis, `products:${userId}*`),
+      deleteCachedPattern(redis, 'products:list:default-user*'),
+      deleteCachedPattern(redis, 'products:default-user*'),
+    ]).catch(() => {})
   } catch (_e) {}
 }
 
@@ -218,7 +224,7 @@ router.get('/', async (req, res) => {
 
   try {
     if (cacheKey) {
-      const cached = await getCached(redis, cacheKey, 60)
+      const cached = await getCached(redis, cacheKey, 500)
       if (cached) {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
         return res.json(cached)

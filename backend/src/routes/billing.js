@@ -49,7 +49,13 @@ async function ensureBillingSchema() {
     query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255)`).catch(() => {}),
     query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50)`).catch(() => {}),
     query(`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_customer_id_fkey`).catch(() => {}),
-    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => {})
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS loose_kg NUMERIC(10, 2) DEFAULT 0`).catch(() => {}),
+
+    // ── Critical indexes — fix full table scans on billing page loads ──────────
+    query(`CREATE INDEX IF NOT EXISTS idx_bills_user_id_status ON bills (user_id, status)`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_bills_user_id_created_at ON bills (user_id, created_at DESC)`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items (bill_id)`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_products_user_id_name ON products (user_id, name)`).catch(() => {}),
   ])
 }
 

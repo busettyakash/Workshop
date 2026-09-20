@@ -102,6 +102,31 @@ async function ensureWorkspaceTable() {
       ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT;
       ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
     `).catch(err => console.error('[DB] Error ensuring columns on shop_profiles:', err.message)),
+
+    // ── Critical indexes — fix full table scans on every auth query ──────────
+    // workspace_members: member_email lookup (used on every login + check-email)
+    query(`CREATE INDEX IF NOT EXISTS idx_workspace_members_member_email
+           ON workspace_members (LOWER(member_email))`).catch(() => {}),
+
+    // workspace_members: owner lookup (used for workspace resolution)
+    query(`CREATE INDEX IF NOT EXISTS idx_workspace_members_owner_id
+           ON workspace_members (workspace_owner_id)`).catch(() => {}),
+
+    // shop_profiles: email lookup (used on every login, check-email, auth/me)
+    query(`CREATE INDEX IF NOT EXISTS idx_shop_profiles_email
+           ON shop_profiles (LOWER(email))`).catch(() => {}),
+
+    // shop_profiles: user_id lookup (used on every token verification)
+    query(`CREATE INDEX IF NOT EXISTS idx_shop_profiles_user_id
+           ON shop_profiles (user_id)`).catch(() => {}),
+
+    // products: user_id lookup (used on every login for workspace resolution)
+    query(`CREATE INDEX IF NOT EXISTS idx_products_user_id
+           ON products (user_id)`).catch(() => {}),
+
+    // bills: user_id lookup (used on every login for workspace resolution)
+    query(`CREATE INDEX IF NOT EXISTS idx_bills_user_id
+           ON bills (user_id)`).catch(() => {}),
   ])
 }
 
@@ -465,12 +490,12 @@ async function resolveInvitedWorkspace(email) {
 
 async function hasOwnProductsOrBills(userId) {
   if (!userId) return false
-  // Use a UNION of two EXISTS checks — stops at the first match (fast)
+  // Each SELECT must be wrapped in () when using LIMIT inside UNION ALL in PostgreSQL
   const { rows } = await query(
     `SELECT 1 AS has_data FROM (
-       SELECT 1 FROM products WHERE user_id::text = $1::text LIMIT 1
+       (SELECT 1 FROM products WHERE user_id::text = $1::text LIMIT 1)
        UNION ALL
-       SELECT 1 FROM bills WHERE user_id::text = $1::text LIMIT 1
+       (SELECT 1 FROM bills WHERE user_id::text = $1::text LIMIT 1)
      ) sub LIMIT 1`,
     [userId]
   ).catch(() => ({ rows: [] }))

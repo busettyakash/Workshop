@@ -499,6 +499,7 @@ export default function Orders() {
                         <th>ORDER</th>
                         <th>CUSTOMER</th>
                         <th>QUOTE</th>
+                        <th>CREATED BY</th>
                         <th>ORDER DATE</th>
                         <th>VALID UNTIL</th>
                         <th style={{ textAlign: 'right' }}>TOTAL</th>
@@ -560,6 +561,22 @@ export default function Orders() {
                               }}>
                                 {row.quote_number || `QT-${row.id}`}
                               </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                <span style={{ fontWeight: 600, fontSize: '0.80rem', color: '#1e293b' }}>
+                                  {row.created_by_name || 'Admin'}
+                                </span>
+                                {(row.created_by_name || 'Admin').toLowerCase().trim() !== (row.created_by_role || 'Admin').toLowerCase().trim() && (
+                                  <span style={{
+                                    fontSize: '0.70rem',
+                                    fontWeight: 500,
+                                    color: (row.created_by_role || 'Admin').toLowerCase() === 'member' ? '#2563eb' : '#64748b'
+                                  }}>
+                                    ({(row.created_by_role || '').toLowerCase() === 'member' ? 'Member' : 'Admin'})
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td>{formatDate(row.created_at)}</td>
                             <td>{formatDate(row.valid_until)}</td>

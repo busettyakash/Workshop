@@ -50,6 +50,9 @@ async function ensureImportStockSchema() {
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS total_amount DECIMAL(10, 2) DEFAULT 0;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS balance_due DECIMAL(10, 2) DEFAULT 0;
       ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(255);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255);
+      ALTER TABLE import_stock ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50);
     END $$;
     CREATE TABLE IF NOT EXISTS import_stock_payments (
       id SERIAL PRIMARY KEY,
@@ -71,33 +74,6 @@ async function ensureImportStockSchema() {
     DROP POLICY IF EXISTS user_isolation_policy ON public.import_stock_payments;
     CREATE POLICY user_isolation_policy ON public.import_stock_payments FOR ALL USING ((user_id = current_setting('app.current_user_id'::text, true)) OR (current_setting('app.bypass_rls'::text, true) = 'on'::text));
   `).catch(() => {})
-
-  // Run schema additions and sync financials for existing records
-  // (Data fixes are run in background without blocking incoming requests)
-  Promise.all([
-    query(`UPDATE import_stock SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {}),
-    query(`UPDATE products SET updated_price_date = CURRENT_DATE WHERE updated_price IS NOT NULL AND (updated_price_date < CURRENT_DATE OR updated_price_date IS NULL)`).catch(() => {}),
-    query(`
-      UPDATE import_stock i
-      SET 
-        total_amount = CASE 
-          WHEN COALESCE(i.price_covers, 0) > 0 THEN 
-            ROUND((COALESCE(i.stock, 0) * COALESCE(i.bag_weight, 1) * (COALESCE(i.buying_price, 0) / i.price_covers))::numeric, 2)
-          ELSE 
-            ROUND((COALESCE(i.stock, 0) * COALESCE(i.buying_price, 0))::numeric, 2)
-        END,
-        amount_paid = COALESCE((SELECT SUM(amount) FROM import_stock_payments p WHERE p.import_stock_id = i.id), 0),
-        paid_amount = COALESCE((SELECT SUM(amount) FROM import_stock_payments p WHERE p.import_stock_id = i.id), 0),
-        balance_due = GREATEST(0, (
-          CASE 
-            WHEN COALESCE(i.price_covers, 0) > 0 THEN 
-              ROUND((COALESCE(i.stock, 0) * COALESCE(i.bag_weight, 1) * (COALESCE(i.buying_price, 0) / i.price_covers))::numeric, 2)
-            ELSE 
-              ROUND((COALESCE(i.stock, 0) * COALESCE(i.buying_price, 0))::numeric, 2)
-          END
-        ) - COALESCE((SELECT SUM(amount) FROM import_stock_payments p WHERE p.import_stock_id = i.id), 0))
-    `).catch((err) => console.warn('[ImportStock] Initial financials sync warning:', err.message)),
-  ]).catch(() => {})
 }
 
 async function syncImportStockFinancials(importStockId, userId) {
@@ -153,17 +129,14 @@ async function syncImportStockFinancials(importStockId, userId) {
   }
 }
 
-router.use(async (_req, _res, next) => {
-  try {
-    ensureImportStockSchemaPromise ||= ensureImportStockSchema().catch((err) => {
+router.use((_req, _res, next) => {
+  if (!ensureImportStockSchemaPromise) {
+    ensureImportStockSchemaPromise = ensureImportStockSchema().catch((err) => {
       ensureImportStockSchemaPromise = null
-      throw err
+      console.warn('[ImportStock Schema Warning]', err.message)
     })
-    await ensureImportStockSchemaPromise
-    next()
-  } catch (err) {
-    next(err)
   }
+  next()
 })
 
 function getIndianDateStr() {
@@ -183,7 +156,15 @@ const IMPORT_STOCK_LATERAL_JOIN = `
 `
 
 const IMPORT_STOCK_SELECT_FIELDS = `
-  i.*, p.id AS product_id,
+  i.*,
+  COALESCE(
+    NULLIF(TRIM(i.created_by_name), 'Admin'),
+    (SELECT NULLIF(TRIM(CONCAT(first_name, ' ', last_name)), '') FROM shop_profiles WHERE user_id::text = i.user_id::text LIMIT 1),
+    (SELECT shop_name FROM shop_profiles WHERE user_id::text = i.user_id::text LIMIT 1),
+    'Admin'
+  ) AS created_by_name,
+  CASE WHEN i.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role,
+  p.id AS product_id,
   CASE WHEN i.status = 'added' THEN COALESCE(p.stock, i.stock) ELSE i.stock END AS stock,
   CASE WHEN i.status = 'added' THEN COALESCE(p.loose_kg, i.loose_kg) ELSE i.loose_kg END AS loose_kg,
   CASE WHEN i.status = 'added' THEN COALESCE(p.price_covers, i.price_covers) ELSE i.price_covers END AS price_covers,
@@ -248,23 +229,29 @@ async function fetchImportStockCursor(res, { conditions, params, limit, orderCol
 
 async function fetchImportStockOffset(res, { conditions, params, limit, offset, page, orderCol, cacheKey }) {
   const where = `WHERE ${conditions.join(' AND ')}`
-  const countRes = await query(
-    `SELECT COUNT(*) FROM import_stock i ${where}`,
-    params
-  )
-  const total = Number.parseInt(countRes.rows[0].count, 10) || 0
-  const totalPages = Math.ceil(total / limit) || 1
+  const queryParams = [...params, limit, offset]
 
-  params.push(limit, offset)
-  const { rows } = await query(
-    `SELECT ${IMPORT_STOCK_SELECT_FIELDS}
+  const { rows: rawRows } = await query(
+    `SELECT ${IMPORT_STOCK_SELECT_FIELDS}, COUNT(*) OVER() AS _total_count
      FROM import_stock i
      ${IMPORT_STOCK_LATERAL_JOIN}
      ${where}
      ORDER BY ${orderCol}
-     LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params
+     LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
+    queryParams
   )
+
+  let total = rawRows.length > 0 ? Number.parseInt(rawRows[0]._total_count, 10) : 0
+  if (total === 0 && offset > 0) {
+    const countRes = await query(`SELECT COUNT(*) FROM import_stock i ${where}`, params)
+    total = Number.parseInt(countRes.rows[0]?.count, 10) || 0
+  }
+
+  const rows = rawRows.map(r => {
+    const { _total_count, ...rest } = r
+    return rest
+  })
+  const totalPages = Math.ceil(total / limit) || 1
 
   const hasNextPage = page < totalPages
   const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
@@ -397,10 +384,40 @@ router.post('/', async (req, res) => {
     console.warn('%s POST / — VALIDATION FAILED: missing required fields', LOG_PREFIX)
     return res.status(400).json({ error: 'name and price are required' })
   }
+  const creatorName = (req.user?.firstName || req.user?.first_name)
+    ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
+    : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
+  const creatorEmail = req.user?.email || ''
+  const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
+
   try {
+    const stockQty = Number.parseFloat(stock) || 0
+    const bagWeightVal = Number.parseFloat(bag_weight) || 1
+    const buyingPriceVal = Number.parseFloat(buying_price) || 0
+    const priceCoversVal = Number.parseFloat(price_covers) || 0
+
+    let totalAmount = 0
+    if (priceCoversVal > 0) {
+      totalAmount = stockQty * bagWeightVal * (buyingPriceVal / priceCoversVal)
+    } else {
+      totalAmount = stockQty * buyingPriceVal
+    }
+    totalAmount = Math.round(totalAmount * 100) / 100
+    const balanceDue = totalAmount
+
     const { rows } = await query(
-      `INSERT INTO import_stock (name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date, stock, status, unit, description, user_id, bag_weight, buyer_name, buyer_phone, buyer_city, buyer_state, note, add_stock_qty, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW()) RETURNING *`,
+      `INSERT INTO import_stock (
+        name, sku, category, price, buying_price, price_covers, updated_price, updated_price_date,
+        stock, status, unit, description, user_id, bag_weight, buyer_name, buyer_phone,
+        buyer_city, buyer_state, note, add_stock_qty, total_amount, amount_paid, paid_amount,
+        balance_due, created_by_name, created_by_email, created_by_role, created_at, updated_at
+      )
+       VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21, 0, 0,
+        $22, $23, $24, $25, NOW(), NOW()
+      ) RETURNING *`,
       [
         name, sku, category, price,
         buying_price ? Number.parseFloat(buying_price) : null,
@@ -410,12 +427,14 @@ router.post('/', async (req, res) => {
         stock || 0, status || 'pending', unit || 'pcs', description, userId, Number.parseFloat(bag_weight) || 1,
         buyer_name || null, buyer_phone || null, buyer_city || null, buyer_state || null,
         note || null,
-        add_stock_qty ? Number.parseFloat(add_stock_qty) : null
+        add_stock_qty ? Number.parseFloat(add_stock_qty) : null,
+        totalAmount,
+        balanceDue,
+        creatorName, creatorEmail, creatorRole
       ]
     )
     console.log('%s POST / SUCCESS', LOG_PREFIX)
-    await syncImportStockFinancials(rows[0].id, userId)
-    await clearImportStockCache(userId)
+    clearImportStockCache(userId).catch(() => {})
     res.status(201).json(rows[0])
   } catch (err) {
     console.error('%s POST / ERROR', LOG_PREFIX)
@@ -643,60 +662,84 @@ async function updateExistingProductFromImport(existingProduct, item, userId, da
     [item.stock, looseKg, item.price, priceCovers, item.updated_price || null, dateStr, item.bag_weight || 1, targetId]
   )
 
-  await query(
-    `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-    [targetId, userId, prevP, newP, dateStr, 'Import Stock Restock']
-  ).catch(() => {})
+  const historyPromises = [
+    query(
+      `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [targetId, userId, prevP, newP, dateStr, 'Import Stock Restock']
+    ).catch(() => {})
+  ]
 
   if (importedQty > 0) {
     const supplierSuffix = item.buyer_name ? ` (Supplier: ${item.buyer_name})` : ''
-    await query(
-      `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
-       VALUES ($1, $2, 'added', $3, $4, $5, 'Stock Import', $6, NOW())`,
-      [
-        targetId, userId, importedQty, currentStock, newStock,
-        `Restocked +${importedQty} ${unitLabel} via Stock Import${supplierSuffix}`
-      ]
-    ).catch(() => {})
+    historyPromises.push(
+      query(
+        `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+         VALUES ($1, $2, 'added', $3, $4, $5, 'Stock Import', $6, NOW())`,
+        [
+          targetId, userId, importedQty, currentStock, newStock,
+          `Restocked +${importedQty} ${unitLabel} via Stock Import${supplierSuffix}`
+        ]
+      ).catch(() => {})
+    )
   }
 
+  Promise.all(historyPromises).catch(() => {})
   return targetId
 }
 
 async function insertNewProductFromImport(item, userId, dateStr, looseKg, priceCovers) {
+  const creatorName = item.created_by_name || 'Admin'
+  const creatorEmail = item.created_by_email || ''
+  const creatorRole = (item.created_by_role && item.created_by_role.toLowerCase() === 'member') ? 'Member' : 'Admin'
+
   const newProd = await query(
-    `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, unit, status, description, user_id, bag_weight, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, NOW(), NOW()) RETURNING id`,
-    [item.name, item.sku, item.category, item.price, priceCovers, item.updated_price || null, dateStr, item.stock, looseKg, item.unit || 'pcs', item.description, userId, item.bag_weight || 1]
+    `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, unit, status, description, user_id, bag_weight, created_by_name, created_by_email, created_by_role, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, $14, $15, $16, NOW(), NOW()) RETURNING id`,
+    [
+      item.name, item.sku, item.category, item.price, priceCovers,
+      item.updated_price || null, dateStr, item.stock, looseKg,
+      item.unit || 'pcs', item.description, userId, item.bag_weight || 1,
+      creatorName, creatorEmail, creatorRole
+    ]
   )
   const targetId = newProd.rows[0].id
   const importedQty = Number.parseFloat(item.stock || 0)
   const unitLabel = getImportUnitLabel(item, importedQty)
 
-  await query(
-    `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
-     VALUES ($1, $2, NULL, $3, NOW(), 'Initial Base Price', NOW())`,
-    [targetId, userId, item.price]
-  ).catch(() => {})
-  if (item.updated_price) {
-    await query(
+  const historyPromises = [
+    query(
       `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
-       VALUES ($1, $2, $3, $4, $5, 'Updated Price', NOW())`,
-      [targetId, userId, item.price, item.updated_price, dateStr]
+       VALUES ($1, $2, NULL, $3, NOW(), 'Initial Base Price', NOW())`,
+      [targetId, userId, item.price]
     ).catch(() => {})
+  ]
+
+  if (item.updated_price) {
+    historyPromises.push(
+      query(
+        `INSERT INTO product_price_history (product_id, user_id, old_price, new_price, effective_date, notes, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'Updated Price', NOW())`,
+        [targetId, userId, item.price, item.updated_price, dateStr]
+      ).catch(() => {})
+    )
   }
+
   if (importedQty > 0) {
     const supplierSuffix = item.buyer_name ? ` (Supplier: ${item.buyer_name})` : ''
-    await query(
-      `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
-       VALUES ($1, $2, 'added', $3, 0, $4, 'Stock Import', $5, NOW())`,
-      [
-        targetId, userId, importedQty, importedQty,
-        `Initial imported stock of ${importedQty} ${unitLabel} from Stock Import${supplierSuffix}`
-      ]
-    ).catch(() => {})
+    historyPromises.push(
+      query(
+        `INSERT INTO product_stock_history (product_id, user_id, change_type, qty_change, stock_before, stock_after, source, notes, created_at)
+         VALUES ($1, $2, 'added', $3, 0, $4, 'Stock Import', $5, NOW())`,
+        [
+          targetId, userId, importedQty, importedQty,
+          `Initial imported stock of ${importedQty} ${unitLabel} from Stock Import${supplierSuffix}`
+        ]
+      ).catch(() => {})
+    )
   }
+
+  Promise.all(historyPromises).catch(() => {})
   return targetId
 }
 
@@ -737,16 +780,14 @@ router.post('/bulk-add-to-products', async (req, res) => {
     }
 
     console.log(`${LOG_PREFIX} POST /bulk-add-to-products — Adding ${importRows.length} items to products`)
-    for (const item of importRows) {
-      await syncOrInsertProductFromImportItem(item, userId)
-    }
+    await Promise.all(importRows.map(item => syncOrInsertProductFromImportItem(item, userId)))
 
     const { rows } = await query(
       "UPDATE import_stock SET status = 'added', updated_at = NOW() WHERE id = ANY($1::int[]) AND user_id = $2 RETURNING *",
       [ids, userId]
     )
 
-    await clearImportStockCache(userId)
+    clearImportStockCache(userId).catch(() => {})
     console.log(`${LOG_PREFIX} POST /bulk-add-to-products — SUCCESS, ${importRows.length} products added`)
     return res.json({ message: `${importRows.length} products added successfully`, data: rows })
   } catch (err) {
@@ -779,7 +820,7 @@ router.post('/:id/add-to-products', async (req, res) => {
       [req.params.id, userId]
     )
 
-    await clearImportStockCache(userId)
+    clearImportStockCache(userId).catch(() => {})
     console.log('%s POST /:id/add-to-products — SUCCESS', LOG_PREFIX)
     return res.json(rows[0])
   } catch (err) {

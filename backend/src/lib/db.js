@@ -60,9 +60,9 @@ const createPool = () => new Pool({
   application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
   ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
-  min: process.env.VERCEL ? 0 : 1,
-  idleTimeoutMillis: process.env.VERCEL ? 5000 : 30000,
-  connectionTimeoutMillis: 5000,
+  min: process.env.VERCEL ? 0 : 4,
+  idleTimeoutMillis: process.env.VERCEL ? 5000 : 300000,
+  connectionTimeoutMillis: 10000,
   statement_timeout: 30000,
   idle_in_transaction_session_timeout: 10000,
   query_timeout: 30000,
@@ -85,10 +85,20 @@ pool.on('connect', () => {
   }
 })
 
-// Warm up the pool immediately so queries never hit cold TLS handshake delay
+// Warm up the pool immediately with 4 ready connections so queries never hit cold TLS handshake delay
 try {
-  await pool.query('SELECT 1')
-  if (isDevelopment) console.log('[DB] Pool warm & ready ✅')
+  if (isDevelopment) {
+    const clients = await Promise.all([
+      pool.connect(),
+      pool.connect(),
+      pool.connect(),
+      pool.connect(),
+    ])
+    clients.forEach(c => c.release())
+    console.log('[DB] Pool warm & ready (4 connections) ✅')
+  } else {
+    await pool.query('SELECT 1')
+  }
 } catch (err) {
   console.warn('[DB Warmup Warning]', err.message)
 }

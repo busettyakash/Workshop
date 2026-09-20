@@ -27,21 +27,21 @@ const ensureTable = async () => {
     ALTER TABLE people ADD COLUMN IF NOT EXISTS user_id TEXT;
     ALTER TABLE people ADD COLUMN IF NOT EXISTS company TEXT;
     ALTER TABLE people ADD COLUMN IF NOT EXISTS company_name TEXT;
+    ALTER TABLE people ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(255);
+    ALTER TABLE people ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255);
+    ALTER TABLE people ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50);
   `).catch(() => {})
 }
 
 let ensureTablePromise
-router.use(async (_req, _res, next) => {
-  try {
-    ensureTablePromise ||= ensureTable().catch((err) => {
+router.use((_req, _res, next) => {
+  if (!ensureTablePromise) {
+    ensureTablePromise = ensureTable().catch((err) => {
       ensureTablePromise = null
-      throw err
+      console.warn('[People Table Warning]', err.message)
     })
-    await ensureTablePromise
-    next()
-  } catch (err) {
-    next(err)
   }
+  next()
 })
 
 export async function clearPeopleCache(userId) {
@@ -100,7 +100,15 @@ router.get('/', async (req, res) => {
       const where = `WHERE ${conditions.join(' AND ')}`
       params.push(limit + 1)
       const { rows } = await query(
-        `SELECT * FROM people ${where} ORDER BY ${orderCol} LIMIT $${params.length}`,
+        `SELECT people.*, 
+           COALESCE(
+             NULLIF(TRIM(people.created_by_name), 'Admin'),
+             (SELECT NULLIF(TRIM(CONCAT(first_name, ' ', last_name)), '') FROM shop_profiles WHERE user_id::text = people.user_id::text LIMIT 1),
+             (SELECT shop_name FROM shop_profiles WHERE user_id::text = people.user_id::text LIMIT 1),
+             'Admin'
+           ) AS created_by_name, 
+            CASE WHEN people.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role 
+         FROM people ${where} ORDER BY ${orderCol} LIMIT $${params.length}`,
         params
       )
       const hasNextPage = rows.length > limit
@@ -118,7 +126,16 @@ router.get('/', async (req, res) => {
     const where = `WHERE ${conditions.join(' AND ')}`
     const queryParams = [...params, limit, offset]
     const { rows: rawRows } = await query(
-      `SELECT *, COUNT(*) OVER() AS _total_count FROM people ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
+      `SELECT people.*, 
+         COALESCE(
+           NULLIF(TRIM(people.created_by_name), 'Admin'),
+           (SELECT NULLIF(TRIM(CONCAT(first_name, ' ', last_name)), '') FROM shop_profiles WHERE user_id::text = people.user_id::text LIMIT 1),
+           (SELECT shop_name FROM shop_profiles WHERE user_id::text = people.user_id::text LIMIT 1),
+           'Admin'
+         ) AS created_by_name, 
+          CASE WHEN people.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role, 
+         COUNT(*) OVER() AS _total_count 
+       FROM people ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
       queryParams
     )
 
@@ -141,11 +158,16 @@ router.post('/', async (req, res) => {
   const { name, email, phone, persona, status, notes, company, company_name } = req.body
   if (!name) return res.status(400).json({ error: 'name is required' })
   const compVal = company || company_name || ''
+  const creatorName = (req.user?.firstName || req.user?.first_name)
+    ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
+    : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
+  const creatorEmail = req.user?.email || ''
+  const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
   try {
     const { rows } = await query(
-      `INSERT INTO people (name, email, phone, persona, status, notes, company, company_name, user_id, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW()) RETURNING *`,
-      [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', compVal, compVal, userId]
+      `INSERT INTO people (name, email, phone, persona, status, notes, company, company_name, user_id, created_by_name, created_by_email, created_by_role, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW()) RETURNING *`,
+      [name, email || '', phone || '', persona || 'Lead', status || 'active', notes || '', compVal, compVal, userId, creatorName, creatorEmail, creatorRole]
     )
     clearPeopleCache(userId)
     res.status(201).json(rows[0])

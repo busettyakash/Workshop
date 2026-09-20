@@ -60,6 +60,14 @@ function ordersUnion(whereClause = '') {
         q.line_items::text AS line_items,
         q.notes,
         q.user_id,
+        COALESCE(
+          NULLIF(TRIM(q.created_by_name), 'Admin'),
+          (SELECT NULLIF(TRIM(CONCAT(first_name, ' ', last_name)), '') FROM shop_profiles WHERE user_id::text = q.user_id::text LIMIT 1),
+          (SELECT shop_name FROM shop_profiles WHERE user_id::text = q.user_id::text LIMIT 1),
+          'Admin'
+        ) AS created_by_name,
+        COALESCE(q.created_by_email, '') AS created_by_email,
+        CASE WHEN q.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role,
         q.created_at,
         q.updated_at
       FROM quotes q

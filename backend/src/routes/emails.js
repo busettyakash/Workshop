@@ -48,16 +48,17 @@ const ensureTable = async () => {
       direction        TEXT DEFAULT 'inbox',
       attachment_name  TEXT,
       attachment_data  TEXT,
+      to_email         TEXT,
       user_id          TEXT NOT NULL,
       created_at       TIMESTAMPTZ DEFAULT NOW(),
       updated_at       TIMESTAMPTZ DEFAULT NOW()
-    )
-  `)
-  await query(`CREATE INDEX IF NOT EXISTS emails_user_id_idx ON emails (user_id)`).catch(() => {})
-  // Alter to add attachment columns if they don't exist yet
-  await query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS attachment_name TEXT`).catch(() => {})
-  await query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS attachment_data TEXT`).catch(() => {})
-  await query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {})
+    );
+    ALTER TABLE emails ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+    ALTER TABLE emails ADD COLUMN IF NOT EXISTS attachment_data TEXT;
+    ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT;
+    CREATE INDEX IF NOT EXISTS emails_user_id_idx ON emails (user_id);
+    CREATE INDEX IF NOT EXISTS idx_emails_user_dir_created ON emails (user_id, direction, created_at DESC);
+  `).catch(err => console.warn('[Emails Table Init Warning]', err.message))
 }
 
 let ensureTablePromise
@@ -70,6 +71,8 @@ router.use((_req, _res, next) => {
   }
   next()
 })
+
+const lastCleanupPerUser = new Map()
 
 async function fetchWorkshopKnownEntities(userId) {
   const workshopEmails = new Set()
@@ -161,9 +164,14 @@ router.get('/', async (req, res) => {
   const userId = req.workspaceId
   const { search, direction = 'inbox' } = req.query
 
-  // Perform inbox cleanup in background without blocking response
+  // Perform inbox cleanup in background without blocking response (throttled to once every 5m)
   if (direction === 'inbox') {
-    cleanupInbox(userId).catch(() => {})
+    const now = Date.now()
+    const last = lastCleanupPerUser.get(userId) || 0
+    if (now - last > 5 * 60 * 1000) {
+      lastCleanupPerUser.set(userId, now)
+      cleanupInbox(userId).catch(() => {})
+    }
   }
 
   const params = [userId, direction]

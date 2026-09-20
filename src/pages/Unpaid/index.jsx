@@ -284,9 +284,9 @@ export default function UnpaidBills() {
                                   <span style={{
                                     fontSize: '0.70rem',
                                     fontWeight: 500,
-                                    color: bill.created_by_role === 'Member' ? '#2563eb' : '#64748b'
+                                    color: (bill.created_by_role || '').toLowerCase() === 'member' ? '#2563eb' : '#64748b'
                                   }}>
-                                    ({bill.created_by_role || 'Admin'})
+                                    ({(bill.created_by_role || '').toLowerCase() === 'member' ? 'Member' : 'Admin'})
                                   </span>
                                 )}
                               </div>

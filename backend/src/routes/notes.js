@@ -33,12 +33,11 @@ const ensureTable = async () => {
       user_id          TEXT NOT NULL,
       created_at       TIMESTAMPTZ DEFAULT NOW(),
       updated_at       TIMESTAMPTZ DEFAULT NOW()
-    )
-  `)
-  await query(`CREATE INDEX IF NOT EXISTS notes_user_id_idx ON notes (user_id)`).catch(() => {})
-  // Alter to add attachment columns if they don't exist yet
-  await query(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS attachment_name TEXT`).catch(() => {})
-  await query(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS attachment_data TEXT`).catch(() => {})
+    );
+    CREATE INDEX IF NOT EXISTS notes_user_id_idx ON notes (user_id);
+    ALTER TABLE notes ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+    ALTER TABLE notes ADD COLUMN IF NOT EXISTS attachment_data TEXT;
+  `).catch(err => console.warn('[Notes Table Init Warning]', err.message))
 }
 
 let ensureTablePromise

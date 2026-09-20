@@ -117,30 +117,35 @@ async function checkUserRevocation(email) {
   // 3. Cached DB existence check
   try {
     const existsCacheKey = `user_exists:${emailLower}`
-    let userExistsFlag = await getCached(redis, existsCacheKey, 100)
+    let userExistsFlag = getMemoryCache(existsCacheKey)
+    if (userExistsFlag === null || userExistsFlag === undefined) {
+      userExistsFlag = await getCached(redis, existsCacheKey, 100)
+    }
 
-    if (userExistsFlag === null) {
+    if (userExistsFlag === null || userExistsFlag === undefined) {
       const userCheck = await query(
-        `SELECT 1 FROM shop_profiles       WHERE LOWER(email)        = LOWER($1)
-         UNION
-         SELECT 1 FROM workspace_members   WHERE LOWER(member_email) = LOWER($1)
-         LIMIT 1`,
+        `SELECT 1 FROM (
+           SELECT 1 FROM shop_profiles     WHERE LOWER(email)        = LOWER($1)
+           UNION ALL
+           SELECT 1 FROM workspace_members WHERE LOWER(member_email) = LOWER($1)
+         ) sub LIMIT 1`,
         [emailLower]
       )
       userExistsFlag = userCheck.rows.length > 0 ? 'true' : 'false'
-      setCached(redis, existsCacheKey, userExistsFlag, 300)
+      setMemoryCache(existsCacheKey, userExistsFlag, 600)
+      setCached(redis, existsCacheKey, userExistsFlag, 600)
     }
 
     if (userExistsFlag === 'false') {
-      setMemoryCache(`revoked_user:${emailLower}`, true, 300)
+      setMemoryCache(`revoked_user:${emailLower}`, true, 600)
       return 'User account not found or has been deleted.'
     }
   } catch (err) {
     console.error('[Auth Middleware] User existence check failed:', err.message)
   }
 
-  // Cache that this user is active and NOT revoked in memory for 120 seconds
-  setMemoryCache(`revoked_user:${emailLower}`, false, 120)
+  // Cache that this user is active and NOT revoked in memory for 10 minutes (600s)
+  setMemoryCache(`revoked_user:${emailLower}`, false, 600)
   return null // user is valid
 }
 

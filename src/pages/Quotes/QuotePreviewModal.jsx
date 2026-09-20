@@ -29,7 +29,7 @@ function dateText(value) {
   return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function QuotePreviewModal({ quote, products: initialProducts, onClose, _onEdit, _onStatusChange }) {
+export default function QuotePreviewModal({ quote, products: initialProducts, onClose, onEdit, onStatusChange }) {
   const items = parseItems(quote?.line_items)
   const [productsMap, setProductsMap] = useState({})
 
@@ -74,6 +74,10 @@ export default function QuotePreviewModal({ quote, products: initialProducts, on
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
               <span style={{ color: '#475569', fontSize: '0.82rem', fontWeight: 500 }}>
                 {quote?.customer_name || 'Customer'}
+              </span>
+              <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                • Created by <strong style={{ color: '#1e293b' }}>{quote?.created_by_name || 'Admin'}</strong>
+                {(quote?.created_by_name || 'Admin').toLowerCase().trim() !== (quote?.created_by_role || 'Admin').toLowerCase().trim() && ` (${(quote?.created_by_role || '').toLowerCase() === 'member' ? 'Member' : 'Admin'})`}
               </span>
               {(() => {
                 const s = String(quote?.status || 'Draft').toLowerCase()
@@ -303,7 +307,34 @@ export default function QuotePreviewModal({ quote, products: initialProducts, on
           )}
         </div>
 
-        <div className="ws-modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        <div className="ws-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {onEdit && quote?.status !== 'Accepted' && (
+              <button className="attio-btn attio-btn-secondary" type="button" onClick={onEdit} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Edit2 size={13} /> Edit Quote
+              </button>
+            )}
+            {onStatusChange && quote?.status !== 'Accepted' && (
+              <>
+                <button
+                  className="attio-btn"
+                  type="button"
+                  style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca' }}
+                  onClick={() => { onStatusChange(quote.id, 'Declined'); onClose(); }}
+                >
+                  Decline
+                </button>
+                <button
+                  className="attio-btn attio-btn-primary"
+                  type="button"
+                  style={{ background: '#15803d', borderColor: '#15803d' }}
+                  onClick={() => { onStatusChange(quote.id, 'Accepted'); onClose(); }}
+                >
+                  Accept Quote
+                </button>
+              </>
+            )}
+          </div>
           <button className="attio-btn attio-btn-secondary" type="button" onClick={onClose}>Close</button>
         </div>
       </div>

@@ -881,6 +881,7 @@ export default function Products() {
                         <th>UPDATED PRICE</th>
                         <th>STOCK</th>
                         <th>STATUS</th>
+                        <th>CREATED BY</th>
                         <th>NEXT RESTOCK</th>
                         <th>BARCODE</th>
                         <th style={{ textAlign: 'right' }}>ACTIONS</th>
@@ -992,6 +993,22 @@ export default function Products() {
                               <span className={`attio-status-badge ${row.status === 'active' ? 'attio-status-active' : 'attio-status-inactive'}`}>
                                 {row.status}
                               </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                <span style={{ fontWeight: 600, fontSize: '0.80rem', color: '#1e293b' }}>
+                                  {row.created_by_name || 'Admin'}
+                                </span>
+                                {(row.created_by_name || 'Admin').toLowerCase().trim() !== (row.created_by_role || 'Admin').toLowerCase().trim() && (
+                                  <span style={{
+                                    fontSize: '0.70rem',
+                                    fontWeight: 500,
+                                    color: (row.created_by_role || 'Admin').toLowerCase() === 'member' ? '#2563eb' : '#64748b'
+                                  }}>
+                                    ({(row.created_by_role || '').toLowerCase() === 'member' ? 'Member' : 'Admin'})
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td>
                               {((Number.parseFloat(row.stock || 0) * (Number.parseFloat(row.bag_weight || 1) > 1 ? Number.parseFloat(row.bag_weight || 1) : 1)) + Number.parseFloat(row.loose_kg || 0)) <= 0 ? (

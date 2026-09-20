@@ -31,6 +31,9 @@ async function ensureProductsSchema() {
     query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_price_date DATE DEFAULT CURRENT_DATE`).catch(() => {}),
     query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(50)`).catch(() => {}),
     query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS price_covers DECIMAL(10, 2)`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(255)`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255)`).catch(() => {}),
+    query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50)`).catch(() => {}),
     query(`CREATE TABLE IF NOT EXISTS product_price_history (
       id SERIAL PRIMARY KEY,
       product_id INT NOT NULL,
@@ -55,7 +58,8 @@ async function ensureProductsSchema() {
       created_at TIMESTAMP DEFAULT NOW()
     )`).catch(() => {}),
     query(`ALTER TABLE product_price_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_price_history FORCE ROW LEVEL SECURITY;`).catch(() => {}),
-    query(`ALTER TABLE product_stock_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_stock_history FORCE ROW LEVEL SECURITY;`).catch(() => {})
+    query(`ALTER TABLE product_stock_history ENABLE ROW LEVEL SECURITY; ALTER TABLE product_stock_history FORCE ROW LEVEL SECURITY;`).catch(() => {}),
+    query(`CREATE INDEX IF NOT EXISTS idx_products_user_sku ON products (user_id, sku)`).catch(() => {})
   ])
 }
 
@@ -134,7 +138,15 @@ async function fetchProductsWithCursor(res, { conditions, params, limit, orderCo
   const where = `WHERE ${conditions.join(' AND ')}`
   params.push(limit + 1)
   const { rows } = await query(
-    `SELECT * FROM products ${where} ORDER BY ${orderCol} LIMIT $${params.length}`,
+    `SELECT products.*, 
+       COALESCE(
+         NULLIF(TRIM(products.created_by_name), 'Admin'),
+         (SELECT NULLIF(TRIM(CONCAT(first_name, ' ', last_name)), '') FROM shop_profiles WHERE user_id::text = products.user_id::text LIMIT 1),
+         (SELECT shop_name FROM shop_profiles WHERE user_id::text = products.user_id::text LIMIT 1),
+         'Admin'
+       ) AS created_by_name, 
+        CASE WHEN products.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role 
+     FROM products ${where} ORDER BY ${orderCol} LIMIT $${params.length}`,
     params
   )
   const hasNextPage = rows.length > limit
@@ -150,7 +162,16 @@ async function fetchProductsWithOffset({ conditions, params, page, limit, offset
   const where = `WHERE ${conditions.join(' AND ')}`
   const queryParams = [...params, limit, offset]
   const { rows: rawRows } = await query(
-    `SELECT *, COUNT(*) OVER() AS _total_count FROM products ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
+    `SELECT products.*, 
+       COALESCE(
+         NULLIF(TRIM(products.created_by_name), 'Admin'),
+         (SELECT NULLIF(TRIM(CONCAT(first_name, ' ', last_name)), '') FROM shop_profiles WHERE user_id::text = products.user_id::text LIMIT 1),
+         (SELECT shop_name FROM shop_profiles WHERE user_id::text = products.user_id::text LIMIT 1),
+         'Admin'
+       ) AS created_by_name, 
+        CASE WHEN products.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role, 
+       COUNT(*) OVER() AS _total_count 
+     FROM products ${where} ORDER BY ${orderCol} LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
     queryParams
   )
 
@@ -402,16 +423,23 @@ router.post('/', async (req, res) => {
   const { name, sku, hsn_code, category, price, price_covers, updated_price, updated_price_date, stock, status, description, next_restock_time, bag_weight } = req.body
   if (!name || !price) return res.status(400).json({ error: 'name and price are required' })
   const finalHsn = hsn_code || sku || '10064000'
+  const creatorName = (req.user?.firstName || req.user?.first_name)
+    ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
+    : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
+  const creatorEmail = req.user?.email || ''
+  const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
+
   try {
     const { rows } = await query(
-      `INSERT INTO products (name, sku, hsn_code, category, price, price_covers, updated_price, updated_price_date, stock, status, description, next_restock_time, user_id, bag_weight, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW()) RETURNING *`,
+      `INSERT INTO products (name, sku, hsn_code, category, price, price_covers, updated_price, updated_price_date, stock, status, description, next_restock_time, user_id, bag_weight, created_by_name, created_by_email, created_by_role, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW(),NOW()) RETURNING *`,
       [
         name, sku || finalHsn, finalHsn, category, price,
         price_covers ? Number.parseFloat(price_covers) : null,
         updated_price ? Number.parseFloat(updated_price) : null,
         updated_price_date || new Date().toISOString().split('T')[0],
-        stock || 0, status || 'active', description, next_restock_time || 'TBD', userId, Number.parseFloat(bag_weight) || 1
+        stock || 0, status || 'active', description, next_restock_time || 'TBD', userId, Number.parseFloat(bag_weight) || 1,
+        creatorName, creatorEmail, creatorRole
       ]
     )
     const newProduct = rows[0]

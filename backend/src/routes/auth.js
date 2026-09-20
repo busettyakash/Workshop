@@ -75,59 +75,37 @@ const router = Router()
 // ─────────────────────────────────────────────
 
 async function ensureWorkspaceTable() {
-  // Run both migration batches in parallel to cut startup latency
-  await Promise.all([
-    query(`
-      CREATE TABLE IF NOT EXISTS workspace_members (
-        id SERIAL PRIMARY KEY,
-        workspace_owner_id TEXT NOT NULL,
-        member_email TEXT NOT NULL,
-        role TEXT DEFAULT 'Member',
-        permissions JSONB DEFAULT '{}'::jsonb,
-        created_at TIMESTAMP DEFAULT NOW(),
-        UNIQUE (workspace_owner_id, member_email)
-      );
-      ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
-      ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE workspace_members FORCE ROW LEVEL SECURITY;
-    `).catch(err => console.error('[DB] Error ensuring workspace_members table:', err.message)),
+  // Batch all table creation, column alters, and index checks into a single query (1 connection & 1 round-trip)
+  await query(`
+    CREATE TABLE IF NOT EXISTS workspace_members (
+      id SERIAL PRIMARY KEY,
+      workspace_owner_id TEXT NOT NULL,
+      member_email TEXT NOT NULL,
+      role TEXT DEFAULT 'Member',
+      permissions JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE (workspace_owner_id, member_email)
+    );
+    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE workspace_members FORCE ROW LEVEL SECURITY;
 
-    query(`
-      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
-      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
-      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
-      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
-      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(50);
-      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT;
-      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT;
-      ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
-    `).catch(err => console.error('[DB] Error ensuring columns on shop_profiles:', err.message)),
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS password TEXT;
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS gstin VARCHAR(50);
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT;
+    ALTER TABLE shop_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
-    // ── Critical indexes — fix full table scans on every auth query ──────────
-    // workspace_members: member_email lookup (used on every login + check-email)
-    query(`CREATE INDEX IF NOT EXISTS idx_workspace_members_member_email
-           ON workspace_members (LOWER(member_email))`).catch(() => {}),
-
-    // workspace_members: owner lookup (used for workspace resolution)
-    query(`CREATE INDEX IF NOT EXISTS idx_workspace_members_owner_id
-           ON workspace_members (workspace_owner_id)`).catch(() => {}),
-
-    // shop_profiles: email lookup (used on every login, check-email, auth/me)
-    query(`CREATE INDEX IF NOT EXISTS idx_shop_profiles_email
-           ON shop_profiles (LOWER(email))`).catch(() => {}),
-
-    // shop_profiles: user_id lookup (used on every token verification)
-    query(`CREATE INDEX IF NOT EXISTS idx_shop_profiles_user_id
-           ON shop_profiles (user_id)`).catch(() => {}),
-
-    // products: user_id lookup (used on every login for workspace resolution)
-    query(`CREATE INDEX IF NOT EXISTS idx_products_user_id
-           ON products (user_id)`).catch(() => {}),
-
-    // bills: user_id lookup (used on every login for workspace resolution)
-    query(`CREATE INDEX IF NOT EXISTS idx_bills_user_id
-           ON bills (user_id)`).catch(() => {}),
-  ])
+    CREATE INDEX IF NOT EXISTS idx_workspace_members_member_email ON workspace_members (LOWER(member_email));
+    CREATE INDEX IF NOT EXISTS idx_workspace_members_owner_id ON workspace_members (workspace_owner_id);
+    CREATE INDEX IF NOT EXISTS idx_shop_profiles_email ON shop_profiles (LOWER(email));
+    CREATE INDEX IF NOT EXISTS idx_shop_profiles_user_id ON shop_profiles (user_id);
+    CREATE INDEX IF NOT EXISTS idx_products_user_id ON products (user_id);
+    CREATE INDEX IF NOT EXISTS idx_bills_user_id ON bills (user_id);
+  `).catch(err => console.error('[DB] Error ensuring workspace tables and indexes:', err.message))
 }
 
 let ensureWorkspaceTableStarted = false
@@ -1293,7 +1271,7 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
 
   try {
     const ownUserId = req.user.id || req.workspaceId
-    const [ownWs, invitedRes, ownDataRes] = await Promise.all([
+    const [ownWs, invitedRes] = await Promise.all([
       query(
         'SELECT user_id, shop_name, email, logo_url FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
         [email]
@@ -1308,21 +1286,25 @@ router.get('/workspaces', apiLimiter, requireAuth, async (req, res) => {
          WHERE LOWER(m.member_email) = LOWER($1)
          ORDER BY m.created_at ASC`,
         [email]
-      ).catch(() => ({ rows: [] })),
-      // Check if user has their own real data (products or bills)
-      ownUserId
-        ? query(
-            `SELECT (
-               EXISTS (SELECT 1 FROM products WHERE user_id::text = $1::text LIMIT 1)
-               OR EXISTS (SELECT 1 FROM bills WHERE user_id::text = $1::text LIMIT 1)
-             ) AS has_data`,
-            [ownUserId]
-          ).catch(() => ({ rows: [] }))
-        : Promise.resolve({ rows: [] })
+      ).catch(() => ({ rows: [] }))
     ])
 
     const invitedEntries = (invitedRes.rows || []).map(formatInvitedWorkspace)
-    const hasOwnData = ownDataRes.rows[0]?.has_data === true
+
+    // Only run expensive hasOwnData check IF the user is invited to another workspace
+    // (needed only to distinguish pure invited members from dual-role owner/members).
+    // If they have NO invited workspaces, they are always a standalone owner — no need to check products/bills!
+    let hasOwnData = false
+    if (invitedEntries.length > 0 && ownUserId) {
+      const ownDataRes = await query(
+        `SELECT (
+           EXISTS (SELECT 1 FROM products WHERE user_id = $1 LIMIT 1)
+           OR EXISTS (SELECT 1 FROM bills WHERE user_id = $1 LIMIT 1)
+         ) AS has_data`,
+        [ownUserId]
+      ).catch(() => ({ rows: [] }))
+      hasOwnData = ownDataRes.rows[0]?.has_data === true
+    }
 
     let workspaces = []
 

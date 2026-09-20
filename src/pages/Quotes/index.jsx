@@ -1524,16 +1524,23 @@ export default function Quotes() {
       if (!document.hidden) {
         fetchQuotes(page, true)
       }
-    }, 15000)
+    }, 5000)
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchQuotes(page, true)
+      }
+    }
     const handleFocus = () => {
       if (!document.hidden) fetchQuotes(page, true)
     }
     window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       clearInterval(pollTimer)
       window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [dispatch, page, search, filterStatus, canRead])
 
@@ -1733,6 +1740,7 @@ export default function Quotes() {
                             <th>CUSTOMER</th>
                             <th>SHOP / COMPANY</th>
                             <th>TOTAL AMOUNT</th>
+                            <th>CREATED BY</th>
                             <th>ISSUE DATE</th>
                             <th>VALID UNTIL</th>
                             <th>STATUS</th>
@@ -1798,6 +1806,22 @@ export default function Quotes() {
                                   </span>
                                 </td>
                                 <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontWeight: 600, fontSize: '0.80rem', color: '#1e293b' }}>
+                                      {row.created_by_name || 'Admin'}
+                                    </span>
+                                    {(row.created_by_name || 'Admin').toLowerCase().trim() !== (row.created_by_role || 'Admin').toLowerCase().trim() && (
+                                      <span style={{
+                                        fontSize: '0.70rem',
+                                        fontWeight: 500,
+                                        color: (row.created_by_role || 'Admin').toLowerCase() === 'member' ? '#2563eb' : '#64748b'
+                                      }}>
+                                        ({(row.created_by_role || '').toLowerCase() === 'member' ? 'Member' : 'Admin'})
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
                                   <span style={{ fontSize: '0.8125rem', color: '#475467' }}>
                                     {issueStr}
                                   </span>
@@ -1845,6 +1869,7 @@ export default function Quotes() {
                                 </td>
                                 <td style={{ textAlign: 'right' }}>
                                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+
                                     <button
                                       className="ws-table-btn ws-table-btn--secondary"
                                       style={{ padding: '3px 8px', gap: 4, display: 'inline-flex', alignItems: 'center' }}

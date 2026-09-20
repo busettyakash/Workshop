@@ -35,6 +35,9 @@ async function initSchema() {
     pool.query(`ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(10,2)`).catch(() => {}),
     pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2)`).catch(() => {}),
     pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {}),
+    pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(255)`).catch(() => {}),
+    pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(255)`).catch(() => {}),
+    pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(50)`).catch(() => {}),
     pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS order_number VARCHAR(50)`).catch(() => {}),
     pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS to_email TEXT`).catch(() => {}),
     pool.query(`CREATE INDEX IF NOT EXISTS idx_quotes_user_created ON quotes (user_id, created_at DESC)`).catch(() => {}),
@@ -42,8 +45,13 @@ async function initSchema() {
   ])
 }
 router.use((_req, _res, next) => {
-  _initSchemaPromise ||= initSchema().catch(e => { _initSchemaPromise = null; throw e })
-  _initSchemaPromise.then(() => next()).catch(next)
+  if (!_initSchemaPromise) {
+    _initSchemaPromise = initSchema().catch(e => {
+      _initSchemaPromise = null
+      console.warn('[Quotes Init Schema Warning]', e.message)
+    })
+  }
+  next()
 })
 
 const getUserId = (req) => req.workspaceId || req.headers['x-workspace-id'] || req.user?.id || 'default-user'
@@ -424,7 +432,15 @@ router.get('/', apiLimiter, async (req, res) => {
     const status = req.query.status || ''
 
     let countQuery = "SELECT COUNT(*) FROM quotes WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user')"
-    let dataQuery = "SELECT * FROM quotes WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user')"
+    let dataQuery = `SELECT quotes.*, 
+      COALESCE(
+        NULLIF(TRIM(quotes.created_by_name), 'Admin'),
+        (SELECT NULLIF(TRIM(CONCAT(first_name, ' ', last_name)), '') FROM shop_profiles WHERE user_id::text = quotes.user_id::text LIMIT 1),
+        (SELECT shop_name FROM shop_profiles WHERE user_id::text = quotes.user_id::text LIMIT 1),
+        'Admin'
+      ) AS created_by_name, 
+      CASE WHEN quotes.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role 
+    FROM quotes WHERE (user_id::text = $1::text OR user_id = 'default-user' OR $1 = 'default-user')`
     const params = [userId]
     let paramIdx = 2
 
@@ -801,6 +817,7 @@ async function handleQuoteAcceptedResponse(quote, generatedOrderNum) {
     await insertBillItemsForConvertedQuote(bill.id, items)
     await clearBillingCache(quote.user_id)
     clearOrdersCache(quote.user_id)
+    await clearQuoteCache(quote.user_id)
 
     await decreaseProductStockForQuote(items, quote.user_id, quote.quote_number || quote.id)
 
@@ -850,6 +867,7 @@ async function handleQuoteDeclinedResponse(quote) {
     })
   }
 
+  await clearQuoteCache(quote.user_id)
   const emailNoticeText = isEmailEnabled
     ? ` A confirmation and follow-up has been sent to your email (<strong>${quote.customer_email || 'your email'}</strong>).`
     : ''
@@ -1175,6 +1193,12 @@ router.post('/', apiLimiter, async (req, res) => {
       [qNum, userId]
     ).catch(() => ({ rows: [] }))
 
+    const creatorName = (req.user?.firstName || req.user?.first_name)
+      ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
+      : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
+    const creatorEmail = req.user?.email || ''
+    const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
+
     let quoteRecord
     if (existingQuoteRes.rows.length > 0) {
       const existingId = existingQuoteRes.rows[0].id
@@ -1213,13 +1237,14 @@ router.post('/', apiLimiter, async (req, res) => {
         `INSERT INTO quotes (
           quote_number, shop_name, customer_company, customer_name, customer_phone, customer_email, 
           total_amount, tax_amount, tax_rate, status, issue_date, valid_until, 
-          notes, line_items, user_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          notes, line_items, user_id, created_by_name, created_by_email, created_by_role
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         RETURNING *`,
         [
           qNum, finalShopName, customer_company, customer_name, customer_phone, customer_email,
           Number.parseFloat(total_amount || 0), Number.parseFloat(tax_amount || 0), Number.parseFloat(tax_rate || 0),
-          status, issue_date, valid_until || null, notes, itemsJson, userId
+          status, issue_date, valid_until || null, notes, itemsJson, userId,
+          creatorName, creatorEmail, creatorRole
         ]
       )
       quoteRecord = result.rows[0]
@@ -1341,7 +1366,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
         notes = COALESCE($13, notes),
         line_items = COALESCE($14, line_items),
         updated_at = NOW()
-      WHERE id = $15 AND user_id = $16
+      WHERE id = $15 AND (user_id::text = $16::text OR user_id = 'default-user' OR $16 = 'default-user')
       RETURNING *`,
       [
         quote_number, shop_name, customer_company, customer_name, customer_phone, customer_email,

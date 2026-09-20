@@ -139,8 +139,8 @@ async function fetchBillsWithCursor({ where, params, cursor, limit, orderCol }) 
     `SELECT b.*,
        COALESCE(p.name, 'General Customer') AS customer_name,
        COALESCE(p.phone, '') AS customer_phone,
-       COALESCE(b.created_by_name, sp.first_name || ' ' || sp.last_name, sp.shop_name, 'Admin') AS created_by_name,
-       COALESCE(b.created_by_role, 'Admin') AS created_by_role,
+       COALESCE(NULLIF(TRIM(b.created_by_name), 'Admin'), NULLIF(TRIM(CONCAT(sp.first_name, ' ', sp.last_name)), ''), sp.shop_name, 'Admin') AS created_by_name,
+       CASE WHEN b.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role,
        COALESCE(b.created_by_email, sp.email, '') AS created_by_email,
        sp.shop_name,
        sp.gstin AS shop_gstin,
@@ -177,8 +177,8 @@ async function fetchBillsWithOffset({ where, params, page, limit, offset, orderC
       `SELECT b.*,
          COALESCE(p.name, 'General Customer') AS customer_name,
          COALESCE(p.phone, '') AS customer_phone,
-         COALESCE(b.created_by_name, sp.first_name || ' ' || sp.last_name, sp.shop_name, 'Admin') AS created_by_name,
-         COALESCE(b.created_by_role, 'Admin') AS created_by_role,
+         COALESCE(NULLIF(TRIM(b.created_by_name), 'Admin'), NULLIF(TRIM(CONCAT(sp.first_name, ' ', sp.last_name)), ''), sp.shop_name, 'Admin') AS created_by_name,
+         CASE WHEN b.created_by_role ILIKE 'member' THEN 'Member' ELSE 'Admin' END AS created_by_role,
          COALESCE(b.created_by_email, sp.email, '') AS created_by_email,
          sp.shop_name,
          sp.gstin AS shop_gstin,
@@ -541,7 +541,7 @@ router.post('/', async (req, res) => {
     ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
     : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
   const creatorEmail = req.user?.email || ''
-  const creatorRole = req.memberRole || (String(req.workspaceId) === String(req.user?.id) ? 'Owner' : 'Member')
+  const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
 
   const lineDiscountsSum = (items || []).reduce((acc, it) => acc + (Number.parseFloat(it.discount) || 0), 0)
   const orderDiscount = Number.parseFloat(discount || 0)

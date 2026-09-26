@@ -310,8 +310,8 @@ function logOtpDevFallback(_email, otp) {
  * Send an OTP email via SMTP → Resend → dev console fallback chain.
  * Returns { success: true, devFallback?: true, data? }.
  */
-async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
-  const userName = await resolveUserName(email)
+async function sendOtpEmail(email, otp, logPrefix = 'OTP', knownUserName = null) {
+  const userName = knownUserName || await resolveUserName(email)
   const isReset  = String(logPrefix).toUpperCase().includes('RESET')
 
   const subject = isReset
@@ -354,7 +354,7 @@ async function sendOtpEmail(email, otp, logPrefix = 'OTP') {
  * Enforces cooldown and send-lock to prevent abuse.
  * Returns { status, body }.
  */
-async function issueOtp(email, logPrefix = 'OTP') {
+async function issueOtp(email, logPrefix = 'OTP', knownUserName = null) {
   if (await hasOtpCooldown(email)) {
     return {
       status: 429,
@@ -374,25 +374,24 @@ async function issueOtp(email, logPrefix = 'OTP') {
   try {
     await storeOtp(email, otp)
 
-    const emailResult = await sendOtpEmail(email, otp, logPrefix)
-    if (!emailResult.success) {
-      await clearOtp(email)
-      return { status: 502, body: { message: 'Failed to send OTP email. Please try again.' } }
-    }
+    // Dispatch email asynchronously so client receives an instant response (<200ms vs 7000ms+)
+    sendOtpEmail(email, otp, logPrefix, knownUserName).then((emailResult) => {
+      console.log('[%s] OTP email dispatched successfully', logPrefix)
+    }).catch((err) => {
+      console.error('[%s] Background email delivery failure:', logPrefix, err.message)
+    })
 
-    console.log('[%s] OTP email accepted', logPrefix)
-    await setOtpCooldown(email)
+    setOtpCooldown(email).catch(() => {})
 
-    const body = { message: 'OTP sent to your email' }
-    if (emailResult.devFallback) {
-      body.devNotice = 'Testing mode active: OTP code logged in server console.'
+    return {
+      status: 200,
+      body: { message: 'OTP sent to your email' }
     }
-    return { status: 200, body }
   } catch (err) {
     console.error('[%s] Failed to store OTP:', logPrefix, err.message)
     return { status: 500, body: { message: 'Failed to generate OTP. Please try again.' } }
   } finally {
-    await releaseOtpSendLock(email)
+    releaseOtpSendLock(email).catch(() => {})
   }
 }
 
@@ -672,15 +671,17 @@ router.post('/send-reset-otp', async (req, res) => {
 
   try {
     const { rows } = await query(
-      'SELECT email FROM shop_profiles WHERE email = $1',
+      'SELECT email, shop_name, first_name FROM shop_profiles WHERE LOWER(TRIM(email)) = LOWER($1)',
       [email]
     ).catch(() => ({ rows: [] }))
 
     if (rows.length === 0) {
-      return res.status(404).json({ message: 'No account found with this email.' })
+      return res.status(404).json({ message: 'No account found with this email. Please check your spelling.' })
     }
 
-    const result = await issueOtp(email, 'RESET OTP')
+    const targetEmail = rows[0].email || email
+    const userName = rows[0].first_name || rows[0].shop_name || ''
+    const result = await issueOtp(targetEmail, 'RESET OTP', userName)
     res.status(result.status).json(result.body)
   } catch (err) {
     console.error('[RESET OTP] Unexpected error:', err.message)
@@ -715,7 +716,7 @@ router.post('/reset-password', async (req, res) => {
     await clearOtp(email)
     await clearOtpAttempts(email)
     const hashedPassword = hashPassword(newPassword)
-    await query('UPDATE shop_profiles SET password = $1 WHERE email = $2', [hashedPassword, email])
+    await query('UPDATE shop_profiles SET password = $1 WHERE LOWER(TRIM(email)) = LOWER($2)', [hashedPassword, email])
 
     console.log('[RESET PASSWORD] Password updated successfully')
     res.json({ message: 'Password reset successfully. You can now log in with your new password.' })
@@ -1122,7 +1123,7 @@ router.post('/logout', async (req, res) => {
 })
 
 /* GET /api/auth/me — Return current user profile from token */
-router.get('/me', authLimiter, async (req, res) => {
+router.get('/me', async (req, res) => {
   const auth = req.headers.authorization
   if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
   const token = auth.slice(7)

@@ -66,8 +66,19 @@ export default function QuotePreviewModal({ quote, products: initialProducts, on
   }, [initialProducts])
 
   return (
-    <div className="ws-modal-backdrop" onClick={onClose}>
-      <div className="ws-modal-card" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
+    <div
+      className="ws-modal-backdrop"
+      role="presentation"
+      onClick={onClose}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
+    >
+      <div
+        className="ws-modal-card"
+        role="presentation"
+        style={{ maxWidth: 760 }}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title">Quotation {quote?.quote_number || `#${quote?.id}`}</h3>

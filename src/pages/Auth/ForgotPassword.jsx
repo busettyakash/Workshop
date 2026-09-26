@@ -42,7 +42,7 @@ export default function ForgotPassword() {
       showSuccess(`Verification code sent to ${email}`)
       setStep('reset')
     } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to send OTP. Please check your email address.'
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to send OTP. Please check your email address.'
       showError(msg)
     } finally {
       setLoading(false)
@@ -69,7 +69,8 @@ export default function ForgotPassword() {
         })
       }, 1000)
     } catch (err) {
-      showError(err.response?.data?.message || 'Failed to resend OTP.')
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to resend OTP.'
+      showError(msg)
     } finally {
       setLoading(false)
     }
@@ -100,7 +101,8 @@ export default function ForgotPassword() {
       await authApi.resetPassword({ email, otp, newPassword })
       setStep('success')
     } catch (err) {
-      showError(err.response?.data?.message || 'Failed to reset password. Please try again.')
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to reset password. Please try again.'
+      showError(msg)
     } finally {
       setLoading(false)
     }

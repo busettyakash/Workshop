@@ -81,7 +81,11 @@ export function cacheGet(key) {
     _store.delete(key)
     return null
   }
-  return entry.data
+  try {
+    return typeof structuredClone === 'function' ? structuredClone(entry.data) : JSON.parse(JSON.stringify(entry.data))
+  } catch {
+    return entry.data
+  }
 }
 
 /** Store data under key with the given TTL (ms). */

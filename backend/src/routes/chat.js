@@ -5,6 +5,8 @@ import { query } from '../lib/db.js'
 import crypto from 'crypto'
 import insforge from '../lib/insforge.js'
 import { sendEmail } from '../lib/smtp.js'
+import { deleteCachedPattern, clearMemoryCachePrefix, deleteCached } from '../lib/fastCache.js'
+import { clearProductsCache } from './products.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -17,20 +19,51 @@ const tools = [
     type: 'function',
     function: {
       name: 'add_to_import_stock',
-      description: 'Adds a product/item to the staged import stock (import_stock table). Use this when the user wants to add, import, stage, or register new stock items or products.',
+      description: 'Adds a product/item to the staged import stock (import_stock table). If a product with the same name or SKU already exists, it will automatically update the existing product instead of creating a duplicate.',
       parameters: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Name of the product/item' },
           sku: { type: 'string', description: 'Unique SKU code for the product' },
-          category: { type: 'string', description: 'Category of the product' },
-          price: { type: 'number', description: 'Price per unit' },
+          category: { type: 'string', description: 'Category of the product (e.g. Grain, Flour, Oil)' },
+          selling_price: { type: 'number', description: 'Selling price per unit/bag' },
+          price: { type: 'number', description: 'Selling price per unit/bag (alias for selling_price)' },
+          buying_price: { type: 'number', description: 'Buying price paid to supplier / buyer price (cost from supplier)' },
+          buyer_name: { type: 'string', description: 'Supplier or buyer company name (e.g. "Mani Traders")' },
+          buyer_phone: { type: 'string', description: 'Supplier or buyer phone number' },
           stock: { type: 'number', description: 'Quantity of stock to import. Defaults to 0.' },
-          unit: { type: 'string', description: 'Unit of measurement, e.g. "pcs", "kg", "box". Defaults to "pcs".' },
+          unit: { type: 'string', description: 'Unit of measurement, e.g. "Bags", "pcs", "kg". Defaults to "pcs".' },
+          bag_weight: { type: 'number', description: 'Pack size or weight per bag in kg. Defaults to 1.' },
           description: { type: 'string', description: 'Detailed description of the product' },
-          status: { type: 'string', enum: ['pending', 'added'], description: 'Staging status, defaults to "pending"' }
+          status: { type: 'string', enum: ['active', 'pending', 'added'], description: 'Staging status, defaults to "active"' }
         },
-        required: ['name', 'price']
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_import_stock',
+      description: 'Updates or modifies an existing product/item in the staged import stock (import_stock table). Use this whenever the user wants to modify, edit, change price, change buying/buyer price, change selling price, change category, change status (e.g. active), or adjust stock of an EXISTING product.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: 'Optional ID of the import stock item if known' },
+          name: { type: 'string', description: 'Name of the product to find and update (case-insensitive match, e.g. "maida")' },
+          sku: { type: 'string', description: 'SKU of the product to find and update' },
+          category: { type: 'string', description: 'New/updated category (e.g. Grain)' },
+          selling_price: { type: 'number', description: 'New/updated selling price per unit/bag (e.g. 400 or 4000)' },
+          price: { type: 'number', description: 'New/updated selling price (alias)' },
+          buying_price: { type: 'number', description: 'New/updated buying price / cost from supplier / buyer price (e.g. 3500)' },
+          stock: { type: 'number', description: 'New/updated stock quantity' },
+          unit: { type: 'string', description: 'Unit of measurement (e.g. "Bags", "pcs", "kg")' },
+          bag_weight: { type: 'number', description: 'Pack size or weight per bag in kg' },
+          buyer_name: { type: 'string', description: 'Supplier / buyer name (e.g. Mani Traders)' },
+          buyer_phone: { type: 'string', description: 'Supplier phone number' },
+          status: { type: 'string', enum: ['active', 'pending', 'added'], description: 'New status (e.g. "active", "pending", "added")' },
+          description: { type: 'string', description: 'Updated description' }
+        }
       }
     }
   },
@@ -102,6 +135,21 @@ const tools = [
           notes: { type: 'string', description: 'Any extra notes about this contact' }
         },
         required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_import_stock',
+      description: 'Deletes a product/item or duplicate items from staged import stock (import_stock table). Use this when user asks to delete or remove an item or duplicate from stock.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: 'ID of the import stock item' },
+          name: { type: 'string', description: 'Name of the item to delete (case-insensitive)' },
+          sku: { type: 'string', description: 'SKU of the item to delete' }
+        }
       }
     }
   }
@@ -367,18 +415,320 @@ async function sendEmailTool(args, userId, reqUser) {
   return { success: true, email: rows[0], message: 'Email sent successfully via SMTP' }
 }
 
-async function handleAddImportStock(args, userId) {
-  const { name, sku, category, price, stock, status, unit, description } = args
-  if (!name || price === undefined) {
-    return { error: 'name and price are required' }
+async function invalidateStockAndProductCaches(userId) {
+  try {
+    clearMemoryCachePrefix(`import_stock:${userId}`)
+    clearMemoryCachePrefix(`import_stock_note:${userId}`)
+    await deleteCached(redis, `profit_margin:${userId}`)
+    await Promise.all([
+      deleteCachedPattern(redis, `import_stock:${userId}*`),
+      deleteCachedPattern(redis, `import_stock_note:${userId}*`),
+      clearProductsCache(userId)
+    ]).catch(() => {})
+  } catch (err) {
+    console.warn('[Chat] Failed to clear stock caches:', err.message)
   }
+}
+
+async function handleUpdateImportStock(args, userId, reqUser) {
+  const {
+    id,
+    name,
+    sku,
+    category,
+    price,
+    selling_price,
+    buying_price,
+    stock,
+    unit,
+    bag_weight,
+    buyer_name,
+    buyer_phone,
+    status,
+    description
+  } = args || {}
+
+  const searchId = id ? Number.parseInt(id, 10) : null
+  const searchSku = sku ? sku.trim() : null
+  const searchName = name ? name.trim() : null
+
+  let existingRes = { rows: [] }
+  if (searchId) {
+    existingRes = await query(
+      `SELECT * FROM import_stock WHERE id = $1 AND user_id = $2`,
+      [searchId, userId]
+    )
+  }
+
+  if (!existingRes.rows.length && (searchSku || searchName)) {
+    const conditions = []
+    const params = [userId]
+    if (searchSku) {
+      params.push(searchSku)
+      conditions.push(`(sku IS NOT NULL AND LOWER(TRIM(sku)) = LOWER(TRIM($${params.length})))`)
+    }
+    if (searchName) {
+      params.push(searchName)
+      conditions.push(`LOWER(TRIM(name)) = LOWER(TRIM($${params.length}))`)
+    }
+
+    existingRes = await query(
+      `SELECT * FROM import_stock 
+       WHERE user_id = $1 AND (${conditions.join(' OR ')})
+       ORDER BY (CASE WHEN status = 'added' THEN 1 WHEN status = 'active' THEN 2 ELSE 3 END), id DESC`,
+      params
+    )
+  }
+
+  // Fallback fuzzy search if still not found
+  if (!existingRes.rows.length && searchName) {
+    existingRes = await query(
+      `SELECT * FROM import_stock 
+       WHERE user_id = $1 AND name ILIKE $2
+       ORDER BY (CASE WHEN status = 'added' THEN 1 WHEN status = 'active' THEN 2 ELSE 3 END), id DESC`,
+      [userId, `%${searchName}%`]
+    )
+  }
+
+  if (!existingRes.rows.length) {
+    // If not found to update, fall back to creating it
+    return await handleAddImportStock(args, userId, reqUser)
+  }
+
+  const primary = existingRes.rows[0]
+
+  // If there are duplicate records (e.g. from previous duplicate additions), clean them up
+  if (existingRes.rows.length > 1) {
+    const duplicateIds = existingRes.rows.slice(1).map(r => r.id)
+    await query(
+      `DELETE FROM import_stock WHERE id = ANY($1) AND user_id = $2`,
+      [duplicateIds, userId]
+    ).catch(() => {})
+  }
+
+  const finalName = searchName || primary.name
+  const finalSku = searchSku || primary.sku
+  let finalCategory = primary.category
+  if (category !== undefined) {
+    finalCategory = category ? category.trim() : null
+  }
+
+  // Resolve selling price (price column) vs buying price (buying_price column)
+  let finalSellingPrice = primary.price
+  if (selling_price !== undefined && selling_price !== null && selling_price !== '') {
+    finalSellingPrice = Number.parseFloat(selling_price)
+  } else if (price !== undefined && price !== null && price !== '') {
+    finalSellingPrice = Number.parseFloat(price)
+  }
+
+  let finalBuyingPrice = primary.buying_price
+  if (buying_price !== undefined && buying_price !== null && buying_price !== '') {
+    finalBuyingPrice = Number.parseFloat(buying_price)
+  }
+
+  const finalStock = stock !== undefined ? Number.parseFloat(stock) : (Number.parseFloat(primary.stock) || 0)
+  const finalUnit = unit ? unit.trim() : (primary.unit || 'pcs')
+  const finalBagWeight = bag_weight !== undefined ? Number.parseFloat(bag_weight) : (Number.parseFloat(primary.bag_weight) || 1)
+  let finalBuyerName = primary.buyer_name
+  if (buyer_name !== undefined) {
+    finalBuyerName = buyer_name ? buyer_name.trim() : null
+  }
+  let finalBuyerPhone = primary.buyer_phone
+  if (buyer_phone !== undefined) {
+    finalBuyerPhone = buyer_phone ? buyer_phone.trim() : null
+  }
+  const finalStatus = status || primary.status || 'active'
+  const finalDesc = description !== undefined ? description : primary.description
+
+  // Recalculate total_amount and balance_due
+  const priceCoversVal = Number.parseFloat(primary.price_covers || 0)
+  const buyingPriceVal = finalBuyingPrice !== null && finalBuyingPrice !== undefined ? Number.parseFloat(finalBuyingPrice) : 0
+
+  let totalAmount = 0
+  if (priceCoversVal > 0) {
+    totalAmount = finalStock * finalBagWeight * (buyingPriceVal / priceCoversVal)
+  } else {
+    totalAmount = finalStock * buyingPriceVal
+  }
+  totalAmount = Math.round(totalAmount * 100) / 100
+
+  const paidAmount = Number.parseFloat(primary.paid_amount || primary.amount_paid || 0)
+  const balanceDue = Math.max(0, Math.round((totalAmount - paidAmount) * 100) / 100)
+
   const { rows } = await query(
-    `INSERT INTO import_stock (name, sku, category, price, stock, status, unit, description, user_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *`,
-    [name, sku || null, category || null, price, stock || 0, status || 'pending', unit || 'pcs', description || null, userId]
+    `UPDATE import_stock 
+     SET name = $1, sku = $2, category = $3, price = $4, buying_price = $5,
+         stock = $6, unit = $7, bag_weight = $8, buyer_name = $9, buyer_phone = $10,
+         status = $11, description = $12, total_amount = $13, balance_due = $14,
+         updated_at = NOW()
+     WHERE id = $15 AND user_id = $16
+     RETURNING *`,
+    [
+      finalName, finalSku, finalCategory, finalSellingPrice, finalBuyingPrice,
+      finalStock, finalUnit, finalBagWeight, finalBuyerName, finalBuyerPhone,
+      finalStatus, finalDesc, totalAmount, balanceDue,
+      primary.id, userId
+    ]
   )
-  await redis.del(`import_stock:${userId}`).catch(() => {})
-  return { success: true, product: rows[0] }
+
+  // If already linked in products table, sync products table
+  await query(
+    `UPDATE products 
+     SET name = $1, category = $2, price = $3, stock = $4, unit = $5, bag_weight = $6, updated_at = NOW()
+     WHERE user_id = $7 AND (
+       (sku IS NOT NULL AND sku <> '' AND sku <> 'N/A' AND sku = $8)
+       OR LOWER(TRIM(name)) = LOWER(TRIM($9))
+     )`,
+    [finalName, finalCategory, finalSellingPrice, finalStock, finalUnit, finalBagWeight, userId, finalSku || 'N/A', finalName]
+  ).catch(() => {})
+
+  await invalidateStockAndProductCaches(userId)
+
+  return {
+    success: true,
+    action: 'updated',
+    product: rows[0],
+    message: `Updated product "${rows[0].name}" successfully: Buying Price=₹${finalBuyingPrice ?? 0}, Selling Price=₹${finalSellingPrice ?? 0}, Category=${finalCategory || 'None'}, Stock=${finalStock} ${finalUnit}, Status=${finalStatus}.`
+  }
+}
+
+async function handleAddImportStock(args, userId, reqUser) {
+  const {
+    name,
+    sku,
+    category,
+    price,
+    selling_price,
+    buying_price,
+    stock,
+    status,
+    unit,
+    bag_weight,
+    buyer_name,
+    buyer_phone,
+    description
+  } = args || {}
+
+  if (!name) {
+    return { error: 'Product name is required' }
+  }
+
+  // Deduplication check: if product with same name or SKU already exists, update it!
+  const existingCheck = await query(
+    `SELECT id FROM import_stock 
+     WHERE user_id = $1 AND (
+       LOWER(TRIM(name)) = LOWER(TRIM($2))
+       OR ($3::text IS NOT NULL AND sku IS NOT NULL AND LOWER(TRIM(sku)) = LOWER(TRIM($3)))
+     )
+     ORDER BY (CASE WHEN status = 'added' THEN 1 WHEN status = 'active' THEN 2 ELSE 3 END), id DESC
+     LIMIT 1`,
+    [userId, name.trim(), sku ? sku.trim() : null]
+  )
+
+  if (existingCheck.rows.length > 0) {
+    return await handleUpdateImportStock({ ...args, id: existingCheck.rows[0].id }, userId, reqUser)
+  }
+
+  // Resolve selling price (price column) vs buying price (buying_price column)
+  let sellingPriceVal = null
+  if (selling_price !== undefined && selling_price !== null && selling_price !== '') {
+    sellingPriceVal = Number.parseFloat(selling_price)
+  } else if (price !== undefined && price !== null && price !== '') {
+    sellingPriceVal = Number.parseFloat(price)
+  }
+
+  let buyingPriceVal = null
+  if (buying_price !== undefined && buying_price !== null && buying_price !== '') {
+    buyingPriceVal = Number.parseFloat(buying_price)
+  }
+
+  if (sellingPriceVal === null && buyingPriceVal !== null) {
+    sellingPriceVal = buyingPriceVal
+  }
+
+  const stockQty = Number.parseFloat(stock) || 0
+  const bagWeightVal = Number.parseFloat(bag_weight) || 1
+  const unitVal = unit ? unit.trim() : 'pcs'
+  const statusVal = status || 'active'
+
+  let totalAmount = 0
+  if (buyingPriceVal !== null) {
+    totalAmount = Math.round(stockQty * buyingPriceVal * 100) / 100
+  }
+  const balanceDue = totalAmount
+
+  const creatorName = (reqUser?.firstName || reqUser?.first_name)
+    ? `${reqUser.firstName || reqUser.first_name} ${reqUser?.lastName || reqUser?.last_name || ''}`.trim()
+    : (reqUser?.shopName || reqUser?.email?.split('@')[0] || 'Admin')
+  const creatorEmail = reqUser?.email || ''
+  const creatorRole = (reqUser?.role && reqUser.role.toLowerCase() === 'member') ? 'Member' : 'Admin'
+
+  const { rows } = await query(
+    `INSERT INTO import_stock (
+      name, sku, category, price, buying_price, stock, status, unit, description,
+      bag_weight, buyer_name, buyer_phone, total_amount, balance_due, amount_paid, paid_amount,
+      created_by_name, created_by_email, created_by_role, user_id, created_at, updated_at
+    )
+     VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9,
+      $10, $11, $12, $13, $14, 0, 0,
+      $15, $16, $17, $18, NOW(), NOW()
+    ) RETURNING *`,
+    [
+      name.trim(),
+      sku ? sku.trim() : null,
+      category ? category.trim() : null,
+      sellingPriceVal,
+      buyingPriceVal,
+      stockQty,
+      statusVal,
+      unitVal,
+      description || null,
+      bagWeightVal,
+      buyer_name ? buyer_name.trim() : null,
+      buyer_phone ? buyer_phone.trim() : null,
+      totalAmount,
+      balanceDue,
+      creatorName,
+      creatorEmail,
+      creatorRole,
+      userId
+    ]
+  )
+
+  await invalidateStockAndProductCaches(userId)
+  return { success: true, action: 'created', product: rows[0] }
+}
+
+async function handleDeleteImportStock(args, userId) {
+  const { id, name, sku } = args || {}
+  const conditions = []
+  const params = [userId]
+
+  if (id) {
+    params.push(id)
+    conditions.push(`id = $${params.length}`)
+  }
+  if (sku) {
+    params.push(sku.trim())
+    conditions.push(`(sku IS NOT NULL AND LOWER(TRIM(sku)) = LOWER(TRIM($${params.length})))`)
+  }
+  if (name) {
+    params.push(name.trim())
+    conditions.push(`LOWER(TRIM(name)) = LOWER(TRIM($${params.length}))`)
+  }
+
+  if (conditions.length === 0) {
+    return { error: 'id, name, or sku is required to delete' }
+  }
+
+  const { rows } = await query(
+    `DELETE FROM import_stock WHERE user_id = $1 AND (${conditions.join(' OR ')}) RETURNING id, name`,
+    params
+  )
+
+  await invalidateStockAndProductCaches(userId)
+  return { success: true, deletedCount: rows.length, deletedItems: rows }
 }
 
 async function handleAddNote(args, userId) {
@@ -416,7 +766,9 @@ async function handleCreatePerson(args, userId) {
 }
 
 const TOOL_HANDLERS = {
-  add_to_import_stock: (args, userId) => handleAddImportStock(args, userId),
+  add_to_import_stock: (args, userId, reqUser) => handleAddImportStock(args, userId, reqUser),
+  update_import_stock: (args, userId, reqUser) => handleUpdateImportStock(args, userId, reqUser),
+  delete_import_stock: (args, userId) => handleDeleteImportStock(args, userId),
   query_business_data: (args, userId) => queryBusinessData(args, userId),
   send_email: (args, userId, reqUser) => sendEmailTool(args, userId, reqUser),
   add_note: (args, userId) => handleAddNote(args, userId),
@@ -475,7 +827,19 @@ CRITICAL ROLE & BUSINESS CONTEXT:
   When the user asks "how much amount to pay to the supplier / buyer for this product/batch" or "what is the remaining balance / due amount to pay for product [SKU/barcode/name]" (e.g. SKU 48765977), ALWAYS query "import_stock". This returns the supplier name, total supplier cost, total paid so far, and remaining balance due to the supplier.
 - Format all currency and prices with the Rupee symbol (₹).
 
-You have access to tools to query business data (products, bills, quotes, people, notes, deals, revenue_summary, import_stock), create contacts, add notes, and stage import stock.
+CRITICAL STOCK EDITING & DEDUPLICATION RULES:
+- When the user asks to modify, update, change prices, change category, change status, or edit an EXISTING product/stock item (or supplies follow-up/updated values like "buyer price is 3500 and selling price is 400 and catageroy is grain and make satus active"):
+  NEVER create a new product! ALWAYS call the "update_import_stock" tool!
+- Calling "add_to_import_stock" when modifying an existing item causes unwanted duplicate products.
+- PRICE FIELDS DISTINCTION:
+  * "buyer price", "buying price", "purchase price", "cost price", "supplier price" -> maps to "buying_price" (cost from the supplier/buyer).
+  * "selling price", "retail price", "sale price", "market price", "price" -> maps to "selling_price" (or "price") (price charged to customers).
+  * "buyer name", "supplier name" -> maps to "buyer_name" (e.g. "Mani Traders").
+  * "category" -> maps to "category" (e.g. "Grain", "Oil", "Spices").
+  * "status" -> maps to "status" ("active", "pending", "added").
+- Always clearly display both Buying Price (₹) and Selling Price (₹) in your confirmation reply so the merchant has complete transparency.
+
+You have access to tools to query business data (products, bills, quotes, people, notes, deals, revenue_summary, import_stock), create contacts, add notes, stage import stock (add_to_import_stock), modify stock (update_import_stock), and remove stock (delete_import_stock).
 When presenting data tables, format them cleanly with proper columns and values.`
     }
 

@@ -5,7 +5,7 @@ import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
 import { updateUser, logout } from '../../redux/slices/authSlice'
 import { useAuth } from '../../hooks/useAuth'
 import {
-  ChevronLeft, ArrowLeft, Search, User, Palette, Bell, Lock, Building2, LayoutGrid, Scale, Users, DollarSign, Info, Camera, HelpCircle, Save, Plus, Trash2, Copy, Download, Calendar, X
+  ChevronLeft, ArrowLeft, Search, User, Palette, Bell, Lock, Building2, LayoutGrid, Scale, Users, DollarSign, Info, Camera, HelpCircle, Save, Plus, Trash2, Copy, Download, Calendar, X, Check, Loader2
 } from 'lucide-react'
 import api from '../../api/client'
 import { authApi } from '../../services/authApi'
@@ -267,22 +267,31 @@ export default function Settings() {
     }
   }
 
+  const [wsSaveStatus, setWsSaveStatus] = useState('idle') // 'idle' | 'saving' | 'saved' | 'error'
+
   const handleWorkspaceNameChange = (val) => {
-    const updatedForm = { ...workspaceForm, shopName: val }
-    setWorkspaceForm(updatedForm)
+    setWorkspaceForm(prev => ({ ...prev, shopName: val }))
+  }
 
-    // Auto-save locally & update sidebar header live!
-    localStorage.setItem('ws_workspace_settings', JSON.stringify(updatedForm))
-    sessionStorage.setItem('ws_active_workspace_name', val)
-    localStorage.setItem('ws_workspace_name', val)
-    dispatch(updateUser({ shopName: val }))
-    window.dispatchEvent(new Event('workspace_updated'))
-
-    // Debounced API call to backend
-    if (window.wsNameDebounce) clearTimeout(window.wsNameDebounce)
-    window.wsNameDebounce = setTimeout(() => {
-      api.put('/auth/workspace', updatedForm).catch(() => { })
-    }, 400)
+  const handleWorkspaceNameSave = () => {
+    const trimmed = workspaceForm.shopName?.trim() || 'My Workspace'
+    const updated = { ...workspaceForm, shopName: trimmed }
+    setWorkspaceForm(updated)
+    setWsSaveStatus('saving')
+    api.put('/auth/workspace', updated)
+      .then(() => {
+        setWsSaveStatus('idle')
+        sessionStorage.setItem('ws_active_workspace_name', trimmed)
+        localStorage.setItem('ws_workspace_name', trimmed)
+        localStorage.setItem('ws_workspace_settings', JSON.stringify(updated))
+        dispatch(updateUser({ shopName: trimmed }))
+        window.dispatchEvent(new CustomEvent('workspace_updated', { detail: { shopName: trimmed } }))
+        dispatch(addToast({ message: 'Workspace name updated successfully!', type: 'success' }))
+      })
+      .catch((err) => {
+        setWsSaveStatus('error')
+        dispatch(addToast({ message: err.response?.data?.error || 'Failed to update workspace name', type: 'error' }))
+      })
   }
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
@@ -937,8 +946,8 @@ export default function Settings() {
               </div>
 
               {/* Fields: Name & Slug */}
-              <form onSubmit={e => e.preventDefault()}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+              <form onSubmit={e => { e.preventDefault(); handleWorkspaceNameSave(); }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 14 }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 500, color: '#64748b', marginBottom: 4 }}>Name</label>
                     <input
@@ -989,6 +998,39 @@ export default function Settings() {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
+                  <button
+                    type="submit"
+                    disabled={wsSaveStatus === 'saving'}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: '#2563eb',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 7,
+                      padding: '7px 18px',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: wsSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                      opacity: wsSaveStatus === 'saving' ? 0.75 : 1,
+                      fontFamily: 'inherit',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {wsSaveStatus === 'saving' ? (
+                      <>
+                        <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>Save changes</span>
+                    )}
+                  </button>
                 </div>
 
                 {/* Danger Zone Section */}

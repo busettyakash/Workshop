@@ -376,7 +376,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Base Benchmark Price</span>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Base Selling Price</span>
               </div>
               <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#0f172a' }}>{formatINR(basePriceVal)}</p>
               <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
@@ -386,7 +386,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
 
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>Active Updated Price</span>
+                <span style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>Active Updated Selling Price</span>
               </div>
               <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>
                 {formatINR(updatedPriceVal)}
@@ -413,7 +413,7 @@ function ProductPriceHistoryDetail({ product, onBack }) {
           <div className="attio-table-card">
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Historical Price Log Table</h3>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Historical Selling Price Log Table</h3>
                 <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>Complete chronological record of all price updates and stock restock revisions.</p>
               </div>
               <span className="ws-unified-header-badge">{history.length} records</span>
@@ -433,8 +433,8 @@ function ProductPriceHistoryDetail({ product, onBack }) {
                   <thead>
                     <tr>
                       <th>EFFECTIVE DATE</th>
-                      <th>REVISED PRICE</th>
-                      <th>PREVIOUS PRICE</th>
+                      <th>REVISED SELLING PRICE</th>
+                      <th>PREVIOUS SELLING PRICE</th>
                       <th>PRICE CHANGE</th>
                       <th>UNIT RATE</th>
                       <th>REASON & NOTES</th>
@@ -872,7 +872,7 @@ export default function PriceHistory() {
                             </th>
                             <th>PRODUCT NAME</th>
                             <th>CATEGORY</th>
-                            <th>PRICE</th>
+                            <th>SELLING PRICE</th>
                             <th>UPDATED PRICE</th>
                             <th>PRICE TREND</th>
                             <th>STOCK</th>

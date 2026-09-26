@@ -7,6 +7,7 @@ export const loginThunk = createAsyncThunk(
   'auth/login',
   async ({ email, password }, { rejectWithValue }) => {
     try {
+      clearCache()
       const data = await authApi.login({ email, password })
       const userObj = {
         shopName: data.user.shopName,

@@ -183,13 +183,13 @@ function PricingModal({ product, onClose }) {
           {/* Current Pricing Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Selling Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
                 ₹{basePriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
-              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
+              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Selling Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
                 ₹{activeBagPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
@@ -210,7 +210,7 @@ function PricingModal({ product, onClose }) {
           {/* Price History Timeline */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
-              <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>Price History Log</h4>
+              <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>Selling Price History Log</h4>
               <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{history.length} record{history.length === 1 ? '' : 's'}</span>
             </div>
 

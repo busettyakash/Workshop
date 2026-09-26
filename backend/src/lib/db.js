@@ -52,7 +52,7 @@ const getPoolMax = () => {
   const configuredMax = Number.parseInt(process.env.PG_POOL_MAX, 10)
   if (Number.isInteger(configuredMax) && configuredMax > 0) return configuredMax
   if (process.env.VERCEL) return 3  // Vercel: serverless — keep very small
-  return 10
+  return 6 // Safe default for database with 30 max connections
 }
 
 const createPool = () => new Pool({
@@ -60,14 +60,14 @@ const createPool = () => new Pool({
   application_name: process.env.PG_APPLICATION_NAME || 'workshop-backend',
   ssl: { rejectUnauthorized: false },
   max: getPoolMax(),
-  min: process.env.VERCEL ? 0 : 4,
-  idleTimeoutMillis: process.env.VERCEL ? 5000 : 300000,
+  min: process.env.VERCEL ? 0 : 1,
+  idleTimeoutMillis: process.env.VERCEL ? 5000 : 120000, // 2m in dev so connections stay warm while typing credentials
   connectionTimeoutMillis: 10000,
   statement_timeout: 30000,
   idle_in_transaction_session_timeout: 10000,
   query_timeout: 30000,
   allowExitOnIdle: true,
-  keepAlive: !process.env.VERCEL,        // disabled on Vercel — serverless connections are ephemeral
+  keepAlive: true,
   keepAliveInitialDelayMillis: 10000,
   maxUses: 500,
 })
@@ -85,17 +85,22 @@ pool.on('connect', () => {
   }
 })
 
-// Warm up the pool immediately with 4 ready connections so queries never hit cold TLS handshake delay
+// Warm up the pool with a ready connection so queries never hit cold TLS handshake delay
 try {
   if (isDevelopment) {
-    const clients = await Promise.all([
-      pool.connect(),
-      pool.connect(),
-      pool.connect(),
-      pool.connect(),
-    ])
-    clients.forEach(c => c.release())
-    console.log('[DB] Pool warm & ready (4 connections) ✅')
+    const client = await pool.connect()
+    client.release()
+    console.log('[DB] Pool warm & ready ✅')
+
+    // Lightweight heartbeat every 25s so cloud firewalls never drop the idle socket
+    const heartbeatTimer = setInterval(() => {
+      if (poolClosed) {
+        clearInterval(heartbeatTimer)
+        return
+      }
+      pool.query('SELECT 1').catch(() => {})
+    }, 25000)
+    heartbeatTimer.unref()
   } else {
     await pool.query('SELECT 1')
   }
@@ -135,47 +140,85 @@ import { AsyncLocalStorage } from 'async_hooks'
 
 export const dbLocalStorage = new AsyncLocalStorage()
 
+export const isConnectionError = (err) => {
+  if (!err) return false
+  const code = err.code
+  const msg = (err.message || '').toLowerCase()
+  return (
+    code === 'ECONNRESET' ||
+    code === 'EPIPE' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNREFUSED' ||
+    code === '57P01' ||
+    code === '57P02' ||
+    code === '57P03' ||
+    code === '08006' ||
+    code === '08001' ||
+    code === '08004' ||
+    code === '08003' ||
+    msg.includes('connection terminated') ||
+    msg.includes('connection closed') ||
+    msg.includes('connection reset') ||
+    msg.includes('socket closed') ||
+    msg.includes('not useable') ||
+    msg.includes('timeout')
+  )
+}
+
 export const query = async (text, params) => {
-  const start = Date.now()
   const store = dbLocalStorage.getStore()
 
-  const client = await pool.connect()
+  const executeOnce = async () => {
+    const start = Date.now()
+    const client = await pool.connect()
+    let hasError = false
+    try {
+      const targetUserId = store || null
+      const targetBypass = !store
+
+      if (client.currentUserId !== targetUserId || client.bypassRls !== targetBypass) {
+        if (store) {
+          await client.query(`SELECT set_config('app.current_user_id', $1, false), set_config('app.bypass_rls', 'off', false)`, [store])
+        } else {
+          await client.query(`SELECT set_config('app.current_user_id', '', false), set_config('app.bypass_rls', 'on', false)`)
+        }
+        client.currentUserId = targetUserId
+        client.bypassRls = targetBypass
+      }
+
+      const result = await client.query(text, params)
+      const duration = Date.now() - start
+
+      if (isDevelopment) {
+        const displayQuery = text.replace(/\s+/g, ' ').trim()
+        console.log(`[DB Query] (${duration}ms) ${displayQuery.substring(0, 150)}${displayQuery.length > 150 ? '...' : ''}`)
+        if (params && params.length > 0) {
+          console.log(`[DB Params] [REDACTED] count=${params.length}`)
+        }
+      } else if (duration > 2000) {
+        console.warn(`[DB Slow Query] ${duration}ms — ${text.substring(0, 80)}...`)
+      }
+
+      return result
+    } catch (err) {
+      hasError = true
+      const duration = Date.now() - start
+      console.error(`[DB Query Error] (${duration}ms) ${err.message}`)
+      throw err
+    } finally {
+      // Pass hasError to release: destroys client if it encountered an error so dead sockets aren't recycled
+      client.release(hasError)
+    }
+  }
+
   try {
-    const targetUserId = store || null
-    const targetBypass = !store
-
-    if (client.currentUserId !== targetUserId || client.bypassRls !== targetBypass) {
-      if (store) {
-        await client.query(`SELECT set_config('app.current_user_id', $1, false), set_config('app.bypass_rls', 'off', false)`, [store])
-      } else {
-        await client.query(`SELECT set_config('app.current_user_id', '', false), set_config('app.bypass_rls', 'on', false)`)
-      }
-      client.currentUserId = targetUserId
-      client.bypassRls = targetBypass
-    }
-
-    const result = await client.query(text, params)
-    const duration = Date.now() - start
-
-    if (isDevelopment) {
-      const displayQuery = text.replace(/\s+/g, ' ').trim()
-      console.log(`[DB Query] (${duration}ms) ${displayQuery.substring(0, 150)}${displayQuery.length > 150 ? '...' : ''}`)
-      if (params && params.length > 0) {
-        console.log(`[DB Params] [REDACTED] count=${params.length}`)
-      }
-    } else if (duration > 2000) {
-      console.warn(`[DB Slow Query] ${duration}ms — ${text.substring(0, 80)}...`)
-    }
-
-    return result
+    return await executeOnce()
   } catch (err) {
-    const duration = Date.now() - start
-    console.error(`[DB Query Error] (${duration}ms) ${err.message}`)
-    console.error(`[DB Query Error] Query: ${text}`)
-    console.error(`[DB Query Error] Params count: ${Array.isArray(params) ? params.length : 0}`)
+    if (isConnectionError(err)) {
+      console.warn('[DB] Stale/severed connection detected, retrying query once with fresh connection...')
+      return await executeOnce()
+    }
     throw err
-  } finally {
-    client.release()
   }
 }
 
@@ -186,36 +229,53 @@ export const query = async (text, params) => {
  */
 export const querySerial = async (queries) => {
   const store = dbLocalStorage.getStore()
-  const client = await pool.connect()
-  const results = []
-  try {
-    const targetUserId = store || null
-    const targetBypass = !store
 
-    if (client.currentUserId !== targetUserId || client.bypassRls !== targetBypass) {
-      if (store) {
-        await client.query(`SELECT set_config('app.current_user_id', $1, false), set_config('app.bypass_rls', 'off', false)`, [store])
-      } else {
-        await client.query(`SELECT set_config('app.current_user_id', '', false), set_config('app.bypass_rls', 'on', false)`)
-      }
-      client.currentUserId = targetUserId
-      client.bypassRls = targetBypass
-    }
+  const executeOnce = async () => {
+    const client = await pool.connect()
+    let hasError = false
+    const results = []
+    try {
+      const targetUserId = store || null
+      const targetBypass = !store
 
-    for (const { text, params: p } of queries) {
-      const start = Date.now()
-      const result = await client.query(text, p)
-      const duration = Date.now() - start
-      if (isDevelopment) {
-        const displayQuery = text.replace(/\s+/g, ' ').trim()
-        console.log(`[DB Serial] (${duration}ms) ${displayQuery.substring(0, 120)}${displayQuery.length > 120 ? '...' : ''}`)
+      if (client.currentUserId !== targetUserId || client.bypassRls !== targetBypass) {
+        if (store) {
+          await client.query(`SELECT set_config('app.current_user_id', $1, false), set_config('app.bypass_rls', 'off', false)`, [store])
+        } else {
+          await client.query(`SELECT set_config('app.current_user_id', '', false), set_config('app.bypass_rls', 'on', false)`)
+        }
+        client.currentUserId = targetUserId
+        client.bypassRls = targetBypass
       }
-      results.push(result)
+
+      for (const { text, params: p } of queries) {
+        const start = Date.now()
+        const result = await client.query(text, p)
+        const duration = Date.now() - start
+        if (isDevelopment) {
+          const displayQuery = text.replace(/\s+/g, ' ').trim()
+          console.log(`[DB Serial] (${duration}ms) ${displayQuery.substring(0, 120)}${displayQuery.length > 120 ? '...' : ''}`)
+        }
+        results.push(result)
+      }
+      return results
+    } catch (err) {
+      hasError = true
+      throw err
+    } finally {
+      client.release(hasError)
     }
-  } finally {
-    client.release()
   }
-  return results
+
+  try {
+    return await executeOnce()
+  } catch (err) {
+    if (isConnectionError(err)) {
+      console.warn('[DB Serial] Severed connection detected, retrying with fresh connection...')
+      return await executeOnce()
+    }
+    throw err
+  }
 }
 
 export default pool

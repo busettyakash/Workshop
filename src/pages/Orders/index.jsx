@@ -496,13 +496,13 @@ export default function Orders() {
                             title="Select all on this page"
                           />
                         </th>
-                        <th>ORDER</th>
+                        <th>ORDER #</th>
                         <th>CUSTOMER</th>
                         <th>QUOTE</th>
                         <th>CREATED BY</th>
                         <th>ORDER DATE</th>
                         <th>VALID UNTIL</th>
-                        <th style={{ textAlign: 'right' }}>TOTAL</th>
+                        <th style={{ textAlign: 'right' }}>TOTAL AMOUNT</th>
                         <th style={{ textAlign: 'right' }}>ACTIONS</th>
                       </tr>
                     </thead>
@@ -524,12 +524,14 @@ export default function Orders() {
                             </td>
                             <td>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                <span style={{ fontWeight: 700, color: '#2563eb', fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1e293b', fontSize: '0.85rem' }}>
                                   {formatOrderNumber(row)}
                                 </span>
-                                <span style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 500 }}>
-                                  From accepted quotation
-                                </span>
+                                {row.quote_number && (
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
+                                    {row.quote_number}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td>
@@ -537,13 +539,15 @@ export default function Orders() {
                                 <div className="attio-avatar" style={{ background: getAvatarColor(customerName) }}>
                                   {getSingleLetter(customerName)}
                                 </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                  <span style={{ fontWeight: 535, fontSize: '0.78rem', color: '#1e293b' }}>
+                                <div>
+                                  <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.85rem' }}>
                                     {customerName}
-                                  </span>
-                                  <span style={{ color: '#64748b', fontSize: '0.67rem' }}>
-                                    {row.customer_phone || row.customer_email || 'No contact'}
-                                  </span>
+                                  </div>
+                                  {(row.customer_phone || row.customer_email) && (
+                                    <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                      {row.customer_phone || row.customer_email}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </td>
@@ -578,10 +582,20 @@ export default function Orders() {
                                 )}
                               </div>
                             </td>
-                            <td>{formatDate(row.created_at)}</td>
-                            <td>{formatDate(row.valid_until)}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
-                              {formatCurrency(row.total_amount)}
+                            <td>
+                              <span style={{ fontSize: '0.8125rem', color: '#475467' }}>
+                                {formatDate(row.created_at)}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '0.8125rem', color: '#475467' }}>
+                                {formatDate(row.valid_until)}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>
+                                {formatCurrency(row.total_amount)}
+                              </span>
                             </td>
                             <td>
                               <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
@@ -592,17 +606,18 @@ export default function Orders() {
                                     border: '1px solid #bfdbfe',
                                     color: '#2563eb',
                                     cursor: 'pointer',
-                                    padding: '2px 8px',
-                                    borderRadius: 4,
-                                    fontSize: '0.72rem',
-                                    fontWeight: 500,
+                                    padding: '3px 8px',
+                                    borderRadius: 6,
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: 4,
+                                    gap: 4
                                   }}
                                   title="Preview quotation"
                                 >
-                                  <Eye size={12} /> View
+                                  <Eye size={13} />
+                                  <span>View</span>
                                 </button>
                               </div>
                             </td>

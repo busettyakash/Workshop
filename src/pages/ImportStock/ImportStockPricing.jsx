@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast } from '../../redux/slices/uiSlice'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ArrowLeft } from 'lucide-react'
 import { getAvatarColor, getSingleLetter, getCategoryTagStyle } from '../../utils/tableHelpers'
 import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
@@ -361,23 +361,26 @@ export default function ImportStockPricing() {
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button
+                type="button"
                 className="attio-btn"
                 onClick={() => navigate('/import-stock')}
-                style={{ fontWeight: 600 }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, fontSize: '0.78rem', padding: '0 12px' }}
               >
-                Back to Import Stock
+                <ArrowLeft size={13} /> Back to Import Stock
               </button>
               <button
+                type="button"
                 className="attio-btn"
                 onClick={() => navigate(`/import-stock/${item.id}/note`)}
-                style={{ fontWeight: 600 }}
+                style={{ display: 'inline-flex', alignItems: 'center', height: 32, fontSize: '0.78rem', padding: '0 12px', fontWeight: 600 }}
               >
                 Supplier Details & Note
               </button>
               <button
+                type="button"
                 className="attio-btn attio-btn-primary"
                 onClick={() => navigate(`/import-stock/edit/${item.id}`)}
-                style={{ fontWeight: 600 }}
+                style={{ display: 'inline-flex', alignItems: 'center', height: 32, fontSize: '0.78rem', padding: '0 12px', fontWeight: 600 }}
               >
                 Edit Product
               </button>

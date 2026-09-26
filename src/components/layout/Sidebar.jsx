@@ -1058,11 +1058,22 @@ export default function Sidebar() {
     return sessionStorage.getItem('ws_active_workspace_logo') || localStorage.getItem('ws_workspace_logo') || localStorage.getItem('ws_avatar_url') || ''
   })
 
+  // Keep active workspace name in sync with useAuth()
+  useEffect(() => {
+    if (shopName && shopName !== 'null' && shopName !== 'undefined') {
+      setActiveWorkspaceName(shopName)
+      sessionStorage.setItem('ws_active_workspace_name', shopName)
+      localStorage.setItem('ws_workspace_name', shopName)
+    }
+  }, [shopName])
+
   useEffect(() => {
     const handleOpenInvite = () => setInviteModalOpen(true)
     const handleWsUpdate = (e) => {
-      const updated = sessionStorage.getItem('ws_active_workspace_name') || localStorage.getItem('ws_workspace_name')
-      if (updated && updated !== 'null' && updated !== 'undefined') setActiveWorkspaceName(updated)
+      const updated = e?.detail?.shopName || sessionStorage.getItem('ws_active_workspace_name') || localStorage.getItem('ws_workspace_name')
+      if (updated && updated !== 'null' && updated !== 'undefined') {
+        setActiveWorkspaceName(updated)
+      }
       const updatedLogo = e?.detail?.logoUrl || sessionStorage.getItem('ws_active_workspace_logo') || localStorage.getItem('ws_workspace_logo') || localStorage.getItem('ws_avatar_url')
       if (updatedLogo) setActiveWorkspaceLogo(updatedLogo)
       if (e) {
@@ -1076,7 +1087,8 @@ export default function Sidebar() {
               const role = current.role || (current.isOwner ? 'Owner' : 'Member')
               const perms = current.permissions || {}
               setActiveWorkspaceId(current.id)
-              setActiveWorkspaceName(current.shopName)
+              const resolvedName = updated && updated !== 'null' && updated !== 'undefined' ? updated : current.shopName
+              setActiveWorkspaceName(resolvedName)
               setActiveRole(role)
               setActivePermissions(perms)
               if (current.logoUrl) {
@@ -1085,7 +1097,7 @@ export default function Sidebar() {
                 localStorage.setItem('ws_workspace_logo', current.logoUrl)
               }
               sessionStorage.setItem('ws_active_workspace_id', current.id)
-              sessionStorage.setItem('ws_active_workspace_name', current.shopName)
+              sessionStorage.setItem('ws_active_workspace_name', resolvedName)
               sessionStorage.setItem('ws_active_role', role)
               sessionStorage.setItem('ws_active_permissions', JSON.stringify(perms))
               window.dispatchEvent(new CustomEvent('ws_permissions_updated', { detail: { role, perms } }))

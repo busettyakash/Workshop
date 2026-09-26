@@ -105,6 +105,19 @@ api.interceptors.response.use(
       }
     }
 
+    // ── Auto-retry GET requests once on transient network/server blips ─────
+    const config = err.config
+    if (
+      config &&
+      config.method?.toLowerCase() === 'get' &&
+      !config._isRetry &&
+      (!err.response || (err.response.status >= 500 && err.response.status <= 504))
+    ) {
+      config._isRetry = true
+      delete config.adapter
+      return new Promise((resolve) => setTimeout(resolve, 350)).then(() => api(config))
+    }
+
     if (err.response?.status === 401) {
       const onAuthPage = ['/login', '/signup'].some((p) =>
         window.location.pathname.startsWith(p)

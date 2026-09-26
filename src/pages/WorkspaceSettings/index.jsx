@@ -8,6 +8,8 @@ import {
   ArrowLeft, Search, User, Palette, Mail, PhoneCall, HardDrive, Share2, Bell, MessageSquare, Plug,
   Building2, Users, Radio, CreditCard, DollarSign, Code, Headphones, ArrowRightLeft, Grid, Info, Scale, Plus, Edit2, Trash2, Save, HelpCircle
 } from 'lucide-react'
+import api from '../../api/client'
+import { updateUser } from '../../redux/slices/authSlice'
 import UomManager from '../../components/settings/UomManager'
 import MembersManager from '../../components/settings/MembersManager'
 import '../Dashboard/Dashboard.css'
@@ -16,10 +18,7 @@ export default function WorkspaceSettings() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
   const { shopName } = useAuth()
-
-  useEffect(() => {
-    dispatch(setActiveNav('Settings'))
-  }, [dispatch])
+  const [saving, setSaving] = useState(false)
 
   const [activeSection, setActiveSection] = useState('general') // 'general' | 'uom' | 'members' | 'billing'
 
@@ -31,9 +30,41 @@ export default function WorkspaceSettings() {
     address: ''
   })
 
-  const handleSaveWorkspace = (e) => {
+  useEffect(() => {
+    dispatch(setActiveNav('Settings'))
+    api.get('/auth/profile')
+      .then(res => {
+        if (res.data) {
+          setWorkspaceForm(prev => ({
+            ...prev,
+            shopName: res.data.shopName || prev.shopName || 'My Workspace',
+            phone: res.data.phone || '',
+            gstin: res.data.gstin || '',
+            address: res.data.address || ''
+          }))
+        }
+      })
+      .catch(() => {})
+  }, [dispatch])
+
+  const handleSaveWorkspace = async (e) => {
     e.preventDefault()
-    dispatch(addToast({ message: 'Workspace details saved!', type: 'success' }))
+    const trimmedName = workspaceForm.shopName?.trim() || 'My Workspace'
+    const updated = { ...workspaceForm, shopName: trimmedName }
+    setSaving(true)
+    try {
+      await api.put('/auth/workspace', updated)
+      sessionStorage.setItem('ws_active_workspace_name', trimmedName)
+      localStorage.setItem('ws_workspace_name', trimmedName)
+      localStorage.setItem('ws_workspace_settings', JSON.stringify(updated))
+      dispatch(updateUser({ shopName: trimmedName }))
+      window.dispatchEvent(new CustomEvent('workspace_updated', { detail: { shopName: trimmedName } }))
+      dispatch(addToast({ message: 'Workspace details saved successfully!', type: 'success' }))
+    } catch (err) {
+      dispatch(addToast({ message: err.response?.data?.error || 'Failed to save workspace details', type: 'error' }))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -325,6 +356,7 @@ export default function WorkspaceSettings() {
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
                     <button
                       type="submit"
+                      disabled={saving}
                       style={{
                         background: '#2563eb',
                         color: '#ffffff',
@@ -333,10 +365,11 @@ export default function WorkspaceSettings() {
                         padding: '8px 20px',
                         fontSize: '0.85rem',
                         fontWeight: 500,
-                        cursor: 'pointer'
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                        opacity: saving ? 0.7 : 1
                       }}
                     >
-                      Save Workspace Details
+                      {saving ? 'Saving...' : 'Save Workspace Details'}
                     </button>
                   </div>
                 </form>

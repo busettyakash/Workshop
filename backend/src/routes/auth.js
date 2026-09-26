@@ -496,6 +496,16 @@ async function resolveLoginWorkspace(email, userId, shopName, profRow = null) {
     ? shopName
     : `${email.split('@')[0]}'s Workshop`
 
+  // Fast path: existing shop profile is directly the Owner of their own workspace (0ms DB delay)
+  if (profRow?.user_id) {
+    return {
+      activeRole: 'Owner',
+      activePermissions: null,
+      activeWorkspaceId: profRow.user_id,
+      activeWorkspaceName: profRow.shop_name || safeShopName
+    }
+  }
+
   try {
     const [invitedWorkspace, ownData] = await Promise.all([
       resolveInvitedWorkspace(email),
@@ -942,12 +952,24 @@ router.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ message: 'email and password required' })
 
   try {
-    const profile = await query(
-      'SELECT user_id, shop_name, first_name, last_name, phone, gstin, password FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
-      [email]
-    ).catch(() => ({ rows: [] }))
+    const profileCacheKey = `user_auth_prof:${email}`
+    let prof = getMemoryCache(profileCacheKey)
+    if (!prof) {
+      prof = await getCached(redis, profileCacheKey, 80)
+    }
 
-    let prof           = profile.rows[0] || null
+    if (!prof) {
+      const profile = await query(
+        'SELECT user_id, shop_name, first_name, last_name, phone, gstin, password FROM shop_profiles WHERE LOWER(email) = LOWER($1)',
+        [email]
+      ).catch(() => ({ rows: [] }))
+      prof = profile.rows[0] || null
+      if (prof) {
+        setMemoryCache(profileCacheKey, prof, 1800)
+        setCached(redis, profileCacheKey, prof, 1800)
+      }
+    }
+
     let userId         = prof?.user_id || null
     let shopName       = prof?.shop_name   || email.split('@')[0]
     let firstName      = prof?.first_name  || ''
@@ -960,15 +982,21 @@ router.post('/login', async (req, res) => {
     // ── Fast path: local password check with secure hash verification ──
     const isPasswordValid = prof && verifyPassword(password, storedPassword)
     if (prof && isPasswordValid) {
-      // Auto-upgrade legacy plaintext passwords to secure scrypt hash on successful login
+      // Auto-upgrade legacy plaintext passwords to secure scrypt hash on successful login (background task)
       if (storedPassword && !storedPassword.startsWith('scrypt:')) {
         const upgradedHash = hashPassword(password)
-        await query('UPDATE shop_profiles SET password = $1 WHERE LOWER(email) = LOWER($2)', [upgradedHash, email]).catch(() => {})
+        query('UPDATE shop_profiles SET password = $1 WHERE LOWER(email) = LOWER($2)', [upgradedHash, email]).catch(() => {})
+        prof.password = upgradedHash
+        setMemoryCache(profileCacheKey, prof, 1800)
+        setCached(redis, profileCacheKey, prof, 1800)
       }
       userId = userId || getLocalUserId(email)
       token = signLocalJwt({ sub: userId, email, shopName, firstName, lastName })
+    } else if (prof && storedPassword) {
+      // User has registered password in shop_profiles that did not match -> return 401 immediately
+      return res.status(401).json({ message: 'Invalid email or password.' })
     } else {
-      // ── Fallback: verify via InsForge auth service ──
+      // ── Fallback: verify via InsForge auth service (for users created in InsForge without local password) ──
       try {
         const { data, error } = await insforge.auth.signInWithPassword({ email, password })
         if (error) {
@@ -1789,34 +1817,46 @@ router.put('/profile', apiLimiter, requireAuth, async (req, res) => {
 router.put('/workspace', apiLimiter, requireAuth, async (req, res) => {
   try {
     const userEmail = req.user?.email
+    const workspaceId = req.workspaceId
     if (!userEmail) return res.status(401).json({ error: 'Unauthorized' })
 
     const { shopName, phone, gstin, address, logoUrl, logo_url } = req.body
-    const targetLogo = logoUrl !== undefined ? logoUrl : logo_url
-    if (targetLogo !== undefined) {
-      await query(
-        `UPDATE shop_profiles
-         SET shop_name = COALESCE($1, shop_name),
-             phone = COALESCE($2, phone),
-             gstin = COALESCE($3, gstin),
-             address = COALESCE($4, address),
-             logo_url = $5
-         WHERE LOWER(email) = LOWER($6)`,
-        [shopName, phone, gstin, address, targetLogo, userEmail]
-      )
-    } else {
-      await query(
-        `UPDATE shop_profiles
-         SET shop_name = $1, phone = $2, gstin = $3, address = $4
-         WHERE LOWER(email) = LOWER($5)`,
-        [shopName, phone, gstin, address, userEmail]
-      )
+    const targetName = shopName !== undefined ? (shopName?.trim() || null) : null
+    const targetPhone = phone !== undefined ? phone : null
+    const targetGstin = gstin !== undefined ? gstin : null
+    const targetAddress = address !== undefined ? address : null
+    let targetLogo = null
+    if (logoUrl !== undefined) {
+      targetLogo = logoUrl
+    } else if (logo_url !== undefined) {
+      targetLogo = logo_url
     }
+    const targetWorkspaceId = workspaceId || null
 
-    deleteMemoryCache(`workspaces:${normalizeEmail(userEmail)}`)
+    await query(
+      `UPDATE shop_profiles
+       SET shop_name = COALESCE(NULLIF($1, ''), shop_name),
+           phone     = COALESCE($2, phone),
+           gstin     = COALESCE($3, gstin),
+           address   = COALESCE($4, address),
+           logo_url  = COALESCE($5, logo_url)
+       WHERE LOWER(email) = LOWER($6) OR (user_id IS NOT NULL AND user_id::text = $7)`,
+      [targetName, targetPhone, targetGstin, targetAddress, targetLogo, userEmail, targetWorkspaceId]
+    )
+
+    const normalized = normalizeEmail(userEmail)
+    deleteMemoryCache(`workspaces:${normalized}`)
+    deleteMemoryCache(`user_auth_prof:${normalized}`)
+    deleteMemoryCache(`user_id_map:${normalized}`)
+    await Promise.allSettled([
+      deleteCached(redis, `workspaces:${normalized}`),
+      deleteCached(redis, `user_auth_prof:${normalized}`),
+      deleteCached(redis, `user_id_map:${normalized}`)
+    ])
 
     res.json({ message: 'Workspace details saved successfully!' })
   } catch (err) {
+    console.error('[Update Workspace Error]:', err.message)
     res.status(500).json({ error: err.message })
   }
 })

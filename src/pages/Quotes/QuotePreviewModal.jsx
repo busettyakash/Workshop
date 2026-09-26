@@ -68,13 +68,11 @@ export default function QuotePreviewModal({ quote, products: initialProducts, on
   return (
     <div
       className="ws-modal-backdrop"
-      role="presentation"
       onClick={onClose}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
       <div
         className="ws-modal-card"
-        role="presentation"
         style={{ maxWidth: 760 }}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}

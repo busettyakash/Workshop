@@ -1225,13 +1225,11 @@ function QuoteComparisonModal({ quotes, onClose, onRemoveQuote, onClearAll }) {
   return (
     <div
       className="ws-modal-backdrop"
-      role="presentation"
       onClick={onClose}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
       <div
         className="ws-modal-card compare-modal-card"
-        role="presentation"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >

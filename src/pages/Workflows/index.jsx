@@ -1640,7 +1640,6 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
 
   return (
     <div
-      role="presentation"
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
         background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(3px)',
@@ -1650,7 +1649,6 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
       onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
       <div
-        role="presentation"
         style={{
           width: 580, maxWidth: '95vw', maxHeight: '85vh',
           background: '#ffffff', borderRadius: 16,

@@ -232,6 +232,12 @@ export default function ImportStock() {
   const [selectedPricing, setSelectedPricing] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' })
 
+  const handleToggleSelect = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    )
+  }
+
   const [page, setPage] = useState(1)
   const [limit] = useState(20) // fixed limit to remove dropdown
   const [total, setTotal] = useState(0)
@@ -580,43 +586,31 @@ export default function ImportStock() {
                     {products.map(row => (
                       <tr key={row.id}>
                           <td style={{ textAlign: 'left', paddingLeft: 4 }}>
-                            {(() => {
-                              if (row.status === 'added') {
-                                return (
-                                  <input 
-                                    type="checkbox" 
-                                    className="attio-chk" 
-                                    disabled 
-                                    checked={false} 
-                                    style={{ opacity: 0.4, cursor: 'not-allowed' }}
-                                  />
-                                )
-                              }
-                              if (row.status !== 'active') {
-                                return (
-                                  <input 
-                                    type="checkbox" 
-                                    className="attio-chk" 
-                                    disabled 
-                                    checked={false} 
-                                    style={{ opacity: 0.4, cursor: 'not-allowed' }}
-                                    title="Only active status items can be added to products"
-                                  />
-                                )
-                              }
-                              return (
-                                <input 
-                                  type="checkbox" 
-                                  className="attio-chk" 
-                                  checked={selectedIds.includes(row.id)}
-                                  onChange={() => {
-                                    setSelectedIds(prev => 
-                                      prev.includes(row.id) ? prev.filter(id => id !== row.id) : [...prev, row.id]
-                                    )
-                                  }}
-                                />
-                              )
-                            })()}
+                            {row.status === 'added' ? (
+                              <input 
+                                type="checkbox" 
+                                className="attio-chk" 
+                                disabled 
+                                checked={false} 
+                                style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                              />
+                            ) : row.status !== 'active' ? (
+                              <input 
+                                type="checkbox" 
+                                className="attio-chk" 
+                                disabled 
+                                checked={false} 
+                                style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                                title="Only active status items can be added to products"
+                              />
+                            ) : (
+                              <input 
+                                type="checkbox" 
+                                className="attio-chk" 
+                                checked={selectedIds.includes(row.id)}
+                                onChange={() => handleToggleSelect(row.id)}
+                              />
+                            )}
                           </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

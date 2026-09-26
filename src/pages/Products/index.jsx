@@ -169,13 +169,11 @@ function PricingModal({ product, onClose }) {
   return (
     <div
       className="ws-modal-backdrop"
-      role="presentation"
       onClick={onClose}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
       <div
         className="ws-modal-card"
-        role="presentation"
         style={{ maxWidth: 480, width: '90%' }}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
@@ -352,13 +350,11 @@ function ProductComparisonModal({ products, onClose, onRemoveProduct, onClearAll
   return (
     <div
       className="ws-modal-backdrop"
-      role="presentation"
       onClick={onClose}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
       <div
         className="ws-modal-card compare-modal-card"
-        role="presentation"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >

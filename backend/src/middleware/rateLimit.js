@@ -17,9 +17,9 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    // Skip rate limiting in development or loopback
+    // Skip rate limiting in development or for local loopback requests
     if (process.env.NODE_ENV === 'development') return true
-    if (req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1') return true
+    if (req.hostname === 'localhost') return true
     // Do not rate-limit GET requests like session checks (/auth/me)
     if (req.method === 'GET') return true
     return false

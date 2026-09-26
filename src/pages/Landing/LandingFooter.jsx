@@ -1,24 +1,32 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import WorkshopLogo from '../../components/WorkshopLogo'
 import './Landing.css'
 
 const FOOTER_COLS = [
   {
     heading: 'Platform',
-    links: ['Billing', 'Inventory', 'Customers', 'Reports', 'Automations'],
+    links: [
+      { name: 'Billing', href: '/#platform' },
+      { name: 'Inventory', href: '/#platform' },
+      { name: 'Customers', href: '/#platform' },
+      { name: 'Reports', href: '/#platform' },
+      { name: 'Automations', href: '/#platform' },
+    ],
   },
   {
     heading: 'Company',
-    links: ['About', 'Customers', 'Changelog', 'Careers'],
-  },
-  {
-    heading: 'Resources',
-    links: ['Documentation', 'Help center', 'Blog', 'System status'],
+    links: [
+      { name: 'About', href: '/#platform' },
+      { name: 'Customers', href: '/#customers' },
+    ],
   },
   {
     heading: 'Legal',
-    links: ['Privacy Policy', 'Terms of Service', 'Security'],
+    links: [
+      { name: 'Privacy Policy', to: '/privacy' },
+      { name: 'Terms of Service', to: '/terms' },
+    ],
   },
 ]
 
@@ -40,9 +48,20 @@ export default function LandingFooter() {
           {FOOTER_COLS.map(col => (
             <div className="ws-footer-col" key={col.heading}>
               <div className="ws-footer-col-label">{col.heading}</div>
-              {col.links.map(link => (
-                <a href="#" key={link} className="ws-footer-link">{link}</a>
-              ))}
+              {col.links.map(link => {
+                if (link.to) {
+                  return (
+                    <Link to={link.to} key={link.name} className="ws-footer-link">
+                      {link.name}
+                    </Link>
+                  )
+                }
+                return (
+                  <a href={link.href} key={link.name} className="ws-footer-link">
+                    {link.name}
+                  </a>
+                )
+              })}
             </div>
           ))}
         </div>
@@ -50,8 +69,8 @@ export default function LandingFooter() {
         <div className="ws-footer-bottom">
           <span>© {new Date().getFullYear()} Workshop Limited. All rights reserved.</span>
           <div className="ws-footer-bottom-links">
-            <a href="#">Privacy Policy</a>
-            <a href="#">Terms</a>
+            <Link to="/privacy">Privacy Policy</Link>
+            <Link to="/terms">Terms</Link>
           </div>
         </div>
       </div>

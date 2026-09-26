@@ -1,64 +1,65 @@
-import React from "react";
+import React from "react"
+import { Link } from "react-router"
 import {
-  Globe,
+  FileText,
   Building2,
-  DollarSign,
   MapPin,
   Tag,
   BarChart3,
-  Users,
+  CheckCircle2,
   Search,
   Bot,
-  Sparkles
-} from "lucide-react";
+  Sparkles,
+  Receipt
+} from "lucide-react"
 
 export default function AskWorkshopSection() {
   const rows = [
     {
-      icon: <Globe size={11} />,
-      label: "Domain",
-      value: <span style={{ color: "#2563eb", fontSize: "0.72rem" }}>rahulstore.com</span>,
+      icon: <FileText size={11} />,
+      label: "GSTIN",
+      value: <span style={{ color: "#2563eb", fontFamily: "monospace", fontSize: "0.72rem", fontWeight: 700 }}>36AAACR1234F1Z5</span>,
     },
     {
       icon: <Building2 size={11} />,
-      label: "Name",
-      value: "Rahul's Store",
+      label: "Business",
+      value: "Sri Venkateswara",
     },
     {
-      icon: <DollarSign size={11} />,
-      label: "Revenue",
+      icon: <Receipt size={11} />,
+      label: "Status",
       value: (
-        <span style={{ background: "#dcfce7", color: "#166534", padding: "1px 7px", borderRadius: "999px", fontSize: "0.68rem", fontWeight: 500 }}>
-          ₹2-5L
+        <span style={{ background: "#dcfce7", color: "#166534", padding: "1px 7px", borderRadius: "999px", fontSize: "0.68rem", fontWeight: 700 }}>
+          Active · Verified
         </span>
       ),
     },
     {
       icon: <MapPin size={11} />,
       label: "Location",
-      value: "Mumbai, India",
+      value: "Hyderabad, India",
     },
     {
       icon: <Tag size={11} />,
-      label: "Categories",
+      label: "Category",
       value: (
         <span style={{ display: "flex", gap: "3px", justifyContent: "flex-end", flexWrap: "wrap" }}>
-          <span style={{ background: "#ede9fe", color: "#6d28d9", padding: "1px 6px", borderRadius: "999px", fontSize: "0.65rem", fontWeight: 500 }}>Retail</span>
-          <span style={{ background: "#ede9fe", color: "#6d28d9", padding: "1px 6px", borderRadius: "999px", fontSize: "0.65rem", fontWeight: 500 }}>Electronics</span>
+          <span style={{ background: "#eff6ff", color: "#1d4ed8", padding: "1px 6px", borderRadius: "999px", fontSize: "0.65rem", fontWeight: 600 }}>Wholesale</span>
+          <span style={{ background: "#f0fdf4", color: "#15803d", padding: "1px 6px", borderRadius: "999px", fontSize: "0.65rem", fontWeight: 600 }}>Retail</span>
         </span>
       ),
     },
     {
       icon: <BarChart3 size={11} />,
-      label: "Total Sales",
-      value: "₹28L this year",
+      label: "Total Billed",
+      value: "₹48.6L this year",
     },
     {
-      icon: <Users size={11} />,
-      label: "Staff",
-      value: <span style={{ color: "#9ca3af" }}>Rahul Sharma, ...</span>,
+      icon: <CheckCircle2 size={11} />,
+      label: "Ledger",
+      value: <span style={{ color: "#16a34a", fontWeight: 600 }}>₹0 Balance (Paid)</span>,
     },
-  ];
+  ]
 
   return (
     <div className="cds-split">
@@ -66,40 +67,38 @@ export default function AskWorkshopSection() {
       {/* ── LEFT ── */}
       <div className="cds-left">
         <div className="cds-left-top">
-          <h2 className="cds-heading">Deploy AI</h2>
+          <h2 className="cds-heading">AI-Powered Operations</h2>
           <p className="cds-sub">
-            Search and create with Ask Workshop, connect your stack with
-            integrations, or put agents to work on complex tasks like
-            inventory scoring and customer analysis.
+            Ask Workshop automates GST tax calculations, verifies live stock availability, checks customer ledger balances, and creates quotations instantly.
           </p>
         </div>
-        <a href="#explore" className="cds-link">Explore AI →</a>
+        <Link to="/signup" className="cds-link" style={{ textDecoration: "none" }}>Explore AI features →</Link>
       </div>
 
-      {/* ── CENTER ── */}
+      {/* ── CENTER — Real Retail AI Decision Tree ── */}
       <div className="cds-center" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div className="ws-ai-tree">
           <div className="ws-ai-trigger">
             <Search size={14} className="ws-ai-trigger-icon" />
-            <span>New order found</span>
+            <span>New order request found</span>
           </div>
 
           <div className="ws-ai-trunk">
             {[
               {
-                title: "Activate loyalty check",
-                question: "Does this customer qualify for loyalty rewards?",
-                answer: <>Yes, they are a <span className="ws-ai-purple-text">Gold Tier</span> customer</>,
+                title: "Automated GST Calculation",
+                question: "What is the tax breakdown for this order?",
+                answer: <>18% GST (<span className="ws-ai-purple-text">9% CGST + 9% SGST</span>) applied · Taxable: ₹46,000</>,
               },
               {
-                title: "Evaluate purchase value",
-                question: "What's the lifetime spend of this customer?",
-                answer: <><span className="ws-ai-purple-text">₹2.4L</span> spent across <span className="ws-ai-purple-text">34 orders</span></>,
+                title: "Live Inventory & Stock Check",
+                question: "Is there sufficient stock in warehouse?",
+                answer: <><span className="ws-ai-purple-text">120 Bags (50kg)</span> in stock · 50 Bags auto-reserved</>,
               },
               {
-                title: "Identify key contacts",
-                question: "Who are the frequent buyers at this shop?",
-                answer: <span className="ws-ai-purple-text">Rahul Sharma, Manager; Priya Mehta, Owner</span>,
+                title: "Customer Ledger & Credit Check",
+                question: "What is the customer's outstanding balance?",
+                answer: <><span className="ws-ai-purple-text">₹0 outstanding</span> · Previous invoice INV-10482 paid</>,
               },
             ].map(({ title, question, answer }) => (
               <div key={title} className="ws-ai-branch">
@@ -124,7 +123,7 @@ export default function AskWorkshopSection() {
         </div>
       </div>
 
-      {/* ── RIGHT ── */}
+      {/* ── RIGHT — Real Verified Customer & Business Profile Card ── */}
       <div
         className="cds-right"
         style={{
@@ -137,7 +136,6 @@ export default function AskWorkshopSection() {
           overflow: "hidden",
         }}
       >
-        {/* Profile card — rebuilt with strict grid alignment */}
         <div
           style={{
             width: "100%",
@@ -145,7 +143,7 @@ export default function AskWorkshopSection() {
             background: "#fff",
             border: "1px solid #e5e7eb",
             borderRadius: "12px",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
             overflow: "hidden",
             flexShrink: 0,
           }}
@@ -158,6 +156,7 @@ export default function AskWorkshopSection() {
               gap: "10px",
               padding: "12px 14px",
               borderBottom: "1px solid #f0f0f0",
+              background: "#fafafa",
             }}
           >
             <div
@@ -165,59 +164,62 @@ export default function AskWorkshopSection() {
                 width: "28px",
                 height: "28px",
                 borderRadius: "6px",
-                background: "#111827",
+                background: "#1e3a8a",
                 color: "#fff",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "0.6rem",
-                fontWeight: 700,
+                fontSize: "0.65rem",
+                fontWeight: 800,
                 flexShrink: 0,
                 letterSpacing: "0.02em",
               }}
             >
-              RS
+              SV
             </div>
-            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#111827" }}>
-              Rahul's Store
-            </span>
+            <div>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#0f172a", display: "block", lineHeight: 1.2 }}>
+                Sri Venkateswara
+              </span>
+              <span style={{ fontSize: "0.68rem", color: "#64748b" }}>
+                Wholesale Buyer
+              </span>
+            </div>
           </div>
 
-          {/* Rows — strict 2-col grid: label | value */}
+          {/* Rows */}
           <div style={{ padding: "8px 0" }}>
             {rows.map(({ icon, label, value }) => (
               <div
                 key={label}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "88px 1fr",
+                  gridTemplateColumns: "82px 1fr",
                   alignItems: "center",
                   columnGap: "6px",
-                  padding: "5px 14px",
+                  padding: "6px 14px",
                 }}
               >
-                {/* Label col */}
                 <span
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: "5px",
                     fontSize: "0.69rem",
-                    color: "#9ca3af",
+                    color: "#64748b",
                     whiteSpace: "nowrap",
                     minWidth: 0,
                   }}
                 >
-                  <span style={{ color: "#c0c4cc", flexShrink: 0 }}>{icon}</span>
+                  <span style={{ color: "#94a3b8", flexShrink: 0 }}>{icon}</span>
                   {label}
                 </span>
 
-                {/* Value col — right-aligned */}
                 <span
                   style={{
                     fontSize: "0.74rem",
                     fontWeight: 500,
-                    color: "#111827",
+                    color: "#0f172a",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "flex-end",
@@ -234,5 +236,5 @@ export default function AskWorkshopSection() {
       </div>
 
     </div>
-  );
+  )
 }

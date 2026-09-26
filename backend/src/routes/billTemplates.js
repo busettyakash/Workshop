@@ -21,7 +21,20 @@ const ensureTable = async () => {
     )
   `).catch(() => {})
 }
-ensureTable()
+
+let ensureTablePromise
+router.use(async (_req, _res, next) => {
+  try {
+    ensureTablePromise ||= ensureTable().catch((err) => {
+      ensureTablePromise = null
+      throw err
+    })
+    await ensureTablePromise
+    next()
+  } catch (err) {
+    next(err)
+  }
+})
 
 /* GET /api/bill-templates */
 router.get('/', async (req, res) => {

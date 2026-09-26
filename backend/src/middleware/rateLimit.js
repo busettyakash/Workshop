@@ -2,16 +2,42 @@ import rateLimit from 'express-rate-limit'
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  message: { error: 'Too many requests, please try again later.' }
+  max: 5000, // High throughput limit for team operations
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: 'Too many requests, please try again later.',
+    error: 'Too many requests, please try again later.',
+  },
 })
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Limit each IP to 20 requests per `window` for auth routes
+  max: process.env.NODE_ENV === 'development' ? 10000 : 300,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests to auth endpoints, please try again later.' }
+  skip: (req) => {
+    // Skip rate limiting in development or for local loopback requests
+    if (process.env.NODE_ENV === 'development') return true
+    if (req.hostname === 'localhost') return true
+    // Do not rate-limit GET requests like session checks (/auth/me)
+    if (req.method === 'GET') return true
+    return false
+  },
+  message: {
+    message: 'Too many requests to auth endpoints, please try again later.',
+    error: 'Too many requests to auth endpoints, please try again later.',
+  },
+})
+
+// Limiter for email/notification-sending routes
+export const emailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 500, // High limit for team emails
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: 'Too many email requests. Please try again later.',
+    error: 'Too many email requests. Please try again later.',
+  },
 })

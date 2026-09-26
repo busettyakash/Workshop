@@ -4,7 +4,7 @@ import Sidebar from '../../components/layout/Sidebar'
 import Topbar from '../../components/layout/Topbar'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast, setSidebarOpen } from '../../redux/slices/uiSlice'
-import { Plus, Filter, ArrowUpDown, X, Trash2, Loader2, Search, Eye, FileText, Calendar, Edit2, ArrowLeft, User, Package, Calculator, CheckCircle2, Send, Receipt, ArrowRight, ChevronDown, ArrowLeftRight } from 'lucide-react'
+import { Plus, Filter, X, Trash2, Loader2, Search, Eye, Edit2, ArrowLeft, CheckCircle2, Send, ArrowRight, ArrowLeftRight } from 'lucide-react'
 import { getAvatarColor, getSingleLetter } from '../../utils/tableHelpers'
 import { getBulkUnitDetails, formatStockDisplay } from '../../utils/unitHelpers'
 import api from '../../api/client'
@@ -12,7 +12,6 @@ import '../Dashboard/Dashboard.css'
 import '../Products/Products.css'
 import TablePagination from '../../components/ui/TablePagination'
 import ConfirmModal from '../../components/ui/ConfirmModal'
-import BillPreview from '../Billing/BillPreview'
 import QuotePreviewModal from './QuotePreviewModal'
 import { usePermissions, getFirstAccessibleRoute } from '../../utils/permissionUtils'
 
@@ -47,36 +46,43 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
     const q = query.toLowerCase()
     return (
       p.name?.toLowerCase().includes(q) ||
-      (p.company && p.company.toLowerCase().includes(q)) ||
-      (p.company_name && p.company_name.toLowerCase().includes(q)) ||
-      (p.phone && p.phone.includes(q)) ||
-      (p.email && p.email.toLowerCase().includes(q))
+      p.company?.toLowerCase().includes(q) ||
+      p.company_name?.toLowerCase().includes(q) ||
+      p.phone?.includes(q) ||
+      p.email?.toLowerCase().includes(q)
     )
   })
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen(prev => !prev)}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setOpen(prev => !prev)}
-        style={{
-          width: '100%', height: 32, padding: '0 8px', borderRadius: 5,
-          border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.78rem',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer'
-        }}
-      >
-        <span style={{
-          color: selectedPerson ? '#0f172a' : '#94a3b8', fontWeight: selectedPerson ? 600 : 400,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 'calc(100% - 20px)'
-        }}>
-          {selectedPerson
-            ? `${selectedPerson.name} ${(selectedPerson.company || selectedPerson.company_name) ? `(${selectedPerson.company || selectedPerson.company_name})` : selectedPerson.phone ? `(${selectedPerson.phone})` : ''}`
-            : 'Search vendor from People...'}
-        </span>
-        <Search size={12} style={{ color: '#64748b', flexShrink: 0 }} />
-      </div>
+      {(() => {
+        let selectedLabel = 'Search vendor from People...'
+        if (selectedPerson) {
+          const extra = selectedPerson.company || selectedPerson.company_name || selectedPerson.phone
+          selectedLabel = extra ? `${selectedPerson.name} (${extra})` : selectedPerson.name
+        }
+
+        return (
+          <button
+            type="button"
+            onClick={() => setOpen(prev => !prev)}
+            style={{
+              width: '100%', height: 32, padding: '0 8px', borderRadius: 5,
+              border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.78rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            <span style={{
+              color: selectedPerson ? '#0f172a' : '#94a3b8', fontWeight: selectedPerson ? 600 : 400,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 'calc(100% - 20px)'
+            }}>
+              {selectedLabel}
+            </span>
+            <Search size={12} style={{ color: '#64748b', flexShrink: 0 }} />
+          </button>
+        )
+      })()}
 
       {open && (
         <div style={{
@@ -95,17 +101,16 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
             <div style={{ padding: '8px 10px', fontSize: '0.78rem', color: '#94a3b8' }}>No vendors found</div>
           ) : (
             filtered.map(p => (
-              <div
+              <button
+                type="button"
                 key={p.id}
-                role="button"
-                tabIndex={0}
                 onClick={() => {
                   onSelect(p.id)
                   setOpen(false)
                   setQuery('')
                 }}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onSelect(p.id); setOpen(false); setQuery('') } }}
                 style={{
+                  width: '100%', background: 'transparent', border: 'none', textAlign: 'left',
                   padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: '0.78rem',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                 }}
@@ -120,7 +125,7 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
                   )}
                 </div>
                 <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{p.phone || p.email || ''}</span>
-              </div>
+              </button>
             ))
           )}
         </div>
@@ -129,35 +134,38 @@ function SearchableCustomerSelect({ people, value, onSelect }) {
   )
 }
 
-function SearchableProductSelect({ products, value, onSelect, subtext }) {
+function SearchableProductSelect({ products = [], value, onSelect, subtext }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const containerRef = useRef(null)
 
-  const selectedProd = products.find(p => String(p.id) === String(value))
+  const productList = Array.isArray(products) ? products : []
+  const selectedProd = productList.find(p => String(p?.id) === String(value))
 
   useCloseOnOutsideClick(containerRef, setOpen)
 
-  const filtered = products.filter(p =>
-    p.name.toLowerCase().includes(query.toLowerCase()) ||
-    (p.sku && p.sku.toLowerCase().includes(query.toLowerCase())) ||
-    (p.category && p.category.toLowerCase().includes(query.toLowerCase()))
-  )
+  const q = (query || '').toLowerCase().trim()
+  const filtered = productList.filter(p => {
+    if (!p) return false
+    if (!q) return true
+    const nameMatch = (p.name || '').toLowerCase().includes(q)
+    const skuMatch = (p.sku || '').toLowerCase().includes(q)
+    const catMatch = (p.category || '').toLowerCase().includes(q)
+    return nameMatch || skuMatch || catMatch
+  })
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: 240 }}>
       {selectedProd && !open ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <div
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             onClick={() => setOpen(true)}
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setOpen(true)}
-            style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+            style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, textAlign: 'left' }}
             title="Click to change product"
           >
             <span>{selectedProd.name}</span>
-          </div>
+          </button>
           {subtext && (
             <span style={{ fontSize: '0.68rem', color: '#0d9488', fontWeight: 600 }}>
               {subtext}
@@ -165,22 +173,21 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
           )}
         </div>
       ) : (
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={() => setOpen(prev => !prev)}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setOpen(prev => !prev)}
           style={{
             width: '100%', height: 28, padding: '0 8px', borderRadius: 5,
             border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.75rem',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer'
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer',
+            textAlign: 'left'
           }}
         >
           <span style={{ color: selectedProd ? '#0f172a' : '#94a3b8', fontWeight: selectedProd ? 600 : 400, fontSize: '0.75rem' }}>
             {selectedProd ? selectedProd.name : 'Type to search product...'}
           </span>
           <Search size={12} style={{ color: '#64748b' }} />
-        </div>
+        </button>
       )}
 
       {open && (
@@ -200,23 +207,16 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
             <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#94a3b8' }}>No products found</div>
           ) : (
             filtered.map(p => (
-              <div
+              <button
+                type="button"
                 key={p.id}
-                role="button"
-                tabIndex={0}
                 onClick={() => {
                   onSelect(p.id)
                   setOpen(false)
                   setQuery('')
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    onSelect(p.id)
-                    setOpen(false)
-                    setQuery('')
-                  }
-                }}
                 style={{
+                  width: '100%', background: 'transparent', border: 'none', textAlign: 'left',
                   padding: '6px 8px', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8
                 }}
@@ -231,7 +231,7 @@ function SearchableProductSelect({ products, value, onSelect, subtext }) {
                 <span style={{ fontWeight: 700, color: '#059669', fontSize: '0.78rem', flexShrink: 0 }}>
                   ₹{Number.parseFloat(p.updated_price || p.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
-              </div>
+              </button>
             ))
           )}
         </div>
@@ -245,8 +245,8 @@ const calcMaxStock = (prod, itemUnit) => {
   const stockBags = Number.parseFloat(prod.stock) || 0
   const looseKg = Number.parseFloat(prod.loose_kg) || 0
   const bw = Number.parseFloat(prod.bag_weight) || 1
-  const bulkUnit = getBulkUnitDetails(prod.unit)
-  const unitStr = String(itemUnit || prod.unit || '').toLowerCase()
+  const bulkUnit = getBulkUnitDetails(prod?.unit)
+  const unitStr = String(itemUnit || prod?.unit || '').toLowerCase()
 
   const isBaseUnit = bulkUnit && (
     unitStr === bulkUnit.short?.toLowerCase() ||
@@ -312,7 +312,14 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
       .catch(() => { })
 
     api.get('/products?limit=200')
-      .then(res => setProducts(res.data?.data || []))
+      .then(res => {
+        let raw = res.data
+        if (typeof raw === 'string') {
+          try { raw = JSON.parse(raw.startsWith('local:') ? raw.slice(6) : raw) } catch {}
+        }
+        const prods = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.products) ? raw.products : []))
+        setProducts(prods)
+      })
       .catch(() => { })
 
     if (!quote?.shop_name || quote.shop_name === 'Workshop Store') {
@@ -410,13 +417,18 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
     const isPack = bulkUnit && bagWeight > 1
     const unitLabel = isPack ? (bulkUnit.name || prod.unit || 'Bag') : (prod.unit || 'pcs')
-    const itemRate = isPack ? prices.perPackPrice : (prices.perUnitRate > 0 ? prices.perUnitRate : (prod.price || 0))
+    let itemRate = prod.price || 0
+    if (isPack) {
+      itemRate = prices.perPackPrice
+    } else if (prices.perUnitRate > 0) {
+      itemRate = prices.perUnitRate
+    }
 
     let subtext = ''
     if (bulkUnit && bagWeight > 1) {
-      subtext = `${bulkUnit.name || 'Pack'}: ₹${prices.perPackPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
+      subtext = `${bulkUnit.name || 'Pack'}: ₹${prices.perPackPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bagWeight}${bulkUnit.short})`
     } else if (prod.unit) {
-      subtext = `${prod.unit}: ₹${(Number.parseFloat(prod.updated_price || prod.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      subtext = `${prod.unit}: ₹${(Number.parseFloat(prod.updated_price || prod.price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }
 
     setLineItems(prev => prev.map((item, i) => {
@@ -616,57 +628,51 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
 
       {/* Stepper Navigation Bar (Increased box sizes by 2%) */}
       <div className="attio-table-card" style={{ padding: '8px 14px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 700, margin: '0 auto', boxSizing: 'border-box', flexWrap: 'nowrap', gap: 10 }}>
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={() => setStep(1)}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setStep(1)}
           style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
-            background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`
+            background: step === 1 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 1 ? '#2563eb' : '#e2e8f0'}`, textAlign: 'left'
           }}
         >
           <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 1 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>1</div>
           <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 1 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
             Step 1: Customer Details
           </div>
-        </div>
+        </button>
 
         <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={() => setStep(2)}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setStep(2)}
           style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
-            background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`
+            background: step === 2 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 2 ? '#2563eb' : '#e2e8f0'}`, textAlign: 'left'
           }}
         >
           <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 2 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>2</div>
           <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 2 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
             Step 2: Products & Line Items
           </div>
-        </div>
+        </button>
 
         <ArrowRight size={13} style={{ color: '#cbd5e1', flexShrink: 0 }} />
 
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={() => setStep(3)}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setStep(3)}
           style={{
             flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
-            background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`
+            background: step === 3 ? '#eff6ff' : '#f8fafc', border: `1px solid ${step === 3 ? '#2563eb' : '#e2e8f0'}`, textAlign: 'left'
           }}
         >
           <div style={{ width: 20, height: 20, borderRadius: '50%', background: step === 3 ? '#2563eb' : '#94a3b8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', flexShrink: 0 }}>3</div>
           <div style={{ fontSize: '0.78rem', fontWeight: 600, color: step === 3 ? '#1e40af' : '#475467', whiteSpace: 'nowrap' }}>
             Step 3: Review, Send & Bill
           </div>
-        </div>
+        </button>
       </div>
 
       {/* STEP 1: Customer Details */}
@@ -847,12 +853,19 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                   ? `${bulkUnit?.name || 'Bag'} (${bw}${bulkUnit?.short || 'kg'})`
                   : (selectedProd?.unit || rawUnit))
 
-                const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? Number.parseFloat(selectedProd.stock) : null
+                const maxStock = selectedProd?.stock != null ? Number.parseFloat(selectedProd.stock) : null
                 const isExceeded = maxStock !== null && maxStock >= 0 && (Number.parseFloat(item.quantity) || 0) > maxStock
 
-                const baseSubtext = item.subtext || (selectedProd && bw > 1 && bulkUnit
-                  ? `${bulkUnit.name || 'Bag'}: ₹${(Number.parseFloat(selectedProd.updated_price || selectedProd.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })} (${bw}${bulkUnit.short})`
-                  : (selectedProd ? `${selectedProd.unit || 'Unit'}: ₹${(Number.parseFloat(selectedProd?.updated_price || selectedProd?.price || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}` : ''))
+                let baseSubtext = item.subtext || ''
+                if (!baseSubtext && selectedProd) {
+                  const prodPrice = Number.parseFloat(selectedProd.updated_price || selectedProd.price || 0)
+                  const formattedPrice = prodPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  if (bw > 1 && bulkUnit) {
+                    baseSubtext = `${bulkUnit.name || 'Bag'}: ₹${formattedPrice} (${bw}${bulkUnit.short})`
+                  } else {
+                    baseSubtext = `${selectedProd.unit || 'Unit'}: ₹${formattedPrice}`
+                  }
+                }
 
                 const stockSubtext = selectedProd ? `Available Stock: ${formatStockDisplay(selectedProd.stock, selectedProd.bag_weight, selectedProd.unit, selectedProd.loose_kg)}` : ''
                 const fullSubtext = [baseSubtext, stockSubtext].filter(Boolean).join(' • ')
@@ -900,7 +913,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                           type="text"
                           readOnly
                           disabled
-                          value={item.rate ? `₹${(Number.parseFloat(item.rate) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
+                          value={item.rate ? `₹${(Number.parseFloat(item.rate) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
                           style={{
                             width: 85, height: 26, padding: '0 4px', borderRadius: 4,
                             border: '1px solid #cbd5e1', fontSize: '0.75rem', fontWeight: 700,
@@ -915,7 +928,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                     <td style={{ padding: '6px 8px', verticalAlign: 'middle', textAlign: 'right' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
                         <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
-                          ₹{(Number.parseFloat(item.amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
+                          ₹{(Number.parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                         <button
                           type="button"
@@ -942,7 +955,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               onClick={() => {
                 for (const item of lineItems) {
                   const selectedProd = products.find(p => String(p.id) === String(item.product_id))
-                  const maxStock = selectedProd && selectedProd.stock !== undefined && selectedProd.stock !== null ? Number.parseFloat(selectedProd.stock) : null
+                  const maxStock = selectedProd?.stock != null ? Number.parseFloat(selectedProd.stock) : null
                   const qty = Number.parseFloat(item.quantity) || 0
                   if (maxStock !== null && maxStock >= 0 && qty > maxStock) {
                     const bulkUnit = getBulkUnitDetails(item.unit || selectedProd?.unit)
@@ -986,7 +999,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               <div style={{ textAlign: 'right' }}>
                 <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600 }}>Total Quotation Amount</span>
                 <p style={{ margin: '1px 0 0', fontWeight: 800, color: '#15803d', fontSize: '1.1rem' }}>
-                  ₹{(Number.parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
+                  ₹{(Number.parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
                 <p style={{ margin: '1px 0 0', fontSize: '0.72rem', color: '#64748b' }}>Quote #{formData.quote_number} • Valid till {formData.valid_until}</p>
               </div>
@@ -1016,12 +1029,12 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               </div>
 
               <div style={{ textAlign: 'right', fontSize: '0.78rem' }}>
-                <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (Number.parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
+                <span style={{ color: '#64748b' }}>Subtotal: ₹{lineItems.reduce((acc, item) => acc + (Number.parseFloat(item.amount) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
-                <span style={{ color: gstRate > 0 ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST ({gstRate}%): ₹{(Number.parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}</span>
+                <span style={{ color: gstRate > 0 ? '#15803d' : '#94a3b8', fontWeight: 600 }}>GST ({gstRate}%): ₹{(Number.parseFloat(formData.tax_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 <span style={{ margin: '0 5px', color: '#cbd5e1' }}>|</span>
                 <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.82rem' }}>
-                  Final Total: ₹{(Number.parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
+                  Final Total: ₹{(Number.parseFloat(formData.total_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
@@ -1031,7 +1044,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
               <h4 style={{ margin: '0 0 5px', fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>Items Breakdown</h4>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: 6, overflow: 'hidden' }}>
                 {lineItems.map((item, idx) => (
-                  <div key={idx} style={{ padding: '8px 12px', borderBottom: idx < lineItems.length - 1 ? '1px solid #f1f5f9' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                  <div key={item.id || item.product_id || idx} style={{ padding: '8px 12px', borderBottom: idx < lineItems.length - 1 ? '1px solid #f1f5f9' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.8rem' }}>{item.name || 'Selected Item'}</span>
                       <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f8fafc', padding: '2px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>Qty: {item.quantity} {item.unit || ''}</span>
@@ -1056,7 +1069,7 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
                       </div>
 
                       <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.82rem', minWidth: 80, textAlign: 'right' }}>
-                        ₹{(Number.parseFloat(item.amount) || 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2 })}
+                        ₹{(Number.parseFloat(item.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -1115,37 +1128,57 @@ function FullPageQuoteStepper({ quote, onBack, onSaved }) {
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 {/* Save Draft / Save Quote */}
-                <button
-                  type="button"
-                  className="attio-btn attio-btn-secondary"
-                  onClick={handleSaveDraft}
-                  disabled={submitting || sendingEmail}
-                  title="Save Quote Changes"
-                  style={{
-                    height: 32, fontSize: '0.78rem', padding: '0 12px', cursor: 'pointer'
-                  }}
-                >
-                  {submitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Save Draft'}
-                </button>
+                {(() => {
+                  let saveButtonLabel = 'Save Draft'
+                  if (submitting) {
+                    saveButtonLabel = 'Saving…'
+                  } else if (isEdit) {
+                    saveButtonLabel = 'Save Changes'
+                  }
 
-                {/* Send / Resend Email */}
-                <button
-                  type="button"
-                  className="attio-btn"
-                  onClick={handleSendEmail}
-                  disabled={submitting || sendingEmail}
-                  style={{
-                    height: 32, fontSize: '0.78rem', padding: '0 14px',
-                    background: '#2563eb',
-                    color: '#fff',
-                    borderColor: '#2563eb',
-                    fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5,
-                    cursor: 'pointer'
-                  }}
-                >
-                  {sendingEmail ? <Loader2 size={14} className="ws-chat-loader-spin" /> : <Send size={14} />}
-                  {sendingEmail ? 'Sending…' : (isEdit || formData.status === 'Sent' || formData.status === 'Declined' ? 'Resend Quotation to Customer' : 'Save & Send Email')}
-                </button>
+                  let sendButtonLabel = 'Save & Send Email'
+                  if (sendingEmail) {
+                    sendButtonLabel = 'Sending…'
+                  } else if (isEdit || formData.status === 'Sent' || formData.status === 'Declined') {
+                    sendButtonLabel = 'Resend Quotation to Customer'
+                  }
+
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        className="attio-btn attio-btn-secondary"
+                        onClick={handleSaveDraft}
+                        disabled={submitting || sendingEmail}
+                        title="Save Quote Changes"
+                        style={{
+                          height: 32, fontSize: '0.78rem', padding: '0 12px', cursor: 'pointer'
+                        }}
+                      >
+                        {saveButtonLabel}
+                      </button>
+
+                      {/* Send / Resend Email */}
+                      <button
+                        type="button"
+                        className="attio-btn"
+                        onClick={handleSendEmail}
+                        disabled={submitting || sendingEmail}
+                        style={{
+                          height: 32, fontSize: '0.78rem', padding: '0 14px',
+                          background: '#2563eb',
+                          color: '#fff',
+                          borderColor: '#2563eb',
+                          fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {sendingEmail ? <Loader2 size={14} className="ws-chat-loader-spin" /> : <Send size={14} />}
+                        {sendButtonLabel}
+                      </button>
+                    </>
+                  )
+                })()}
 
               </div>
             </div>
@@ -1190,7 +1223,7 @@ function QuoteComparisonModal({ quotes, onClose, onRemoveQuote, onClearAll }) {
   const hasAmountVariance = minAmount !== maxAmount
 
   return (
-    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+    <div className="ws-modal-backdrop" onClick={onClose}>
       <div className="ws-modal-card compare-modal-card" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="ws-modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
@@ -1366,9 +1399,11 @@ function QuoteComparisonModal({ quotes, onClose, onRemoveQuote, onClearAll }) {
                 <tr>
                   <td className="attr-cell">Order Conversion</td>
                   {quoteData.map(q => {
-                    const orderNum = (q.status === 'Accepted')
-                      ? (q.order_number || `ORD-${q.quote_number ? q.quote_number.replace(/^QT-?/i, '') : q.id}`)
-                      : null
+                    let orderNum = null
+                    if (q.status === 'Accepted') {
+                      const quoteSuffix = q.quote_number ? q.quote_number.replace(/^QT-?/i, '') : q.id
+                      orderNum = q.order_number || `ORD-${quoteSuffix}`
+                    }
                     return (
                       <td key={q.id} className="product-col">
                         {orderNum ? (
@@ -1402,7 +1437,7 @@ function QuoteComparisonModal({ quotes, onClose, onRemoveQuote, onClearAll }) {
                             const unitLabel = it.unit || 'pcs'
 
                             return (
-                              <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 5, padding: '6px 10px', fontSize: '0.74rem' }}>
+                              <div key={it.id || it.product_id || idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 5, padding: '6px 10px', fontSize: '0.74rem' }}>
                                 <div style={{ fontWeight: 600, color: '#1e293b' }}>{it.name || it.product_name || `Item ${idx + 1}`}</div>
                                 <div style={{ color: '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                                   <span>{qty} {unitLabel} × ₹{rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -1478,14 +1513,12 @@ export default function Quotes() {
     const pages = []
     if (totalPages <= 5) {
       for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else if (page <= 2) {
+      pages.push(1, 2, 3, '...', totalPages)
+    } else if (page >= totalPages - 1) {
+      pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
     } else {
-      if (page <= 2) {
-        pages.push(1, 2, 3, '...', totalPages)
-      } else if (page >= totalPages - 1) {
-        pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
-      } else {
-        pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
-      }
+      pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
     }
     return pages
   }
@@ -1715,15 +1748,17 @@ export default function Quotes() {
                 {/* CRM Table Card Box */}
                 <div className="attio-table-card">
                   <div className="attio-table-wrap">
-                    {loading ? (
+                    {loading && (
                       <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
                         <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
                       </div>
-                    ) : quotes.length === 0 ? (
+                    )}
+                    {!loading && quotes.length === 0 && (
                       <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
                         No quotes found. Click "+ Create Quote" to create your first quote.
                       </div>
-                    ) : (
+                    )}
+                    {!loading && quotes.length > 0 && (
                       <table className="attio-table">
                         <thead>
                           <tr>

@@ -69,8 +69,8 @@ export function buildCacheKey(url = '', params = {}) {
   const sorted = Object.keys(params)
     .sort((a, b) => a.localeCompare(b))
     .map((k) => `${k}=${params[k]}`)
-    .join('&')
-  return `${wsId}::${url}${sorted ? `?${sorted}` : ''}`
+  const queryString = sorted ? `?${sorted}` : ''
+  return `${wsId}::${url}${queryString}`
 }
 
 /** Return cached data if it exists and hasn't expired. */
@@ -82,7 +82,7 @@ export function cacheGet(key) {
     return null
   }
   try {
-    return typeof structuredClone === 'function' ? structuredClone(entry.data) : JSON.parse(JSON.stringify(entry.data))
+    return structuredClone(entry.data)
   } catch {
     return entry.data
   }

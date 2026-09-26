@@ -69,7 +69,8 @@ export default function Notes() {
     fetchRequestRef.current = requestId
     setLoading(true)
     try {
-      const res = await api.get(`/notes${q ? `?search=${encodeURIComponent(q)}&_t=${Date.now()}` : `?_t=${Date.now()}`}`)
+      const searchParam = q ? `search=${encodeURIComponent(q)}&` : ''
+      const res = await api.get(`/notes?${searchParam}_t=${Date.now()}`)
       if (requestId !== fetchRequestRef.current) return
       const data = res.data?.data || []
       setNotes(data)
@@ -274,24 +275,31 @@ export default function Notes() {
 
             {/* List */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              {loading ? (
+              {loading && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Loader2 size={20} className="ws-chat-loader-spin" style={{ color: '#9ca3af' }} />
                 </div>
-              ) : filtered.length === 0 ? (
+              )}
+              {!loading && filtered.length === 0 && (
                 <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: '0.82rem' }}>
                   <p style={{ margin: 0 }}>{search ? 'No notes match search' : 'No notes created yet'}</p>
                 </div>
-              ) : (
+              )}
+              {!loading && filtered.length > 0 && (
                 filtered.map(note => (
-                  <div
+                  <button
+                    type="button"
                     key={note.id}
-                    role="button"
-                    tabIndex={0}
                     onClick={() => handleSelect(note)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelect(note) }}
                     style={{
-                      padding: '10px 14px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer',
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      fontFamily: 'inherit',
+                      padding: '10px 14px',
+                      border: 'none',
+                      borderBottom: '1px solid #f3f4f6',
+                      cursor: 'pointer',
                       background: selected?.id === note.id ? '#eff6ff' : '#fff',
                       borderLeft: selected?.id === note.id ? '3px solid #2563eb' : '3px solid transparent',
                       transition: 'background 0.15s'
@@ -304,7 +312,7 @@ export default function Notes() {
                       {note.body || 'No description'}
                     </div>
                     <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{timeAgo(note.updated_at)}</div>
-                  </div>
+                  </button>
                 ))
               )}
             </div>

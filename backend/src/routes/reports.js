@@ -542,7 +542,7 @@ function buildCategorySeries(allCategoryProducts, productFilter) {
       id: prod.id,
       label: prod.name,
       unit: prod.unit,
-      color: COLOR_PALETTE[(originalIdx >= 0 ? originalIdx : 0) % COLOR_PALETTE.length]
+      color: COLOR_PALETTE[Math.max(originalIdx, 0) % COLOR_PALETTE.length]
     }
   })
 
@@ -633,7 +633,7 @@ function aggregateCategoryBarRows(rows, buckets, groupBy, series) {
       const rowDate = r.date_str
       buckets.forEach(b => {
         const matches = (b.type === 'day' && b.dateStr === rowDate) || (b.type === 'range' && rowDate >= b.startDateStr && rowDate <= b.endDateStr)
-        if (matches && barDataMap[b.key] && barDataMap[b.key][seriesKey] !== undefined) {
+        if (matches && barDataMap[b.key]?.[seriesKey] !== undefined) {
           barDataMap[b.key][seriesKey] = (barDataMap[b.key][seriesKey] || 0) + Math.round(rev)
           barDataMap[b.key][`${seriesKey}_with_gst`] = (barDataMap[b.key][`${seriesKey}_with_gst`] || 0) + Math.round(revWithGst)
           barDataMap[b.key].total_without_gst += Math.round(rev)
@@ -644,7 +644,7 @@ function aggregateCategoryBarRows(rows, buckets, groupBy, series) {
       const m = Number.parseInt(r.month_num, 10)
       const y = Number.parseInt(r.year_num, 10)
       const key = `${y}-${m}`
-      if (barDataMap[key] && barDataMap[key][seriesKey] !== undefined) {
+      if (barDataMap[key]?.[seriesKey] !== undefined) {
         barDataMap[key][seriesKey] = (barDataMap[key][seriesKey] || 0) + Math.round(rev)
         barDataMap[key][`${seriesKey}_with_gst`] = (barDataMap[key][`${seriesKey}_with_gst`] || 0) + Math.round(revWithGst)
         barDataMap[key].total_without_gst += Math.round(rev)

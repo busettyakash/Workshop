@@ -6,11 +6,11 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks'
 import { setActiveNav, selectSidebarOpen, addToast, setSidebarOpen } from '../../redux/slices/uiSlice'
 import {
   GitBranch, HelpCircle, Search, Plus, Star, Filter,
-  SlidersHorizontal, ChevronRight, ChevronDown, MoreHorizontal, Grid,
+  SlidersHorizontal, ChevronRight, ChevronDown,
   RefreshCw, Download, Layers, Zap, Calendar, AlertCircle,
-  Settings, ArrowLeft, ArrowRight, Play, Pause, Trash2, CheckCircle2,
-  Clock, Terminal, X, ExternalLink, Loader2, Sparkles, Send, FileCheck,
-  Check, Disc, FileText, MessageSquare, Printer, Bell, Phone, Mail, Users
+  Settings, Play, Pause, Trash2, CheckCircle2,
+  Terminal, X, Loader2, Send,
+  Disc, FileText, MessageSquare, Printer, Bell, Phone, Mail, Users
 } from 'lucide-react'
 import '../Dashboard/Dashboard.css'
 import '../Products/Products.css'
@@ -37,6 +37,31 @@ const TRIGGER_CATEGORIES = [
     ]
   }
 ]
+
+function getToggleLiveConfirmMessage(confirmToggleLive) {
+  if (!confirmToggleLive.targetState) {
+    return (
+      <span>
+        Do you want to stop and set <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> to <strong>Draft</strong>? When drafted, quotations will no longer trigger automatic runs.
+      </span>
+    )
+  }
+  if (confirmToggleLive.activeOtherWfName) {
+    return (
+      <span>
+        Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and set it to <strong>Live</strong>?<br /><br />
+        <span style={{ color: '#d97706', fontSize: '0.82rem' }}>
+          ⚠️ Note: <strong>"{confirmToggleLive.activeOtherWfName}"</strong> is currently live and will automatically be switched to <strong>Draft</strong> so only one workflow is live at a time.
+        </span>
+      </span>
+    )
+  }
+  return (
+    <span>
+      Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and make it <strong>Live</strong>? When live, newly created and updated quotations will trigger automated execution steps.
+    </span>
+  )
+}
 
 /* ─── Main Export ─── */
 export default function Workflows() {
@@ -153,7 +178,13 @@ export default function Workflows() {
   const handleToggleLive = (targetState, customWf = null) => {
     const target = customWf || currentWf
     if (!target) return
-    const nextLive = typeof targetState === 'boolean' ? targetState : !(customWf ? customWf.is_live : isPublished)
+    let nextLive
+    if (typeof targetState === 'boolean') {
+      nextLive = targetState
+    } else {
+      const currentStatus = customWf ? customWf.is_live : isPublished
+      nextLive = !currentStatus
+    }
     const otherLiveWf = workflows.find(w => w.id !== target.id && w.is_live)
     setConfirmToggleLive({
       isOpen: true,
@@ -176,7 +207,11 @@ export default function Workflows() {
         setIsPublished(nextLive)
         setCurrentWf(prev => prev ? { ...prev, is_live: nextLive } : null)
       }
-      setWorkflows(prev => prev.map(w => w.id === target.id ? { ...w, is_live: nextLive } : (nextLive ? { ...w, is_live: false } : w)))
+      setWorkflows(prev => prev.map(w => {
+        if (w.id === target.id) return { ...w, is_live: nextLive }
+        if (nextLive) return { ...w, is_live: false }
+        return w
+      }))
       dispatch(addToast({
         message: nextLive
           ? `Workflow "${target.name || 'Quotation Workflow'}" is now Live! Quotations will trigger automated runs.`
@@ -265,26 +300,7 @@ export default function Workflows() {
               </div>
             )
           }
-          message={
-            confirmToggleLive.targetState ? (
-              confirmToggleLive.activeOtherWfName ? (
-                <span>
-                  Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and set it to <strong>Live</strong>?<br /><br />
-                  <span style={{ color: '#d97706', fontSize: '0.82rem' }}>
-                    ⚠️ Note: <strong>"{confirmToggleLive.activeOtherWfName}"</strong> is currently live and will automatically be switched to <strong>Draft</strong> so only one workflow is live at a time.
-                  </span>
-                </span>
-              ) : (
-                <span>
-                  Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and make it <strong>Live</strong>? When live, newly created and updated quotations will trigger automated execution steps.
-                </span>
-              )
-            ) : (
-              <span>
-                Do you want to stop and set <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> to <strong>Draft</strong>? When drafted, quotations will no longer trigger automatic runs.
-              </span>
-            )
-          }
+          message={getToggleLiveConfirmMessage(confirmToggleLive)}
           confirmLabel={confirmToggleLive.targetState ? 'Start Workflow' : 'Draft Workflow'}
           confirmBg={confirmToggleLive.targetState ? '#2563eb' : '#d97706'}
           confirmHoverBg={confirmToggleLive.targetState ? '#1d4ed8' : '#b45309'}
@@ -298,13 +314,14 @@ export default function Workflows() {
   /* ── Filtered workflows ── */
   const filteredWorkflows = workflows.filter(wf => {
     const matchSearch = !search || wf.name?.toLowerCase().includes(search.toLowerCase())
-    const matchStatus = filterStatus === 'all'
-      ? true
-      : filterStatus === 'starred'
-      ? !!wf.is_starred
-      : filterStatus === 'live'
-      ? !!wf.is_live
-      : !wf.is_live
+    let matchStatus = !wf.is_live
+    if (filterStatus === 'all') {
+      matchStatus = true
+    } else if (filterStatus === 'starred') {
+      matchStatus = !!wf.is_starred
+    } else if (filterStatus === 'live') {
+      matchStatus = !!wf.is_live
+    }
     return matchSearch && matchStatus
   })
 
@@ -391,11 +408,12 @@ export default function Workflows() {
             {/* CRM Table Card */}
             <div className="attio-table-card">
               <div className="attio-table-wrap">
-                {loading ? (
+                {loading && (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
                     <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
                   </div>
-                ) : filteredWorkflows.length === 0 ? (
+                )}
+                {!loading && filteredWorkflows.length === 0 && (
                   <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
                     <GitBranch size={32} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
                     <div style={{ fontWeight: 600, color: '#334155', fontSize: '0.92rem' }}>No workflows found</div>
@@ -403,7 +421,8 @@ export default function Workflows() {
                       {search || filterStatus !== 'all' ? 'Try adjusting your search query or filter.' : 'Create your first workflow to automate your quotes & sales pipeline.'}
                     </div>
                   </div>
-                ) : (
+                )}
+                {!loading && filteredWorkflows.length > 0 && (
                   <table className="attio-table">
                     <thead>
                       <tr>
@@ -499,9 +518,8 @@ export default function Workflows() {
                                 </div>
                               </td>
                               <td style={{ textAlign: 'center' }}>
-                                <span
-                                  role="button"
-                                  tabIndex={0}
+                                <button
+                                  type="button"
                                   style={{
                                     cursor: 'pointer',
                                     background: (wf.runs_count > 0) ? '#eff6ff' : '#f1f5f9',
@@ -510,38 +528,32 @@ export default function Workflows() {
                                     fontSize: '0.74rem',
                                     padding: '2px 8px',
                                     borderRadius: 12,
-                                    display: 'inline-block'
+                                    display: 'inline-block',
+                                    border: 'none',
+                                    fontFamily: 'inherit'
                                   }}
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     openWorkflow(wf, 'runs')
                                   }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.stopPropagation()
-                                      openWorkflow(wf, 'runs')
-                                    }
-                                  }}
                                   title="Click to view execution runs"
                                 >
                                   {wf.runs_count || 0}
-                                </span>
+                                </button>
                               </td>
                               <td>
-                                <span
-                                  role="button"
-                                  tabIndex={0}
+                                <button
+                                  type="button"
                                   className={`ws-wfl-badge ws-wfl-badge--${badge.cls}`}
-                                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                                  style={{ cursor: 'pointer', userSelect: 'none', border: 'none', fontFamily: 'inherit' }}
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     handleToggleLive(!wf.is_live, wf)
                                   }}
-                                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.currentTarget.click() }}
                                   title={`Click to switch to ${wf.is_live ? 'Draft (OFF)' : 'Live (ON)'}`}
                                 >
                                   {badge.label}
-                                </span>
+                                </button>
                               </td>
                               <td>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -568,7 +580,12 @@ export default function Workflows() {
                                 {wf.is_live ? fmtDate(wf.updated_at) : '—'}
                               </td>
                               <td style={{ color: '#64748b', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                                {wf.last_run_at ? new Date(wf.last_run_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : (wf.runs_count > 0 ? 'Active' : '—')}
+                                {(() => {
+                                  if (wf.last_run_at) {
+                                    return new Date(wf.last_run_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                  }
+                                  return wf.runs_count > 0 ? 'Active' : '—'
+                                })()}
                               </td>
                               <td style={{ textAlign: 'center' }}>
                                 <button
@@ -613,19 +630,27 @@ export default function Workflows() {
                                         const runDate = runItem?.created_at ? new Date(runItem.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
                                         const rawDur = String(runItem?.duration || '')
                                         const durNum = Number.parseInt(rawDur, 10)
-                                        const displayDuration = isExec ? 'Running' : (rawDur && !Number.isNaN(durNum) && durNum > 600 ? '6s' : (rawDur || '—'))
+                                        let displayDuration = rawDur || '—'
+                                        if (isExec) {
+                                          displayDuration = 'Running'
+                                        } else if (rawDur && !Number.isNaN(durNum) && durNum > 600) {
+                                          displayDuration = '6s'
+                                        }
 
                                         return (
-                                          <div
+                                          <button
                                             key={runItem.id}
-                                            role="button"
-                                            tabIndex={0}
+                                            type="button"
                                             onClick={(e) => {
                                               e.stopPropagation()
                                               openWorkflow(wf, 'runs', runItem)
                                             }}
-                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openWorkflow(wf, 'runs', runItem) } }}
                                             style={{
+                                              width: '100%',
+                                              border: 'none',
+                                              background: 'transparent',
+                                              textAlign: 'left',
+                                              fontFamily: 'inherit',
                                               display: 'flex',
                                               alignItems: 'center',
                                               justifyContent: 'space-between',
@@ -658,31 +683,39 @@ export default function Workflows() {
 
                                             {/* Center: Status Badge & Step Progress */}
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                                              {isComplete ? (
-                                                <span style={{
-                                                  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-                                                  borderRadius: 12, background: '#f0fdf4', color: '#15803d',
-                                                  fontWeight: 600, fontSize: '0.7rem'
-                                                }}>
-                                                  <CheckCircle2 size={10} /> Completed
-                                                </span>
-                                              ) : isExec ? (
-                                                <span style={{
-                                                  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-                                                  borderRadius: 12, background: '#eff6ff', color: '#2563eb',
-                                                  fontWeight: 600, fontSize: '0.7rem'
-                                                }}>
-                                                  <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> Executing
-                                                </span>
-                                              ) : (
-                                                <span style={{
-                                                  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-                                                  borderRadius: 12, background: '#fee2e2', color: '#b91c1c',
-                                                  fontWeight: 600, fontSize: '0.7rem'
-                                                }}>
-                                                  {runItem.status || 'Failed'}
-                                                </span>
-                                              )}
+                                              {(() => {
+                                                if (isComplete) {
+                                                  return (
+                                                    <span style={{
+                                                      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                                                      borderRadius: 12, background: '#f0fdf4', color: '#15803d',
+                                                      fontWeight: 600, fontSize: '0.7rem'
+                                                    }}>
+                                                      <CheckCircle2 size={10} /> Completed
+                                                    </span>
+                                                  )
+                                                }
+                                                if (isExec) {
+                                                  return (
+                                                    <span style={{
+                                                      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                                                      borderRadius: 12, background: '#eff6ff', color: '#2563eb',
+                                                      fontWeight: 600, fontSize: '0.7rem'
+                                                    }}>
+                                                      <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> Executing
+                                                    </span>
+                                                  )
+                                                }
+                                                return (
+                                                  <span style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                                                    borderRadius: 12, background: '#fee2e2', color: '#b91c1c',
+                                                    fontWeight: 600, fontSize: '0.7rem'
+                                                  }}>
+                                                    {runItem.status || 'Failed'}
+                                                  </span>
+                                                )
+                                              })()}
 
                                               <span style={{ color: '#64748b', fontSize: '0.7rem', minWidth: 110 }}>
                                                 {Number(runItem?.current_step) >= 4 ? 'Step 4/4: Complete' : `Step ${runItem?.current_step || 0}/4 In Progress`}
@@ -697,21 +730,17 @@ export default function Workflows() {
                                               <span style={{ color: '#64748b', fontSize: '0.7rem', width: 36, textAlign: 'right' }}>
                                                 {displayDuration}
                                               </span>
-                                              <button
+                                              <span
                                                 className="ws-table-btn ws-table-btn--secondary"
                                                 style={{
                                                   padding: '2px 8px', fontSize: '0.68rem', display: 'inline-flex',
                                                   alignItems: 'center', gap: 4, height: 22, borderRadius: 4
                                                 }}
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  openWorkflow(wf, 'runs', runItem)
-                                                }}
                                               >
                                                 <Terminal size={9} /> Logs
-                                              </button>
+                                              </span>
                                             </div>
-                                          </div>
+                                          </button>
                                         )
                                       })}
                                     </div>
@@ -751,26 +780,7 @@ export default function Workflows() {
             </div>
           )
         }
-        message={
-          confirmToggleLive.targetState ? (
-            confirmToggleLive.activeOtherWfName ? (
-              <span>
-                Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and set it to <strong>Live</strong>?<br /><br />
-                <span style={{ color: '#d97706', fontSize: '0.82rem' }}>
-                  ⚠️ Note: <strong>"{confirmToggleLive.activeOtherWfName}"</strong> is currently live and will automatically be switched to <strong>Draft</strong> so only one workflow is live at a time.
-                </span>
-              </span>
-            ) : (
-              <span>
-                Do you want to start <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> and make it <strong>Live</strong>? When live, newly created and updated quotations will trigger automated execution steps.
-              </span>
-            )
-          ) : (
-            <span>
-              Do you want to stop and set <strong>"{confirmToggleLive.targetWf?.name || 'this workflow'}"</strong> to <strong>Draft</strong>? When drafted, quotations will no longer trigger automatic runs.
-            </span>
-          )
-        }
+        message={getToggleLiveConfirmMessage(confirmToggleLive)}
         confirmLabel={confirmToggleLive.targetState ? 'Start Workflow' : 'Draft Workflow'}
         confirmBg={confirmToggleLive.targetState ? '#2563eb' : '#d97706'}
         confirmHoverBg={confirmToggleLive.targetState ? '#1d4ed8' : '#b45309'}
@@ -907,7 +917,7 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
   const filteredRuns = runs.filter(r => {
     return !search ||
       String(r.id).includes(search) ||
-      (r.test_company && r.test_company.toLowerCase().includes(search.toLowerCase()))
+      r.test_company?.toLowerCase().includes(search.toLowerCase())
   })
 
   return (
@@ -975,11 +985,12 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
           flex: selectedRun ? '1 1 55%' : '1 1 100%', overflowY: 'auto', display: 'flex', flexDirection: 'column'
         }}>
           <div className="attio-table-wrap">
-            {loading && runs.length === 0 ? (
+            {loading && runs.length === 0 && (
               <div style={{ padding: 60, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
               </div>
-            ) : filteredRuns.length === 0 ? (
+            )}
+            {!loading && filteredRuns.length === 0 && (
               <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
                 <Terminal size={32} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
                 <div style={{ fontWeight: 600, color: '#334155', fontSize: '0.9rem' }}>No execution runs found</div>
@@ -987,7 +998,8 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                   {search ? 'No runs match your search query.' : 'Create a Quote or click "Trigger Test Run" above to see QStash execute in real time.'}
                 </div>
               </div>
-            ) : (
+            )}
+            {filteredRuns.length > 0 && (!loading || runs.length > 0) && (
               <table className="attio-table" style={{ width: '100%', tableLayout: 'auto' }}>
                 <thead>
                   <tr>
@@ -1071,28 +1083,36 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                           </div>
                         </td>
                         <td>
-                          {isExecuting ? (
-                            <span style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-                              borderRadius: 12, background: '#eff6ff', color: '#2563eb', fontWeight: 700, fontSize: '0.72rem'
-                            }}>
-                              <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Executing
-                            </span>
-                          ) : isCompleted ? (
-                            <span style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-                              borderRadius: 12, background: '#dcfce7', color: '#15803d', fontWeight: 700, fontSize: '0.72rem'
-                            }}>
-                              <CheckCircle2 size={11} /> Completed
-                            </span>
-                          ) : (
-                            <span style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-                              borderRadius: 12, background: '#fee2e2', color: '#b91c1c', fontWeight: 700, fontSize: '0.72rem'
-                            }}>
-                              <AlertCircle size={11} /> {r.status || 'Failed'}
-                            </span>
-                          )}
+                          {(() => {
+                            if (isExecuting) {
+                              return (
+                                <span style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                                  borderRadius: 12, background: '#eff6ff', color: '#2563eb', fontWeight: 700, fontSize: '0.72rem'
+                                }}>
+                                  <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Executing
+                                </span>
+                              )
+                            }
+                            if (isCompleted) {
+                              return (
+                                <span style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                                  borderRadius: 12, background: '#dcfce7', color: '#15803d', fontWeight: 700, fontSize: '0.72rem'
+                                }}>
+                                  <CheckCircle2 size={11} /> Completed
+                                </span>
+                              )
+                            }
+                            return (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                                borderRadius: 12, background: '#fee2e2', color: '#b91c1c', fontWeight: 700, fontSize: '0.72rem'
+                              }}>
+                                <AlertCircle size={11} /> {r.status || 'Failed'}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td>
                           <span style={{ color: '#475569', fontSize: '0.74rem', fontWeight: 500 }}>
@@ -1176,15 +1196,25 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
             <div style={{ padding: '10px 14px', background: '#131e33', borderBottom: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {(() => {
                 const isDeclinedRun = Boolean(selectedRun?.test_company && String(selectedRun.test_company).toLowerCase().includes('declined'))
-                const allWorkflows = (Array.isArray(internalWfs) && internalWfs.length > 0) ? internalWfs : (Array.isArray(workflows) ? workflows : [])
+                let allWorkflows = []
+                if (Array.isArray(internalWfs) && internalWfs.length > 0) {
+                  allWorkflows = internalWfs
+                } else if (Array.isArray(workflows)) {
+                  allWorkflows = workflows
+                }
                 const targetWf = allWorkflows.find(w => w && w.id === selectedRun?.workflow_id) || currentWf
                 let rawNodes = selectedRun?.nodes || targetWf?.nodes || currentWf?.nodes
                 if (typeof rawNodes === 'string') {
                   try { rawNodes = JSON.parse(rawNodes) } catch { rawNodes = null }
                 }
-                const rawStepsList = isDeclinedRun
-                  ? (Array.isArray(rawNodes?.declinedSteps) ? rawNodes.declinedSteps : DEFAULT_DECLINED_STEPS)
-                  : (Array.isArray(rawNodes?.acceptedSteps) ? rawNodes.acceptedSteps : (Array.isArray(rawNodes) ? rawNodes : DEFAULT_ACCEPTED_STEPS))
+                let rawStepsList
+                if (isDeclinedRun) {
+                  rawStepsList = Array.isArray(rawNodes?.declinedSteps) ? rawNodes.declinedSteps : DEFAULT_DECLINED_STEPS
+                } else if (Array.isArray(rawNodes?.acceptedSteps)) {
+                  rawStepsList = rawNodes.acceptedSteps
+                } else {
+                  rawStepsList = Array.isArray(rawNodes) ? rawNodes : DEFAULT_ACCEPTED_STEPS
+                }
 
                 const knownActions = isDeclinedRun ? DEFAULT_DECLINED_STEPS : DEFAULT_ACCEPTED_STEPS
                 const maxStepLogged = (Array.isArray(logs) && logs.length > 0)
@@ -1233,6 +1263,12 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                 return checklist.map(st => {
                   const isPassed = (Number(selectedRun?.current_step || 0) >= st.step) || selectedRun?.status === 'Completed' || (Array.isArray(logs) && logs.some(l => Number(l.step) === st.step))
                   const isCurrent = Number(selectedRun?.current_step || 0) === st.step - 1 && selectedRun?.status === 'Executing'
+                  let stepColor = '#64748b'
+                  if (isPassed) {
+                    stepColor = '#e2e8f0'
+                  } else if (isCurrent) {
+                    stepColor = '#38bdf8'
+                  }
 
                   return (
                     <div key={st.step} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.73rem' }}>
@@ -1243,7 +1279,7 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
                       ) : (
                         <div style={{ width: 13, height: 13, borderRadius: '50%', border: '1.5px solid #475569', flexShrink: 0 }} />
                       )}
-                      <span style={{ color: isPassed ? '#e2e8f0' : isCurrent ? '#38bdf8' : '#64748b', fontWeight: isPassed || isCurrent ? 600 : 400 }}>
+                      <span style={{ color: stepColor, fontWeight: isPassed || isCurrent ? 600 : 400 }}>
                         {st.name}
                       </span>
                     </div>
@@ -1254,27 +1290,36 @@ function WorkflowRunsView({ workflowId, currentWf, initialSelectedRun = null, wo
 
             {/* Console Log Feed */}
             <div style={{ flex: 1, padding: 14, overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.74rem', lineHeight: 1.6 }}>
-              {loadingLogs && logs.length === 0 ? (
+              {loadingLogs && logs.length === 0 && (
                 <div style={{ color: '#64748b', padding: 20 }}>Fetching logs from Upstash Redis...</div>
-              ) : logs.length === 0 ? (
+              )}
+              {!loadingLogs && logs.length === 0 && (
                 <div style={{ color: selectedRun?.status === 'Completed' ? '#4ade80' : '#94a3b8', padding: 10 }}>
                   {selectedRun?.status === 'Completed'
                     ? '✓ Workflow execution completed successfully. All steps finished.'
                     : '⚡ Initializing execution logs. Steps will stream as QStash advances pipeline...'}
                 </div>
-              ) : (
+              )}
+              {logs.length > 0 && (
                 logs.map((l, i) => {
                   const logTime = l?.time ? new Date(l.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '00:00:00'
                   const logContent = typeof l === 'string' ? l : (typeof l?.text === 'string' ? l.text : JSON.stringify(l?.text || l || ''))
                   const isErr = logContent.includes('Error') || logContent.includes('Failed')
                   const isDone = logContent.includes('completed') || logContent.includes('Completed') || logContent.includes('Complete') || logContent.includes('Passed')
+                  let logTextColor = '#e2e8f0'
+                  if (isErr) {
+                    logTextColor = '#f87171'
+                  } else if (isDone) {
+                    logTextColor = '#4ade80'
+                  }
+                  const logKey = l?.id || `${l?.time || 'log'}-${i}-${logContent.slice(0, 10)}`
 
                   return (
-                    <div key={i} style={{ marginBottom: 6, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <div key={logKey} style={{ marginBottom: 6, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                       <span style={{ color: '#64748b', userSelect: 'none', flexShrink: 0 }}>
                         {logTime}
                       </span>
-                      <span style={{ color: isErr ? '#f87171' : isDone ? '#4ade80' : '#e2e8f0', wordBreak: 'break-word' }}>
+                      <span style={{ color: logTextColor, wordBreak: 'break-word' }}>
                         {logContent}
                       </span>
                     </div>
@@ -1449,35 +1494,11 @@ function MultiRecipientConfig({ step, onUpdateRecipients }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [people, setPeople] = useState([])
-  const [_selectedPersonId, setSelectedPersonId] = useState('')
+
 
   useEffect(() => {
     setRecipients(step.recipients || [])
   }, [step.id, step.recipients])
-
-  useEffect(() => {
-    const fetchPeople = async () => {
-      try {
-        const res = await api.get('/people?limit=100')
-        setPeople(res.data?.data || [])
-      } catch {
-        // quiet fallback
-      }
-    }
-    fetchPeople()
-  }, [])
-
-  const _handleSelectPerson = (personId) => {
-    setSelectedPersonId(personId)
-    if (!personId) return
-    const person = people.find(p => String(p.id) === String(personId))
-    if (person) {
-      setName(person.name || '')
-      setEmail(person.email || '')
-      setPhone(person.phone || '')
-    }
-  }
 
   const handleAddRecipient = (e) => {
     if (e) e.preventDefault()
@@ -1497,7 +1518,6 @@ function MultiRecipientConfig({ step, onUpdateRecipients }) {
     setName('')
     setEmail('')
     setPhone('')
-    setSelectedPersonId('')
   }
 
   const handleRemoveRecipient = (recId) => {
@@ -1620,15 +1640,12 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
 
   return (
     <div
-      role="button"
-      tabIndex={0}
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
         background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(3px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
       }}
       onClick={onClose}
-      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
       <div
         style={{
@@ -1710,13 +1727,12 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
             </div>
           ) : (
             filtered.map(action => (
-              <div
+              <button
                 key={action.id}
-                role="button"
-                tabIndex={0}
+                type="button"
                 onClick={() => onSelectAction(action)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectAction(action) }}
                 style={{
+                  width: '100%', textAlign: 'left', fontFamily: 'inherit',
                   display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
                   background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: 10,
                   cursor: 'pointer', transition: 'all 0.15s ease'
@@ -1750,16 +1766,16 @@ function AddStepModal({ branch, onClose, onSelectAction }) {
                     {action.desc}
                   </div>
                 </div>
-                <button
+                <span
                   style={{
                     padding: '4px 10px', fontSize: '0.72rem', fontWeight: 600,
                     background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe',
-                    borderRadius: 6, cursor: 'pointer', flexShrink: 0
+                    borderRadius: 6, flexShrink: 0
                   }}
                 >
                   + Add
-                </button>
-              </div>
+                </span>
+              </button>
             ))
           )}
         </div>
@@ -1924,11 +1940,9 @@ function WorkflowVisualGraph({
 
       {/* ── ROW 1: TRIGGER NODE (Centered, No text wrap) ── */}
       <div style={{ width: '100%', display: 'flex', justifyContent: 'center', zIndex: 2, position: 'relative' }}>
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={() => onSelectNode('trigger')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectNode('trigger') }}
           style={{
             width: 275,
             height: 64,
@@ -1940,7 +1954,9 @@ function WorkflowVisualGraph({
             position: 'relative',
             boxShadow: selectedNodeId === 'trigger' ? '0 0 0 3px rgba(37,99,235,0.12), 0 4px 14px rgba(0,0,0,0.04)' : '0 2px 10px rgba(0,0,0,0.02)',
             cursor: 'pointer',
-            transition: 'all 0.15s ease'
+            transition: 'all 0.15s ease',
+            textAlign: 'left',
+            fontFamily: 'inherit'
           }}
         >
           {/* Top Left Badge: Trigger */}
@@ -1978,16 +1994,14 @@ function WorkflowVisualGraph({
               </div>
             </div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* ── ROW 2: SWITCH / CONDITION NODE (Centered, Compact) ── */}
       <div style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: 42, zIndex: 2, position: 'relative' }}>
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={() => onSelectNode('switch')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectNode('switch') }}
           style={{
             width: 275,
             height: 64,
@@ -1999,7 +2013,9 @@ function WorkflowVisualGraph({
             position: 'relative',
             boxShadow: selectedNodeId === 'switch' ? '0 0 0 3px rgba(37,99,235,0.12), 0 4px 14px rgba(0,0,0,0.04)' : '0 2px 10px rgba(0,0,0,0.02)',
             cursor: 'pointer',
-            transition: 'all 0.15s ease'
+            transition: 'all 0.15s ease',
+            textAlign: 'left',
+            fontFamily: 'inherit'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -2024,7 +2040,7 @@ function WorkflowVisualGraph({
               </div>
             </div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* ── ROW 3: DYNAMIC BRANCH CONTENT (Left = Accepted Steps, Right = Declined Steps) ── */}
@@ -2034,35 +2050,18 @@ function WorkflowVisualGraph({
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 250 }}>
           {acceptedSteps.map((step, idx) => (
             <React.Fragment key={step.id}>
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelectNode(step.id)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectNode(step.id) }}
-                style={{
-                  width: 250,
-                  minHeight: 64,
-                  boxSizing: 'border-box',
-                  background: '#ffffff',
-                  border: selectedNodeId === step.id ? '2px solid #2563eb' : '1.5px solid #10b981',
-                  borderRadius: 12,
-                  padding: '9px 12px',
-                  position: 'relative',
-                  boxShadow: selectedNodeId === step.id ? '0 0 0 3px rgba(37,99,235,0.12), 0 4px 14px rgba(0,0,0,0.04)' : '0 2px 10px rgba(0,0,0,0.02)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
+              <div style={{ position: 'relative', width: 250 }}>
                 {/* Delete button on top right — only for non-core steps */}
                 {!isPermanentStep(step) && (
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       onDeleteStep(step.id)
                     }}
                     title="Delete Step"
                     style={{
-                      position: 'absolute', top: 6, right: 6, width: 20, height: 20,
+                      position: 'absolute', top: 6, right: 6, zIndex: 10, width: 20, height: 20,
                       borderRadius: 4, border: 'none', background: 'transparent',
                       color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       cursor: 'pointer', opacity: 0.7, transition: 'opacity 0.15s, color 0.15s'
@@ -2074,28 +2073,48 @@ function WorkflowVisualGraph({
                   </button>
                 )}
 
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <div style={{
-                    width: 30, height: 30, borderRadius: 8,
-                    background: step.tagBg || '#eff6ff', color: step.themeColor || '#2563eb',
-                    border: '1px solid #dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                  }}>
-                    {renderStepIcon(step.iconType, step.themeColor)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0, paddingRight: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.79rem', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {idx + 1}. {step.title}
-                      </span>
-                      <span style={{ fontSize: '0.58rem', fontWeight: 600, background: step.tagBg || '#eff6ff', color: step.tagColor || '#2563eb', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>
-                        {step.tag}
-                      </span>
+                <button
+                  type="button"
+                  onClick={() => onSelectNode(step.id)}
+                  style={{
+                    width: 250,
+                    minHeight: 64,
+                    boxSizing: 'border-box',
+                    background: '#ffffff',
+                    border: selectedNodeId === step.id ? '2px solid #2563eb' : '1.5px solid #10b981',
+                    borderRadius: 12,
+                    padding: '9px 12px',
+                    boxShadow: selectedNodeId === step.id ? '0 0 0 3px rgba(37,99,235,0.12), 0 4px 14px rgba(0,0,0,0.04)' : '0 2px 10px rgba(0,0,0,0.02)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    textAlign: 'left',
+                    fontFamily: 'inherit',
+                    display: 'block'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{
+                      width: 30, height: 30, borderRadius: 8,
+                      background: step.tagBg || '#eff6ff', color: step.themeColor || '#2563eb',
+                      border: '1px solid #dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                    }}>
+                      {renderStepIcon(step.iconType, step.themeColor)}
                     </div>
-                    <div style={{ fontSize: '0.67rem', color: '#64748b', marginTop: 2, lineHeight: 1.25 }}>
-                      {step.desc}
+                    <div style={{ flex: 1, minWidth: 0, paddingRight: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.79rem', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {idx + 1}. {step.title}
+                        </span>
+                        <span style={{ fontSize: '0.58rem', fontWeight: 600, background: step.tagBg || '#eff6ff', color: step.tagColor || '#2563eb', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                          {step.tag}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.67rem', color: '#64748b', marginTop: 2, lineHeight: 1.25 }}>
+                        {step.desc}
+                      </div>
                     </div>
                   </div>
-                </div>
+                </button>
               </div>
 
               {/* Wire to next node */}
@@ -2146,34 +2165,17 @@ function WorkflowVisualGraph({
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 250 }}>
           {declinedSteps.map((step, idx) => (
             <React.Fragment key={step.id}>
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelectNode(step.id)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectNode(step.id) }}
-                style={{
-                  width: 250,
-                  minHeight: 64,
-                  boxSizing: 'border-box',
-                  background: '#ffffff',
-                  border: selectedNodeId === step.id ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
-                  borderRadius: 12,
-                  padding: '9px 12px',
-                  position: 'relative',
-                  boxShadow: selectedNodeId === step.id ? '0 0 0 3px rgba(37,99,235,0.12), 0 4px 14px rgba(0,0,0,0.04)' : '0 2px 10px rgba(0,0,0,0.02)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
+              <div style={{ position: 'relative', width: 250 }}>
                 {/* Delete button on top right */}
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation()
                     onDeleteStep(step.id)
                   }}
                   title="Delete Step"
                   style={{
-                    position: 'absolute', top: 6, right: 6, width: 20, height: 20,
+                    position: 'absolute', top: 6, right: 6, zIndex: 10, width: 20, height: 20,
                     borderRadius: 4, border: 'none', background: 'transparent',
                     color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: 'pointer', opacity: 0.7, transition: 'opacity 0.15s, color 0.15s'
@@ -2184,28 +2186,48 @@ function WorkflowVisualGraph({
                   <Trash2 size={12} />
                 </button>
 
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <div style={{
-                    width: 30, height: 30, borderRadius: 8,
-                    background: step.tagBg || '#f8fafc', color: step.themeColor || '#64748b',
-                    border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                  }}>
-                    {renderStepIcon(step.iconType, step.themeColor)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0, paddingRight: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.79rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {step.title}
-                      </span>
-                      <span style={{ fontSize: '0.58rem', fontWeight: 600, background: step.tagBg || '#f1f5f9', color: step.tagColor || '#64748b', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>
-                        {step.tag}
-                      </span>
+                <button
+                  type="button"
+                  onClick={() => onSelectNode(step.id)}
+                  style={{
+                    width: 250,
+                    minHeight: 64,
+                    boxSizing: 'border-box',
+                    background: '#ffffff',
+                    border: selectedNodeId === step.id ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
+                    borderRadius: 12,
+                    padding: '9px 12px',
+                    boxShadow: selectedNodeId === step.id ? '0 0 0 3px rgba(37,99,235,0.12), 0 4px 14px rgba(0,0,0,0.04)' : '0 2px 10px rgba(0,0,0,0.02)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    textAlign: 'left',
+                    fontFamily: 'inherit',
+                    display: 'block'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{
+                      width: 30, height: 30, borderRadius: 8,
+                      background: step.tagBg || '#f8fafc', color: step.themeColor || '#64748b',
+                      border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                    }}>
+                      {renderStepIcon(step.iconType, step.themeColor)}
                     </div>
-                    <div style={{ fontSize: '0.67rem', color: '#64748b', marginTop: 2, lineHeight: 1.25 }}>
-                      {step.desc}
+                    <div style={{ flex: 1, minWidth: 0, paddingRight: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.79rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {step.title}
+                        </span>
+                        <span style={{ fontSize: '0.58rem', fontWeight: 600, background: step.tagBg || '#f1f5f9', color: step.tagColor || '#64748b', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                          {step.tag}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.67rem', color: '#64748b', marginTop: 2, lineHeight: 1.25 }}>
+                        {step.desc}
+                      </div>
                     </div>
                   </div>
-                </div>
+                </button>
               </div>
 
               {/* Wire between steps if multiple */}
@@ -2473,7 +2495,7 @@ function WorkflowEditor({
         <div className="ws-wfe-tabs">
           {[
             { id: 'editor',   label: 'Editor',   icon: <Settings size={12} /> },
-            { id: 'runs',     label: 'Runs',     icon: <RefreshCw size={12} />, badge: String(currentWf?.runs_count || '0') },
+            { id: 'runs',     label: 'Runs',     icon: <RefreshCw size={12} />, badge: String(currentWf?.runs_count ?? '0') },
             { id: 'settings', label: 'Settings', icon: <Layers size={12} /> },
           ].map(t => (
             <button

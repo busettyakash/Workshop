@@ -204,6 +204,20 @@ function PricingModal({ product, onClose }) {
   )
 }
 
+function getPriceSubtext(priceCovers, bagWeight, uomShort) {
+  const pc = Number.parseFloat(priceCovers || 0)
+  const bw = Number.parseFloat(bagWeight || 1)
+  if (pc > 0) return `${pc} ${uomShort} price`
+  if (bw > 1) return `${bw} ${uomShort} price`
+  return `Per ${uomShort} price`
+}
+
+function getStockBadgeStyle(isOut, isLow) {
+  if (isOut) return { bg: '#fee2e2', textCol: '#dc2626', borderCol: '#fecaca' }
+  if (isLow) return { bg: '#fef3c7', textCol: '#d97706', borderCol: '#fde68a' }
+  return { bg: '#dcfce7', textCol: '#15803d', borderCol: '#bbf7d0' }
+}
+
 export default function ImportStock() {
   const dispatch = useAppDispatch()
   const sidebarOpen = useAppSelector(selectSidebarOpen)
@@ -519,15 +533,17 @@ export default function ImportStock() {
             {/* Table Card Shell */}
             <div className="attio-table-card">
               <div className="attio-table-wrap">
-              {loading ? (
+              {loading && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Loader2 size={24} className="ws-chat-loader-spin" />
                 </div>
-              ) : products.length === 0 ? (
+              )}
+              {!loading && products.length === 0 && (
                 <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
                   No pending stock found. Click "Add stock" to stage one.
                 </div>
-              ) : (
+              )}
+              {!loading && products.length > 0 && (
                 <table className="attio-table">
                   <thead>
                     <tr>
@@ -564,51 +580,57 @@ export default function ImportStock() {
                     {products.map(row => (
                       <tr key={row.id}>
                           <td style={{ textAlign: 'left', paddingLeft: 4 }}>
-                            {row.status === 'added' ? (
-                              <input 
-                                type="checkbox" 
-                                className="attio-chk" 
-                                disabled 
-                                checked={false} 
-                                style={{ opacity: 0.4, cursor: 'not-allowed' }}
-                              />
-                            ) : row.status !== 'active' ? (
-                              <input 
-                                type="checkbox" 
-                                className="attio-chk" 
-                                disabled 
-                                checked={false} 
-                                style={{ opacity: 0.4, cursor: 'not-allowed' }}
-                                title="Only active status items can be added to products"
-                              />
-                            ) : (
-                              <input 
-                                type="checkbox" 
-                                className="attio-chk" 
-                                checked={selectedIds.includes(row.id)}
-                                onChange={() => {
-                                  setSelectedIds(prev => 
-                                    prev.includes(row.id) ? prev.filter(id => id !== row.id) : [...prev, row.id]
-                                  )
-                                }}
-                              />
-                            )}
+                            {(() => {
+                              if (row.status === 'added') {
+                                return (
+                                  <input 
+                                    type="checkbox" 
+                                    className="attio-chk" 
+                                    disabled 
+                                    checked={false} 
+                                    style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                                  />
+                                )
+                              }
+                              if (row.status !== 'active') {
+                                return (
+                                  <input 
+                                    type="checkbox" 
+                                    className="attio-chk" 
+                                    disabled 
+                                    checked={false} 
+                                    style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                                    title="Only active status items can be added to products"
+                                  />
+                                )
+                              }
+                              return (
+                                <input 
+                                  type="checkbox" 
+                                  className="attio-chk" 
+                                  checked={selectedIds.includes(row.id)}
+                                  onChange={() => {
+                                    setSelectedIds(prev => 
+                                      prev.includes(row.id) ? prev.filter(id => id !== row.id) : [...prev, row.id]
+                                    )
+                                  }}
+                                />
+                              )
+                            })()}
                           </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
                                 {getSingleLetter(row.name)}
                               </div>
-                              <span
+                              <button
+                                type="button"
                                 className="ws-table-primary-text"
-                                role="button"
-                                tabIndex={0}
                                 onClick={() => navigate(`/import-stock/edit/${row.id}`)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/import-stock/edit/${row.id}`) }}
-                                style={{ fontWeight: 535, fontSize: '0.89rem', color: '#1e293b', cursor: 'pointer' }}
+                                style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', fontWeight: 535, fontSize: '0.89rem', color: '#1e293b', cursor: 'pointer' }}
                               >
                                 {row.name}
-                              </span>
+                              </button>
                             </div>
                           </td>
                           <td style={{ color: '#1e293b', fontWeight: 600, fontSize: '0.85rem' }}>
@@ -632,10 +654,8 @@ export default function ImportStock() {
 
                               const bulkUnit = getBulkUnitDetails(row.unit)
                               const uomShort = (bulkUnit?.short || row.unit || 'kg').toLowerCase().replace(/s$/, '')
-                              const pc = Number.parseFloat(row.price_covers || 0)
-                              const bw = Number.parseFloat(row.bag_weight || 1)
 
-                              const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+                              const subtext = getPriceSubtext(row.price_covers, row.bag_weight, uomShort)
 
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -663,7 +683,7 @@ export default function ImportStock() {
                                 priceVal = (rawP / bw) * pc
                               }
 
-                              const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+                              const subtext = getPriceSubtext(row.price_covers, row.bag_weight, uomShort)
 
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -715,7 +735,7 @@ export default function ImportStock() {
                                 updatedPriceVal = (rawUP / bw) * pc
                               }
 
-                              const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+                              const subtext = getPriceSubtext(row.price_covers, row.bag_weight, uomShort)
 
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -739,16 +759,14 @@ export default function ImportStock() {
 
                               const isOut = totalBase <= 0
                               const isLow = totalBase > 0 && totalBase <= 10
-                              const bg = isOut ? '#fee2e2' : isLow ? '#fef3c7' : '#dcfce7'
-                              const textCol = isOut ? '#dc2626' : isLow ? '#d97706' : '#15803d'
-                              const borderCol = isOut ? '#fecaca' : isLow ? '#fde68a' : '#bbf7d0'
+                              const badgeStyle = getStockBadgeStyle(isOut, isLow)
 
                               return (
                                 <span 
                                   style={{ 
-                                    background: bg, 
-                                    color: textCol, 
-                                    border: `1px solid ${borderCol}`, 
+                                    background: badgeStyle.bg, 
+                                    color: badgeStyle.textCol, 
+                                    border: `1px solid ${badgeStyle.borderCol}`, 
                                     borderRadius: 6, 
                                     padding: '2px 10px', 
                                     height: 22,
@@ -842,27 +860,36 @@ export default function ImportStock() {
                               >
                                 <FileText size={12} /> Note
                               </button>
-                              {canEdit && (
-                                row.status === 'added' ? (
+                              {canEdit && (() => {
+                                if (row.status === 'added') {
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="ws-chat-history-delete-btn"
+                                      style={{ color: '#8b5cf6', padding: 6, fontWeight: 500, background: '#ede9fe', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+                                      disabled
+                                      title="Product is already added"
+                                    >
+                                      <Check size={13} /> Added
+                                    </button>
+                                  )
+                                }
+                                if (row.status !== 'active') {
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="ws-chat-history-delete-btn"
+                                      style={{ color: '#9ca3af', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'not-allowed', opacity: 0.6 }}
+                                      disabled
+                                      title="Only active items can be added to products"
+                                    >
+                                      <Plus size={13} /> Add to Products
+                                    </button>
+                                  )
+                                }
+                                return (
                                   <button
-                                    className="ws-chat-history-delete-btn"
-                                    style={{ color: '#8b5cf6', padding: 6, fontWeight: 500, background: '#ede9fe', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
-                                    disabled
-                                    title="Product is already added"
-                                  >
-                                    <Check size={13} /> Added
-                                  </button>
-                                ) : row.status !== 'active' ? (
-                                  <button
-                                    className="ws-chat-history-delete-btn"
-                                    style={{ color: '#9ca3af', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: 'not-allowed', opacity: 0.6 }}
-                                    disabled
-                                    title="Only active items can be added to products"
-                                  >
-                                    <Plus size={13} /> Add to Products
-                                  </button>
-                                ) : (
-                                  <button
+                                    type="button"
                                     className="ws-chat-history-delete-btn"
                                     style={{ color: '#4b5563', padding: 6, fontWeight: 500, background: '#f3f4f6', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}
                                     onClick={() => handleAddToProducts(row.id, row.name)}
@@ -871,7 +898,7 @@ export default function ImportStock() {
                                     <Plus size={13} /> Add to Products
                                   </button>
                                 )
-                              )}
+                              })()}
                               {canEdit && (
                                 <button
                                   className="ws-chat-history-delete-btn"

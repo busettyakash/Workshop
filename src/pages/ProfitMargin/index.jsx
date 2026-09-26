@@ -134,14 +134,12 @@ export default function ProfitMargin() {
     const pages = []
     if (totalPages <= 5) {
       for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else if (page <= 2) {
+      pages.push(1, 2, 3, '...', totalPages)
+    } else if (page >= totalPages - 1) {
+      pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
     } else {
-      if (page <= 2) {
-        pages.push(1, 2, 3, '...', totalPages)
-      } else if (page >= totalPages - 1) {
-        pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
-      } else {
-        pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
-      }
+      pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
     }
     return pages
   }
@@ -171,8 +169,8 @@ export default function ProfitMargin() {
       'Loose Qty',
       'Total Units In Hand',
       'Unit',
-      'Buyer Price (Package)',
-      'Seller Price (Package)',
+      'Buyer Price (Bag)',
+      'Seller Price (Bag)',
       'Buyer Cost Per Unit',
       'Seller Rate Per Unit',
       'Profit Margin Per Unit (INR)',
@@ -264,11 +262,11 @@ export default function ProfitMargin() {
                   title="Cycle sort orders"
                 >
                   <ArrowUpDown size={13} />
-                  Sort: {
-                    sort === 'margin_desc' ? 'Margin % High-Low' : 
-                    sort === 'margin_asc' ? 'Margin % Low-High' : 
-                    sort === 'profit_desc' ? 'Potential Profit High-Low' : 'Name A-Z'
-                  }
+                  Sort: {{
+                    margin_desc: 'Margin % High-Low',
+                    margin_asc: 'Margin % Low-High',
+                    profit_desc: 'Potential Profit High-Low'
+                  }[sort] || 'Name A-Z'}
                 </button>
 
                 {/* Filter Button */}
@@ -345,19 +343,22 @@ export default function ProfitMargin() {
             {/* CRM Table Card Box matching Products & ImportStock */}
             <div className="attio-table-card">
               <div className="attio-table-wrap">
-                {loading ? (
+                {loading && (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
                     <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
                   </div>
-                ) : error ? (
+                )}
+                {!loading && error && (
                   <div style={{ padding: 50, textAlign: 'center', color: '#dc2626' }}>
                     {error}
                   </div>
-                ) : filteredProducts.length === 0 ? (
+                )}
+                {!loading && !error && filteredProducts.length === 0 && (
                   <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
                     No products found matching the criteria.
                   </div>
-                ) : (
+                )}
+                {!loading && !error && filteredProducts.length > 0 && (
                   <table className="attio-table">
                     <thead>
                       <tr>
@@ -366,7 +367,7 @@ export default function ProfitMargin() {
                         </th>
                         <th>PRODUCT NAME</th>
                         <th>CATEGORY</th>
-                        <th>STOCK & PACK</th>
+                        <th>STOCK & BAG</th>
                         <th style={{ textAlign: 'right' }}>BUYER PRICE (COST)</th>
                         <th style={{ textAlign: 'right' }}>SELLER PRICE (RETAIL)</th>
                         <th style={{ textAlign: 'right' }}>PROFIT / UNIT</th>
@@ -424,13 +425,13 @@ export default function ProfitMargin() {
                               </span>
                             </td>
 
-                            {/* 3. Stock & Packaging */}
+                            {/* 3. Stock & Bag */}
                             <td>
                               <span className={`attio-stock-badge ${getStockBadgeClass(p.stock, p.loose_kg, p.bag_weight)}`}>
                                 {formatStockDisplay(p.stock, p.bag_weight, p.unit, p.loose_kg)}
                               </span>
                               <span style={{ display: 'block', fontSize: '0.70rem', color: '#64748b', marginTop: 3 }}>
-                                {p.bag_weight > 1 ? `${p.bag_weight} ${p.unit}/pack` : `Per ${p.unit || 'unit'}`}
+                                {p.bag_weight > 1 ? `${p.bag_weight} ${p.unit}/bag` : `Per ${p.unit || 'unit'}`}
                               </span>
                             </td>
 
@@ -442,7 +443,7 @@ export default function ProfitMargin() {
                                 </span>
                                 <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                                   {p.buy_rate_per_unit > 0 ? `₹${p.buy_rate_per_unit.toFixed(2)} / ${p.unit} cost` : '—'}
-                                  {p.bag_weight > 1 && p.buyer_pack_price > 0 ? ` · ₹${formatINR(p.buyer_pack_price)}/pack` : ''}
+                                  {p.bag_weight > 1 && p.buyer_pack_price > 0 ? ` · ₹${formatINR(p.buyer_pack_price)}/bag` : ''}
                                 </span>
                               </div>
                             </td>
@@ -455,7 +456,7 @@ export default function ProfitMargin() {
                                 </span>
                                 <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                                   {p.sell_rate_per_unit > 0 ? `₹${p.sell_rate_per_unit.toFixed(2)} / ${p.unit} retail` : '—'}
-                                  {p.bag_weight > 1 && p.seller_pack_price > 0 ? ` · ₹${formatINR(p.seller_pack_price)}/pack` : ''}
+                                  {p.bag_weight > 1 && p.seller_pack_price > 0 ? ` · ₹${formatINR(p.seller_pack_price)}/bag` : ''}
                                 </span>
                               </div>
                             </td>
@@ -475,7 +476,13 @@ export default function ProfitMargin() {
                                 </span>
                                 <span style={{ fontSize: '0.70rem', color: '#94a3b8' }}>
                                   per {p.unit}
-                                  {p.bag_weight > 1 && p.profit_per_pack !== undefined ? ` · ${p.profit_per_pack >= 0 ? '+' : ''}₹${p.profit_per_pack.toFixed(0)}/pack` : ''}
+                                  {(() => {
+                                    if (p.bag_weight > 1 && p.profit_per_pack !== undefined) {
+                                      const sign = p.profit_per_pack >= 0 ? '+' : ''
+                                      return ` · ${sign}₹${p.profit_per_pack.toFixed(0)}/bag`
+                                    }
+                                    return ''
+                                  })()}
                                 </span>
                               </div>
                             </td>
@@ -526,15 +533,25 @@ export default function ProfitMargin() {
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                                 <span style={{ 
                                   fontWeight: 700, 
-                                  color: isLoss ? '#dc2626' : ((p.present_profit || 0) > 0 ? '#16a34a' : '#64748b'),
+                                  color: (() => {
+                                    if (isLoss) return '#dc2626'
+                                    if ((p.present_profit || 0) > 0) return '#16a34a'
+                                    return '#64748b'
+                                  })(),
                                   fontSize: '0.88rem'
                                 }}>
                                   {formatINR(p.present_profit !== undefined ? p.present_profit : p.total_potential_profit)}
                                 </span>
                                 <span style={{ fontSize: '0.70rem', color: '#64748b', marginTop: 1 }}>
-                                  {p.bag_weight > 1 && p.profit_per_pack !== undefined
-                                    ? `${p.stock || 0} bags${p.loose_kg > 0 ? ` +${p.loose_kg}kg` : ''} (${(p.present_units || 0).toLocaleString('en-IN')} ${p.unit})`
-                                    : `${(p.present_units !== undefined ? p.present_units : (p.total_units_in_stock || 0)).toLocaleString('en-IN')} ${p.unit} in hand`}
+                                  {(() => {
+                                    if (p.bag_weight > 1 && p.profit_per_pack !== undefined) {
+                                      const looseStr = p.loose_kg > 0 ? ` +${p.loose_kg}kg` : ''
+                                      const unitsFormatted = (p.present_units || 0).toLocaleString('en-IN')
+                                      return `${p.stock || 0} bags${looseStr} (${unitsFormatted} ${p.unit})`
+                                    }
+                                    const finalUnits = p.present_units !== undefined ? p.present_units : (p.total_units_in_stock || 0)
+                                    return `${finalUnits.toLocaleString('en-IN')} ${p.unit} in hand`
+                                  })()}
                                 </span>
                               </div>
                             </td>

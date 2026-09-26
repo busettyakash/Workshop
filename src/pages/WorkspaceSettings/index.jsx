@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router'
-import Sidebar from '../../components/layout/Sidebar'
 import { useAppDispatch } from '../../redux/hooks'
 import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
 import { useAuth } from '../../hooks/useAuth'
 import { 
-  ArrowLeft, Search, User, Palette, Mail, PhoneCall, HardDrive, Share2, Bell, MessageSquare, Plug,
-  Building2, Users, Radio, CreditCard, DollarSign, Code, Headphones, ArrowRightLeft, Grid, Info, Scale, Plus, Edit2, Trash2, Save, HelpCircle
+  ArrowLeft, Search, User,
+  Building2, Users, DollarSign, Scale, HelpCircle
 } from 'lucide-react'
 import api from '../../api/client'
 import { updateUser } from '../../redux/slices/authSlice'
@@ -102,7 +101,7 @@ export default function WorkspaceSettings() {
           </button>
           <span style={{ color: '#cbd5e1' }}>/</span>
           <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 500 }}>
-            {activeSection === 'general' ? 'General' : activeSection === 'uom' ? 'Unit of Measure (UOM)' : activeSection === 'members' ? 'Members & Teams' : 'Billing'}
+            {{ general: 'General', uom: 'Unit of Measure (UOM)', members: 'Members & Teams', billing: 'Billing' }[activeSection] || 'General'}
           </span>
         </div>
 

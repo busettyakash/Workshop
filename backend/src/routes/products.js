@@ -22,7 +22,9 @@ export async function clearProductsCache(userId) {
       deleteCachedPattern(redis, 'products:list:default-user*'),
       deleteCachedPattern(redis, 'products:default-user*'),
     ]).catch(() => {})
-  } catch (_e) {}
+  } catch (_e) {
+    // Intentionally ignored: cache invalidation failure should not interrupt response
+  }
 }
 
 import { parsePaginationParams, encodeCursor } from '../utils/pagination.js'
@@ -202,7 +204,7 @@ router.get('/', async (req, res) => {
   const params = [userId]
   const conditions = ['(user_id::text = $1::text OR user_id = \'default-user\' OR $1 = \'default-user\')']
 
-  if (search && search.trim()) { 
+  if (search?.trim()) { 
     params.push(`%${search.trim()}%`)
     conditions.push(`(COALESCE(name, '') ILIKE $${params.length} OR COALESCE(sku, '') ILIKE $${params.length} OR COALESCE(hsn_code, '') ILIKE $${params.length})`) 
   }
@@ -433,7 +435,7 @@ router.post('/', async (req, res) => {
     ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
     : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
   const creatorEmail = req.user?.email || ''
-  const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
+  const creatorRole = req.memberRole?.toLowerCase() === 'member' ? 'Member' : 'Admin'
 
   try {
     const { rows } = await query(

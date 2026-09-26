@@ -550,6 +550,12 @@ export default function Signup() {
               <div className="ws-auth-switch" style={{ marginTop: '14px' }}>
                 Already have an account? <Link to={`/login?email=${encodeURIComponent(form.email)}`}>Log in</Link>
               </div>
+              <p className="ws-auth-legal" style={{ marginTop: '12px' }}>
+                By joining, you agree to Workshop&apos;s{' '}
+                <Link to="/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>Terms of Service</Link>{' '}
+                and{' '}
+                <Link to="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>Privacy Policy</Link>.
+              </p>
             </form>
           </>
         ) : (
@@ -618,9 +624,10 @@ export default function Signup() {
                   </div>
                 </form>
                 <p className="ws-auth-legal">
-                  By inserting your details you confirm you agree to Workshop contacting you about our
-                  products and services. You can opt out any time. Find out more in our{' '}
-                  <a href="#">privacy policy</a>.
+                  By continuing, you agree to Workshop&apos;s{' '}
+                  <Link to="/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>Terms of Service</Link>{' '}
+                  and{' '}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>Privacy Policy</Link>.
                 </p>
               </>
             )}

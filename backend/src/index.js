@@ -229,11 +229,21 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Endpoint not found' })
 })
 
-/* ── Global Error Handler ── */
+/* ── Express Global Error Handler ── */
 app.use((err, _req, res, _next) => {
-  console.error('[Unhandled Error]', err)
+  console.error('[Express Unhandled Error]', err)
   res.status(500).json({ error: err.message || 'Internal server error' })
 })
+
+/* ── Process-Level Safety Handlers ── */
+process.on('unhandledRejection', (reason, _promise) => {
+  console.error('[Unhandled Rejection at Promise]:', reason)
+})
+
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception]:', err)
+})
+
 
 
 

@@ -72,8 +72,8 @@ function BarcodeModal({ sku, onClose }) {
   }
 
   return (
-    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
-      <div className="ws-modal-card" style={{ maxWidth: 360 }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" onClick={onClose}>
+      <div className="ws-modal-card" style={{ maxWidth: 360 }} onClick={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
           <h3 className="ws-modal-title">Product Barcode</h3>
           <button className="ws-modal-close-x" onClick={onClose} aria-label="Close">
@@ -167,8 +167,8 @@ function PricingModal({ product, onClose }) {
   if (!product) return null
 
   return (
-    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
-      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" onClick={onClose}>
+      <div className="ws-modal-card" style={{ maxWidth: 480, width: '90%' }} onClick={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title" style={{ margin: 0 }}>Pricing & Price History</h3>
@@ -185,13 +185,13 @@ function PricingModal({ product, onClose }) {
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
               <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>Base Selling Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-                ₹{basePriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{basePriceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
               <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 500 }}>Active Updated Selling Price ({bagWeight} {bulkUnit?.short || product?.unit || 'kg'})</span>
               <p style={{ margin: '2px 0 0', fontSize: '1rem', fontWeight: 700, color: '#15803d' }}>
-                ₹{activeBagPrice.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{activeBagPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -235,7 +235,7 @@ function PricingModal({ product, onClose }) {
                     <div key={item.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newBagP.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>₹{newBagP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           {bagWeight > 1 && (
                             <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                               ({bagWeight} {bulkUnit?.short || product?.unit || 'kgs'} price)
@@ -243,7 +243,7 @@ function PricingModal({ product, onClose }) {
                           )}
                           {diff !== 0 && (
                             <span style={{ fontSize: '0.7rem', fontWeight: 600, color: isUp ? '#16a34a' : '#dc2626', background: isUp ? '#dcfce7' : '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
-                              {isUp ? `+₹${diff.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              {isUp ? `+₹${diff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             </span>
                           )}
                         </div>
@@ -259,7 +259,7 @@ function PricingModal({ product, onClose }) {
                         )}
                         {oldBagP !== null && (
                           <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                            Prev: ₹{oldBagP.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            Prev: ₹{oldBagP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         )}
                       </div>
@@ -300,9 +300,18 @@ function ProductComparisonModal({ products, onClose, onRemoveProduct, onClearAll
       updatedPriceVal = (rawUP / bw) * pc
     }
 
-    const priceSubtext = pc > 0 ? `${pc} ${uomShort}` : (bw > 1 ? `${bw} ${uomShort}` : `1 ${uomShort}`)
+    let priceSubtext = `1 ${uomShort}`
+    if (pc > 0) {
+      priceSubtext = `${pc} ${uomShort}`
+    } else if (bw > 1) {
+      priceSubtext = `${bw} ${uomShort}`
+    }
+
     const effectiveUnitPrice = bw > 0 ? (rawP / bw) : rawP
-    const effectiveUpdatedUnitPrice = (rawUP > 0 && bw > 0) ? (rawUP / bw) : (rawUP > 0 ? rawUP : null)
+    let effectiveUpdatedUnitPrice = null
+    if (rawUP > 0) {
+      effectiveUpdatedUnitPrice = bw > 0 ? (rawUP / bw) : rawUP
+    }
 
     const stockQty = Number.parseFloat(p.stock || 0)
     const looseQty = Number.parseFloat(p.loose_kg || 0)
@@ -330,8 +339,8 @@ function ProductComparisonModal({ products, onClose, onRemoveProduct, onClearAll
   const minEffectiveRate = allSameUnit ? Math.min(...productData.map(p => (p.effectiveUpdatedUnitPrice || p.effectiveUnitPrice))) : null
 
   return (
-    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
-      <div className="ws-modal-card compare-modal-card" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" onClick={onClose}>
+      <div className="ws-modal-card compare-modal-card" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="ws-modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
           <div>
@@ -853,15 +862,17 @@ export default function Products() {
             {/* CRM Table Card Box */}
             <div className="attio-table-card">
               <div className="attio-table-wrap">
-                {loading ? (
+                {loading && (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
                     <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
                   </div>
-                ) : products.length === 0 ? (
+                )}
+                {!loading && products.length === 0 && (
                   <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
                     No products found.
                   </div>
-                ) : (
+                )}
+                {!loading && products.length > 0 && (
                   <table className="attio-table">
                     <thead>
                       <tr>
@@ -942,12 +953,17 @@ export default function Products() {
                                     priceVal = (rawP / bw) * pc
                                   }
 
-                                  const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+                                  let subtext = `Per ${uomShort} price`
+                                  if (pc > 0) {
+                                    subtext = `${pc} ${uomShort} price`
+                                  } else if (bw > 1) {
+                                    subtext = `${bw} ${uomShort} price`
+                                  }
 
                                   return (
                                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                                       <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        ₹{priceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ₹{priceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </span>
                                       <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                                         {subtext}
@@ -970,12 +986,17 @@ export default function Products() {
                                     updatedPriceVal = (rawUP / bw) * pc
                                   }
 
-                                  const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+                                  let subtext = `Per ${uomShort} price`
+                                  if (pc > 0) {
+                                    subtext = `${pc} ${uomShort} price`
+                                  } else if (bw > 1) {
+                                    subtext = `${bw} ${uomShort} price`
+                                  }
 
                                   return (
                                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                                       <span style={{ fontWeight: 600, color: '#2563eb' }}>
-                                        ₹{updatedPriceVal.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ₹{updatedPriceVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </span>
                                       <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
                                         {subtext}
@@ -1011,26 +1032,36 @@ export default function Products() {
                               </div>
                             </td>
                             <td>
-                              {((Number.parseFloat(row.stock || 0) * (Number.parseFloat(row.bag_weight || 1) > 1 ? Number.parseFloat(row.bag_weight || 1) : 1)) + Number.parseFloat(row.loose_kg || 0)) <= 0 ? (
-                                <select 
-                                  value={restock}
-                                  onChange={(e) => handleUpdateRestock(row, e.target.value)}
-                                  className="attio-select"
-                                  style={{ padding: '2px 6px', fontSize: '0.75rem' }}
-                                >
-                                  {restockOpts.map(opt => (
-                                    <option key={opt} value={opt}>{opt}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span style={{ color: '#9ca3af' }}>—</span>
-                              )}
+                              {(() => {
+                                const bwVal = Number.parseFloat(row.bag_weight || 1)
+                                const bwMultiplier = bwVal > 1 ? bwVal : 1
+                                const computedStock = (Number.parseFloat(row.stock || 0) * bwMultiplier) + Number.parseFloat(row.loose_kg || 0)
+                                if (computedStock <= 0) {
+                                  return (
+                                    <select 
+                                      value={restock}
+                                      onChange={(e) => handleUpdateRestock(row, e.target.value)}
+                                      className="attio-select"
+                                      style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                                    >
+                                      {restockOpts.map(opt => (
+                                        <option key={opt} value={opt}>{opt}</option>
+                                      ))}
+                                    </select>
+                                  )
+                                }
+                                return <span style={{ color: '#9ca3af' }}>—</span>
+                              })()}
                             </td>
                             <td>
                               {row.sku ? (
-                                <div role="button" tabIndex={0} onClick={() => setSelectedSku(row.sku)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedSku(row.sku) }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedSku(row.sku)}
+                                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                                >
                                   <ProductBarcode sku={row.sku} />
-                                </div>
+                                </button>
                               ) : <span style={{ color: '#9ca3af' }}>—</span>}
                             </td>
                             <td>

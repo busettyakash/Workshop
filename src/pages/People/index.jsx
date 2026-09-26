@@ -216,16 +216,18 @@ export default function People() {
             {/* Table Card Shell */}
             <div className="attio-table-card">
               <div className="attio-table-wrap">
-              {loading ? (
+              {loading && (
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '48px 0' }}>
                   <Loader2 size={22} className="ws-chat-loader-spin" style={{ color: 'var(--color-gray-400)' }} />
                 </div>
-              ) : people.length === 0 ? (
+              )}
+              {!loading && people.length === 0 && (
                 <div style={{ padding: '48px 20px', textAlign: 'center' }}>
                   <p style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-gray-700)', marginBottom: 4 }}>No people yet</p>
                   <p style={{ fontSize: '0.8rem', color: 'var(--color-gray-400)', marginBottom: 0 }}>Add your first person to get started</p>
                 </div>
-              ) : (
+              )}
+              {!loading && people.length > 0 && (
                 <table className="attio-table">
                   <thead>
                     <tr>
@@ -269,16 +271,14 @@ export default function People() {
                                 {getSingleLetter(row.name)}
                               </div>
                               {canEdit ? (
-                                <span 
+                                <button 
+                                  type="button"
                                   className="ws-table-primary-text" 
-                                  role="button"
-                                  tabIndex={0}
-                                  style={{ cursor: 'pointer', fontWeight: 600 }}
+                                  style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}
                                   onClick={() => navigate(`/people/edit/${row.id}`)}
-                                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/people/edit/${row.id}`) }}
                                 >
                                   {row.name}
-                                </span>
+                                </button>
                               ) : (
                                 <span 
                                   className="ws-table-primary-text" 

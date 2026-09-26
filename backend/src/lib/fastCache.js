@@ -105,7 +105,9 @@ export async function deleteCachedPattern(redis, pattern) {
         await redis.del(...chunk).catch(() => {})
       }
     }
-  } catch (_err) {}
+  } catch (_err) {
+    // Intentionally ignored: cache invalidation failure should not disrupt the request flow
+  }
 }
 
 // Run multiple queries on the SAME db connection to avoid repeated pool.connect + set_config overhead

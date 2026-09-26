@@ -152,7 +152,7 @@ export async function publishWorkflowStep(payload, options = {}) {
     console.log('[QSTASH] Successfully published step %d for run #%d.', safeStep, safeRunId)
     return result
   } catch (_err) {
-    console.warn('[QSTASH LOCAL FALLBACK] Publish failed for run #%d step %d. Advancing via local runner...', safeRunId, safeStep)
+    console.warn('[QSTASH LOCAL FALLBACK] Publish failed for run #%d step %d: %s. Advancing via local runner...', safeRunId, safeStep, _err?.message || _err)
     runLocalStep(payload, delaySeconds)
     return {
       local: true,

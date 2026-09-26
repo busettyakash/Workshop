@@ -32,8 +32,6 @@ import Orders from './pages/Orders/index'
 import Notes  from './pages/Notes/index'
 import Emails from './pages/Emails/index'
 import Settings from './pages/Settings/index'
-import AccountSettings from './pages/AccountSettings/index'
-import WorkspaceSettings from './pages/WorkspaceSettings/index'
 
 // UI
 import ToastContainer from './components/ui/Toast'

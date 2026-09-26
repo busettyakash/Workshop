@@ -48,7 +48,9 @@ export async function clearPeopleCache(userId) {
   try {
     clearMemoryCachePrefix(`people:${userId}:`)
     await deleteCachedPattern(redis, `people:${userId}:*`).catch(() => {})
-  } catch (_e) {}
+  } catch (_e) {
+    // Intentionally ignored: cache invalidation failure should not block operations
+  }
 }
 
 
@@ -160,7 +162,7 @@ router.post('/', async (req, res) => {
     ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
     : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
   const creatorEmail = req.user?.email || ''
-  const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
+  const creatorRole = req.memberRole?.toLowerCase() === 'member' ? 'Member' : 'Admin'
   try {
     const { rows } = await query(
       `INSERT INTO people (name, email, phone, persona, status, notes, company, company_name, user_id, created_by_name, created_by_email, created_by_role, created_at, updated_at)

@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router'
 import {
   Home, Bell, BarChart3, Settings,
-  Package, BookOpen, Receipt, CheckCircle, CheckCircle2, XCircle, Check,
+  CheckCircle2, Check,
   Users, UserCheck, GitBranch, Building2,
-  Search, ChevronDown, ChevronRight, LogOut, Zap, Menu, X, Plus,
+  Search, ChevronDown, ChevronRight, LogOut, X, Plus,
   Briefcase, User, CheckSquare, FileText, Mail, Phone, Send, Folder, LayoutGrid, Play, Star,
-  MessageSquare, Upload, UserRound, ScrollText, DollarSign, History, ShoppingBag, PanelLeftClose, PanelLeftOpen, MoreHorizontal,
+  MessageSquare, UserRound, DollarSign, History, ShoppingBag, PanelLeftClose, PanelLeftOpen, MoreHorizontal,
   Trash2
 } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'

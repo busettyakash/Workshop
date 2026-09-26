@@ -1,8 +1,8 @@
 import React from 'react'
-import { Sliders, HelpCircle, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { ExpandSidebarIcon } from '../icons/SidebarIcons'
 import { useAppDispatch, useAppSelector } from '../../redux/hooks'
-import { toggleSidebar, selectActiveNav, selectSidebarOpen, setSidebarTriggerHovered, toggleConfigure, toggleChat, selectChatOpen } from '../../redux/slices/uiSlice'
+import { toggleSidebar, selectActiveNav, selectSidebarOpen, setSidebarTriggerHovered, toggleChat, selectChatOpen } from '../../redux/slices/uiSlice'
 import { useAuth } from '../../hooks/useAuth'
 import './Topbar.css'
 
@@ -13,9 +13,7 @@ export default function Topbar() {
   const activeNav   = useAppSelector(selectActiveNav)
   const sidebarOpen = useAppSelector(selectSidebarOpen)
   const chatOpen    = useAppSelector(selectChatOpen)
-  const { initials, shopName } = useAuth()
-
-  const isHome = activeNav === 'Home'
+  const { initials, fullName } = useAuth()
 
   const handleMouseEnterZone = () => {
     if (topbarLeaveTimer) clearTimeout(topbarLeaveTimer)
@@ -70,29 +68,19 @@ export default function Topbar() {
       </div>
 
       <div className="ws-topbar-right">
-        {isHome && (
-          <>
-            <button className="ws-topbar-action-btn" onClick={() => dispatch(toggleConfigure())}>
-              <Sliders size={13} />
-              Configure
-            </button>
-            <button className="ws-topbar-action-btn">
-              <HelpCircle size={13} />
-              Help
-            </button>
-          </>
+        {activeNav !== 'Home' && (
+          <button
+            type="button"
+            className={`ws-topbar-chat-btn${chatOpen ? ' active' : ''}`}
+            onClick={() => dispatch(toggleChat())}
+            title="Toggle AI Assistant"
+            aria-label="Toggle AI Chat"
+          >
+            <Sparkles size={14} style={{ color: chatOpen ? '#ffffff' : '#2563eb' }} />
+            <span className="ws-topbar-chat-label">AI Chat</span>
+          </button>
         )}
-        <button
-          type="button"
-          className={`ws-topbar-chat-btn${chatOpen ? ' active' : ''}`}
-          onClick={() => dispatch(toggleChat())}
-          title="Toggle AI Assistant"
-          aria-label="Toggle AI Chat"
-        >
-          <Sparkles size={14} style={{ color: chatOpen ? '#ffffff' : '#2563eb' }} />
-          <span className="ws-topbar-chat-label">AI Chat</span>
-        </button>
-        <div className="ws-topbar-avatar" title={shopName}>
+        <div className="ws-topbar-avatar" title={fullName}>
           {initials}
         </div>
       </div>

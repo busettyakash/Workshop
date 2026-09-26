@@ -2709,7 +2709,7 @@
 
 .cds-split {
   display: grid;
-  grid-template-columns: 256px 1fr 280px;
+  grid-template-columns: 340px 1fr 280px;
   min-height: 700px;
   height: auto;
 }
@@ -2721,7 +2721,7 @@
 
 .cds-left {
   border-right: 1px solid #e2e2e2;
-  padding: 52px 36px;
+  padding: 52px 40px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;

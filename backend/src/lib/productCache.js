@@ -120,7 +120,7 @@ function resolveBagWeight(item, catProd, name) {
 
   if (Number.isNaN(bagWeight) || bagWeight <= 0) {
     const weightMatch = name.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
-    bagWeight = (weightMatch && weightMatch[1]) ? Number.parseFloat(weightMatch[1]) : 1
+    bagWeight = weightMatch?.[1] ? Number.parseFloat(weightMatch[1]) : 1
   }
   return bagWeight
 }

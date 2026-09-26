@@ -48,9 +48,10 @@ export const ORDERED_NAV_ITEMS = [
  * Check if the active role is Owner or Admin.
  */
 export function isOwnerOrAdmin(role) {
-  const rawRole = role !== undefined && role !== null
-    ? role
-    : (typeof window !== 'undefined' ? sessionStorage.getItem('ws_active_role') : null)
+  let rawRole = role
+  if (rawRole === undefined || rawRole === null) {
+    rawRole = typeof window !== 'undefined' ? sessionStorage.getItem('ws_active_role') : null
+  }
   if (!rawRole) return false
   const currentRole = String(rawRole).trim().toLowerCase()
   return currentRole === 'owner' || currentRole === 'admin'

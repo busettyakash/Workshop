@@ -81,7 +81,7 @@ function buildBillingWhere(queryObj, userId, includeStatus = true) {
     conditions.push(`b.status = $${params.length}`)
   }
 
-  if (search && search.trim()) {
+  if (search?.trim()) {
     params.push(`%${search.trim()}%`)
     conditions.push(`(
       COALESCE(p.name, '') ILIKE $${params.length} 
@@ -345,14 +345,16 @@ function calculateBillAmount(items, amount, discount) {
 }
 
 async function generateUniqueBillNumber(customBillNum) {
-  let billNumber = (customBillNum && customBillNum.trim()) ? customBillNum.trim() : `INV-${crypto.randomInt(10000, 100000)}`
+  let billNumber = customBillNum?.trim() ? customBillNum.trim() : `INV-${crypto.randomInt(10000, 100000)}`
   try {
     for (let attempts = 0; attempts < 5; attempts++) {
       const check = await query("SELECT id FROM bills WHERE bill_number = $1 LIMIT 1", [billNumber]).catch(() => ({ rows: [] }))
       if (!check.rows.length) break
       billNumber = `INV-${crypto.randomInt(10000, 100000)}`
     }
-  } catch { }
+  } catch {
+    // Intentionally ignored: fallback to generated billNumber
+  }
   return billNumber
 }
 
@@ -544,7 +546,7 @@ router.post('/', async (req, res) => {
     ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
     : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
   const creatorEmail = req.user?.email || ''
-  const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
+  const creatorRole = req.memberRole?.toLowerCase() === 'member' ? 'Member' : 'Admin'
 
   const lineDiscountsSum = (items || []).reduce((acc, it) => acc + (Number.parseFloat(it.discount) || 0), 0)
   const orderDiscount = Number.parseFloat(discount || 0)

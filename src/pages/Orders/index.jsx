@@ -89,8 +89,8 @@ function OrderComparisonModal({ orders, onClose, onRemoveOrder, onClearAll }) {
   const hasAmountVariance = minAmount !== maxAmount
 
   return (
-    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
-      <div className="ws-modal-card compare-modal-card" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" onClick={onClose}>
+      <div className="ws-modal-card compare-modal-card" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="ws-modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
           <div>
@@ -270,7 +270,7 @@ function OrderComparisonModal({ orders, onClose, onRemoveOrder, onClearAll }) {
                             const unitLabel = it.unit || 'pcs'
 
                             return (
-                              <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 5, padding: '6px 10px', fontSize: '0.74rem' }}>
+                              <div key={it.id || it.product_id || `${it.name || 'item'}-${idx}`} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 5, padding: '6px 10px', fontSize: '0.74rem' }}>
                                 <div style={{ fontWeight: 600, color: '#1e293b' }}>{it.name || it.product_name || `Item ${idx + 1}`}</div>
                                 <div style={{ color: '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                                   <span>{qty} {unitLabel} × ₹{rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -475,15 +475,17 @@ export default function Orders() {
 
             <div className="attio-table-card">
               <div className="attio-table-wrap">
-                {loading ? (
+                {loading && (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
                     <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
                   </div>
-                ) : sortedOrders.length === 0 ? (
+                )}
+                {!loading && sortedOrders.length === 0 && (
                   <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
                     No orders found.
                   </div>
-                ) : (
+                )}
+                {!loading && sortedOrders.length > 0 && (
                   <table className="attio-table">
                     <thead>
                       <tr>

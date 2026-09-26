@@ -228,7 +228,7 @@ async function resolveUserFromToken(token) {
 function isOwnOrPublicWorkspace(req, requestedWorkspaceId, user) {
   const isWorkspacesRoute =
     req.path === '/workspaces' ||
-    Boolean(req.originalUrl && req.originalUrl.includes('/auth/workspaces'))
+    Boolean(req.originalUrl?.includes('/auth/workspaces'))
 
   return (
     isWorkspacesRoute ||
@@ -274,7 +274,7 @@ async function handleCrossWorkspaceAccess(req, res, next, requestedWorkspaceId, 
 /* Verify token and enforce workspace isolation on every protected request */
 export async function requireAuth(req, res, next) {
   const auth = req.headers.authorization
-  if (!auth || !auth.startsWith('Bearer ')) {
+  if (!auth?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' })
   }
 

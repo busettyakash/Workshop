@@ -5,7 +5,7 @@ import { addToast, setActiveNav } from '../../redux/slices/uiSlice'
 import { updateUser, logout } from '../../redux/slices/authSlice'
 import { useAuth } from '../../hooks/useAuth'
 import {
-  ChevronLeft, ArrowLeft, Search, User, Palette, Bell, Lock, Building2, LayoutGrid, Scale, Users, DollarSign, Info, Camera, HelpCircle, Save, Plus, Trash2, Copy, Download, Calendar, X, Check, Loader2
+  ChevronLeft, Search, User, LayoutGrid, Scale, Users, DollarSign, Info, Camera, HelpCircle, Trash2, Copy, X, Loader2
 } from 'lucide-react'
 import api from '../../api/client'
 import { authApi } from '../../services/authApi'
@@ -421,11 +421,16 @@ export default function Settings() {
           boxSizing: 'border-box'
         }}>
           <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0f172a' }}>
-            {!isOwnerAdmin || activeSection === 'profile' ? 'Profile' :
-              activeSection === 'general' ? 'General' :
-                activeSection === 'uom' ? 'Unit of Measure (UOM)' :
-                  activeSection === 'members' ? 'Members & Teams' :
-                    activeSection === 'billing' ? 'Billing' : 'Settings'}
+            {(() => {
+              if (!isOwnerAdmin || activeSection === 'profile') return 'Profile'
+              const titles = {
+                general: 'General',
+                uom: 'Unit of Measure (UOM)',
+                members: 'Members & Teams',
+                billing: 'Billing'
+              }
+              return titles[activeSection] || 'Settings'
+            })()}
           </span>
 
           <button

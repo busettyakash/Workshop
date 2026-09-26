@@ -28,7 +28,7 @@ dns.lookup = function (hostname, options, callback) {
     if (err || !addresses || addresses.length === 0) {
       return originalLookup(hostname, options, callback)
     }
-    if (options && options.all) {
+    if (options?.all) {
       const results = addresses.map(addr => ({ address: addr, family: 4 }))
       callback(null, results)
     } else {

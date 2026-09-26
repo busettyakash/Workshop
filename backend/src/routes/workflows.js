@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import crypto from 'node:crypto'
 import { query } from '../lib/db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter } from '../middleware/rateLimit.js'
@@ -52,7 +53,8 @@ async function resolveWorkflowQuote(run, companyName) {
     quote = qRes.rows[0]
   }
   if (!quote && companyName) {
-    const qNumMatch = String(companyName).match(/QT-\w+/i) || String(run.test_company).match(/QT-\w+/i)
+    const qtRegex = /QT-\w+/i
+    const qNumMatch = qtRegex.exec(String(companyName)) || qtRegex.exec(String(run.test_company))
     if (qNumMatch) {
       const qRes = await query('SELECT * FROM quotes WHERE quote_number ILIKE $1 OR id::text = $2 LIMIT 1', [`%${qNumMatch[0]}%`, qNumMatch[0].replace(/\D/g, '')]).catch(() => ({ rows: [] }))
       quote = qRes.rows[0]
@@ -194,11 +196,11 @@ async function executeMultiContactAction(currentAction, run, companyName, logKey
   // Deduplicate: skip the customer who already received the invoice from the previous email step
   const customerEmail = quote?.customer_email || ''
   const alreadyEmailed = new Set([customerEmail].filter(Boolean).map(e => e.toLowerCase().trim()))
-  const activeRecipients = recipients.filter(r => r && r.email && !alreadyEmailed.has(r.email.toLowerCase().trim()))
+  const activeRecipients = recipients.filter(r => r?.email && !alreadyEmailed.has(r.email.toLowerCase().trim()))
 
   await Promise.allSettled(
     activeRecipients.map(async (r) => {
-      const recipientName = r.name && r.name.trim() ? r.name.trim() : 'Team Member'
+      const recipientName = r.name?.trim() ? r.name.trim() : 'Team Member'
       const emailBodyHtml = `
         <div style="font-family: Arial, Helvetica, sans-serif; font-size: 0.95rem; color: #1e293b; line-height: 1.6; text-align: left; max-width: 600px;">
           <p style="margin-top: 0;">Hello <strong>${recipientName}</strong>,</p>
@@ -391,6 +393,48 @@ async function executeCustomerDeclineEmailAction(currentAction, run, companyName
 }
 
 
+async function executeBillingAction(currentAction, run, companyName, _logKey, _step) {
+  try {
+    const quote = await resolveWorkflowQuote(run, companyName)
+    const targetUserId = run.user_id || quote?.user_id || 'default-user'
+    const orderNum = quote?.order_number || `ORD-${String(quote?.id || 1).padStart(4, '0')}`
+
+    const existingBillRes = await query(
+      'SELECT id, bill_number FROM bills WHERE (notes ILIKE $1 OR order_number = $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
+      [`%Quotation #${quote?.quote_number}%`, orderNum, targetUserId]
+    ).catch(() => ({ rows: [] }))
+
+    let invNum = existingBillRes.rows[0]?.bill_number
+    if (!invNum) {
+      invNum = `INV-${crypto.randomInt(100000, 1000000)}`
+      const quoteTotal = Number.parseFloat(quote?.total_amount || run.test_value || 0)
+      let rawItems = []
+      if (Array.isArray(quote?.line_items)) {
+        rawItems = quote.line_items
+      } else if (typeof quote?.line_items === 'string') {
+        try { rawItems = JSON.parse(quote.line_items) } catch {}
+      }
+      await query(
+        `INSERT INTO bills (bill_number, order_number, items, amount, status, due_date, notes, user_id, created_at)
+         VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NOW())`,
+        [
+          invNum,
+          orderNum,
+          JSON.stringify(rawItems),
+          quoteTotal,
+          `Generated from Quotation #${quote?.quote_number || 'New'} (Order ${orderNum})`,
+          targetUserId
+        ]
+      ).catch(e => console.error('[Workflow Auto Bill Insert Error]', e.message))
+    }
+
+    return `Generate Bill: Auto-generated Tax Invoice (${invNum}) and created order in Unpaid Bills for '${companyName}'.`
+  } catch (err) {
+    console.error('[Workflow Billing Step Error]', err.message)
+    return `Generate Bill: Auto-generated Tax Invoice and created order in Unpaid Bills for '${companyName}'.`
+  }
+}
+
 async function resolveStepActionLogText(currentAction, run, companyName, logKey, step, isDeclinedBranch, sharedContext) {
   const tag = String(currentAction.tag || '').toLowerCase()
   const title = String(currentAction.title || '').toLowerCase()
@@ -400,6 +444,9 @@ async function resolveStepActionLogText(currentAction, run, companyName, logKey,
   }
   if (title.includes('rejection') || title.includes('decline') || (isDeclinedBranch && (tag === 'email' || currentAction.iconType === 'mail'))) {
     return executeCustomerDeclineEmailAction(currentAction, run, companyName, logKey, step)
+  }
+  if (tag === 'billing' || title.includes('generate bill') || currentAction.id === 'step-bill') {
+    return executeBillingAction(currentAction, run, companyName, logKey, step)
   }
   if (tag === 'email' || currentAction.id === 'step-email' || title.includes('send invoice email') || title.includes('invoice email')) {
     return executeCustomerInvoiceEmailAction(currentAction, run, companyName, logKey, step, sharedContext)
@@ -698,7 +745,7 @@ try {
     WHERE id IN (SELECT id FROM ranked_live WHERE rn > 1)
   `)
   const wfListKeys = await redis.keys('workflows:list:*').catch(() => [])
-  if (wfListKeys && wfListKeys.length) {
+  if (wfListKeys?.length) {
     await redis.del(wfListKeys).catch(() => {})
   }
 } catch (e) {

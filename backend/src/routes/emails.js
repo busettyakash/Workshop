@@ -226,7 +226,8 @@ router.post('/sync', async (req, res) => {
     await clearEmailsCache(userId).catch(() => {})
     res.json({ message: 'Inbox sync completed', synced: result.synced || 0, error: result.error || null })
   } catch (_err) {
-    res.json({ message: 'Inbox sync completed', synced: 0, error: null })
+    // Intentionally ignored: fallback response when sync encounters an error
+    res.json({ message: 'Inbox sync completed', synced: 0, error: _err?.message || null })
   }
 })
 

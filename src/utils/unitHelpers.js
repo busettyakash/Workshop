@@ -262,9 +262,9 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0)
     let looseQty = passedLoose > 0 ? passedLoose : (validStock - fullBags) * bw;
     looseQty = Math.round(looseQty * 100) / 100;
 
-    const containerName = (bulkUnit && bulkUnit.name) ? bulkUnit.name : 'Pack';
-    const containerPlural = (bulkUnit && bulkUnit.pluralName) ? bulkUnit.pluralName : `${containerName}s`;
-    const looseUnitLabel = unitCode || (bulkUnit && bulkUnit.short) || 'unit';
+    const containerName = bulkUnit?.name ?? 'Pack';
+    const containerPlural = bulkUnit?.pluralName ?? `${containerName}s`;
+    const looseUnitLabel = unitCode || bulkUnit?.short || 'unit';
 
     const packLabel = fullBags === 1 ? containerName : containerPlural;
 
@@ -280,7 +280,7 @@ export const formatStockDisplay = (stock, bagWeight = 1, unit = '', looseKg = 0)
   }
 
   // Standard non-bulk item (or bagWeight <= 1): Display exact stock amount + exact UOM code (e.g. "100 ltr", "40 kgs")
-  const totalStock = validStock + (passedLoose > 0 ? passedLoose : 0);
+  const totalStock = validStock + Math.max(passedLoose, 0);
   const displayUnit = unitCode || 'pcs';
   return `${totalStock} ${displayUnit}`;
 };
@@ -301,7 +301,7 @@ export const formatStockDisplayFromBase = (totalBaseQty, bagWeight = 1, unit = '
     let looseQty = Math.round((total % bw) * 100) / 100;
     const containerName = bulkUnit.name || 'Pack';
     const containerPlural = bulkUnit.pluralName || `${containerName}s`;
-    const looseUnitLabel = unitCode || (bulkUnit && bulkUnit.short) || 'unit';
+    const looseUnitLabel = unitCode || bulkUnit?.short || 'unit';
 
     const packLabel = fullBags === 1 ? containerName : containerPlural;
 

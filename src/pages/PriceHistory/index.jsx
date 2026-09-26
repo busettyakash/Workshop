@@ -96,6 +96,72 @@ const getItemPriceDetails = (rawP, bw, pc) => {
   return { price100, unitRate, packPrice }
 }
 
+const getPriceSubtext = (pc, bw, uomShort) => {
+  const p = Number.parseFloat(pc || 0)
+  const b = Number.parseFloat(bw || 1)
+  if (p > 0) return `${p} ${uomShort} price`
+  if (b > 1) return `${b} ${uomShort} price`
+  return `Per ${uomShort} price`
+}
+
+const renderTrendBadge = (isUp, isDrop, absDiffFormatted, pct) => {
+  if (isUp) {
+    return (
+      <span style={{
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        color: '#15803d',
+        background: '#dcfce7',
+        border: '1px solid #bbf7d0',
+        padding: '2px 7px',
+        borderRadius: 6,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        whiteSpace: 'nowrap'
+      }}>
+        Price Up +₹{absDiffFormatted} ({pct}%)
+      </span>
+    )
+  }
+  if (isDrop) {
+    return (
+      <span style={{
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        color: '#dc2626',
+        background: '#fee2e2',
+        border: '1px solid #fecaca',
+        padding: '2px 7px',
+        borderRadius: 6,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        whiteSpace: 'nowrap'
+      }}>
+        Price Drop -₹{absDiffFormatted} ({pct}%)
+      </span>
+    )
+  }
+  return (
+    <span style={{
+      fontSize: '0.72rem',
+      fontWeight: 600,
+      color: '#475467',
+      background: '#f1f5f9',
+      border: '1px solid #e2e8f0',
+      padding: '2px 7px',
+      borderRadius: 6,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 3,
+      whiteSpace: 'nowrap'
+    }}>
+      Stable (0.0%)
+    </span>
+  )
+}
+
 // Accepts already-computed display prices (per price_covers qty) so the trend matches what the user sees
 const renderPriceTrendGraph = (baseDisplayPrice, updatedDisplayPrice, rowId) => {
   const b = Number.parseFloat(baseDisplayPrice) || 0
@@ -129,55 +195,7 @@ const renderPriceTrendGraph = (baseDisplayPrice, updatedDisplayPrice, rowId) => 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{ minWidth: 105 }}>
-        {isUp ? (
-          <span style={{
-            fontSize: '0.72rem',
-            fontWeight: 700,
-            color: '#15803d',
-            background: '#dcfce7',
-            border: '1px solid #bbf7d0',
-            padding: '2px 7px',
-            borderRadius: 6,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 3,
-            whiteSpace: 'nowrap'
-          }}>
-            Price Up +₹{absDiffFormatted} ({pct}%)
-          </span>
-        ) : isDrop ? (
-          <span style={{
-            fontSize: '0.72rem',
-            fontWeight: 700,
-            color: '#dc2626',
-            background: '#fee2e2',
-            border: '1px solid #fecaca',
-            padding: '2px 7px',
-            borderRadius: 6,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 3,
-            whiteSpace: 'nowrap'
-          }}>
-            Price Drop -₹{absDiffFormatted} ({pct}%)
-          </span>
-        ) : (
-          <span style={{
-            fontSize: '0.72rem',
-            fontWeight: 600,
-            color: '#475467',
-            background: '#f1f5f9',
-            border: '1px solid #e2e8f0',
-            padding: '2px 7px',
-            borderRadius: 6,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 3,
-            whiteSpace: 'nowrap'
-          }}>
-            Stable (0.0%)
-          </span>
-        )}
+        {renderTrendBadge(isUp, isDrop, absDiffFormatted, pct)}
       </div>
 
       <svg width="84" height="26" viewBox="0 0 84 26" style={{ overflow: 'visible' }}>
@@ -212,9 +230,12 @@ function ProductPriceHistoryDetail({ product, onBack }) {
   const updatedPriceVal = rawUP > 0 ? getDisplayPrice(rawUP, bagWeight, pc) : basePriceVal
 
   const activeCoveragePrice = (product.updated_price && updatedPriceVal > 0) ? updatedPriceVal : basePriceVal
-  const perUnitRate = (pc > 0)
-    ? (activeCoveragePrice / pc)
-    : (bagWeight > 0 ? (activeCoveragePrice / bagWeight) : activeCoveragePrice)
+  let perUnitRate = activeCoveragePrice
+  if (pc > 0) {
+    perUnitRate = activeCoveragePrice / pc
+  } else if (bagWeight > 0) {
+    perUnitRate = activeCoveragePrice / bagWeight
+  }
 
   const unitPrice = perUnitRate.toFixed(2)
   const latestLog = history.find(h => h.notes !== 'Initial Base Price') || history[0]
@@ -370,66 +391,88 @@ function ProductPriceHistoryDetail({ product, onBack }) {
         </button>
       </div>
 
-      {activeTab === 'price' ? (
-        <>
-          {/* Top 3 Summary Cards (Symbols Removed) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
-            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Base Selling Price</span>
-              </div>
-              <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#0f172a' }}>{formatINR(basePriceVal)}</p>
-              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                {pc > 0 ? `${pc} ${bulkUnit?.short || product.unit || 'kgs'} price` : (bagWeight > 1 ? `${bagWeight} ${bulkUnit?.short || product.unit || 'kgs'} pack price` : 'Original master list price')}
-              </span>
-            </div>
+      {(() => {
+        const unitLabel = bulkUnit?.short || product.unit || 'kgs'
+        let basePriceSubtext = 'Original master list price'
+        if (pc > 0) {
+          basePriceSubtext = `${pc} ${unitLabel} price`
+        } else if (bagWeight > 1) {
+          basePriceSubtext = `${bagWeight} ${unitLabel} pack price`
+        }
 
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>Active Updated Selling Price</span>
-              </div>
-              <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>
-                {formatINR(updatedPriceVal)}
-              </p>
-              <span style={{ fontSize: '0.75rem', color: '#166534' }}>
-                {product.updated_price ? `Updated on ${updatedDateStr}${pc > 0 ? ` (${pc} ${bulkUnit?.short || product.unit || 'kgs'})` : (bagWeight > 1 ? ` (${bagWeight} ${bulkUnit?.short || product.unit || 'kgs'})` : '')}` : 'No price revision yet'}
-              </span>
-            </div>
+        let updatedPriceSubtext = 'No price revision yet'
+        if (product.updated_price) {
+          let suffix = ''
+          if (pc > 0) {
+            suffix = ` (${pc} ${unitLabel})`
+          } else if (bagWeight > 1) {
+            suffix = ` (${bagWeight} ${unitLabel})`
+          }
+          updatedPriceSubtext = `Updated on ${updatedDateStr}${suffix}`
+        }
 
-            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.8rem', color: '#1e40af', fontWeight: 600 }}>Unit Rate Breakdown</span>
-              </div>
-              <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#2563eb' }}>
-                {formatINR(unitPrice)} <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1e40af' }}>/ {bulkUnit ? bulkUnit.short : 'pcs'}</span>
-              </p>
-              <span style={{ fontSize: '0.75rem', color: '#1e40af' }}>
-                {bagWeight > 1 ? `${bulkUnit?.name || 'Pack'} (${bagWeight}${bulkUnit?.short || product.unit || 'kg'} pack)` : 'Individual Unit'}
-              </span>
-            </div>
-          </div>
-
-          {/* Full Page Table Card */}
-          <div className="attio-table-card">
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Historical Selling Price Log Table</h3>
-                <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>Complete chronological record of all price updates and stock restock revisions.</p>
-              </div>
-              <span className="ws-unified-header-badge">{history.length} records</span>
-            </div>
-
-            <div className="attio-table-wrap">
-              {loadingHistory ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
-                  <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
+        return activeTab === 'price' ? (
+          <>
+            {/* Top 3 Summary Cards (Symbols Removed) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Base Selling Price</span>
                 </div>
-              ) : history.length === 0 ? (
-                <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
-                  No price history records logged for this product yet.
+                <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#0f172a' }}>{formatINR(basePriceVal)}</p>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  {basePriceSubtext}
+                </span>
+              </div>
+
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>Active Updated Selling Price</span>
                 </div>
-              ) : (
-                <table className="attio-table">
+                <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>
+                  {formatINR(updatedPriceVal)}
+                </p>
+                <span style={{ fontSize: '0.75rem', color: '#166534' }}>
+                  {updatedPriceSubtext}
+                </span>
+              </div>
+
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: '0.8rem', color: '#1e40af', fontWeight: 600 }}>Unit Rate Breakdown</span>
+                </div>
+                <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#2563eb' }}>
+                  {formatINR(unitPrice)} <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1e40af' }}>/ {bulkUnit ? bulkUnit.short : 'pcs'}</span>
+                </p>
+                <span style={{ fontSize: '0.75rem', color: '#1e40af' }}>
+                  {bagWeight > 1 ? `${bulkUnit?.name || 'Pack'} (${bagWeight}${bulkUnit?.short || product.unit || 'kg'} pack)` : 'Individual Unit'}
+                </span>
+              </div>
+            </div>
+
+            {/* Full Page Table Card */}
+            <div className="attio-table-card">
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Historical Selling Price Log Table</h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>Complete chronological record of all price updates and stock restock revisions.</p>
+                </div>
+                <span className="ws-unified-header-badge">{history.length} records</span>
+              </div>
+
+              <div className="attio-table-wrap">
+                {loadingHistory && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
+                    <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
+                  </div>
+                )}
+                {!loadingHistory && history.length === 0 && (
+                  <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
+                    No price history records logged for this product yet.
+                  </div>
+                )}
+                {!loadingHistory && history.length > 0 && (
+                  <table className="attio-table">
                   <thead>
                     <tr>
                       <th>EFFECTIVE DATE</th>
@@ -562,15 +605,17 @@ function ProductPriceHistoryDetail({ product, onBack }) {
           </div>
 
           <div className="attio-table-wrap">
-            {loadingStock ? (
+            {loadingStock && (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
                 <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
               </div>
-            ) : stockHistory.length === 0 ? (
+            )}
+            {!loadingStock && stockHistory.length === 0 && (
               <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
                 No stock movement logs recorded yet for this product. Stock deductions will automatically appear here when quotes are accepted or billing is created.
               </div>
-            ) : (
+            )}
+            {!loadingStock && stockHistory.length > 0 && (
               <table className="attio-table">
                 <thead>
                   <tr>
@@ -670,7 +715,8 @@ function ProductPriceHistoryDetail({ product, onBack }) {
             )}
           </div>
         </div>
-      )}
+      )
+      })()}
     </div>
   )
 }
@@ -699,14 +745,12 @@ export default function PriceHistory() {
     const pages = []
     if (totalPages <= 5) {
       for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else if (page <= 2) {
+      pages.push(1, 2, 3, '...', totalPages)
+    } else if (page >= totalPages - 1) {
+      pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
     } else {
-      if (page <= 2) {
-        pages.push(1, 2, 3, '...', totalPages)
-      } else if (page >= totalPages - 1) {
-        pages.push(1, '...', totalPages - 2, totalPages - 1, totalPages)
-      } else {
-        pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
-      }
+      pages.push(1, '...', page - 1, page, page + 1, '...', totalPages)
     }
     return pages
   }
@@ -777,7 +821,11 @@ export default function PriceHistory() {
                     <button
                       className="attio-btn"
                       onClick={() => {
-                        setSort(prev => prev === 'name_asc' ? 'name_desc' : prev === 'name_desc' ? '' : 'name_asc');
+                        setSort(prev => {
+                          if (prev === 'name_asc') return 'name_desc'
+                          if (prev === 'name_desc') return ''
+                          return 'name_asc'
+                        });
                         setPage(1);
                       }}
                       style={{
@@ -787,7 +835,7 @@ export default function PriceHistory() {
                       }}
                     >
                       <ArrowUpDown size={13} />
-                      Sort {sort === 'name_asc' ? 'A-Z' : sort === 'name_desc' ? 'Z-A' : ''}
+                      Sort {({ name_asc: 'A-Z', name_desc: 'Z-A' }[sort] || '')}
                     </button>
 
                     {/* Filter button */}
@@ -855,15 +903,17 @@ export default function PriceHistory() {
                 {/* Main Table Card */}
                 <div className="attio-table-card">
                   <div className="attio-table-wrap">
-                    {loading ? (
+                    {loading && (
                       <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
                         <Loader2 size={24} style={{ color: '#2563eb', animation: 'spin 1s linear infinite' }} />
                       </div>
-                    ) : products.length === 0 ? (
+                    )}
+                    {!loading && products.length === 0 && (
                       <div style={{ padding: 50, textAlign: 'center', color: '#9ca3af' }}>
                         No product history records found.
                       </div>
-                    ) : (
+                    )}
+                    {!loading && products.length > 0 && (
                       <table className="attio-table">
                         <thead>
                           <tr>
@@ -888,12 +938,10 @@ export default function PriceHistory() {
                                   <input type="checkbox" className="attio-chk" readOnly />
                                 </td>
                                 <td>
-                                  <div
-                                    role="button"
-                                    tabIndex={0}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+                                  <button
+                                    type="button"
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'left' }}
                                     onClick={() => setSelectedPricing(row)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedPricing(row) }}
                                     title="Click to view detailed price & stock history"
                                   >
                                     <div className="attio-avatar" style={{ background: getAvatarColor(row.name) }}>
@@ -911,7 +959,7 @@ export default function PriceHistory() {
                                     >
                                       {row.name}
                                     </span>
-                                  </div>
+                                  </button>
                                 </td>
                                 <td>
                                   <span style={{
@@ -935,7 +983,7 @@ export default function PriceHistory() {
                                     const bw = Number.parseFloat(row.bag_weight || 1)
                                     const priceVal = getDisplayPrice(row.price, bw, pc)
 
-                                    const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+                                    const subtext = getPriceSubtext(pc, bw, uomShort)
 
                                     return (
                                       <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -958,7 +1006,7 @@ export default function PriceHistory() {
                                     const bw = Number.parseFloat(row.bag_weight || 1)
                                     const updatedPriceVal = getDisplayPrice(row.updated_price, bw, pc)
 
-                                    const subtext = pc > 0 ? `${pc} ${uomShort} price` : (bw > 1 ? `${bw} ${uomShort} price` : `Per ${uomShort} price`)
+                                    const subtext = getPriceSubtext(pc, bw, uomShort)
 
                                     return (
                                       <div style={{ display: 'flex', flexDirection: 'column' }}>

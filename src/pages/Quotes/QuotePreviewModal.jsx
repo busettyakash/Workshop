@@ -15,7 +15,7 @@ function parseItems(value) {
 }
 
 function money(value) {
-  return (Number.parseFloat(value || 0)).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata',
+  return (Number.parseFloat(value || 0)).toLocaleString('en-IN', {
     style: 'currency',
     currency: 'INR',
     minimumFractionDigits: 2,
@@ -66,8 +66,8 @@ export default function QuotePreviewModal({ quote, products: initialProducts, on
   }, [initialProducts])
 
   return (
-    <div className="ws-modal-backdrop" role="button" tabIndex={0} onClick={onClose} onKeyDown={(e) => (e.key === 'Enter' || e.key === 'Escape') && onClose()}>
-      <div className="ws-modal-card" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div className="ws-modal-backdrop" onClick={onClose}>
+      <div className="ws-modal-card" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
         <div className="ws-modal-header">
           <div>
             <h3 className="ws-modal-title">Quotation {quote?.quote_number || `#${quote?.id}`}</h3>
@@ -129,9 +129,11 @@ export default function QuotePreviewModal({ quote, products: initialProducts, on
               <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, marginBottom: 6 }}>DETAILS</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: '0.79rem' }}>
                 {(() => {
-                  const orderNum = (quote?.status === 'Accepted')
-                    ? (quote?.order_number || `ORD-${quote.quote_number ? quote.quote_number.replace(/^QT-?/i, '') : quote?.id}`)
-                    : null
+                  let orderNum = null
+                  if (quote?.status === 'Accepted') {
+                    const fallbackSuffix = quote.quote_number ? quote.quote_number.replace(/^QT-?/i, '') : quote?.id
+                    orderNum = quote?.order_number || `ORD-${fallbackSuffix}`
+                  }
                   return orderNum ? (
                     <>
                       <span style={{ color: '#64748b' }}>Order No</span>
@@ -255,7 +257,10 @@ export default function QuotePreviewModal({ quote, products: initialProducts, on
                           <span style={{ fontWeight: 600, color: '#0f172a' }}>{q}</span>
                           {item.unit && (
                             <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4, fontWeight: 500 }}>
-                              {q === 1 ? item.unit : (item.unit.endsWith('s') ? item.unit : `${item.unit}s`)}
+                              {(() => {
+                                if (q === 1 || item.unit.endsWith('s')) return item.unit
+                                return `${item.unit}s`
+                              })()}
                             </span>
                           )}
                         </td>

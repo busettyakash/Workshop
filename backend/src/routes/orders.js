@@ -14,7 +14,9 @@ export async function clearOrdersCache(userId) {
   try {
     clearMemoryCachePrefix(`orders:${userId}:`)
     await deleteCachedPattern(redis, `orders:${userId}:*`).catch(() => {})
-  } catch (_e) {}
+  } catch (_e) {
+    // Intentionally ignored: cache invalidation failure should not throw
+  }
 }
 
 let ensureOrdersSchemaPromise
@@ -108,7 +110,7 @@ router.get('/', async (req, res) => {
   const params = [userId]
   const conditions = []
 
-  if (search && search.trim()) {
+  if (search?.trim()) {
     params.push(`%${search.trim()}%`)
     conditions.push(`(
       COALESCE(order_number, '') ILIKE $${params.length}

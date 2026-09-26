@@ -444,7 +444,7 @@ router.get('/', apiLimiter, async (req, res) => {
     const params = [userId]
     let paramIdx = 2
 
-    if (search && search.trim()) {
+    if (search?.trim()) {
       countQuery += ` AND (COALESCE(quote_number, '') ILIKE $${paramIdx} OR COALESCE(order_number, '') ILIKE $${paramIdx} OR COALESCE(customer_name, '') ILIKE $${paramIdx} OR COALESCE(customer_email, '') ILIKE $${paramIdx})`
       dataQuery += ` AND (COALESCE(quote_number, '') ILIKE $${paramIdx} OR COALESCE(order_number, '') ILIKE $${paramIdx} OR COALESCE(customer_name, '') ILIKE $${paramIdx} OR COALESCE(customer_email, '') ILIKE $${paramIdx})`
       params.push(`%${search.trim()}%`)
@@ -775,13 +775,17 @@ async function insertBillItemsForConvertedQuote(billId, items) {
           ).catch(() => null)
         })
         if (itemRes?.rows?.[0]) createdItems.push(itemRes.rows[0])
-      } catch (_itemErr) { }
+      } catch (_itemErr) {
+        // Intentionally ignored: individual item insertion failure should not abort full bill generation
+      }
     }
   }
   try {
     const rKeys = await redis.keys('*reports*').catch(() => [])
     for (const k of rKeys) { await redis.del(k).catch(() => {}) }
-  } catch {}
+  } catch {
+    // Intentionally ignored: reports cache invalidation fallback
+  }
   return createdItems
 }
 
@@ -1200,7 +1204,7 @@ router.post('/', apiLimiter, async (req, res) => {
       ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
       : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
     const creatorEmail = req.user?.email || ''
-    const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
+    const creatorRole = req.memberRole?.toLowerCase() === 'member' ? 'Member' : 'Admin'
 
     let quoteRecord
     if (existingQuoteRes.rows.length > 0) {
@@ -1433,6 +1437,32 @@ router.patch('/:id/status', apiLimiter, async (req, res) => {
       if (itemsToDeduct.length > 0) {
         await decreaseProductStockForQuote(itemsToDeduct, userId, quote.quote_number || quote.id)
       }
+      // Ensure Invoice bill is created in bills table if not already present
+      const existingBillRes = await pool.query(
+        'SELECT id FROM bills WHERE (notes ILIKE $1 OR order_number = $2) AND (user_id::text = $3::text OR user_id = \'default-user\') LIMIT 1',
+        [`%Quotation #${quote.quote_number}%`, orderNum, userId]
+      ).catch(() => ({ rows: [] }))
+
+      if (existingBillRes.rows.length === 0) {
+        const autoBillNum = `INV-${crypto.randomInt(100000, 1000000)}`
+        const quoteTotal = Number.parseFloat(quote.total_amount || 0)
+        await pool.query(
+          `INSERT INTO bills (bill_number, order_number, items, amount, status, due_date, notes, user_id, created_at)
+           VALUES ($1, $2, $3, $4, 'unpaid', NOW() + INTERVAL '15 days', $5, $6, NOW())`,
+          [
+            autoBillNum,
+            orderNum,
+            JSON.stringify(itemsToDeduct),
+            quoteTotal,
+            `Generated from Quotation #${quote.quote_number} (Order ${orderNum})`,
+            userId
+          ]
+        ).catch((err) => {
+          console.error('[Quotes PATCH Status Bill Creation Error]', err.message)
+        })
+        await clearBillingCache(userId)
+        clearOrdersCache(userId)
+      }
     }
 
     const updateRes = await pool.query(
@@ -1442,9 +1472,11 @@ router.patch('/:id/status', apiLimiter, async (req, res) => {
 
     const updatedQuote = updateRes.rows[0]
 
-    // Trigger workflow ONLY when quote is accepted
+    // Trigger workflow asynchronously in background so response returns immediately
     if (status === 'Accepted') {
-      await triggerWorkflowForQuote(userId, updatedQuote, 'Accepted')
+      triggerWorkflowForQuote(userId, updatedQuote, 'Accepted').catch(e => {
+        console.error('[Async Quote Workflow Error]', e.message)
+      })
     }
 
     clearQuoteCache(userId)

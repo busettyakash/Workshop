@@ -70,13 +70,13 @@ function computeItemProfitMargin(r) {
   const profitPerPack = sellerPackPrice - buyerPackPrice
 
   // Present stock remaining (reduces as sales happen in Billing)
-  const fullBagUnits = stock * (bw > 1 ? bw : 1)
+  const fullBagUnits = stock * Math.max(bw, 1)
   const presentUnits = fullBagUnits + looseKg
   const presentProfit = Math.round(marginPerUnit * presentUnits)
 
   // Full stock imported lot (initial total batch)
   const fullLotStock = Number.parseFloat(r.initial_full_stock) || stock
-  const fullUnits = fullLotStock * (bw > 1 ? bw : 1)
+  const fullUnits = fullLotStock * Math.max(bw, 1)
   const fullStockProfit = Math.round(marginPerUnit * fullUnits)
 
   return {

@@ -156,7 +156,7 @@ const tools = [
 ]
 
 async function handleDealP2PChat(conversationId, userId, lastMsg) {
-  if (!conversationId || !conversationId.startsWith('deal-')) return null
+  if (!conversationId?.startsWith('deal-')) return null
   const dealIdStr = conversationId.split('-')[1]
   const dealId = Number.parseInt(dealIdStr, 10)
   if (Number.isNaN(dealId)) return null
@@ -200,7 +200,7 @@ async function handleDealP2PChat(conversationId, userId, lastMsg) {
         payload: { title: notifTitle, body: notifBody, link: notifLink }
       }).catch(() => {})
     } catch (_err) {
-      console.error('Failed to notify counterparty')
+      console.error('Failed to notify counterparty:', _err.message)
     }
   }
 
@@ -403,7 +403,7 @@ async function sendEmailTool(args, userId, reqUser) {
       for (const key of recipientKeys) { await redis.del(key).catch(() => {}) }
     }
   } catch (_inboxErr) {
-    console.error('[Emails AI Recipient Inbox Error]')
+    console.error('[Emails AI Recipient Inbox Error]:', _inboxErr.message)
   }
 
   await sendEmail({
@@ -661,7 +661,7 @@ async function handleAddImportStock(args, userId, reqUser) {
     ? `${reqUser.firstName || reqUser.first_name} ${reqUser?.lastName || reqUser?.last_name || ''}`.trim()
     : (reqUser?.shopName || reqUser?.email?.split('@')[0] || 'Admin')
   const creatorEmail = reqUser?.email || ''
-  const creatorRole = (reqUser?.role && reqUser.role.toLowerCase() === 'member') ? 'Member' : 'Admin'
+  const creatorRole = reqUser?.role?.toLowerCase() === 'member' ? 'Member' : 'Admin'
 
   const { rows } = await query(
     `INSERT INTO import_stock (
@@ -751,7 +751,7 @@ async function handleCreatePerson(args, userId) {
   if (!name) return { error: 'name is required' }
   const validPersonas = ['Lead', 'Prospect', 'Customer', 'Partner', 'Vendor', 'Other']
   const matchedPersona = validPersonas.find(p => p.toLowerCase() === String(persona).toLowerCase()) || persona || 'Lead'
-  const compVal = company && company.trim() ? company.trim() : null
+  const compVal = company?.trim() ? company.trim() : null
 
   const { rows } = await query(
     `INSERT INTO people (name, email, phone, company, company_name, persona, notes, user_id, created_at, updated_at)
@@ -761,7 +761,9 @@ async function handleCreatePerson(args, userId) {
   try {
     const pKeys = await redis.keys(`people:${userId}:*`).catch(() => [])
     for (const key of pKeys) { await redis.del(key).catch(() => {}) }
-  } catch { }
+  } catch {
+    // Intentionally ignored: cache invalidation fallback
+  }
   return { success: true, person: rows[0] }
 }
 
@@ -792,7 +794,7 @@ router.post('/', async (req, res) => {
   }
 
   const userId = req.workspaceId
-  const lastMsg = messages[messages.length - 1]?.content || ''
+  const lastMsg = messages.at(-1)?.content || ''
 
   const cacheKey = `chat_cache:${userId}:${crypto.createHash('sha256').update(lastMsg.toLowerCase().trim()).digest('hex')}`
   try {

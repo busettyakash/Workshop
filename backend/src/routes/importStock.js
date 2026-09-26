@@ -26,7 +26,7 @@ async function clearImportStockCache(userId) {
       clearProductsCache(userId),
     ]).catch(() => {})
   } catch (_err) {
-    console.warn('%s Failed to clear import stock cache', LOG_PREFIX)
+    console.warn('%s Failed to clear import stock cache: %s', LOG_PREFIX, _err?.message || _err)
   }
 }
 
@@ -390,7 +390,7 @@ router.post('/', async (req, res) => {
     ? `${req.user.firstName || req.user.first_name} ${req.user?.lastName || req.user?.last_name || ''}`.trim()
     : (req.user?.shopName || req.user?.email?.split('@')[0] || 'Admin')
   const creatorEmail = req.user?.email || ''
-  const creatorRole = (req.memberRole && req.memberRole.toLowerCase() === 'member') ? 'Member' : 'Admin'
+  const creatorRole = req.memberRole?.toLowerCase() === 'member' ? 'Member' : 'Admin'
 
   try {
     const stockQty = Number.parseFloat(stock) || 0
@@ -693,7 +693,7 @@ async function updateExistingProductFromImport(existingProduct, item, userId, da
 async function insertNewProductFromImport(item, userId, dateStr, looseKg, priceCovers) {
   const creatorName = item.created_by_name || 'Admin'
   const creatorEmail = item.created_by_email || ''
-  const creatorRole = (item.created_by_role && item.created_by_role.toLowerCase() === 'member') ? 'Member' : 'Admin'
+  const creatorRole = item.created_by_role?.toLowerCase() === 'member' ? 'Member' : 'Admin'
 
   const newProd = await query(
     `INSERT INTO products (name, sku, category, price, price_covers, updated_price, updated_price_date, stock, loose_kg, unit, status, description, user_id, bag_weight, created_by_name, created_by_email, created_by_role, created_at, updated_at)

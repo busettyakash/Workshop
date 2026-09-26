@@ -53,7 +53,7 @@
   font-size: 0.75rem !important;
   font-weight: 600 !important;
   background: #f3f4f6 !important;
-  color: #6b7280 !important;
+  color: #374151 !important;
   padding: 2px 8px !important;
   border-radius: 12px !important;
   line-height: 1.2 !important;
@@ -466,7 +466,7 @@
 .crm-card-sku {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.7rem;
-  color: #64748b;
+  color: #475569;
   background: #f1f5f9;
   padding: 1px 6px;
   border-radius: 4px;

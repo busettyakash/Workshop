@@ -76,7 +76,7 @@ function resolveProdName(prodName, dbUnit) {
 function inferBagWeight(bw, pNameLower) {
   if (bw > 1 || !pNameLower) return bw
   const nameWeightMatch = pNameLower.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
-  if (nameWeightMatch && nameWeightMatch[1]) {
+  if (nameWeightMatch?.[1]) {
     return Number.parseFloat(nameWeightMatch[1])
   }
   if (pNameLower.includes('soddalu')) return 50
@@ -177,7 +177,7 @@ function resolveDocumentNumber({ quote, bill, isQuote }) {
   }
   if (!quoteNumFound && (quote.notes || bill.notes)) {
     const notesStr = String(quote.notes || bill.notes || '')
-    const match = notesStr.match(/QT-[A-Z0-9]+/i)
+    const match = /QT-[A-Z0-9]+/i.exec(notesStr)
     if (match) quoteNumFound = match[0].toUpperCase()
   }
   if (!quoteNumFound && (quote.id || !bill.id)) {
@@ -316,7 +316,7 @@ function renderInvoiceItemRow(li, i, { items, grossSubtotal, lineDiscounts, tota
 
   if (Number.isNaN(bagWeight) || bagWeight <= 0) {
     const nameMatch = prodName.match(/\b(\d{1,6})\s*(kgs?|ltrs?|liters?|mtrs?)\b/i)
-    bagWeight = (nameMatch && nameMatch[1]) ? Number.parseFloat(nameMatch[1]) : 1
+    bagWeight = nameMatch?.[1] ? Number.parseFloat(nameMatch[1]) : 1
   }
 
   const { displayQty, displayUnit, subtext } = resolvePackDisplay(rawUnit, qty, bagWeight, dbUnit, prodName, isQuote)
@@ -676,10 +676,10 @@ import fs from 'node:fs'
 
 function getSystemBrowserPath() {
   const possiblePaths = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    String.raw`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+    String.raw`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+    String.raw`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+    String.raw`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
     '/usr/bin/google-chrome',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',

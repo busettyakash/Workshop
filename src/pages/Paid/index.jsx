@@ -188,15 +188,17 @@ export default function PaidBills() {
             <div className="attio-table-card">
 
             <div className="ws-table-wrap" style={{ flex: 1 }}>
-              {loading ? (
+              {loading && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Loader2 size={24} className="ws-chat-loader-spin" />
                 </div>
-              ) : bills.length === 0 ? (
+              )}
+              {!loading && bills.length === 0 && (
                 <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
                   No paid invoices found.
                 </div>
-              ) : (
+              )}
+              {!loading && bills.length > 0 && (
                 <table className="ws-table-styled">
                   <thead>
                     <tr>
@@ -240,19 +242,27 @@ export default function PaidBills() {
                           </td>
                           <td className="ws-td-mono" style={{ fontWeight: 700, color: '#1e293b' }}>{invNum}</td>
                           <td>
-                            {orderMatch ? (
-                              <span style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.78rem', fontFamily: 'monospace' }}>
-                                {orderMatch}
-                              </span>
-                            ) : quoteMatch ? (
-                              <span style={{ color: '#475569', fontWeight: 600, fontSize: '0.78rem', fontFamily: 'monospace' }}>
-                                {quoteMatch}
-                              </span>
-                            ) : (
-                              <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
-                                Direct Bill
-                              </span>
-                            )}
+                            {(() => {
+                              if (orderMatch) {
+                                return (
+                                  <span style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                    {orderMatch}
+                                  </span>
+                                )
+                              }
+                              if (quoteMatch) {
+                                return (
+                                  <span style={{ color: '#475569', fontWeight: 600, fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                    {quoteMatch}
+                                  </span>
+                                )
+                              }
+                              return (
+                                <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>
+                                  Direct Bill
+                                </span>
+                              )
+                            })()}
                           </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
